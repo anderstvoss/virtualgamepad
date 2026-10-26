@@ -361,6 +361,9 @@ mod extensions;
 mod memory;
 pub use memory::{WiiEepromImage, WiiResourceDisposition};
 
+mod calibration;
+pub use calibration::WiiExtensionCalibration;
+
 mod topology;
 
 // Source coordinate midpoints, not factory calibration values.

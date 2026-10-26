@@ -525,3 +525,6 @@ impl crate::retained::OutputState for super::WiiRemoteOutputs {
 
 #[cfg(test)]
 mod part_c_tests;
+
+#[cfg(test)]
+mod calibration_tests;

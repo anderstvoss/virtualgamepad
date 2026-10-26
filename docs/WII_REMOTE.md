@@ -51,6 +51,35 @@ consumer close and host lifecycle events do not export anything. The library
 chooses no file path and claims no filesystem durability. Uinput has no addressed
 memory channel and rejects a nonempty import.
 
+The supporting API also accepts immutable caller-imported extension calibration.
+Use `WiiExtensionCalibration::import` with optional 32-byte MotionPlus and
+16-byte Nunchuk/Classic blocks, then
+`WiiEepromImage::with_extension_calibration` before creating the handle through
+`create_wii_remote_with_image`. Import validates the MotionPlus CRC32 and the
+two additive checksum bytes on Nunchuk/Classic. It does not repair bytes, infer
+factory values, or certify physical calibration. The snapshot retains these
+blocks alongside EEPROM; `bytes()` still returns only EEPROM bytes. No imports
+are selected by default. Missing blocks retain the exact error 7 response.
+
+Reads at extension offset `0x20` use the addressed device. An inactive MP answers
+at A6; an active MP answers at A4 in modes `04`, `05` and `07`. Inactive MP
+permits an initialized downstream Nunchuk/Classic to answer at A4. This follows
+`wii-gap-dolphin-emulated-motionplus-modes-passthrough` and the existing identity
+routing. Imported MP data is returned in at most 16-byte chunks; a request
+straddling any block fails whole before a prefix is sent. No downstream copy at
+`0x40`, Nunchuk/Classic calibration mirror at `0x30`, encrypted workflow or Classic Pro resource
+is inferred. Host writes cannot mutate calibration. Attachment changes reset
+register initialization but preserve the caller's imported resource.
+
+Layouts and checksums cite `wii-gap-dolphin-motionplus-crc32-calibration`,
+`wii-gap-dolphin-nunchuk-calibration-layout`,
+`wii-gap-dolphin-classic-calibration-layout` and
+`wii-gap-dolphin-calibration-additive-checksums`. Uinput rejects calibration
+imports before opening a provider because it has no addressed memory channel.
+The ordinary-root API remains unchanged; `scripts/check-alpha-api.py` checks a
+separate Wii supporting-API snapshot for these additions. Consumer acceptance
+and physical calibration remain separate gates.
+
 The demo creates Wii handles and provides native controls, extension selection
 and typed IR editing. Advanced raw battery and EEPROM configuration use the
 supporting API. Detached editors can use `WiiRemoteState::set_attachment` to
@@ -63,16 +92,16 @@ ordinary-root lab view. Interactive desktop/game acceptance remains untested.
 
 - Uinput follows the six `hid-wiimote` interface names and capability sets: core,
   accelerometer, IR, Nunchuk, Classic and MotionPlus. The provider advertises
-  USB bus3 and cannot express the kernel consumer's nonzero fuzz. Minimum,
+  USB bus 3 and cannot express the kernel consumer's nonzero fuzz. Minimum,
   maximum and flat values match the extracted source table. Decoder values can
   exceed the advertised ABS bounds; they are preserved, including the missing
-  IR1023/1023 sentinel. There is no explicit evdev point-visibility/blob field.
+  IR 1023/1023 sentinel. There is no explicit evdev point-visibility/blob field.
 - Wii LED-class and `power_supply` endpoints belong to the HID kernel driver;
   plain uinput cannot provide them. Its target surface states this limitation.
 - Bluetooth-bus UHID uses Nintendo identity and an authored interim synthetic
   Generic Desktop/Game Pad collection with vendor-page fields and source-backed
-  report sizes (W2 option B; retail-evidence successor#238). It is not a retail
-  descriptor. Bus5 is local kernel metadata: no radio, pairing or BlueZ.
+  report sizes (W2 option B; retail-evidence successor #238). It is not a retail
+  descriptor. Bus 5 is local kernel metadata: no radio, pairing or BlueZ.
 - Classic Pro wire identity, early Plus discrimination, encrypted extension
   workflows, factory calibration/default registers, retail EEPROM size and
   visible extended/full IR blob metadata remain **No evidence**. Basic point
@@ -98,12 +127,12 @@ driver and Dolphin were not measured. Kernel initialization setting an LED is
 not a successful user LED-control test. These missing cells remain explicit.
 
 The source and virtual-host records are in
-[research PR17](https://github.com/anderstvoss/controller-protocol-research/pull/17):
+[research PR 17](https://github.com/anderstvoss/controller-protocol-research/pull/17):
 `wii-c5-bt-host-binding`, `wii-c5-evdev-native-values` and the four
 `wii-c5-*-host-run` experiments. The acceptance manifest pins their reviewed
 research revision. No fixture is a physical capture.
 
-The C5 review fixes were checked on the same Linux6.12 host at tracked-clean
+The C5 review fixes were checked on the same Linux 6.12 host at tracked-clean
 `1b431cd5eabdf55c5c84091311c15f8105a25c87`. The unchanged ignored probe passed
 once, including kernel rumble and owned-node cleanup; all four LED writes remained
 permission-denied. A separate temporary supporting-API harness observed Nunchuk,
@@ -114,55 +143,55 @@ research record or historical timing sample was changed.
 
 ## W1 bounded follow-up observations
 
-[Part A PR235](https://github.com/anderstvoss/virtualgamepad/pull/235) is the
+[Part A PR 235](https://github.com/anderstvoss/virtualgamepad/pull/235) is the
 implementation tested at clean `50161b913d0f82950c292465625e9cdd8854daf2`.
-[Research PR22](https://github.com/anderstvoss/controller-protocol-research/pull/22)
+[Research PR 22](https://github.com/anderstvoss/controller-protocol-research/pull/22)
 retains five original `wii-w1-*` experiments, structured fixtures, executable and
 source hashes, and the original bounded probes under `tools/wii_w1`. The current
 manifest pins research main `732ca43c397f710e1632d825dbc03ccaf5637ad9`, which
-retains the W1 records through merged research PR22. The earlier C5 paragraphs and timing table
+retains the W1 records through merged research PR 22. The earlier C5 paragraphs and timing table
 remain historical observations of their own exact revisions.
 
 On the same Linux 6.12.113+deb13-arm64 aarch64 host, the W1 probes opened all six
 owned interface roles for each realization. Live minimum, maximum, flat and
-resolution matched the source table; kernel fuzz was2 for accelerometer/IR/
-Nunchuk,1 for Classic and4 for MotionPlus. Uinput reported fuzz0, its documented
+resolution matched the source table; kernel fuzz was 2 for accelerometer/IR/
+Nunchuk, 1 for Classic and 4 for MotionPlus. Uinput reported fuzz 0, its documented
 provider limitation. Selected explicit inputs delivered these consumer values:
 
 | Native input | Delivered event values |
 | --- | --- |
-| Accelerometer600/400/512 | 88/-112/0 |
-| IR point123/234; other points absent | 123/234; missing1023/1023 |
-| Nunchuk stick150/100; accel600/400/512 | 22/-28;88/-112/0 |
-| Classic left50/20, right20/10, triggers4/9 | 18/-12,8/-12,18/8 in source event order |
-| MotionPlus9000/8000/8192, all slow | 0/-1728/7272 in source event order |
+| Accelerometer 600/400/512 | 88/-112/0 |
+| IR point 123/234; other points absent | 123/234; missing 1023/1023 |
+| Nunchuk stick 150/100; accel 600/400/512 | 22/-28; 88/-112/0 |
+| Classic left 50/20, right 20/10, triggers 4/9 | 18/-12, 8/-12, 18/8 in source event order |
+| MotionPlus 9000/8000/8192, all slow | 0/-1728/7272 in source event order |
 
 Explicit neutral transitions restored the expected native values, including
-accelerometer-512 and IR missing1023/1023 outside the advertised limits. This is
+accelerometer-512 and IR missing 1023/1023 outside the advertised limits. This is
 selected-value virtual delivery, not physical calibration, a full-domain sensor
 test or a first-valid-neutral creation oracle. Unchanged core buttons have no
 evdev edge, and this probe opens nodes after initialization. Each helper's fd
-count returned4→4, owned nodes disappeared, and close remained idempotent.
+count returned 4→4, owned nodes disappeared, and close remained idempotent.
 
-The strengthened ignored probe asserted raw battery192→kernel capacity75,
+The strengthened ignored probe asserted raw battery 192→kernel capacity 75,
 rumble upload/play/stop/erase and retained native intent, replacement of Nunchuk
 by Classic, and owned-HID disappearance. All four LED brightness writes still
-returned EACCES13; initialization LED intent is not user LED-control acceptance.
+returned EACCES 13; initialization LED intent is not user LED-control acceptance.
 
-SDL's installed Debian3.2.10+ds-1 runtime was selected explicitly, avoiding the
-separate local3.5.0 installation. Both runs set HIDAPI=1, HIDAPI_WII=1,
+SDL's installed Debian 3.2.10+ds-1 runtime was selected explicitly, avoiding the
+separate local 3.5.0 installation. Both runs set HIDAPI=1, HIDAPI_WII=1,
 WII_PLAYER_LED=1 and ALLOW_BACKGROUND_EVENTS=1. With normal controller-only HID
 filtering the synthetic vendor-page collection was absent; setting
 HIDAPI_ENUMERATE_ONLY_CONTROLLERS=0 exposed it, but owned hidraw O_RDWR returned
-EACCES13. SDL instead opened the owned core through evdev:11 buttons,0 axes,
+EACCES 13. SDL instead opened the owned core through evdev:11 buttons, 0 axes,
 0 hats and no accelerometer/gyro sensors. Rumble reached retained intent through
 that fallback. RGB LED failed; a successful player-index setter is not proof of
 LED delivery. The core stayed connected across extension edits, but this is no
 Wii HIDAPI extension or sensor acceptance.
 
-The existing Dolphin Flatpak2609a (commit
+The existing Dolphin Flatpak 2609a (commit
 `a22e93a81ac2898f9a4cd69bbcbaa7b8de52262f7b6f5cc4eb18211a3bd25d7e`)
-ran offscreen with a fresh in-sandbox profile, Real slot1, continuous scanning and
+ran offscreen with a fresh in-sandbox profile, Real slot 1, continuous scanning and
 controller-interface connection enabled. The exact owned hidraw existed inside
 its sandbox but could not be opened. No internal backend discovery/connection,
 report modes, memory reads, extension initialization or MotionPlus activation
@@ -173,9 +202,9 @@ of these HID-specific consumer cells.
 These historical runs kept `wiimote` bound and made no root, installation, udev,
 unbind, permission or module-policy change. Anders subsequently confirmed the
 five temporary per-node grants authorized by
-[the owner decision on176](https://github.com/anderstvoss/virtualgamepad/issues/176#issuecomment-6347519179).
+[the owner decision on 176](https://github.com/anderstvoss/virtualgamepad/issues/176#issuecomment-6347519179).
 The later granted reruns are separate new records in
-[research PR28](https://github.com/anderstvoss/controller-protocol-research/pull/28),
+[research PR 28](https://github.com/anderstvoss/controller-protocol-research/pull/28),
 not retained by this pin. The manifest preserves the historical blocked results
 and missing neutral oracle; it does not claim that grants are still pending.
 Research pin adoption does not adopt independent `wii-gap-*` protocol behavior:
@@ -184,7 +213,7 @@ Classic Pro, early Plus, descriptor and other existing refusals remain unchanged
 ## Creation and removal timing
 
 Ten cycles were recorded at N1 and N4 for each realization, using the same
-hashed executable built from tracked-clean `ccb98dc`, for100 total samples.
+hashed executable built from tracked-clean `ccb98dc`, for 100 total samples.
 The first cycle is labelled cold; subsequent cycles warm. N sessions coexist
 before removal. All operation error lists were empty, owned nodes disappeared,
 and fd/thread/input/hidraw counts returned to baseline for all four runs.
@@ -228,22 +257,22 @@ protocol descriptions from physical evidence. The following behaviours cite
 its records; none establishes retail fidelity or a firmware report clock.
 
 - Unsolicited extension-status notifications pause data until a valid host
-  report0x12 selects a mode again. ACKs and memory replies continue while
-  paused. Solicited status0x15 does not pause data
+  report 0x12 selects a mode again. ACKs and memory replies continue while
+  paused. Solicited status 0x15 does not pause data
   (`wii-gap-wiibrew-status-20-resend`, `wii-gap-wiibrew-data-report-powerup-default`).
-- MotionPlus deactivation0x55 at0xA400F0 ACKs and publishes unplug/current-port
+- MotionPlus deactivation 0x55 at 0xA400F0 ACKs and publishes unplug/current-port
   statuses atomically. Initialized downstream state survives, data pauses, and
-  inactive0xA600FA retains the previous04/05/07 plus05 suffix
+  inactive 0xA600FA retains the previous 04/05/07 plus 05 suffix
   (`wii-gap-wiibrew-motionplus-deactivation`). No downstream means no plug flag.
 - EEPROM reads ignore the high address byte and intersect the caller image
-  with documented host window[0,0x1700). Out-of-window or straddling reads error;
+  with documented host window[0, 0x1700). Out-of-window or straddling reads error;
   the full imported image remains available for explicit terminal resolution.
-  Writes retain caller-image bounds and Dolphin-qualified0x22 errors; the
-  documentary0x21 error disagreement and physical write protection remain open
+  Writes retain caller-image bounds and Dolphin-qualified 0x22 errors; the
+  documentary 0x21 error disagreement and physical write protection remain open
   (`wii-gap-wiibrew-eeprom-address-mirroring`,
   `wii-gap-dolphin-out-of-range-write-ack`, `wii-memory-size-hypothesis`).
-- Classic uses existing format01. Writes01/02/03 to0xA400FE explicitly return
-  error7 rather than accepting an unimplemented format
+- Classic uses existing format 01. Writes 01/02/03 to 0xA400FE explicitly return
+  error 7 rather than accepting an unimplemented format
   (`wii-gap-wiibrew-extension-data-format-selector`). MotionPlus pass-through
   field moves and alternating records retain existing encoding and now have
   independent decoders (`wii-gap-wiibrew-motionplus-passthrough-field-moves`).
@@ -256,24 +285,24 @@ its records; none establishes retail fidelity or a firmware report clock.
 Encrypted workflows and Classic Pro stay refused. EEPROM images remain
 opaque, length-validated caller imports, with no invented checksums or per-device
 factory values (`wii-gap-extension-calibration-checksum-unknown`,
-`wii-gap-classic-pro-full-id-physical-unknown`). The subsequent W2 owner decision on#158 authorizes only the interim synthetic
+`wii-gap-classic-pro-full-id-physical-unknown`). The subsequent W2 owner decision on #158 authorizes only the interim synthetic
 Game Pad collection described below; the retail descriptor remains unknown.
 Permissions, consumer discovery and timing remain separate acceptance questions;
 the earlier C5/W1 measurements are never relabelled as Part C measurements.
 
 ## W2 interim descriptor and Part C follow-up
 
-Owner option B on#158 comment6354044408 authorizes an independently authored
+Owner option B on #158 comment 6354044408 authorizes an independently authored
 synthetic Generic Desktop/Game Pad Application collection. Its byte fields stay
-on vendor page0xFF00 with the existing Variable flags. All report directions,
-IDs and payload lengths are unchanged; speaker IDs14/18/19 stay absent.
+on vendor page 0xFF00 with the existing Variable flags. All report directions,
+IDs and payload lengths are unchanged; speaker IDs 14/18/19 stay absent.
 The historical `wii-c5-functional-descriptor` fixture still records C5 and is
 used only to verify the unchanged report body. No rnconrad candidate bytes were
 copied or used as a template. Retail-evidence replacement is tracked in#238;
 this interim descriptor makes no retail authenticity claim.
 
 Unsupported active MotionPlus A4FE selectors now use the same atomic deactivation
-path as55 atA400F0: ACK, unplug/current-port statuses, data pause and preserved
+path as 55 at A400F0: ACK, unplug/current-port statuses, data pause and preserved
 inactive suffix/downstream initialization. This is the explicit software policy
 chosen by the W2 handoff, not newly authenticated retail selector behavior.
 The regression covers every unsupported byte for all three active modes, plus
@@ -294,12 +323,12 @@ WIP after the observed disconnect. This changes evidence dispositions, not the
 interim descriptor or protocol model.
 
 The unchanged-main W3 trace observes unsolicited Nunchuk status, prompt host
-report0x12 reselection and resumed DATA. Repeating the bounded sequence with
+report 0x12 reselection and resumed DATA. Repeating the bounded sequence with
 explicit application commits still disconnects the old HIDAPI joystick; the
-actual-default evdev control remains connected. Pinned SDL3.2.10 source
-`877399b2b2cf21e67554ed9046410f268ce1d1b2`, HandleStatus1350–1384, requests a
+actual-default evdev control remains connected. Pinned SDL 3.2.10 source
+`877399b2b2cf21e67554ed9046410f268ce1d1b2`, HandleStatus 1350–1384, requests a
 mode reset and marks extension changes disconnected to reinitialize. Its
-UpdateDevice1511–1576 separately implements an inactivity heuristic. The trace
+UpdateDevice 1511–1576 separately implements an inactivity heuristic. The trace
 and control support the explicit host reinitialization explanation rather than
 a DATA-pause deadlock. Reopening/sustained HIDAPI acceptance is not established.
 No firmware clock, workaround or conflicting protocol behavior is invented.
@@ -311,14 +340,14 @@ virtual UHID syscall boundaries, not physical delivery or latency acceptance.
 New W3 research records retain filtered report sequences and diagnostic limits;
 raw application logs and identifying metadata stay private.
 
-The historical W2 N1 input-class count26→29 is attributable to an unrelated
+The historical W2 N1 input-class count 26→29 is attributable to an unrelated
 USB-parent gamepad's input/event/joystick class entries: its retained udev
 initialization time falls within that run. It has non-UHID ancestry and does not
 match the virtual controller's association. Historical N1 remains blocked as
 directed; no harness ordering change or replacement timing run is made.
 
-The new Nunchuk six-byte and Classic format01 documentary claims corroborate
-existing packing only. Formats02/03 stay refused; Classic Pro digital-trigger
+The new Nunchuk six-byte and Classic format 01 documentary claims corroborate
+existing packing only. Formats 02/03 stay refused; Classic Pro digital-trigger
 documentation does not lift its identity refusal. Calibration/checksum and
 Classic Pro physical-identity unknowns remain unknown. #238 retains the retail
 descriptor work; Dolphin, radio, speaker and Balance Board are outside W3.
@@ -363,9 +392,9 @@ v1 schema. W4 adoption pinned merged research
 
 ## W5 gyro consumer boundary
 
-W5 runs on unchanged main `b23cb41` with the W4 Linux 6.12.113 / SDL3.2.10 tuple.
+W5 runs on unchanged main `b23cb41` with the W4 Linux 6.12.113 / SDL 3.2.10 tuple.
 Before SDL, two 20-second kernel-only MotionPlus evdev holders produce acknowledged
-map04/05 writes and changing ABS_RX/RY/RZ at the exact expected driven extrema.
+map 04/05 writes and changing ABS_RX/RY/RZ at the exact expected driven extrema.
 Captured active packets decode both distinct drive vectors with valid gyro bits,
 all slow flags and alternating Nunchuk pass-through. A new pure Rust regression
 also covers both vectors and all eight slow-flag combinations; no runtime change.
@@ -409,7 +438,7 @@ Linux 6.12.113+deb13-arm64. The consumer survey supplied hypotheses, not passes.
   by holder/no-holder profiles, repeated with byte capture, exchange raw status,
   EEPROM, register and input reports. No-holder Cemu writes A600F0=55/A600FE=04;
   holder runs show Cemu A400 resets alongside kernel 04/05 maps. MP-only selects 33;
-  Nunchuk also selects/receives 37. All arms receive EEPROM0016/8 error8 because
+  Nunchuk also selects/receives 37. All arms receive EEPROM 0016/8 error 8 because
   the default caller image is empty and no image was imported. Calibration and
   decoded application gyro remain unestablished; raw 37 delivery is not a gyro
   oracle. No Cemu gyro acceptance cell is added. See the
