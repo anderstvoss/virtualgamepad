@@ -2,7 +2,7 @@ schema_version = 1
 controller = "virtualgamepad.wii-remote"
 research_revision = "e5256908f56e57d9910bbc6ae1b283492d743483"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
-refused_operations = ["speaker", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
+refused_operations = ["speaker-audio", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
 persistent_resources = ["caller-imported-eeprom"]
 
 [[functions]]
@@ -198,10 +198,16 @@ id = "dolphin"
 "linux.uhid.bluetooth" = { status = "wip", test_id = "research:tests/test_wii_w1_host_runs.py::WiiW1HostRuns::test_permissions_and_fallback_never_become_hidapi_or_dolphin_acceptance", evidence = ["wii-dolphin-hidapi-probe", "wii-w1-dolphin-host-run"], reason = "untested: existing Flatpak 2609a bounded startup sees owned hidraw inside sandbox but open denied. No internal backend connection, report modes, memory reads, extension init or MotionPlus activation observed. No ROM/emulation session; timeout is termination, not application acceptance. wiimote remains bound. Historical pre-grant result; later human-granted reruns are separate records outside this pin." }
 
 [[functions]]
-id = "speaker"
+id = "speaker-audio"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: separately gated in-band realization under D7/ADR0023." }
-"linux.uhid.bluetooth" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: separately gated in-band realization under D7/ADR0023." }
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "No HID output-report channel or audio endpoint; playback remains gated under D7/ADR-0023." }
+"linux.uhid.bluetooth" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Speaker audio bytes are discarded; control acknowledgement is separate from playback, which remains gated under D7/ADR-0023." }
+
+[[functions]]
+id = "speaker-control-ack"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "uinput has no HID output-report or addressed memory channel; its existing rumble behavior is unchanged." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_tests::control_acknowledgements_retain_state_and_shared_rumble", evidence = ["wii-gap-wiibrew-speaker-control-reports", "audio-wii-dolphin-control-and-stream-reports", "wii-gap-wiibrew-speaker-init-config-registers", "audio-wii-dolphin-speaker-register-model"], reason = "Control intent and bounded register writes are retained and ACKed without producing audio; speaker data has only its shared rumble effect. Deterministic source-model regression, not audio acceptance." }
 
 [[functions]]
 id = "real-bluetooth"

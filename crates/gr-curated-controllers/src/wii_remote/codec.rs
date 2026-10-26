@@ -30,6 +30,12 @@ enum Reporting {
     AwaitingMode,
 }
 
+#[derive(Clone, Default)]
+struct SpeakerControl {
+    enabled: bool,
+    muted: bool,
+}
+
 #[derive(Clone)]
 pub(crate) struct WiiProtocol {
     pub(super) state: WiiRemoteState,
@@ -39,6 +45,8 @@ pub(crate) struct WiiProtocol {
     pub(super) memory: super::memory::Memory,
     read: Option<super::memory::Read>,
     ir_enabled: [bool; 2],
+    // Host control intent only; there is no speaker playback subsystem.
+    speaker: SpeakerControl,
     pending: VecDeque<Report>,
     next: Option<u64>,
     active: bool,
@@ -56,6 +64,7 @@ impl Default for WiiProtocol {
             memory: super::memory::Memory::default(),
             read: None,
             ir_enabled: [false; 2],
+            speaker: SpeakerControl::default(),
             pending: VecDeque::new(),
             next: None,
             active: true,
@@ -244,6 +253,7 @@ impl WiiProtocol {
             .fold(0, |bits, (i, on)| bits | (u8::from(*on) << (i + 4)));
         let flags = u8::from(self.state.battery < 0x20)
             | (u8::from(self.memory.present(&self.state)) << 1)
+            | (u8::from(self.speaker.enabled) << 2)
             | (u8::from(self.ir_enabled[0]) << 3)
             | leds;
         input(
@@ -274,9 +284,9 @@ impl WiiProtocol {
         let id = report.id().ok_or(ReplyError::Unsupported)?;
         let p = report.payload();
         let size = match id {
-            0x10 | 0x11 | 0x13 | 0x15 | 0x1a => 1,
+            0x10 | 0x11 | 0x13 | 0x14 | 0x15 | 0x19 | 0x1a => 1,
             0x12 => 2,
-            0x16 => 21,
+            0x16 | 0x18 => 21,
             0x17 => 6,
             _ => return Err(ReplyError::Unsupported),
         };
@@ -305,7 +315,10 @@ impl WiiProtocol {
         }
         let before = self.outputs;
         match id {
-            0x10 => {}
+            // Only the shared rumble bit is honored below for speaker data.
+            // No audio bytes are decoded, queued or played; bits 1/2 do not
+            // request an ACK for 0x18.
+            0x10 | 0x18 => {}
             0x11 => self.outputs.leds = std::array::from_fn(|i| p[0] & (1 << (i + 4)) != 0),
             0x12 => {
                 if !MODES.iter().any(|(mode, _)| *mode == p[1]) {
@@ -317,6 +330,11 @@ impl WiiProtocol {
                 self.reporting = Reporting::Running;
             }
             0x13 => self.ir_enabled[0] = p[0] & 4 != 0,
+            // wii-gap-wiibrew-speaker-control-reports /
+            // audio-wii-dolphin-control-and-stream-reports: retain control
+            // state and acknowledge it, without claiming audio delivery.
+            0x14 => self.speaker.enabled = p[0] & 4 != 0,
+            0x19 => self.speaker.muted = p[0] & 4 != 0,
             0x1a => self.ir_enabled[1] = p[0] & 4 != 0,
             0x15 => {
                 self.outputs.rumble = p[0] & 1 != 0;
@@ -356,7 +374,7 @@ impl WiiProtocol {
         if self.outputs.leds != before.leds || self.outputs.rumble != before.rumble {
             self.outputs.revision = before.revision.checked_add(1).ok_or(ReplyError::Busy)?;
         }
-        if matches!(id, 0x11 | 0x12 | 0x13 | 0x1a) && p[0] & 2 != 0 {
+        if matches!(id, 0x11 | 0x12 | 0x13 | 0x14 | 0x19 | 0x1a) && p[0] & 2 != 0 {
             self.pending.push_back(self.ack(id, 0));
         }
         self.next = Some(now);
@@ -525,3 +543,6 @@ impl crate::retained::OutputState for super::WiiRemoteOutputs {
 
 #[cfg(test)]
 mod part_c_tests;
+
+#[cfg(test)]
+mod speaker_tests;

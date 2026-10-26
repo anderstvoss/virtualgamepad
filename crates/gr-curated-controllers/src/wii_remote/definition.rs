@@ -80,8 +80,8 @@ static RESTRICTIONS: &[TargetRestriction] = &[
         reason: "synthetic descriptor; factory calibration, early Plus and Classic Pro identity remain No evidence",
     },
     TargetRestriction {
-        feature: "speaker",
-        reason: "separately gated in-band realization under D7 and ADR-0023",
+        feature: "speaker audio",
+        reason: "control reports and register writes are acknowledged without audio; speaker data is discarded except for shared rumble; playback remains gated under D7 and ADR-0023",
     },
     TargetRestriction {
         feature: "early integrated Plus identity",
@@ -102,6 +102,10 @@ static EVDEV_OUTPUT_KINDS: &[gr_controller_contract::OutputKind] =
         ],
     }];
 static EVDEV_RESTRICTIONS: &[TargetRestriction] = &[
+    TargetRestriction {
+        feature: "speaker controls",
+        reason: "uinput has no HID output-report or addressed memory channel; speaker enable/mute and register acknowledgements are unavailable",
+    },
     TargetRestriction {
         feature: "bus and fuzz",
         reason: "uinput provider declares BUS_USB and exposes no fuzz field; kernel consumer uses BUS_BLUETOOTH and nonzero fuzz",

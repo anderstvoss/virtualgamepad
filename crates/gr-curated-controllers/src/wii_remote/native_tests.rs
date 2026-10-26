@@ -282,6 +282,7 @@ fn native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity() {
         "IR visibility and blob metadata",
         "LEDs and battery",
         "EEPROM and calibration",
+        "speaker controls",
         "Classic Pro identity",
     ] {
         assert!(UINPUT.restrictions().iter().any(|r| r.feature == feature));

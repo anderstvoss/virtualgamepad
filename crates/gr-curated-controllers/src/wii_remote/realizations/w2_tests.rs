@@ -83,9 +83,12 @@ fn interim_gamepad_collection_preserves_vendor_variable_report_table() {
         (9, 0x11, 1),
         (9, 0x12, 2),
         (9, 0x13, 1),
+        (9, 0x14, 1),
         (9, 0x15, 1),
         (9, 0x16, 21),
         (9, 0x17, 6),
+        (9, 0x18, 21),
+        (9, 0x19, 1),
         (9, 0x1a, 1),
     ]
     .into_iter()
@@ -93,6 +96,6 @@ fn interim_gamepad_collection_preserves_vendor_variable_report_table() {
     .collect();
     assert_eq!(
         reports, expected,
-        "exact directions/IDs/payload bits; no features or speaker IDs"
+        "exact directions/IDs/payload bits, including W8 control and rumble-only data handling; no features"
     );
 }
