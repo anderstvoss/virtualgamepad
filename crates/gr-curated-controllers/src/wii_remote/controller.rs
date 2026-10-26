@@ -50,9 +50,11 @@ pub(super) fn create(
             reason: "Wii revision/target lacks source-backed identity".into(),
         });
     }
-    if target == RealizationTarget::LINUX_UINPUT && !image.bytes().is_empty() {
+    if target == RealizationTarget::LINUX_UINPUT
+        && (!image.bytes().is_empty() || image.has_extension_calibration())
+    {
         return Err(ProviderError::Unsupported {
-            reason: "uinput has no EEPROM address channel".into(),
+            reason: "uinput has no EEPROM or extension calibration address channel".into(),
         });
     }
     let state = WiiRemoteState::new(revision);
