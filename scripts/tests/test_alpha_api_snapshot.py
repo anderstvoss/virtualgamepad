@@ -22,6 +22,21 @@ def render_fixture(source, docs):
 
 
 class SnapshotTests(unittest.TestCase):
+    def test_wii_import_api_is_checked_separately_and_requires_existing_docs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaises(FileNotFoundError):
+                api.wii_snapshot(root)
+            (root/'index.html').write_text('<a href="struct.Calibration.html">Calibration</a>')
+            page = root/'struct.Calibration.html'
+            declaration = '<pre class="rust item-decl">pub struct Calibration;</pre>'
+            page.write_text(declaration)
+            before = api.wii_snapshot(root)
+            page.write_text(declaration + '<h4 class="code-header">pub fn import()</h4>')
+            self.assertNotEqual(api.wii_snapshot(root), before)
+            self.assertEqual(before['scope'],
+                             'gr-curated-controllers Wii supporting API; not ordinary root')
+
     def test_rustdoc_failure_preserves_compiler_diagnostic(self):
         failure = subprocess.CompletedProcess(
             [], 1, stdout='fixture output', stderr='compiler unavailable')

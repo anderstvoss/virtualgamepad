@@ -132,6 +132,78 @@ fn write(slave: u8, offset: u8, bytes: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+fn imported_calibration_survives_snapshot_and_cleanup_is_per_controller() {
+    let (_, nunchuk, _) = calibration::synthetic_blocks();
+    let image = WiiEepromImage::default().with_extension_calibration(
+        WiiExtensionCalibration::import(None, Some(nunchuk), None).unwrap(),
+    );
+    let (mut first, one) = create(image.clone());
+    let (mut second, two) = create(image.clone());
+    for (controller, fake) in [(&mut first, &one), (&mut second, &two)] {
+        controller
+            .attach(WiiExtension::Nunchuk(WiiNunchukState::default()), false)
+            .unwrap();
+        for (address, value) in [(0xf0, 0x55), (0xfb, 0)] {
+            output(fake, 0x16, &write(0x52, address, &[value]));
+            controller.service(&mut |_| {}).unwrap();
+        }
+        output(fake, 0x17, &[4, 0xa4, 0, 0x20, 0, 16]);
+        for _ in 0..4 {
+            controller.service(&mut |_| {}).unwrap();
+        }
+        let record = fake.0.lock().unwrap();
+        let replies: Vec<_> = record
+            .sent
+            .iter()
+            .filter_map(|frame| match frame {
+                ProviderFrame::HidInput {
+                    report_id: Some(0x21),
+                    bytes,
+                } => Some(bytes),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            replies.len(),
+            1,
+            "repeated polling must not repeat the read"
+        );
+        assert_eq!(&replies[0][2..5], &[0xf0, 0, 0x20]);
+        assert_eq!(&replies[0][5..], &nunchuk);
+        let acks: Vec<_> = record
+            .sent
+            .iter()
+            .filter_map(|frame| match frame {
+                ProviderFrame::HidInput {
+                    report_id: Some(0x22),
+                    bytes,
+                } => Some(bytes),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(acks.len(), 2);
+        assert!(acks.iter().all(|bytes| bytes.as_slice() == [0, 0, 0x16, 0]));
+        assert!(!controller.resource_dirty());
+    }
+    first.close();
+    first.close();
+    assert_eq!(one.0.lock().unwrap().closed, 1);
+    assert_eq!(two.0.lock().unwrap().closed, 0);
+    second.service(&mut |_| {}).unwrap();
+    assert_eq!(
+        first
+            .resolve_resource(WiiResourceDisposition::KeepSnapshot)
+            .unwrap(),
+        Some(&image)
+    );
+    drop(first);
+    assert_eq!(one.0.lock().unwrap().closed, 1);
+    second.close();
+    second.close();
+    drop(second);
+    assert_eq!(two.0.lock().unwrap().closed, 1);
+}
+#[test]
 fn speaker_controls_ack_once_status_is_retained_and_cleanup_is_per_controller() {
     let (mut first, one) = create(WiiEepromImage::default());
     let (mut second, two) = create(WiiEepromImage::default());

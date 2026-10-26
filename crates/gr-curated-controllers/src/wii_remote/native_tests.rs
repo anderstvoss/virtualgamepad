@@ -381,6 +381,19 @@ fn fatal_core_commit_closes_companions_but_retryable_commit_preserves_them() {
 #[test]
 fn native_eeprom_channels_refuse_without_opening_or_exporting_resources() {
     let factory = Factory::default();
+    let (_, nunchuk, _) = calibration::synthetic_blocks();
+    let calibration = WiiExtensionCalibration::import(None, Some(nunchuk), None).unwrap();
+    assert!(matches!(
+        controller::create(
+            RealizationTarget::LINUX_UINPUT,
+            7,
+            WiiRemoteRevision::Original,
+            WiiEepromImage::default().with_extension_calibration(calibration),
+            Some(Arc::new(factory.clone()))
+        ),
+        Err(ProviderError::Unsupported { .. })
+    ));
+    assert!(factory.0.lock().unwrap().requests.is_empty());
     assert!(matches!(
         controller::create(
             RealizationTarget::LINUX_UINPUT,

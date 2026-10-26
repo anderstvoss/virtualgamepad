@@ -546,3 +546,6 @@ mod part_c_tests;
 
 #[cfg(test)]
 mod speaker_tests;
+
+#[cfg(test)]
+mod calibration_tests;
