@@ -47,7 +47,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           # CodeQL pulls bundle + database from a wider set of GitHub
           # CDN endpoints than the standard rust-toolchain flow, so
@@ -91,7 +91,7 @@ jobs:
 
       - name: Cache cargo
         if: matrix.language == 'rust'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: codeql-${{ matrix.language }}
 
@@ -148,7 +148,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           # The analyze job's GitHub endpoints, in case upload-sarif
           # fetches the CodeQL bundle to process the SARIF.
