@@ -8,6 +8,7 @@ use gr_controller_contract::ControlError;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct WiiEepromImage {
     bytes: Vec<u8>,
+    calibration: super::WiiExtensionCalibration,
 }
 impl WiiEepromImage {
     pub fn import(bytes: Vec<u8>) -> Result<Self, ControlError> {
@@ -18,7 +19,23 @@ impl WiiEepromImage {
                 control: "EEPROM model exceeds its source-backed address window",
             });
         }
-        Ok(Self { bytes })
+        Ok(Self {
+            bytes,
+            calibration: super::WiiExtensionCalibration::default(),
+        })
+    }
+    /// Retain validated accessory blocks alongside the EEPROM snapshot.
+    /// These immutable blocks are not EEPROM bytes and cannot be host-written.
+    #[must_use]
+    pub fn with_extension_calibration(
+        mut self,
+        calibration: super::WiiExtensionCalibration,
+    ) -> Self {
+        self.calibration = calibration;
+        self
+    }
+    pub(super) fn has_extension_calibration(&self) -> bool {
+        !self.calibration.is_empty()
     }
     #[must_use]
     pub fn bytes(&self) -> &[u8] {
@@ -227,6 +244,17 @@ impl Memory {
         {
             // wii-c5-extension-identifiers: only the external source model is
             // specified here; no physical integrated-Plus discriminator claim.
+            // wii-gap-dolphin-emulated-motionplus-modes-passthrough:
+            // inactive A6 and active A4 address the MP itself in every mode,
+            // including 05/07; active mode does not route A40020 downstream.
+            if (0x20..0x40).contains(&offset) {
+                return calibration_read(
+                    self.image.calibration.motion_plus.as_ref().map(|b| &b[..]),
+                    offset,
+                    read.remaining,
+                    count,
+                );
+            }
             let id = [
                 0,
                 0,
@@ -244,6 +272,14 @@ impl Memory {
             return Err(7);
         }
         if read.slave == 0x52 && self.initialized == [true, true] {
+            if (0x20..0x30).contains(&offset) {
+                let block = match state.extension() {
+                    WiiExtension::Nunchuk(_) => self.image.calibration.nunchuk.as_ref(),
+                    WiiExtension::Classic(_) => self.image.calibration.classic.as_ref(),
+                    _ => None,
+                };
+                return calibration_read(block.map(|b| &b[..]), offset, read.remaining, count);
+            }
             let id = match state.extension() {
                 WiiExtension::Nunchuk(_) => [0, 0, 0xa4, 0x20, 0, 0],
                 WiiExtension::Classic(_) => [0, 0, 0xa4, 0x20, 1, 1],
@@ -277,4 +313,20 @@ impl Memory {
             }
         }
     }
+}
+
+fn calibration_read(
+    block: Option<&[u8]>,
+    offset: usize,
+    remaining: u16,
+    count: usize,
+) -> Result<Vec<u8>, u8> {
+    // Validate the entire remaining request before returning its first chunk.
+    // Layout records cover only the imported block, never padding or mirrors.
+    let block = block.ok_or(7_u8)?;
+    let start = offset - 0x20;
+    block
+        .get(start..start + usize::from(remaining))
+        .ok_or(7_u8)?;
+    Ok(block[start..start + count].to_vec())
 }

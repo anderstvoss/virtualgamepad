@@ -51,6 +51,35 @@ consumer close and host lifecycle events do not export anything. The library
 chooses no file path and claims no filesystem durability. Uinput has no addressed
 memory channel and rejects a nonempty import.
 
+The supporting API also accepts immutable caller-imported extension calibration.
+Use `WiiExtensionCalibration::import` with optional 32-byte MotionPlus and
+16-byte Nunchuk/Classic blocks, then
+`WiiEepromImage::with_extension_calibration` before creating the handle through
+`create_wii_remote_with_image`. Import validates the MotionPlus CRC32 and the
+two additive checksum bytes on Nunchuk/Classic. It does not repair bytes, infer
+factory values, or certify physical calibration. The snapshot retains these
+blocks alongside EEPROM; `bytes()` still returns only EEPROM bytes. No imports
+are selected by default. Missing blocks retain the exact error 7 response.
+
+Reads at extension offset `0x20` use the addressed device. An inactive MP answers
+at A6; an active MP answers at A4 in modes `04`, `05` and `07`. Inactive MP
+permits an initialized downstream Nunchuk/Classic to answer at A4. This follows
+`wii-gap-dolphin-emulated-motionplus-modes-passthrough` and the existing identity
+routing. Imported MP data is returned in at most 16-byte chunks; a request
+straddling any block fails whole before a prefix is sent. No downstream copy at
+`0x40`, Nunchuk/Classic calibration mirror at `0x30`, encrypted workflow or Classic Pro resource
+is inferred. Host writes cannot mutate calibration. Attachment changes reset
+register initialization but preserve the caller's imported resource.
+
+Layouts and checksums cite `wii-gap-dolphin-motionplus-crc32-calibration`,
+`wii-gap-dolphin-nunchuk-calibration-layout`,
+`wii-gap-dolphin-classic-calibration-layout` and
+`wii-gap-dolphin-calibration-additive-checksums`. Uinput rejects calibration
+imports before opening a provider because it has no addressed memory channel.
+The ordinary-root API remains unchanged; `scripts/check-alpha-api.py` checks a
+separate Wii supporting-API snapshot for these additions. Consumer acceptance
+and physical calibration remain separate gates.
+
 The demo creates Wii handles and provides native controls, extension selection
 and typed IR editing. Advanced raw battery and EEPROM configuration use the
 supporting API. Detached editors can use `WiiRemoteState::set_attachment` to
