@@ -116,7 +116,7 @@ static EVDEV_RESTRICTIONS: &[TargetRestriction] = &[
     },
     TargetRestriction {
         feature: "EEPROM and calibration",
-        reason: "evdev has no addressed memory channel; imported EEPROM is available only through Bluetooth-bus UHID",
+        reason: "evdev has no addressed memory channel; imported EEPROM and extension calibration are available only through Bluetooth-bus UHID",
     },
     TargetRestriction {
         feature: "Classic Pro identity",
