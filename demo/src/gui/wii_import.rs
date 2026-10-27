@@ -44,6 +44,29 @@ pub(super) fn available(target: RealizationId) -> bool {
     target == RealizationId::LINUX_UHID_BLUETOOTH
 }
 
+pub(super) fn draw_compat(
+    ui: &mut egui::Ui,
+    target: RealizationId,
+    options: &mut super::WiiRemoteCreationOptions,
+) {
+    ui.strong("MotionPlus compatibility");
+    if !available(target) {
+        ui.small("uinput has no addressed register channel for compatibility shims.");
+    }
+    ui.add_enabled_ui(available(target), |ui| {
+        ui.checkbox(
+            &mut options.motionplus_passthrough_id_mirror,
+            "Passthrough ID mirror (compat)",
+        );
+        ui.small("Active child ID at F6; F7 stays 0x02, without challenge readiness.");
+        ui.checkbox(
+            &mut options.motionplus_passthrough_calibration_copy,
+            "Child calibration copy (compat)",
+        );
+        ui.small("Exact imported child block at 0x40 during active passthrough.");
+    });
+}
+
 impl Imports {
     pub(super) fn load(&self, target: RealizationId) -> Result<WiiEepromImage, String> {
         self.load_with(target, |path| {

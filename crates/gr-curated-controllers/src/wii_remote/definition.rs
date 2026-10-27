@@ -261,6 +261,7 @@ impl ControllerFamily for WiiRemoteDefinition {
 
 /// Instance configuration stays in the controller package, outside registry metadata.
 pub(super) struct Configured {
+    pub(super) options: super::WiiRemoteCreationOptions,
     pub(super) image: super::WiiEepromImage,
     pub(super) revision: super::WiiRemoteRevision,
     pub(super) role: super::realizations::Role,
@@ -338,7 +339,8 @@ impl common::HidDriver for Configured {
         .open_transport(request)
     }
     fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
-        let mut protocol = super::codec::WiiProtocol::with_image(self.image.clone());
+        let mut protocol =
+            super::codec::WiiProtocol::with_creation_options(self.image.clone(), self.options);
         protocol.state = WiiRemoteState::new(self.revision);
         protocol
     }

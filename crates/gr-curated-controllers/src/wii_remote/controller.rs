@@ -28,11 +28,39 @@ pub fn create_wii_remote_with_image(
 ) -> Result<WiiRemoteController, ProviderError> {
     create(target, session, revision, image, None)
 }
+/// Create with caller resources and independent creation-time compat switches.
+/// Existing constructors use the default (enabled) policy.
+pub fn create_wii_remote_with_options(
+    target: RealizationTarget,
+    session: u64,
+    revision: super::WiiRemoteRevision,
+    image: super::WiiEepromImage,
+    options: super::WiiRemoteCreationOptions,
+) -> Result<WiiRemoteController, ProviderError> {
+    create_configured(target, session, revision, image, options, None)
+}
 pub(super) fn create(
     target: RealizationTarget,
     session: u64,
     revision: super::WiiRemoteRevision,
     image: super::WiiEepromImage,
+    provider: Option<std::sync::Arc<dyn gr_realization_api::NativeProviderFactory>>,
+) -> Result<WiiRemoteController, ProviderError> {
+    create_configured(
+        target,
+        session,
+        revision,
+        image,
+        super::WiiRemoteCreationOptions::default(),
+        provider,
+    )
+}
+fn create_configured(
+    target: RealizationTarget,
+    session: u64,
+    revision: super::WiiRemoteRevision,
+    image: super::WiiEepromImage,
+    options: super::WiiRemoteCreationOptions,
     provider: Option<std::sync::Arc<dyn gr_realization_api::NativeProviderFactory>>,
 ) -> Result<WiiRemoteController, ProviderError> {
     use super::{
@@ -60,6 +88,7 @@ pub(super) fn create(
     let state = WiiRemoteState::new(revision);
     let driver = Configured {
         image,
+        options,
         revision,
         role: Role::Core,
         provider: provider.clone(),

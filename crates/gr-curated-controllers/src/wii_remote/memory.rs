@@ -49,6 +49,7 @@ pub enum WiiResourceDisposition {
 }
 #[derive(Clone)]
 pub(super) struct Memory {
+    pub(super) options: super::WiiRemoteCreationOptions,
     pub(super) image: WiiEepromImage,
     pub(super) dirty: bool,
     pub(super) initialized: [bool; 2],
@@ -80,6 +81,7 @@ impl Read {
 impl Default for Memory {
     fn default() -> Self {
         Self {
+            options: super::WiiRemoteCreationOptions::default(),
             image: WiiEepromImage::default(),
             dirty: false,
             initialized: [false; 2],
@@ -118,6 +120,7 @@ impl Memory {
         let address = usize::from(u16::from_be_bytes([p[2], p[3]]));
         let data = &p[5..5 + usize::from(p[4])];
         if space == 0 {
+            // Compat: bounded caller image, not a physical EEPROM write map.
             // wii-gap-dolphin-out-of-range-write-ack / wii-c5-memory-errors:
             // retain caller-image write bounds and0x22 errors. Documentary read
             // mirroring/window rules do not establish physical write protection.
@@ -139,6 +142,7 @@ impl Memory {
             return 8;
         }
         if slave == 0x51 {
+            // Faithful control-register layout; no audio delivery claim.
             // wii-gap-wiibrew-speaker-init-config-registers /
             // audio-wii-dolphin-speaker-register-model. Store only the bounded
             // A20000..A20009 control image; no stream or audio side effect.
@@ -149,6 +153,7 @@ impl Memory {
             return 0;
         }
         if slave == 0x58 {
+            // Faithful IR control layout: wii-c5-camera-no-points.
             let accepted = matches!(
                 (offset, data.len()),
                 (0x00, 1..=9) | (0x1a, 1..=2) | (0x30 | 0x33, 1)
@@ -164,6 +169,7 @@ impl Memory {
             && ((slave == 0x53 && self.mp_mode.is_none())
                 || (slave == 0x52 && self.mp_mode.is_some()))
         {
+            // Faithful known activation selectors: wii-kernel-motionplus-pass-through.
             if offset == 0xfe && data.len() == 1 {
                 if matches!(data[0], 4 | 5 | 7) {
                     self.mp_mode = Some(data[0]);
@@ -191,6 +197,7 @@ impl Memory {
         {
             return 7;
         }
+        // Faithful unencrypted init: wii-kernel-extension-init.
         match (offset, data) {
             (0xf0, [0x55]) => {
                 self.initialized = [true, false];
@@ -207,6 +214,7 @@ impl Memory {
         }
     }
     fn deactivate_motion_plus(&mut self, slave: u8) {
+        // Compat for unsupported selectors; faithful documented F0 deactivation.
         // wii-gap-wiibrew-motionplus-deactivation; W2 handoff6354044408
         // chooses the same transition for unsupported active A4FE selectors.
         // This is an explicit software-model policy, not retail selector evidence.
@@ -259,6 +267,7 @@ impl Memory {
             // wii-gap-dolphin-emulated-motionplus-modes-passthrough:
             // inactive A6 and active A4 address the MP itself in every mode,
             // including 05/07; active mode does not route A40020 downstream.
+            // Compat imported calibration layout: wii-gap-dolphin-motionplus-crc32-calibration.
             if (0x20..0x40).contains(&offset) {
                 return calibration_read(
                     self.image.calibration.motion_plus.as_ref().map(|b| &b[..]),
@@ -267,6 +276,42 @@ impl Memory {
                     count,
                 );
             }
+            // Compat: exact active passthrough states only. No bank aliasing.
+            let child = match (self.mp_mode, state.extension()) {
+                (Some(5), WiiExtension::Nunchuk(_)) => Some((
+                    [0, 0, 0xa4, 0x20, 0, 0],
+                    self.image.calibration.nunchuk.as_ref(),
+                )),
+                (Some(7), WiiExtension::Classic(_)) => Some((
+                    [0, 0, 0xa4, 0x20, 1, 1],
+                    self.image.calibration.classic.as_ref(),
+                )),
+                _ => None,
+            };
+            if let Some((child_id, calibration)) = child {
+                if self.options.motionplus_passthrough_id_mirror && (0xf6..0xfa).contains(&offset) {
+                    // Compat: wii-gap-dolphin-attach-passthrough-four-byte-id-f6;
+                    // wii-w9-f7-fixed-preparing-compat. Never 0x00 or ready states.
+                    let mirror = [child_id[4], 0x02, child_id[0], child_id[5]];
+                    return window_read(Some(&mirror), offset, 0xf6, read.remaining, count);
+                }
+                if self.options.motionplus_passthrough_calibration_copy
+                    && (0x40..0x50).contains(&offset)
+                {
+                    // Compat: wii-gap-dolphin-attach-active-passthrough-calibration-copy-40.
+                    // Exact import, without repair. Active 0x20 above remains MP's bank.
+                    return window_read(
+                        calibration.map(|b| &b[..]),
+                        offset,
+                        0x40,
+                        read.remaining,
+                        count,
+                    );
+                }
+            }
+            // Challenge data at 0x50 remains unimplemented (error 7).
+            // Faithful identity/mode: wii-c5-extension-identifiers and
+            // wii-gap-wiibrew-motionplus-deactivation (not a physical revision oracle).
             let id = [
                 0,
                 0,
@@ -284,6 +329,8 @@ impl Memory {
             return Err(7);
         }
         if read.slave == 0x52 && self.initialized == [true, true] {
+            // Compat caller calibration layout: wii-gap-dolphin-nunchuk-calibration-layout
+            // and wii-gap-dolphin-classic-calibration-layout.
             if (0x20..0x30).contains(&offset) {
                 let block = match state.extension() {
                     WiiExtension::Nunchuk(_) => self.image.calibration.nunchuk.as_ref(),
@@ -292,6 +339,7 @@ impl Memory {
                 };
                 return calibration_read(block.map(|b| &b[..]), offset, read.remaining, count);
             }
+            // Faithful unencrypted Nunchuk/Classic ID: wii-c5-extension-identifiers.
             let id = match state.extension() {
                 WiiExtension::Nunchuk(_) => [0, 0, 0xa4, 0x20, 0, 0],
                 WiiExtension::Classic(_) => [0, 0, 0xa4, 0x20, 1, 1],
@@ -333,10 +381,19 @@ fn calibration_read(
     remaining: u16,
     count: usize,
 ) -> Result<Vec<u8>, u8> {
-    // Validate the entire remaining request before returning its first chunk.
-    // Layout records cover only the imported block, never padding or mirrors.
+    window_read(block, offset, 0x20, remaining, count)
+}
+
+fn window_read(
+    block: Option<&[u8]>,
+    offset: usize,
+    base: usize,
+    remaining: u16,
+    count: usize,
+) -> Result<Vec<u8>, u8> {
+    // Validate the entire remaining request before returning any prefix/chunk.
     let block = block.ok_or(7_u8)?;
-    let start = offset - 0x20;
+    let start = offset - base;
     block
         .get(start..start + usize::from(remaining))
         .ok_or(7_u8)?;

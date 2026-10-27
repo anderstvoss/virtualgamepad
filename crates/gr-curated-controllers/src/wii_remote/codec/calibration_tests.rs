@@ -84,6 +84,11 @@ fn addressed_device_wins_in_all_modes_and_mp_reads_are_chunked() {
         (WiiExtension::Classic(WiiClassicState::default()), c, 7),
     ] {
         let mut p = imported();
+        // Preserve the pre-shim refusal sequence as the explicit off control.
+        p.memory.options = crate::wii_remote::WiiRemoteCreationOptions {
+            motionplus_passthrough_id_mirror: false,
+            motionplus_passthrough_calibration_copy: false,
+        };
         attach(&mut p, ext, true);
         init(&mut p);
         assert_eq!(&read(&mut p, 0x52, 0x20, 16)[5..], &block);
@@ -154,4 +159,126 @@ fn detach_hides_imports_reattach_restores_them_and_writes_are_rejected() {
     init(&mut p);
     assert_eq!(&read(&mut p, 0x52, 0x20, 16)[5..], &n);
     assert!(!p.memory.dirty);
+}
+
+#[test]
+fn compat_switches_are_independent_and_f7_never_claims_challenge_readiness() {
+    use crate::wii_remote::WiiRemoteCreationOptions;
+    assert_eq!(
+        WiiRemoteCreationOptions::default(),
+        WiiRemoteCreationOptions {
+            motionplus_passthrough_id_mirror: true,
+            motionplus_passthrough_calibration_copy: true,
+        }
+    );
+    let (_, n, c) = super::super::calibration::synthetic_blocks();
+    for mirror in [false, true] {
+        for copy in [false, true] {
+            for (ext, mode, id, block) in [
+                (
+                    WiiExtension::Nunchuk(WiiNunchukState::default()),
+                    5,
+                    [0, 2, 0, 0],
+                    n,
+                ),
+                (
+                    WiiExtension::Classic(WiiClassicState::default()),
+                    7,
+                    [1, 2, 0, 1],
+                    c,
+                ),
+            ] {
+                let mut p = imported();
+                p.memory.options = WiiRemoteCreationOptions {
+                    motionplus_passthrough_id_mirror: mirror,
+                    motionplus_passthrough_calibration_copy: copy,
+                };
+                attach(&mut p, ext, true);
+                init(&mut p);
+                // Inactive MP and active mode 04 never expose the compat windows.
+                error(&mut p, 0x52, 0xf6, 4);
+                error(&mut p, 0x52, 0x40, 16);
+                write(&mut p, 0x53, 0xfe, 4, 0);
+                error(&mut p, 0x52, 0xf7, 1);
+                error(&mut p, 0x52, 0x40, 16);
+                write(&mut p, 0x52, 0xfe, mode, 0);
+                if mirror {
+                    assert_eq!(&read(&mut p, 0x52, 0xf6, 4)[5..9], &id);
+                    assert_eq!(read(&mut p, 0x52, 0xf7, 1)[5], 0x02);
+                    // Repeated polls/reads never promote the fixed non-ready byte.
+                    for _ in 0..3 {
+                        assert_eq!(read(&mut p, 0x52, 0xf7, 1)[5], 0x02);
+                    }
+                } else {
+                    error(&mut p, 0x52, 0xf6, 4);
+                    error(&mut p, 0x52, 0xf7, 1);
+                }
+                if copy {
+                    assert_eq!(&read(&mut p, 0x52, 0x40, 16)[5..], &block);
+                } else {
+                    error(&mut p, 0x52, 0x40, 16);
+                }
+                // F5 is unmodelled. Straddles reject whole; no invented prefix/F7 leak.
+                for (offset, size) in [
+                    (0xf5, 6),
+                    (0xf6, 5),
+                    (0xf9, 2),
+                    (0x3f, 18),
+                    (0x40, 17),
+                    (0x4f, 2),
+                    (0x50, 16),
+                ] {
+                    error(&mut p, 0x52, offset, size);
+                }
+                assert_eq!(
+                    &read(&mut p, 0x52, 0xfa, 6)[5..11],
+                    &[0, 0, 0xa4, 0x20, mode, 5]
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn passthrough_three_banks_never_alias_and_detach_never_serves_a_stale_child() {
+    let (mp, n, c) = super::super::calibration::synthetic_blocks();
+    for (ext, mode, block) in [
+        (WiiExtension::Nunchuk(WiiNunchukState::default()), 5, n),
+        (WiiExtension::Classic(WiiClassicState::default()), 7, c),
+    ] {
+        let mut p = imported();
+        attach(&mut p, ext.clone(), true);
+        init(&mut p);
+        assert_eq!(&read(&mut p, 0x52, 0x20, 16)[5..], &block);
+        write(&mut p, 0x53, 0xfe, mode, 0);
+        assert_eq!(&read(&mut p, 0x52, 0x20, 32)[5..], &mp[..16]);
+        let second = tick(&mut p)
+            .into_iter()
+            .find(|r| r.id() == Some(0x21))
+            .unwrap();
+        assert_eq!(&second.payload()[5..], &mp[16..]);
+        assert_eq!(&read(&mut p, 0x52, 0x40, 16)[5..], &block);
+        write(&mut p, 0x52, 0xf0, 0x55, 0);
+        write(&mut p, 0x52, 0xfb, 0, 0);
+        assert_eq!(&read(&mut p, 0x52, 0x20, 16)[5..], &block);
+        error(&mut p, 0x52, 0x40, 16);
+        attach(&mut p, WiiExtension::None, true);
+        write(&mut p, 0x53, 0xfe, mode, 0);
+        error(&mut p, 0x52, 0xf6, 4);
+        error(&mut p, 0x52, 0x40, 16);
+        attach(&mut p, ext, true);
+        init(&mut p);
+        write(&mut p, 0x53, 0xfe, mode, 0);
+        assert_eq!(&read(&mut p, 0x52, 0x40, 16)[5..], &block);
+    }
+    let mut p = WiiProtocol::default();
+    attach(
+        &mut p,
+        WiiExtension::Nunchuk(WiiNunchukState::default()),
+        true,
+    );
+    init(&mut p);
+    write(&mut p, 0x53, 0xfe, 5, 0);
+    assert_eq!(read(&mut p, 0x52, 0xf7, 1)[5], 2);
+    error(&mut p, 0x52, 0x40, 16); // No import never supplies a copy.
 }

@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.wii-remote"
-research_revision = "e5256908f56e57d9910bbc6ae1b283492d743483"
+research_revision = "074bfad23e8dfa7851540808228f0ce3efe1edc9"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
 refused_operations = ["speaker-audio", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
 persistent_resources = ["caller-imported-eeprom", "caller-imported-extension-calibration"]
@@ -289,3 +289,16 @@ id = "retroarch-udev-generic"
 [functions.cells]
 "linux.uinput" = { status = "source-evidence", test_id = "research:tests/test_wii_w7_consumers.py::WiiW7Consumers::test_retroarch_controls_do_not_promote_rejected_sensor_activation", evidence = ["wii-w7-retroarch-consumer-result", "wii-w7-retroarch-host-run"], reason = "W7 RetroArch 1.20.0 Debian udev driver with original no-content diagnostic and explicit bindings: changing core buttons and Nunchuk controls over 600 frames. All accel/gyro activation requests return false; no sensor sibling retained at the two FD checkpoints. No HID parent for uinput sensor pairing. Generic controls only, no gyro or complete printed-label mapping; bounded timeout exit." }
 "linux.uhid.bluetooth" = { status = "source-evidence", test_id = "research:tests/test_wii_w7_consumers.py::WiiW7Consumers::test_retroarch_controls_do_not_promote_rejected_sensor_activation", evidence = ["wii-w7-retroarch-consumer-result", "wii-w7-retroarch-host-run"], reason = "W7 RetroArch 1.20.0 Debian udev driver with original no-content diagnostic and explicit bindings: changing core buttons and Nunchuk controls over 600 frames. All accel/gyro activation requests return false; held FDs are core and Nunchuk only. Installed udev joypad has no sensor callbacks, unlike the newer surveyed RXYZ fallback; that branch is not an observed cause. Generic controls only, no gyro or physical acceptance; bounded timeout exit." }
+
+
+[[functions]]
+id = "motionplus-passthrough-id-mirror"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Unavailable in this realization: no addressed HID register channel for the compat mirror." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::calibration_tests::compat_switches_are_independent_and_f7_never_claims_challenge_readiness", evidence = ["wii-gap-dolphin-attach-passthrough-four-byte-id-f6", "wii-w9-f7-fixed-preparing-compat"], reason = "Class compat: active mode 05/Nunchuk or 07/Classic only, F6/F8/F9 mirror modelled child ID and F7 stays 0x02. Default on, independent creation switch restores exact error 7. No challenge implementation or readiness; 0x50 remains error 7. Source-model regression only, no physical or consumer pass." }
+
+[[functions]]
+id = "motionplus-passthrough-calibration-copy"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Unavailable in this realization: no addressed HID register channel for the compat calibration copy." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::calibration_tests::passthrough_three_banks_never_alias_and_detach_never_serves_a_stale_child", evidence = ["wii-gap-dolphin-attach-active-passthrough-calibration-copy-40", "wii-gap-dolphin-emulated-motionplus-modes-passthrough", "wii-gap-cross-cemu-fa20-no-f6-40"], reason = "Class compat: exact caller-imported child block at active 0x40, only mode 05/Nunchuk or 07/Classic. No import or disabled switch gives error 7. Active 0x20 remains MP calibration and inactive 0x20 remains child calibration; no bank alias, repair or default. Source-model regression only, no physical or decoded consumer pass." }

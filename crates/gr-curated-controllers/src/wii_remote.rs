@@ -26,6 +26,26 @@ impl WiiRemoteRevision {
     }
 }
 
+/// Creation-time compatibility policy; both bounded shims are initially enabled.
+///
+/// These reads are consumer compatibility behavior, not physical fidelity.
+/// Neither option implements `MotionPlus` challenge data or readiness progression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WiiRemoteCreationOptions {
+    /// Mirror downstream identity at F6/F8/F9 with fixed compat F7 = 0x02.
+    pub motionplus_passthrough_id_mirror: bool,
+    /// Expose exact caller-imported downstream calibration at active offset 0x40.
+    pub motionplus_passthrough_calibration_copy: bool,
+}
+impl Default for WiiRemoteCreationOptions {
+    fn default() -> Self {
+        Self {
+            motionplus_passthrough_id_mirror: true,
+            motionplus_passthrough_calibration_copy: true,
+        }
+    }
+}
+
 /// Core button order follows wii-kernel-evdev-base-keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -353,7 +373,10 @@ mod definition;
 pub use definition::{BLUETOOTH, TOPOLOGY, UINPUT, WiiRemoteDefinition};
 
 mod controller;
-pub use controller::{WiiRemoteController, create_wii_remote, create_wii_remote_with_image};
+pub use controller::{
+    WiiRemoteController, create_wii_remote, create_wii_remote_with_image,
+    create_wii_remote_with_options,
+};
 
 mod codec;
 
