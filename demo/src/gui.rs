@@ -15,7 +15,7 @@ use editor::{
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use input_clusters::{InputEvent, InputUiState, InputValue, card};
 
-use gr_curated_controllers::wii_remote::WiiRemoteRevision;
+use gr_curated_controllers::wii_remote::{WiiRemoteCreationOptions, WiiRemoteRevision};
 use std::{
     cmp::Ordering,
     collections::VecDeque,
@@ -48,6 +48,7 @@ struct ControllerOptions {
     audio: audio_lab::CreationAudio,
     wii_revision: WiiRemoteRevision,
     wii_imports: wii_import::Imports,
+    wii_compat: WiiRemoteCreationOptions,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
@@ -266,8 +267,11 @@ fn draw_advanced_options(
     target: RealizationId,
     kind: Kind,
     audio_creation: &mut audio_lab::CreationAudio,
-    wii_revision: &mut WiiRemoteRevision,
-    wii_imports: &mut wii_import::Imports,
+    (wii_revision, wii_imports, wii_compat): (
+        &mut WiiRemoteRevision,
+        &mut wii_import::Imports,
+        &mut WiiRemoteCreationOptions,
+    ),
 ) -> AdvancedOptionsLayout {
     let max_height = advanced_options_max_height(
         ui.available_height(),
@@ -304,6 +308,7 @@ fn draw_advanced_options(
                     draw_wii_revision_selector(ui, kind, wii_revision);
                     if kind == Kind::WiiRemote {
                         wii_imports.draw(ui, target);
+                        wii_import::draw_compat(ui, target, wii_compat);
                     }
                     ui.strong("Audio configuration");
                     audio_lab::draw_creation(ui, audio_creation, target, kind.supports_audio());
@@ -1381,6 +1386,7 @@ pub struct App {
     audio_creation: audio_lab::CreationAudio,
     wii_revision: WiiRemoteRevision,
     wii_imports: wii_import::Imports,
+    wii_compat: WiiRemoteCreationOptions,
     name_draft: String,
     create_count: u32,
     advanced_options_open: bool,
@@ -1404,6 +1410,7 @@ impl Default for App {
             audio_creation: audio_lab::CreationAudio::default(),
             wii_revision: WiiRemoteRevision::Original,
             wii_imports: wii_import::Imports::default(),
+            wii_compat: WiiRemoteCreationOptions::default(),
             name_draft: String::new(),
             create_count: 1,
             advanced_options_open: false,
@@ -1584,6 +1591,7 @@ impl App {
             audio: self.audio_creation,
             wii_revision: self.wii_revision,
             wii_imports: self.wii_imports.clone(),
+            wii_compat: self.wii_compat,
         };
         let result = self.kind.create(&options);
         match result {
@@ -1891,8 +1899,7 @@ impl eframe::App for App {
                                     self.target,
                                     self.kind,
                                     &mut self.audio_creation,
-                                    &mut self.wii_revision,
-                                    &mut self.wii_imports,
+                                    (&mut self.wii_revision, &mut self.wii_imports, &mut self.wii_compat),
                                 )
                                 .panel_rect;
                             }
@@ -4282,8 +4289,11 @@ mod tests {
                                                 audio_lab::default_creation_target(),
                                                 Kind::DualSense,
                                                 &mut audio_creation,
-                                                &mut WiiRemoteRevision::Original,
-                                                &mut wii_import::Imports::default(),
+                                                (
+                                                    &mut WiiRemoteRevision::Original,
+                                                    &mut wii_import::Imports::default(),
+                                                    &mut WiiRemoteCreationOptions::default(),
+                                                ),
                                             ));
                                             ui.add_sized(
                                                 [SIDEBAR_WIDTH, 1.0],

@@ -112,7 +112,7 @@ impl Kind {
             Self::SwitchPro => create_switch_pro(creation).map(Controller::SwitchPro),
             Self::WiiRemote => create_wii_session(
                 options,
-                gr_curated_controllers::wii_remote::create_wii_remote_with_image,
+                gr_curated_controllers::wii_remote::create_wii_remote_with_options,
             )
             .map(Controller::WiiRemote)
             .map_err(|reason| virtualgamepad::ControllerError::Open { reason }),
@@ -419,11 +419,18 @@ fn create_wii_session<T, E: std::fmt::Display>(
         u64,
         super::WiiRemoteRevision,
         gr_curated_controllers::wii_remote::WiiEepromImage,
+        gr_curated_controllers::wii_remote::WiiRemoteCreationOptions,
     ) -> Result<T, E>,
 ) -> Result<T, String> {
     let image = options.wii_imports.load(options.target)?;
-    create(options.target, options.id, options.wii_revision, image)
-        .map_err(|error| error.to_string())
+    create(
+        options.target,
+        options.id,
+        options.wii_revision,
+        image,
+        options.wii_compat,
+    )
+    .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -442,12 +449,14 @@ mod wii_tests {
                 audio: super::super::audio_lab::CreationAudio::default(),
                 wii_revision: revision,
                 wii_imports: super::super::wii_import::Imports::default(),
+                wii_compat: super::super::WiiRemoteCreationOptions::default(),
             };
-            let state = create_wii_session(&options, |target, session, observed, image| {
+            let state = create_wii_session(&options, |target, session, observed, image, compat| {
                 assert_eq!(target, options.target);
                 assert_eq!(session, 37);
                 assert_eq!(observed, revision);
                 assert!(image.bytes().is_empty());
+                assert_eq!(compat, options.wii_compat);
                 Ok::<_, String>(gr_curated_controllers::wii_remote::WiiRemoteState::new(
                     observed,
                 ))
@@ -465,18 +474,50 @@ mod wii_tests {
                 audio: super::super::audio_lab::CreationAudio::default(),
                 wii_revision: super::super::WiiRemoteRevision::Original,
                 wii_imports: super::super::wii_import::Imports::default(),
+                wii_compat: super::super::WiiRemoteCreationOptions::default(),
             };
-            let received = create_wii_session(&options, |target, session, revision, image| {
-                assert_eq!(revision, super::super::WiiRemoteRevision::Original);
-                assert!(image.bytes().is_empty());
-                Ok::<_, String>((target, session))
-            })
-            .unwrap();
+            let received =
+                create_wii_session(&options, |target, session, revision, image, compat| {
+                    assert_eq!(revision, super::super::WiiRemoteRevision::Original);
+                    assert!(image.bytes().is_empty());
+                    assert_eq!(compat, options.wii_compat);
+                    Ok::<_, String>((target, session))
+                })
+                .unwrap();
             assert_eq!(received, (options.target, id));
             assert_eq!(
-                create_wii_session(&options, |_, _, _, _| Err::<(), _>("open failed")),
+                create_wii_session(&options, |_, _, _, _, _| Err::<(), _>("open failed")),
                 Err("open failed".into())
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod compat_creation_tests {
+    use super::*;
+    #[test]
+    fn independent_compat_switches_reach_creation_without_opening_a_provider() {
+        for mirror in [false, true] {
+            for copy in [false, true] {
+                let compat = super::super::WiiRemoteCreationOptions {
+                    motionplus_passthrough_id_mirror: mirror,
+                    motionplus_passthrough_calibration_copy: copy,
+                };
+                let options = ControllerOptions {
+                    target: virtualgamepad::RealizationId::LINUX_UHID_BLUETOOTH,
+                    id: 9,
+                    audio: super::super::audio_lab::CreationAudio::default(),
+                    wii_revision: super::super::WiiRemoteRevision::Original,
+                    wii_imports: super::super::wii_import::Imports::default(),
+                    wii_compat: compat,
+                };
+                assert_eq!(
+                    create_wii_session(&options, |_, _, _, _, received| Ok::<_, String>(received))
+                        .unwrap(),
+                    compat
+                );
+            }
         }
     }
 }

@@ -642,3 +642,51 @@ checksum contract. Block layouts are cited by
 The file controls are disabled for uinput because it has no EEPROM or extension
 calibration address channel. HID choices remain visible and retained for a
 switch back to HID, but are not read or applied to uinput creation.
+
+
+## Faithful versus compat behaviour
+
+The provenance classes describe register behaviour, not acceptance of a physical
+remote. Faithful means WiiBrew, physical evidence or independent consumer
+codebases agree; compat means a consumer requires plausible behaviour without
+independent physical readback. The project still aims at a full faithful model.
+
+| Register behaviour | Class and records | Remaining limit |
+| --- | --- | --- |
+| Unencrypted child initialization/identity, known MP selectors and identity | Faithful: `wii-kernel-extension-init`, `wii-c5-extension-identifiers`, `wii-kernel-motionplus-pass-through` | Revision and physical fidelity remain separately bounded |
+| IR and speaker control-register writes | Faithful control layout: `wii-c5-camera-no-points`, `wii-gap-wiibrew-speaker-init-config-registers` | No camera blob metadata or speaker audio acceptance |
+| Caller EEPROM storage and imported calibration windows | Compat source-model resource policy: `wii-dolphin-memory-routing`, `wii-gap-dolphin-motionplus-crc32-calibration` and child layout records | No factory defaults, physical writable-map or calibrated-rate claim |
+| Unsupported active MP selector deactivation | Compat existing bounded policy: `wii-gap-wiibrew-motionplus-deactivation` | Only known documented deactivation is faithful; other selectors are not a retail claim |
+| Active F6 child-ID mirror, fixed F7 | Compat: `wii-gap-dolphin-attach-passthrough-four-byte-id-f6`, `wii-w9-f7-fixed-preparing-compat` | F7 is always 0x02 when served, never 0x00 or a readiness value. No challenge; 0x50 stays error 7 |
+| Active A40040 child calibration copy | Compat: `wii-gap-dolphin-attach-active-passthrough-calibration-copy-40` | Exact imported 16 bytes only, never repaired or supplied by default |
+
+`WiiRemoteCreationOptions` has two independent bool fields:
+`motionplus_passthrough_id_mirror` and
+`motionplus_passthrough_calibration_copy`. Both default on by owner decision.
+`create_wii_remote_with_options` takes the same caller resources and revision
+as the existing image constructor plus this policy; existing constructors use
+the default. The values are copied at creation and have no live setter. Demo
+Advanced options exposes both with a compat label; uinput disables them because
+it has no addressed HID register channel.
+
+Each shim applies only in active mode 05 with Nunchuk or mode 07 with Classic.
+Turning either off restores the prior error 7 independently. MP-only mode 04,
+inactive MP and absent or mismatched downstream extensions do not expose either
+window. A400FA remains MP's own identity. Whole requests crossing F5/F6, F9/FA,
+3F/40 or 4F/50 are refused before any prefix is returned; F5 is unmodelled and no
+byte is invented to make a straddling request succeed. Within the mirror, F7
+is fixed at 0x02 across repeated reads and polling.
+
+The three calibration banks are distinct: active A40020/32 is MP's block,
+active A40040/16 is the attached child's exact imported block, and inactive
+A40020/16 is the child's own block. No alias or fallback between those banks is
+allowed. Detach, replacement and missing imports never expose a stale copy.
+
+To promote or retire either shim, an owner-authorized physical capture must
+compare inactive child FA/6 and 20/16 with active F6/4 and 40/16 in mode 05,
+scoped by external, integrated and TR revisions. F7 progress and challenge
+readback would separately settle its fixed preparing policy. Until then both
+remain compat, without physical or game acceptance. Part D will compare native
+Dolphin MP+Nunchuk on/off and preserve MP-only Dolphin plus kernel evdev controls;
+no such new consumer pass is claimed by this code change. Cemu gyro is outside
+the lab scope at its pinned source-limited version.

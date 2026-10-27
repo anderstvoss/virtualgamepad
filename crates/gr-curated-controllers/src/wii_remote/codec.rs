@@ -192,6 +192,14 @@ impl WiiProtocol {
             ..Self::default()
         }
     }
+    pub(super) fn with_creation_options(
+        image: super::WiiEepromImage,
+        options: super::WiiRemoteCreationOptions,
+    ) -> Self {
+        let mut protocol = Self::with_image(image);
+        protocol.memory.options = options;
+        protocol
+    }
     /// Native validation configuration has no HID host or reply queue.
     pub(super) fn install_attachment(
         &mut self,

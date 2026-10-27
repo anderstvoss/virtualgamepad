@@ -73,8 +73,15 @@ impl NativeProviderSession for Fake {
     }
 }
 fn create(image: WiiEepromImage) -> (WiiRemoteController, Fake) {
+    create_with_options(image, WiiRemoteCreationOptions::default())
+}
+fn create_with_options(
+    image: WiiEepromImage,
+    options: WiiRemoteCreationOptions,
+) -> (WiiRemoteController, Fake) {
     let fake = Fake::default();
     let driver = definition::Configured {
+        options,
         image,
         role: super::realizations::Role::Core,
         revision: WiiRemoteRevision::Original,
@@ -753,4 +760,60 @@ fn detached_attachment_projection_matches_live_state_and_rejects_atomically() {
             .is_err()
     );
     assert_eq!(projected, before);
+}
+
+#[test]
+fn compat_creation_options_are_per_controller_and_replies_cleanup_once() {
+    let off = WiiRemoteCreationOptions {
+        motionplus_passthrough_id_mirror: false,
+        motionplus_passthrough_calibration_copy: false,
+    };
+    let (mut first, one) = create_with_options(WiiEepromImage::default(), off);
+    let (mut second, two) = create_with_options(
+        WiiEepromImage::default(),
+        WiiRemoteCreationOptions::default(),
+    );
+    for (controller, fake, enabled) in [(&mut first, &one, false), (&mut second, &two, true)] {
+        controller
+            .attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+            .unwrap();
+        for (slave, addr, value) in [(0x52, 0xf0, 0x55), (0x52, 0xfb, 0), (0x53, 0xfe, 5)] {
+            output(fake, 0x16, &write(slave, addr, &[value]));
+            controller.service(&mut |_| {}).unwrap();
+        }
+        output(fake, 0x17, &[4, 0xa4, 0, 0xf6, 0, 4]);
+        for _ in 0..4 {
+            controller.service(&mut |_| {}).unwrap();
+        }
+        let record = fake.0.lock().unwrap();
+        let replies: Vec<_> = record
+            .sent
+            .iter()
+            .filter_map(|f| match f {
+                ProviderFrame::HidInput {
+                    report_id: Some(0x21),
+                    bytes,
+                } => Some(bytes),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(replies.len(), 1);
+        let mut expected = vec![0; 21];
+        expected[2..5].copy_from_slice(&[if enabled { 0x30 } else { 0xf7 }, 0, 0xf6]);
+        if enabled {
+            expected[5..9].copy_from_slice(&[0, 2, 0, 0]);
+        }
+        assert_eq!(replies[0], &expected);
+    }
+    first.close();
+    first.close();
+    assert_eq!(one.0.lock().unwrap().closed, 1);
+    assert_eq!(two.0.lock().unwrap().closed, 0);
+    second.service(&mut |_| {}).unwrap();
+    second.close();
+    second.close();
+    drop(first);
+    drop(second);
+    assert_eq!(one.0.lock().unwrap().closed, 1);
+    assert_eq!(two.0.lock().unwrap().closed, 1);
 }

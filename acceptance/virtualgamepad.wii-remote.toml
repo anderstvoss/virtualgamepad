@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.wii-remote"
-research_revision = "bd1357c70eeeca4a91b29e34671765e6a05ea5c0"
+research_revision = "074bfad23e8dfa7851540808228f0ce3efe1edc9"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
 refused_operations = ["speaker-audio", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
 persistent_resources = ["caller-imported-eeprom", "caller-imported-extension-calibration"]
@@ -307,3 +307,15 @@ id = "cemu-native-wii-gyro"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Cemu's native Wiimote profile requires HID raw requests; uinput has no HID parent or addressed memory channel. Generic SDL mapping is not measured here." }
 "linux.uhid.bluetooth" = { status = "source-evidence", test_id = "research:tests/test_wii_w8_reruns.py::W8Reruns::test_clean_cemu_nunchuk_calibration_delivery_is_not_decoded_motion", evidence = ["wii-gap-cross-cemu-motionplus-visitor-unreachable", "wii-gap-cross-cemu-exported-gyro-zero-sample", "wii-w8-cemu-imported-motionplus-result", "wii-w8-cemu-imported-motionplus-host-run", "wii-w8-cemu-imported-motionplus-nunchuk-result", "wii-w8-cemu-imported-motionplus-nunchuk-host-run", "wii-w8-cemu-imported-clean-motionplus-result", "wii-w8-cemu-imported-clean-motionplus-host-run", "wii-w8-cemu-imported-clean-motionplus-nunchuk-result", "wii-w8-cemu-imported-clean-motionplus-nunchuk-host-run"], reason = "Consumer source limitation at pinned Cemu 29f2f1f: the report 0x37 MotionPlus visitor uses an extension variant without MotionPlus, and the exported motion sample supplies zero angular arrays. No virtualgamepad change enables gyro in that version. Separate W8 shared-kernel scope: initialization is re-queued with hid-wiimote bound; calibration transport delivery does not establish decoded motion. Cemu gyro is not accepted." }
+
+[[functions]]
+id = "motionplus-passthrough-id-mirror"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Unavailable in this realization: no addressed HID register channel for the compat mirror." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::calibration_tests::compat_switches_are_independent_and_f7_never_claims_challenge_readiness", evidence = ["wii-gap-dolphin-attach-passthrough-four-byte-id-f6", "wii-w9-f7-fixed-preparing-compat"], reason = "Class compat: active mode 05/Nunchuk or 07/Classic only, F6/F8/F9 mirror modelled child ID and F7 stays 0x02. Default on, independent creation switch restores exact error 7. No challenge implementation or readiness; 0x50 remains error 7. Source-model regression only, no physical or consumer pass." }
+
+[[functions]]
+id = "motionplus-passthrough-calibration-copy"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Unavailable in this realization: no addressed HID register channel for the compat calibration copy." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::calibration_tests::passthrough_three_banks_never_alias_and_detach_never_serves_a_stale_child", evidence = ["wii-gap-dolphin-attach-active-passthrough-calibration-copy-40", "wii-gap-dolphin-emulated-motionplus-modes-passthrough", "wii-gap-cross-cemu-fa20-no-f6-40"], reason = "Class compat: exact caller-imported child block at active 0x40, only mode 05/Nunchuk or 07/Classic. No import or disabled switch gives error 7. Active 0x20 remains MP calibration and inactive 0x20 remains child calibration; no bank alias, repair or default. Source-model regression only, no physical or decoded consumer pass." }

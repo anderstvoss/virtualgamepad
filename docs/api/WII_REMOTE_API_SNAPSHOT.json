@@ -82,6 +82,12 @@
       ],
       "traits": []
     },
+    "fn.create_wii_remote_with_options.html": {
+      "declarations": [
+        "pub fn create_wii_remote_with_options( target: RealizationTarget, session: u64, revision: WiiRemoteRevision, image: WiiEepromImage, options: WiiRemoteCreationOptions, ) -> Result<WiiRemoteController, ProviderError>"
+      ],
+      "traits": []
+    },
     "fn.ir_kind.html": {
       "declarations": [
         "pub const fn ir_kind() -> InputKind"
@@ -253,6 +259,24 @@
         "impl Drop for WiiRemoteController",
         "impl Send for WiiRemoteController",
         "impl Unpin for WiiRemoteController"
+      ]
+    },
+    "struct.WiiRemoteCreationOptions.html": {
+      "declarations": [
+        "pub struct WiiRemoteCreationOptions { pub motionplus_passthrough_id_mirror: bool, pub motionplus_passthrough_calibration_copy: bool, }"
+      ],
+      "traits": [
+        "impl Clone for WiiRemoteCreationOptions",
+        "impl Copy for WiiRemoteCreationOptions",
+        "impl Debug for WiiRemoteCreationOptions",
+        "impl Default for WiiRemoteCreationOptions",
+        "impl Eq for WiiRemoteCreationOptions",
+        "impl PartialEq for WiiRemoteCreationOptions",
+        "impl RefUnwindSafe for WiiRemoteCreationOptions",
+        "impl Send for WiiRemoteCreationOptions",
+        "impl Sync for WiiRemoteCreationOptions",
+        "impl Unpin for WiiRemoteCreationOptions",
+        "impl UnwindSafe for WiiRemoteCreationOptions"
       ]
     },
     "struct.WiiRemoteDefinition.html": {
