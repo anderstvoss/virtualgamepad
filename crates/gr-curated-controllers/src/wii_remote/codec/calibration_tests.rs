@@ -75,6 +75,38 @@ fn missing_imports_keep_exact_error_seven_without_pending_reads() {
 }
 
 #[test]
+fn a_missing_addressed_block_never_falls_back_to_an_imported_other_device() {
+    let (mp, n, _) = super::super::calibration::synthetic_blocks();
+    for mp_only in [false, true] {
+        let calibration =
+            WiiExtensionCalibration::import(mp_only.then_some(mp), (!mp_only).then_some(n), None)
+                .unwrap();
+        let mut p = WiiProtocol::with_image(
+            WiiEepromImage::default().with_extension_calibration(calibration),
+        );
+        attach(
+            &mut p,
+            WiiExtension::Nunchuk(WiiNunchukState::default()),
+            true,
+        );
+        init(&mut p);
+        if mp_only {
+            assert_eq!(&read(&mut p, 0x53, 0x20, 16)[5..], &mp[..16]);
+            error(&mut p, 0x52, 0x20, 16);
+        } else {
+            error(&mut p, 0x53, 0x20, 16);
+            assert_eq!(&read(&mut p, 0x52, 0x20, 16)[5..], &n);
+        }
+        write(&mut p, 0x53, 0xfe, 5, 0);
+        if mp_only {
+            assert_eq!(&read(&mut p, 0x52, 0x20, 16)[5..], &mp[..16]);
+        } else {
+            error(&mut p, 0x52, 0x20, 16);
+        }
+    }
+}
+
+#[test]
 fn addressed_device_wins_in_all_modes_and_mp_reads_are_chunked() {
     // wii-gap-dolphin-emulated-motionplus-modes-passthrough, BusRead:
     // MP's active A4 window is its own register bank even in 05 and 07.

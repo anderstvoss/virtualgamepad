@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.wii-remote"
-research_revision = "e5256908f56e57d9910bbc6ae1b283492d743483"
+research_revision = "bd1357c70eeeca4a91b29e34671765e6a05ea5c0"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
 refused_operations = ["speaker-audio", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
 persistent_resources = ["caller-imported-eeprom", "caller-imported-extension-calibration"]
@@ -195,7 +195,7 @@ id = "sdl-hidapi-wii"
 id = "dolphin"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: uinput exposes event nodes without a HID parent or hidraw endpoint for a real-Wii HID backend. Generic evdev support is separate from this HID-specific consumer cell." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "research:tests/test_wii_w1_host_runs.py::WiiW1HostRuns::test_permissions_and_fallback_never_become_hidapi_or_dolphin_acceptance", evidence = ["wii-dolphin-hidapi-probe", "wii-w1-dolphin-host-run"], reason = "untested: existing Flatpak 2609a bounded startup sees owned hidraw inside sandbox but open denied. No internal backend connection, report modes, memory reads, extension init or MotionPlus activation observed. No ROM/emulation session; timeout is termination, not application acceptance. wiimote remains bound. Historical pre-grant result; later human-granted reruns are separate records outside this pin." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "research:tests/test_wii_w8_reruns.py::W8Reruns::test_dolphin_mp_mapping_changes_all_four_inputs_without_physical_promotion", evidence = ["wii-dolphin-hidapi-probe", "wii-w1-dolphin-host-run", "wii-w8-dolphin-imported-motionplus-host-run", "wii-w8-dolphin-imported-motionplus-nunchuk-host-run"], reason = "Native Dolphin 2503 with caller EEPROM and imported blocks reaches Bluetooth ControllerInterface mapping and changing A, acceleration, basic IR and gyro in MP mode 04. Explicit bindings and zero UI gyro auto-calibration period; synthetic calibration only. MP+Nunchuk mode 05 stops at F6 identity before MP calibration. Historical Flatpak open-denied result is retained, not generalized. No Real slot, game, calibrated rates or whole-controller acceptance." }
 
 [[functions]]
 id = "speaker-audio"
@@ -207,7 +207,7 @@ id = "speaker-audio"
 id = "speaker-control-ack"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "uinput has no HID output-report or addressed memory channel; its existing rumble behavior is unchanged." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_tests::control_acknowledgements_retain_state_and_shared_rumble", evidence = ["wii-gap-wiibrew-speaker-control-reports", "audio-wii-dolphin-control-and-stream-reports", "wii-gap-wiibrew-speaker-init-config-registers", "audio-wii-dolphin-speaker-register-model"], reason = "Control intent and bounded register writes are retained and ACKed without producing audio; speaker data has only its shared rumble effect. Deterministic source-model regression, not audio acceptance." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_tests::control_acknowledgements_retain_state_and_shared_rumble", evidence = ["wii-gap-wiibrew-speaker-control-reports", "audio-wii-dolphin-control-and-stream-reports", "wii-gap-wiibrew-speaker-init-config-registers", "audio-wii-dolphin-speaker-register-model", "wii-gap-wiibrew-status-20-resend"], reason = "Control intent and bounded register writes are retained and ACKed without producing audio; speaker data has only its shared rumble effect. Deterministic source-model regression, not audio acceptance." }
 
 [[functions]]
 id = "real-bluetooth"
@@ -289,3 +289,21 @@ id = "retroarch-udev-generic"
 [functions.cells]
 "linux.uinput" = { status = "source-evidence", test_id = "research:tests/test_wii_w7_consumers.py::WiiW7Consumers::test_retroarch_controls_do_not_promote_rejected_sensor_activation", evidence = ["wii-w7-retroarch-consumer-result", "wii-w7-retroarch-host-run"], reason = "W7 RetroArch 1.20.0 Debian udev driver with original no-content diagnostic and explicit bindings: changing core buttons and Nunchuk controls over 600 frames. All accel/gyro activation requests return false; no sensor sibling retained at the two FD checkpoints. No HID parent for uinput sensor pairing. Generic controls only, no gyro or complete printed-label mapping; bounded timeout exit." }
 "linux.uhid.bluetooth" = { status = "source-evidence", test_id = "research:tests/test_wii_w7_consumers.py::WiiW7Consumers::test_retroarch_controls_do_not_promote_rejected_sensor_activation", evidence = ["wii-w7-retroarch-consumer-result", "wii-w7-retroarch-host-run"], reason = "W7 RetroArch 1.20.0 Debian udev driver with original no-content diagnostic and explicit bindings: changing core buttons and Nunchuk controls over 600 frames. All accel/gyro activation requests return false; held FDs are core and Nunchuk only. Installed udev joypad has no sensor callbacks, unlike the newer surveyed RXYZ fallback; that branch is not an observed cause. Generic controls only, no gyro or physical acceptance; bounded timeout exit." }
+
+[[functions]]
+id = "dolphin-controllerinterface-wii"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "The native Wii HIDAPI profile requires a HID parent and addressed reports; generic evdev mapping is a separate surface." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "research:tests/test_wii_w8_reruns.py::W8Reruns::test_dolphin_mp_mapping_changes_all_four_inputs_without_physical_promotion", evidence = ["wii-w8-dolphin-imported-motionplus-result", "wii-w8-dolphin-imported-motionplus-host-run"], reason = "Bounded native Dolphin 2503 mode 04: caller EEPROM and imported MP calibration succeed; explicitly bound mapping view shows changing A, acceleration, basic IR points and gyro. UI gyro auto-calibration period is zero. Synthetic resources, not physical calibration, rate accuracy, all-controls or game acceptance." }
+
+[[functions]]
+id = "dolphin-controllerinterface-motionplus-nunchuk"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "The native Wii HIDAPI profile requires a HID parent and addressed reports; generic evdev mapping is outside this cell." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "research:tests/test_wii_w8_reruns.py::W8Reruns::test_dolphin_passthrough_identity_blocks_before_mp_calibration", evidence = ["wii-w8-dolphin-imported-motionplus-nunchuk-result", "wii-w8-dolphin-imported-motionplus-nunchuk-host-run"], reason = "Recorded model/consumer limitation: mode 05 mapping device is visible, but 12128 A400F6/4 reads receive error 7 before MP calibration. Changing motion is unobserved; no zero-gyro or physical-incompatibility inference and no new register model." }
+
+[[functions]]
+id = "cemu-native-wii-gyro"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Cemu's native Wiimote profile requires HID raw requests; uinput has no HID parent or addressed memory channel. Generic SDL mapping is not measured here." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "research:tests/test_wii_w8_reruns.py::W8Reruns::test_clean_cemu_nunchuk_calibration_delivery_is_not_decoded_motion", evidence = ["wii-gap-cross-cemu-motionplus-visitor-unreachable", "wii-gap-cross-cemu-exported-gyro-zero-sample", "wii-w8-cemu-imported-motionplus-result", "wii-w8-cemu-imported-motionplus-host-run", "wii-w8-cemu-imported-motionplus-nunchuk-result", "wii-w8-cemu-imported-motionplus-nunchuk-host-run", "wii-w8-cemu-imported-clean-motionplus-result", "wii-w8-cemu-imported-clean-motionplus-host-run", "wii-w8-cemu-imported-clean-motionplus-nunchuk-result", "wii-w8-cemu-imported-clean-motionplus-nunchuk-host-run"], reason = "Consumer source limitation at pinned Cemu 29f2f1f: the report 0x37 MotionPlus visitor uses an extension variant without MotionPlus, and the exported motion sample supplies zero angular arrays. No virtualgamepad change enables gyro in that version. Separate W8 shared-kernel scope: initialization is re-queued with hid-wiimote bound; calibration transport delivery does not establish decoded motion. Cemu gyro is not accepted." }
