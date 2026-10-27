@@ -690,3 +690,44 @@ remain compat, without physical or game acceptance. Part D will compare native
 Dolphin MP+Nunchuk on/off and preserve MP-only Dolphin plus kernel evdev controls;
 no such new consumer pass is claimed by this code change. Cemu gyro is outside
 the lab scope at its pinned source-limited version.
+
+
+## W9 compat consumer controls with the kernel bound
+
+Part D tests code PR #256 at actual runtime head
+`ebc3a030685e476242a4d6df96e17e14862e0398`, with both compat switches on and
+off in separate virtual devices. The later owner integration head `fd21d9a`
+adds prior adoption/docs/tests and a source comment; it changes no Wii runtime
+behaviour. Experiment records retain the exact tested head.
+
+| Arm | Bound and result |
+| --- | --- |
+| Native Dolphin 2503 MP+Nunchuk, on | Corrected 180-second repeat: 14,334 F6/4 error 7 replies; MP 20/32 and child 40/16 not reached |
+| Native Dolphin 2503 MP+Nunchuk, off | 180 seconds: 14,659 F6/4 error 7 replies; same unreached calibration checkpoints |
+| Native Dolphin MP-only, on | 150 seconds: exact MP calibration in two chunks and changing mapped gyro, acceleration and basic IR |
+| Kernel evdev MP-only, on | Fresh 12-second control: ABS_RX/RY/RZ each change between two values; reused post-Dolphin node was absent before the earlier evtest attempt |
+
+After native mode 05 mapping, each MP+Nunchuk arm has one combined A400F0=55
+write and zero such native Dolphin writes. This is non-Dolphin output consistent
+with bound hid-wiimote reinitialization, followed by inactive-bank probing.
+Identical shared requests are not uniquely assigned by payload alone, and no
+kernel stack trace is claimed. The first unpassed checkpoint is F6 with the
+shim state gate unavailable, not a missing caller calibration block.
+No model state gate, driver binding, bank alias or challenge behaviour changes.
+
+The first on pilot is excluded because its coordinator exited at timeout before
+recording orderly cleanup; a corrected isolated-process repeat verified cleanup
+between consumers. The first reused kernel preflight stopped before evtest
+because the MotionPlus node had disappeared after Dolphin. A fresh MP-only
+control retaining its initial topology passed; this is not post-Dolphin recovery
+acceptance. All temporary devices and owned consumers closed idempotently, with
+HID/raw/LED removal verified. Raw logs, bytes, screenshots and identities remain
+private. No Cemu gyro, physical, rate-accuracy, radio or game acceptance follows.
+The MP+Nunchuk ControllerInterface cell is not extended to a pass.
+
+
+These reduced results are adopted from research PR #50, merged as
+`ceaa48a30b57485a0ef687800c09c4e197e8868e` (171 Wii claims, 99 corpus tests).
+The W9 MP-only control used mode 05 without a child; the earlier W8 mode 04
+observation remains separate evidence. No F6 or child-copy gate is required in
+that MP-only state.
