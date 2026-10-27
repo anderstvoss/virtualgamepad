@@ -264,7 +264,9 @@ pub(super) fn frame(role: Role, state: &WiiRemoteState) -> ProviderFrame {
 // Interim, independently authored W2 synthetic descriptor, owner option B
 // (#158 comment6354044408). Generic Desktop/Game Pad collection; fields remain
 // vendor-page Variable bytes. Historical wii-c5-functional-descriptor supplies
-// the unchanged report table only; wii-c5-report-layouts supplies payload sizes.
+// the historical report table; wii-c5-report-layouts supplies payload sizes.
+// W8 adds control ACKs and a rumble-only data sink, not audio playback:
+// audio-wii-dolphin-control-and-stream-reports supplies 14/18/19 payload sizes.
 // No rnconrad bytes or retail-authenticity claim. Retail-evidence successor:#238.
 pub(super) const DESCRIPTOR: &[u8] = &[
     0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x06, 0x00, 0xff, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08,
@@ -279,7 +281,8 @@ pub(super) const DESCRIPTOR: &[u8] = &[
     0x85, 0x12, 0x09, 0x01, 0x95, 0x02, 0x91, 0x02, 0x85, 0x13, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02,
     0x85, 0x15, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02, 0x85, 0x16, 0x09, 0x01, 0x95, 0x15, 0x91, 0x02,
     0x85, 0x17, 0x09, 0x01, 0x95, 0x06, 0x91, 0x02, 0x85, 0x1a, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02,
-    0xc0,
+    0x85, 0x14, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02, 0x85, 0x18, 0x09, 0x01, 0x95, 0x15, 0x91, 0x02,
+    0x85, 0x19, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02, 0xc0,
 ];
 pub(super) fn hid(revision: WiiRemoteRevision) -> NativeControllerRealization {
     let mut realization = crate::common::hid_realization(
@@ -399,7 +402,7 @@ mod tests {
                     && s.numbered_output_reports
                     && !s.numbered_feature_reports
             );
-            let expected: Vec<_> = include_str!(
+            let mut expected: Vec<_> = include_str!(
                 "../../../../tests/fixtures/protocol-research/wii-c5-functional-descriptor.hex"
             )
             .split_whitespace()
@@ -407,7 +410,16 @@ mod tests {
             .collect();
             // Historical C5 vendor collection is retained as a research fixture.
             // W2 changes only collection usage/page and restores the vendor page
-            // before the byte fields; preserve every remaining report byte.
+            // before the byte fields. W8 appends only three source-sized output
+            // entries; every historical report byte remains covered exactly.
+            let end = expected.len() - 1;
+            expected.splice(
+                end..end,
+                [
+                    0x85, 0x14, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02, 0x85, 0x18, 0x09, 0x01, 0x95,
+                    0x15, 0x91, 0x02, 0x85, 0x19, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02,
+                ],
+            );
             assert_eq!(&s.descriptor[..9], &[5, 1, 9, 5, 0xa1, 1, 6, 0, 0xff]);
             assert_eq!(&s.descriptor[9..], &expected[7..]);
         }

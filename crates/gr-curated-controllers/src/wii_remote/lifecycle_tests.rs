@@ -204,6 +204,82 @@ fn imported_calibration_survives_snapshot_and_cleanup_is_per_controller() {
     assert_eq!(two.0.lock().unwrap().closed, 1);
 }
 #[test]
+fn speaker_controls_ack_once_status_is_retained_and_cleanup_is_per_controller() {
+    let (mut first, one) = create(WiiEepromImage::default());
+    let (mut second, two) = create(WiiEepromImage::default());
+    for id in [0x14, 0x19] {
+        output(&one, id, &[7]);
+        for _ in 0..3 {
+            first.service(&mut |_| {}).unwrap();
+        }
+    }
+    output(&one, 0x16, &write(0x51, 0x03, &[1, 2, 3]));
+    first.service(&mut |_| {}).unwrap();
+    let mut stream = [42; 21];
+    stream[0] = 1;
+    output(&one, 0x18, &stream);
+    first.service(&mut |_| {}).unwrap();
+    assert!(first.host_outputs().unwrap().rumble);
+    assert!(!first.resource_dirty());
+    for (c, fake, expected) in [(&mut first, &one, true), (&mut second, &two, false)] {
+        for _ in 0..3 {
+            output(fake, 0x15, &[u8::from(expected)]);
+            c.service(&mut |_| {}).unwrap();
+        }
+        let record = fake.0.lock().unwrap();
+        let statuses: Vec<_> = record
+            .sent
+            .iter()
+            .filter_map(|frame| match frame {
+                ProviderFrame::HidInput {
+                    report_id: Some(0x20),
+                    bytes,
+                } => Some(bytes),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(statuses.len(), 3);
+        assert!(statuses.iter().all(|bytes| (bytes[2] & 4 != 0) == expected));
+    }
+    let record = one.0.lock().unwrap();
+    let acks: Vec<_> = record
+        .sent
+        .iter()
+        .filter_map(|frame| match frame {
+            ProviderFrame::HidInput {
+                report_id: Some(0x22),
+                bytes,
+            } => Some(bytes.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        acks,
+        [
+            vec![0, 0, 0x14, 0],
+            vec![0, 0, 0x19, 0],
+            vec![0, 0, 0x16, 0]
+        ]
+    );
+    assert!(
+        record
+            .sent
+            .iter()
+            .all(|frame| matches!(frame, ProviderFrame::HidInput { .. }))
+    );
+    drop(record);
+    first.close();
+    first.close();
+    drop(first);
+    assert_eq!(one.0.lock().unwrap().closed, 1);
+    assert_eq!(two.0.lock().unwrap().closed, 0);
+    second.service(&mut |_| {}).unwrap();
+    second.close();
+    second.close();
+    drop(second);
+    assert_eq!(two.0.lock().unwrap().closed, 1);
+}
+#[test]
 fn live_attachment_swap_detach_preserves_core_and_counts_only_shape_changes() {
     let (mut c, fake) = create(WiiEepromImage::default());
     c.set_button(WiiRemoteButton::A, true).unwrap();

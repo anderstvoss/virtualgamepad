@@ -80,6 +80,26 @@ The ordinary-root API remains unchanged; `scripts/check-alpha-api.py` checks a
 separate Wii supporting-API snapshot for these additions. Consumer acceptance
 and physical calibration remain separate gates.
 
+Speaker control is acknowledged without producing audio. Reports `0x14` and
+`0x19` retain enable/mute intent, apply the shared rumble bit, and send the
+standard `0x22` error 0 ACK only when bit 1 requests it. The enable flag appears
+in status; status requests preserve both controls. Writes through `0x16` to
+A20000–A20009 store bounded control-register bytes and receive an ACK. Reads
+retain error 7: the cited register records establish writes but do not decide
+the read contract here. Out-of-block and straddling writes keep error 7 without
+storing a prefix. These controls do not create an audio stream or audio endpoint.
+
+For `0x18`, the fixed report is admitted only to preserve its shared rumble bit.
+The audio area is discarded, including oversized encoded lengths, without an
+ACK, decoder, queue, mixer, PipeWire sink or playback. Transport success is not
+speaker-audio acceptance. This is an explicit deviation while playback remains
+gated by D7 and audio phase A3. No A3 work is included. Uinput has no HID output
+report or addressed register channel; its existing native rumble is unchanged.
+Evidence: `wii-gap-wiibrew-speaker-control-reports`,
+`audio-wii-dolphin-control-and-stream-reports`,
+`wii-gap-wiibrew-speaker-init-config-registers`, and
+`audio-wii-dolphin-speaker-register-model`. No public API is added.
+
 The demo creates Wii handles and provides native controls, extension selection
 and typed IR editing. Advanced raw battery and EEPROM configuration use the
 supporting API. Detached editors can use `WiiRemoteState::set_attachment` to
@@ -295,9 +315,10 @@ the earlier C5/W1 measurements are never relabelled as Part C measurements.
 Owner option B on #158 comment 6354044408 authorizes an independently authored
 synthetic Generic Desktop/Game Pad Application collection. Its byte fields stay
 on vendor page 0xFF00 with the existing Variable flags. All report directions,
-IDs and payload lengths are unchanged; speaker IDs 14/18/19 stay absent.
+IDs and payload lengths were unchanged at W2; speaker IDs 14/18/19 were absent.
 The historical `wii-c5-functional-descriptor` fixture still records C5 and is
-used only to verify the unchanged report body. No rnconrad candidate bytes were
+used to verify the historical report body. W8 later appends source-sized speaker
+control reports and data handling for rumble only, without playback. No rnconrad candidate bytes were
 copied or used as a template. Retail-evidence replacement is tracked in#238;
 this interim descriptor makes no retail authenticity claim.
 

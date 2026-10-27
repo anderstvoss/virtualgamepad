@@ -57,6 +57,7 @@ pub(super) struct Memory {
     mp_initialized: [bool; 2],
     pub(super) mp_turn: bool,
     camera: [u8; 52],
+    pub(super) speaker: [u8; 10],
 }
 #[derive(Clone, Copy)]
 pub(super) struct Read {
@@ -87,6 +88,7 @@ impl Default for Memory {
             mp_inactive_mode: 0,
             mp_turn: false,
             camera: [0; 52],
+            speaker: [0; 10],
         }
     }
 }
@@ -135,6 +137,16 @@ impl Memory {
         let offset = p[3];
         if slave == 0x50 {
             return 8;
+        }
+        if slave == 0x51 {
+            // wii-gap-wiibrew-speaker-init-config-registers /
+            // audio-wii-dolphin-speaker-register-model. Store only the bounded
+            // A20000..A20009 control image; no stream or audio side effect.
+            let Some(range) = self.speaker.get_mut(address..address + data.len()) else {
+                return 7;
+            };
+            range.copy_from_slice(data);
+            return 0;
         }
         if slave == 0x58 {
             let accepted = matches!(
