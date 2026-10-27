@@ -3,6 +3,7 @@ mod audio_topology;
 mod editor;
 mod families;
 mod native_editor;
+mod wii_import;
 #[cfg(test)]
 mod wii_tests;
 use families::{Controller, Kind};
@@ -40,12 +41,13 @@ use virtualgamepad::{
 
 // Controller IDs are demo-local labels. The Wii supporting constructor also
 // receives this creation token; provider-generated association labels stay unique.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct ControllerOptions {
     target: RealizationId,
     id: u64,
     audio: audio_lab::CreationAudio,
     wii_revision: WiiRemoteRevision,
+    wii_imports: wii_import::Imports,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
@@ -265,6 +267,7 @@ fn draw_advanced_options(
     kind: Kind,
     audio_creation: &mut audio_lab::CreationAudio,
     wii_revision: &mut WiiRemoteRevision,
+    wii_imports: &mut wii_import::Imports,
 ) -> AdvancedOptionsLayout {
     let max_height = advanced_options_max_height(
         ui.available_height(),
@@ -299,6 +302,9 @@ fn draw_advanced_options(
                             }),
                     );
                     draw_wii_revision_selector(ui, kind, wii_revision);
+                    if kind == Kind::WiiRemote {
+                        wii_imports.draw(ui, target);
+                    }
                     ui.strong("Audio configuration");
                     audio_lab::draw_creation(ui, audio_creation, target, kind.supports_audio());
                 })
@@ -1374,6 +1380,7 @@ pub struct App {
     target: RealizationId,
     audio_creation: audio_lab::CreationAudio,
     wii_revision: WiiRemoteRevision,
+    wii_imports: wii_import::Imports,
     name_draft: String,
     create_count: u32,
     advanced_options_open: bool,
@@ -1396,6 +1403,7 @@ impl Default for App {
             target: audio_lab::default_creation_target(),
             audio_creation: audio_lab::CreationAudio::default(),
             wii_revision: WiiRemoteRevision::Original,
+            wii_imports: wii_import::Imports::default(),
             name_draft: String::new(),
             create_count: 1,
             advanced_options_open: false,
@@ -1575,6 +1583,7 @@ impl App {
             id: self.next_controller_id,
             audio: self.audio_creation,
             wii_revision: self.wii_revision,
+            wii_imports: self.wii_imports.clone(),
         };
         let result = self.kind.create(&options);
         match result {
@@ -1883,6 +1892,7 @@ impl eframe::App for App {
                                     self.kind,
                                     &mut self.audio_creation,
                                     &mut self.wii_revision,
+                                    &mut self.wii_imports,
                                 )
                                 .panel_rect;
                             }
@@ -4273,6 +4283,7 @@ mod tests {
                                                 Kind::DualSense,
                                                 &mut audio_creation,
                                                 &mut WiiRemoteRevision::Original,
+                                                &mut wii_import::Imports::default(),
                                             ));
                                             ui.add_sized(
                                                 [SIDEBAR_WIDTH, 1.0],

@@ -529,3 +529,26 @@ The adopted research pin also includes the test-discovery repair in
 relative to their source file, so parent-checkout discovery follows the same
 path as research-root discovery. The repair changes no evidence records or
 runtime helpers.
+
+
+### Demo caller calibration files
+
+In the Wii Remote creation card, Advanced options lets you choose an optional
+EEPROM image and MotionPlus (32 bytes), Nunchuk (16 bytes) and Classic (16 bytes)
+calibration files. Choose file opens the demo's directory browser; Go and Parent
+navigate it, and selecting a file retains its path for creation. Clear removes a
+choice. No image, factory value or preset is supplied by the demo.
+
+Creation reads and validates each selected file before opening the provider,
+using `WiiEepromImage::import` and `WiiExtensionCalibration::import`. Size,
+checksum, CRC and file-read errors use the existing creation-error display.
+The EEPROM API bounds the address window; it does not invent an EEPROM
+checksum contract. Block layouts are cited by
+`wii-gap-dolphin-motionplus-crc32-calibration`,
+`wii-gap-dolphin-nunchuk-calibration-layout`,
+`wii-gap-dolphin-classic-calibration-layout` and
+`wii-gap-dolphin-calibration-additive-checksums`.
+
+The file controls are disabled for uinput because it has no EEPROM or extension
+calibration address channel. HID choices remain visible and retained for a
+switch back to HID, but are not read or applied to uinput creation.

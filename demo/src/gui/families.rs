@@ -115,9 +115,7 @@ impl Kind {
                 gr_curated_controllers::wii_remote::create_wii_remote_with_image,
             )
             .map(Controller::WiiRemote)
-            .map_err(|e| virtualgamepad::ControllerError::Open {
-                reason: e.to_string(),
-            }),
+            .map_err(|reason| virtualgamepad::ControllerError::Open { reason }),
         }
     }
     pub(super) const fn validation_soak() -> Self {
@@ -414,7 +412,7 @@ impl ControllerView {
 }
 
 // Keep the application's actual creation token at the supporting-package boundary.
-fn create_wii_session<T, E>(
+fn create_wii_session<T, E: std::fmt::Display>(
     options: &ControllerOptions,
     create: impl FnOnce(
         virtualgamepad::RealizationId,
@@ -422,13 +420,10 @@ fn create_wii_session<T, E>(
         super::WiiRemoteRevision,
         gr_curated_controllers::wii_remote::WiiEepromImage,
     ) -> Result<T, E>,
-) -> Result<T, E> {
-    create(
-        options.target,
-        options.id,
-        options.wii_revision,
-        gr_curated_controllers::wii_remote::WiiEepromImage::default(),
-    )
+) -> Result<T, String> {
+    let image = options.wii_imports.load(options.target)?;
+    create(options.target, options.id, options.wii_revision, image)
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -446,6 +441,7 @@ mod wii_tests {
                 id: 37,
                 audio: super::super::audio_lab::CreationAudio::default(),
                 wii_revision: revision,
+                wii_imports: super::super::wii_import::Imports::default(),
             };
             let state = create_wii_session(&options, |target, session, observed, image| {
                 assert_eq!(target, options.target);
@@ -468,6 +464,7 @@ mod wii_tests {
                 id,
                 audio: super::super::audio_lab::CreationAudio::default(),
                 wii_revision: super::super::WiiRemoteRevision::Original,
+                wii_imports: super::super::wii_import::Imports::default(),
             };
             let received = create_wii_session(&options, |target, session, revision, image| {
                 assert_eq!(revision, super::super::WiiRemoteRevision::Original);
@@ -478,7 +475,7 @@ mod wii_tests {
             assert_eq!(received, (options.target, id));
             assert_eq!(
                 create_wii_session(&options, |_, _, _, _| Err::<(), _>("open failed")),
-                Err("open failed")
+                Err("open failed".into())
             );
         }
     }
