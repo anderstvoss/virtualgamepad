@@ -259,6 +259,7 @@ impl WiiProtocol {
             .iter()
             .enumerate()
             .fold(0, |bits, (i, on)| bits | (u8::from(*on) << (i + 4)));
+        // wii-gap-wiibrew-status-20-resend: status bit 0x04 retains speaker-enable intent.
         let flags = u8::from(self.state.battery < 0x20)
             | (u8::from(self.memory.present(&self.state)) << 1)
             | (u8::from(self.speaker.enabled) << 2)
