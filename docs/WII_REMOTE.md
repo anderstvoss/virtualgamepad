@@ -603,3 +603,20 @@ claims; its new attachment hypotheses do not promote the W8 live results or
 implement compatibility shims. The `dolphin-controllerinterface-wii` cell is
 scoped to MP-only with caller imports. MP+Nunchuk and Cemu retain their recorded
 limits; future compatibility options and reruns belong to separate PRs.
+
+
+W9 steering adopts research main `bd1357c70eeeca4a91b29e34671765e6a05ea5c0`
+with research PR #47 (166 Wii claims). Cemu `29f2f1f` has a consumer source
+limitation: its report `0x37` MotionPlus visitor operates on an extension variant
+without MotionPlus (`wii-gap-cross-cemu-motionplus-visitor-unreachable`), and its
+exported motion sample supplies zero angular arrays
+(`wii-gap-cross-cemu-exported-gyro-zero-sample`). No virtualgamepad change can
+produce exported Cemu gyro at that pinned version. The W8 shared-kernel setup
+requeue observations remain a separate scope line; decoded motion is unobserved.
+
+F6 and A40040 are Dolphin-specific setup gates; other consumers decode
+MotionPlus without them (`wii-gap-cross-cemu-fa20-no-f6-40` and
+`wii-gap-cross-linux-kernel-sdl-layer-contrast`). They are not universal
+prerequisites and any future shims remain compat-class. Active passthrough
+A40020 retains MP calibration, A40040 is the child copy, and inactive A40020
+is the child's own calibration; the banks must never alias.
