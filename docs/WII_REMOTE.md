@@ -98,7 +98,9 @@ report or addressed register channel; its existing native rumble is unchanged.
 Evidence: `wii-gap-wiibrew-speaker-control-reports`,
 `audio-wii-dolphin-control-and-stream-reports`,
 `wii-gap-wiibrew-speaker-init-config-registers`, and
-`audio-wii-dolphin-speaker-register-model`. No public API is added.
+`audio-wii-dolphin-speaker-register-model`. The speaker-enabled status flag
+`0x04` cites `wii-gap-wiibrew-status-20-resend`; it retains accepted enable
+intent and does not establish audio playback. No public API is added.
 
 The demo creates Wii handles and provides native controls, extension selection
 and typed IR editing. Advanced raw battery and EEPROM configuration use the
@@ -529,3 +531,75 @@ The adopted research pin also includes the test-discovery repair in
 relative to their source file, so parent-checkout discovery follows the same
 path as research-root discovery. The repair changes no evidence records or
 runtime helpers.
+
+## W8 native consumers with caller calibration
+
+W8 first records seven baseline arms, then six imported-block arms on merged
+code `5a11e507ac973c23ca10beb36edb44fc35034376`. The research pin and acceptance
+cells distinguish successful virtual observations from consumer limitations.
+No imported image becomes a default, and no physical, calibrated-rate, audio,
+radio, game or whole-controller acceptance is inferred.
+
+| Consumer arm | Bounded result | Limit |
+| --- | --- | --- |
+| Native Dolphin 2503, MP | Imported MP calibration succeeds in two chunks; mapping view shows changing A, acceleration, two basic IR points and gyro | Explicit bindings, synthetic caller resources and UI gyro auto-calibration period zero; not rate accuracy or all-controls acceptance |
+| Native Dolphin 2503, MP+Nunchuk | Mapping device visible; active mode 5 | A400F6/4 returns error 7 before MP calibration; changing motion not established |
+| Cemu ARM64 AppImage 29f2f1f, MP | Base EEPROM read succeeds | Coexistence identity/init exchange includes A600FA error 7; decoded state unobserved |
+| Cemu ARM64 AppImage 29f2f1f, MP+Nunchuk | Base read and 44 mapped A40020/16 reads succeed | Returned data matches MP's first half; not a clean Nunchuk-calibration or decoded-gyro pass |
+
+The native Dolphin transport arms are bounded to 180 seconds each. MP includes
+an additional 150-second mapping observation; it lists the Bluetooth
+ControllerInterface device and shows changing application indicators. Its
+acceleration preview displays 1.37 g and 2.27 g under the lab image; these labels
+are not a physical calibration claim. Basic IR points are caller-driven only
+in basic-capable report modes. No Real Wii Remote slot or game content is used.
+
+The MP+Nunchuk F6 window is a known model boundary. Its 12,128 reads receive
+12,128 error 7 replies, so it does not reach the MP calibration request. No new
+register, codec, descriptor or API change is implemented to bypass that result.
+A failed setup is not evidence of zero gyro or physical incompatibility.
+
+The clean Cemu no-holder preflight was blocked by a foreign browser companion
+holder before launch. Separate 35-second coexistence arms ran with that known
+holder present, without opening a runner holder or modifying a foreign process.
+Native requests are directly attributed; shared kernel traffic is not assigned
+to a sole actor. The held MP+Nunchuk replies match the correctly mapped MP bank;
+this does not establish application interpretation as Nunchuk calibration.
+Those initial coexistence arms do not verify the clean Nunchuk path; the follow-up below does test delivery. Decoded Cemu gyro remains unverified.
+
+All completed consumers exited and the shared temporary producer closed
+idempotently; its HID, hidraw and four LED nodes were verified removed. Raw
+captures, screenshots, identities and paths stay private. The adoption retains
+the bank-isolation regression from the test-only `ec95e9a` followup, preventing
+a missing addressed block from falling back to another device's calibration.
+
+
+After the browser holder closed, two clean 35-second Cemu comparisons passed
+no-holder preflight on a fresh producer with the same resources. The runner
+opened no holder; the kernel remained bound. MP again made no extension
+calibration read. MP+Nunchuk received 18 successful A40020/16 replies: 17 match
+the imported Nunchuk block and one matches MP first half under shared mapping.
+This establishes Nunchuk calibration delivery beyond the earlier refusal,
+without proving application interpretation or decoded motion. Repeated
+initialization remains the next unestablished checkpoint. Earlier coexistence
+records are retained; no further register or API behavior is added. Fresh owned
+nodes and consumers were verified gone after the clean comparison.
+
+
+Cemu setup-order analysis narrows the boundary: MP has one IR setup and later
+status/report-mode polling, while its native A4 initialization writes and
+identity read receive error 7 after shared mapping changes. MP+Nunchuk has
+19 repeat IR setups, preceded by successful calibration, successful identity
+or present-extension status. Cemu's pinned provider reselects mode/IR from
+status and extension state; it does not await ACKs in that path. The captures
+lack timestamps and do not support a missing-ACK timeout or a unique actor
+cause. This remains a consumer/shared-kernel limitation, without a model fix.
+
+
+W9 Part A adopts research main `77dad7408cbdb9d3738059de85e6f366eeabce59`,
+including W8 evidence merge `0870a91` (research PR #45) and the source-only
+Dolphin attachment brief (research PR #46). The current corpus has 160 Wii
+claims; its new attachment hypotheses do not promote the W8 live results or
+implement compatibility shims. The `dolphin-controllerinterface-wii` cell is
+scoped to MP-only with caller imports. MP+Nunchuk and Cemu retain their recorded
+limits; future compatibility options and reruns belong to separate PRs.
