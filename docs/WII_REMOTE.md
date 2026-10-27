@@ -727,7 +727,7 @@ The MP+Nunchuk ControllerInterface cell is not extended to a pass.
 
 
 These reduced results are adopted from research PR #50, merged as
-`ceaa48a30b57485a0ef687800c09c4e197e8868e` (171 Wii claims, 99 corpus tests).
+`ceaa48a30b57485a0ef687800c09c4e197e8868e` (178 Wii claims, 99 corpus tests).
 The W9 MP-only control used mode 05 without a child; the earlier W8 mode 04
 observation remains separate evidence. No F6 or child-copy gate is required in
 that MP-only state.
