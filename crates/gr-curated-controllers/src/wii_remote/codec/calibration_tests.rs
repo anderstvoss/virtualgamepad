@@ -314,3 +314,106 @@ fn passthrough_three_banks_never_alias_and_detach_never_serves_a_stale_child() {
     assert_eq!(read(&mut p, 0x52, 0xf7, 1)[5], 2);
     error(&mut p, 0x52, 0x40, 16); // No import never supplies a copy.
 }
+
+#[test]
+fn passthrough_commits_alternate_latest_gyro_and_child_without_dropping_either_edit() {
+    for (extension, mode) in [
+        (WiiExtension::Nunchuk(WiiNunchukState::default()), 5),
+        (WiiExtension::Classic(WiiClassicState::default()), 7),
+    ] {
+        let mut p = imported();
+        attach(&mut p, extension, true);
+        init(&mut p);
+        write(&mut p, 0x53, 0xfe, mode, 0);
+        send(&mut p, 0x12, &[0, 0x37]);
+        tick(&mut p); // Complete setup separately from application commits.
+        let mut state = p.state.clone();
+        let mut previous_kind = None;
+        let mut count = 0;
+        for step in 0_u8..24 {
+            // Each kind of edit occurs on both packet turns. The other input
+            // keeps its latest value, even when not edited on this commit.
+            if matches!(step % 4, 0 | 3) {
+                state
+                    .set_motion_plus_values(
+                        [
+                            7000 + u16::from(step),
+                            8000 + u16::from(step),
+                            9000 + u16::from(step),
+                        ],
+                        [true, false, true],
+                    )
+                    .unwrap();
+            } else {
+                let next = match state.extension() {
+                    WiiExtension::Nunchuk(_) => WiiExtension::Nunchuk(WiiNunchukState {
+                        stick: [50 + step, 180 - step],
+                        accelerometer: [
+                            4 * (30 + u16::from(step)),
+                            4 * (50 + u16::from(step)),
+                            8 * (60 + u16::from(step)),
+                        ],
+                        c: step % 2 == 0,
+                        z: step % 2 != 0,
+                    }),
+                    WiiExtension::Classic(_) => WiiExtension::Classic(WiiClassicState {
+                        left: [20 + step, 50 - step],
+                        right: [step, 30 - step],
+                        triggers: [step, 31 - step],
+                        ..Default::default()
+                    }),
+                    _ => unreachable!(),
+                };
+                state.set_extension_values(next).unwrap();
+            }
+            // Protocol::input is the codec seam used for one application commit.
+            let reports = p.input(&state, u64::from(step) + 2).unwrap();
+            assert_eq!(reports.len(), 1, "mode {mode}, commit {step}");
+            assert_eq!(reports[0].id(), Some(0x37));
+            let b = &reports[0].payload()[15..21];
+            let gyro = b[5] & 2 != 0;
+            if let Some(previous) = previous_kind {
+                assert_ne!(gyro, previous, "mode {mode}, commit {step}");
+            }
+            previous_kind = Some(gyro);
+            count += 1;
+            assert_eq!(b[4] & 1, 1); // Downstream remains connected on both turns.
+            if gyro {
+                let decoded = [
+                    u16::from(b[2]) | (u16::from(b[5] >> 2) << 8),
+                    u16::from(b[1]) | (u16::from(b[4] >> 2) << 8),
+                    u16::from(b[0]) | (u16::from(b[3] >> 2) << 8),
+                ];
+                assert_eq!(decoded, state.motion_plus().gyroscope);
+                assert_eq!(
+                    [b[3] & 1 != 0, b[4] & 2 != 0, b[3] & 2 != 0],
+                    state.motion_plus().slow
+                );
+            } else {
+                match state.extension() {
+                    WiiExtension::Nunchuk(n) => {
+                        assert_eq!(&b[..2], &n.stick);
+                        assert_eq!(u16::from(b[2]), n.accelerometer[0] >> 2);
+                        assert_eq!(u16::from(b[3]), n.accelerometer[1] >> 2);
+                        assert_eq!(u16::from(b[4] & !1), (n.accelerometer[2] >> 2) & !1);
+                        assert_eq!(b[5] & 8 == 0, n.c);
+                        assert_eq!(b[5] & 4 == 0, n.z);
+                    }
+                    WiiExtension::Classic(c) => {
+                        assert_eq!(
+                            [b[0] & 0x3e, b[1] & 0x3e],
+                            [c.left[0] & 0x3e, c.left[1] & 0x3e]
+                        );
+                        assert_eq!(
+                            [(b[0] >> 6) << 3 | (b[1] >> 6) << 1 | b[2] >> 7, b[2] & 31],
+                            c.right
+                        );
+                        assert_eq!([((b[2] >> 5) & 3) << 3 | b[3] >> 5, b[3] & 31], c.triggers);
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+        assert_eq!(count, 24);
+    }
+}
