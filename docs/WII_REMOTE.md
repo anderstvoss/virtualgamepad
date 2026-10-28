@@ -767,6 +767,7 @@ test pins the unchanged behavior; no new faithful status-bit claim follows.
 The approved supporting API snapshot deliberately adds the creation-option
 field; the ordinary root API stays unchanged. Source pin: research #56,
 774b004 (203 Wii-prefixed claims), including the prior #57 boundary. Kernel-
-bound Plus acceptance is recorded separately as wii-p1-* when run. Unbound
+bound Plus qualification is recorded separately as wii-p1-* in research PR #63;
+these unmerged live records are not added to the source-pinned acceptance rows. Unbound
 Plus passthrough is out of scope until W9f passes; #258 gates release use of
 the special-driver window. Physical captures remain deferred under #52.

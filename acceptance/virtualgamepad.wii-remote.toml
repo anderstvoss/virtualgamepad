@@ -336,7 +336,7 @@ id = "plus-builtin-motionplus-probe-activation"
 id = "plus-motionplus-gyro"
 [functions.cells]
 "linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::plus_native_roles_preserve_all_source_controls_with_plus_identity", evidence = ["wii-gap-plustrace-acceptance-and-revision-contract", "wii-c5-evdev-native-values"], reason = "Plus-scoped native source regression preserves core, gyro and child capabilities with product 0330. No live Plus acceptance or HID register behavior is inherited from Original." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::plus_tests::plus_mapped_ids_and_deactivation_do_not_leak_the_inactive_toggle", evidence = ["wii-gap-plustrace-kernel-gen2-ladder", "wii-gap-plustrace-sdl-fe-probe-classic-limit"], reason = "Plus-scoped synthetic/source regression only; no Original gyro pass inherited. Kernel, SDL, xwiimote and Dolphin Plus live acceptance pending." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::plus_tests::plus_mapped_ids_and_deactivation_do_not_leak_the_inactive_toggle", evidence = ["wii-gap-plustrace-kernel-gen2-ladder", "wii-gap-plustrace-sdl-fe-probe-classic-limit"], reason = "Plus-scoped synthetic/source regression only; no Original gyro pass inherited. Separate wii-p1 live qualification is recorded in research PR #63; this cell awaits merged host evidence and does not adopt its unmerged results." }
 
 [[functions]]
 id = "plus-motionplus-nunchuk"
