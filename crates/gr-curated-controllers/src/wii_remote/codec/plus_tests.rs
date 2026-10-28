@@ -113,9 +113,18 @@ fn plus_mapped_ids_and_deactivation_do_not_leak_the_inactive_toggle() {
             );
             assert_eq!(read(&mut p, 0x53, 0xfe, 2), Err(7));
             write(&mut p, 0x52, 0xf0, 0x55);
+            assert_eq!(read(&mut p, 0x53, 0xfe, 1), Ok(vec![mode]));
+            assert_eq!(read(&mut p, 0x53, 0xfe, 2), Ok(vec![mode, 5]));
             assert_eq!(
                 read(&mut p, 0x53, 0xfa, 6),
-                Ok(vec![0, 0, if external { 0xa6 } else { 0xa4 }, 0x20, 0, 5])
+                Ok(vec![
+                    0,
+                    0,
+                    if external { 0xa6 } else { 0xa4 },
+                    0x20,
+                    mode,
+                    5
+                ])
             );
         }
     }

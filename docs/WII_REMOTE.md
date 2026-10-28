@@ -751,8 +751,11 @@ activation check. The GUI labels it compat, shows it only for Plus and disables
 it for uinput. Cemu gyro export remains out of scope. Original ignores the
 option and retains its external MP identity and existing deactivation policy.
 
-Plus inactive identity returns to mode byte 00 after deactivation, as in the
-owner-selected built-in identity. Active IDs remain `A4 20 <mode> 05` in modes
+After F0 deactivation, both Plus ID styles retain the previous mode byte,
+following `wii-gap-wiibrew-motionplus-deactivation` for the external model.
+The integrated Plus post-deactivation byte is unknown; this reuse is a model
+policy, not physical evidence. Fresh inactive IDs still have mode byte 00.
+Active IDs remain `A4 20 <mode> 05` in modes
 04/05/07 for both revisions. FE/1 and FE/2 are bounded identity slices; invalid
 F9/FF straddles fail as whole reads. F6, 0x40 and fixed F7 0x02 retain the same
 active passthrough scope, caller imports and independent creation switches;

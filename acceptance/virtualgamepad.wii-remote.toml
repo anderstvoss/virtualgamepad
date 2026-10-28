@@ -330,7 +330,7 @@ id = "plus-identity-discovery"
 id = "plus-builtin-motionplus-probe-activation"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Plus-scoped HID consumer qualification unavailable in uinput: no addressed register channel or HID parent; native controls remain represented by existing source mappings." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::plus_tests::plus_inactive_id_defaults_builtin_and_toggle_never_changes_original", evidence = ["wii-gap-plustrace-wiiuse-builtin-id-and-classic-gap", "wii-gap-plustrace-cemu-builtin-identity-nonactivation", "wii-gap-plustrace-kernel-mp-id-predicate-and-fallback"], reason = "Faithful-class source constants: Plus inactive A4200005, leading zero bytes unknown and retained. FE probes and activation source-tested; physical integrated identity and timing unmeasured." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::plus_tests::plus_inactive_id_defaults_builtin_and_toggle_never_changes_original", evidence = ["wii-gap-plustrace-wiiuse-builtin-id-and-classic-gap", "wii-gap-plustrace-cemu-builtin-identity-nonactivation", "wii-gap-plustrace-kernel-mp-id-predicate-and-fallback", "wii-gap-wiibrew-motionplus-deactivation"], reason = "Faithful-class source constants: fresh Plus inactive A4200005, leading zero bytes unknown and retained. Both ID styles preserve the previous mode after deactivation as external-model policy; integrated Plus post-deactivation byte is unknown. FE probes and activation source-tested; physical integrated identity and timing unmeasured." }
 
 [[functions]]
 id = "plus-motionplus-gyro"

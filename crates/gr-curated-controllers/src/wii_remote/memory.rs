@@ -243,8 +243,9 @@ impl Memory {
                 0xa6
             },
             0x20,
-            self.mp_mode
-                .unwrap_or(if plus { 0 } else { self.mp_inactive_mode }),
+            // wii-gap-wiibrew-motionplus-deactivation: preserve the prior mode.
+            // Integrated Plus post-deactivation byte is unknown; reuse that policy.
+            self.mp_mode.unwrap_or(self.mp_inactive_mode),
             5,
         ]
     }
