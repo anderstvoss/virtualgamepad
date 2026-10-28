@@ -120,6 +120,7 @@ fn addressed_device_wins_in_all_modes_and_mp_reads_are_chunked() {
         p.memory.options = crate::wii_remote::WiiRemoteCreationOptions {
             motionplus_passthrough_id_mirror: false,
             motionplus_passthrough_calibration_copy: false,
+            motionplus_inactive_id_external_style: false,
         };
         attach(&mut p, ext, true);
         init(&mut p);
@@ -201,6 +202,7 @@ fn compat_switches_are_independent_and_f7_never_claims_challenge_readiness() {
         WiiRemoteCreationOptions {
             motionplus_passthrough_id_mirror: true,
             motionplus_passthrough_calibration_copy: true,
+            motionplus_inactive_id_external_style: false,
         }
     );
     let (_, n, c) = super::super::calibration::synthetic_blocks();
@@ -224,6 +226,7 @@ fn compat_switches_are_independent_and_f7_never_claims_challenge_readiness() {
                 p.memory.options = WiiRemoteCreationOptions {
                     motionplus_passthrough_id_mirror: mirror,
                     motionplus_passthrough_calibration_copy: copy,
+                    motionplus_inactive_id_external_style: false,
                 };
                 attach(&mut p, ext, true);
                 init(&mut p);

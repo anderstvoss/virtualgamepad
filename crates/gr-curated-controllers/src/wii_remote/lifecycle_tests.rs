@@ -767,6 +767,7 @@ fn compat_creation_options_are_per_controller_and_replies_cleanup_once() {
     let off = WiiRemoteCreationOptions {
         motionplus_passthrough_id_mirror: false,
         motionplus_passthrough_calibration_copy: false,
+        motionplus_inactive_id_external_style: false,
     };
     let (mut first, one) = create_with_options(WiiEepromImage::default(), off);
     let (mut second, two) = create_with_options(

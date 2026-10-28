@@ -226,6 +226,28 @@ impl Memory {
             self.initialized = [true, false];
         }
     }
+    fn motionplus_identity(&self, state: &WiiRemoteState) -> [u8; 6] {
+        // Faithful-class consumer constants, not physical readback:
+        // wii-gap-plustrace-wiiuse-builtin-id-and-classic-gap and
+        // wii-gap-plustrace-cemu-builtin-identity-nonactivation.
+        // Leading bytes remain the model's existing unknown zero bytes.
+        // The external-style toggle is Plus-only compatibility for Cemu.
+        let plus = state.revision() == super::WiiRemoteRevision::Tr;
+        let builtin_id = plus && !self.options.motionplus_inactive_id_external_style;
+        [
+            0,
+            0,
+            if self.mp_mode.is_some() || builtin_id {
+                0xa4
+            } else {
+                0xa6
+            },
+            0x20,
+            self.mp_mode
+                .unwrap_or(if plus { 0 } else { self.mp_inactive_mode }),
+            5,
+        ]
+    }
     pub(super) fn read(
         &self,
         state: &WiiRemoteState,
@@ -312,14 +334,7 @@ impl Memory {
             // Challenge data at 0x50 remains unimplemented (error 7).
             // Faithful identity/mode: wii-c5-extension-identifiers and
             // wii-gap-wiibrew-motionplus-deactivation (not a physical revision oracle).
-            let id = [
-                0,
-                0,
-                if self.mp_mode.is_some() { 0xa4 } else { 0xa6 },
-                0x20,
-                self.mp_mode.unwrap_or(self.mp_inactive_mode),
-                5,
-            ];
+            let id = self.motionplus_identity(state);
             if offset >= 0xfa {
                 return Ok(id[offset - 0xfa..offset - 0xfa + count].to_vec());
             }

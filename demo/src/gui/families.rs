@@ -498,25 +498,35 @@ mod compat_creation_tests {
     use super::*;
     #[test]
     fn independent_compat_switches_reach_creation_without_opening_a_provider() {
-        for mirror in [false, true] {
-            for copy in [false, true] {
-                let compat = super::super::WiiRemoteCreationOptions {
-                    motionplus_passthrough_id_mirror: mirror,
-                    motionplus_passthrough_calibration_copy: copy,
-                };
-                let options = ControllerOptions {
-                    target: virtualgamepad::RealizationId::LINUX_UHID_BLUETOOTH,
-                    id: 9,
-                    audio: super::super::audio_lab::CreationAudio::default(),
-                    wii_revision: super::super::WiiRemoteRevision::Original,
-                    wii_imports: super::super::wii_import::Imports::default(),
-                    wii_compat: compat,
-                };
-                assert_eq!(
-                    create_wii_session(&options, |_, _, _, _, received| Ok::<_, String>(received))
-                        .unwrap(),
-                    compat
-                );
+        for revision in [
+            super::super::WiiRemoteRevision::Original,
+            super::super::WiiRemoteRevision::Tr,
+        ] {
+            for mirror in [false, true] {
+                for copy in [false, true] {
+                    for external in [false, true] {
+                        let compat = super::super::WiiRemoteCreationOptions {
+                            motionplus_passthrough_id_mirror: mirror,
+                            motionplus_passthrough_calibration_copy: copy,
+                            motionplus_inactive_id_external_style: external,
+                        };
+                        let options = ControllerOptions {
+                            target: virtualgamepad::RealizationId::LINUX_UHID_BLUETOOTH,
+                            id: 9,
+                            audio: super::super::audio_lab::CreationAudio::default(),
+                            wii_revision: revision,
+                            wii_imports: super::super::wii_import::Imports::default(),
+                            wii_compat: compat,
+                        };
+                        assert_eq!(
+                            create_wii_session(&options, |_, _, _, _, received| Ok::<_, String>(
+                                received
+                            ))
+                            .unwrap(),
+                            compat
+                        );
+                    }
+                }
             }
         }
     }
