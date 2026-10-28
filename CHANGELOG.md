@@ -8,6 +8,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- CI: bump `step-security/harden-runner` to v2.22.3, which fixes block mode
+  dropping allowed connections on GitHub-hosted Linux runners (the cause of
+  stuck CodeQL and secret-scan jobs, #260). Egress policy stays `block`.
 - Documentation reorganized after Alpha 1: decision records moved to `docs/adr/`,
   the API snapshot and inventory to `docs/api/`, and Alpha 1 planning, gate and
   evidence records to `docs/history/alpha-1/`. Added `docs/STATUS.md` and a
