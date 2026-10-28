@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.wii-remote"
-research_revision = "774b004b06315572f4a385ced6e2b241645c9a83"
+research_revision = "e19cadbfea6e496e3c73fb3b055ccd17f0506b1e"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
 refused_operations = ["speaker-audio", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
 persistent_resources = ["caller-imported-eeprom", "caller-imported-extension-calibration"]
@@ -361,3 +361,9 @@ id = "plus-status-extension-bit"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Plus-scoped HID consumer qualification unavailable in uinput: no addressed register channel or HID parent; native controls remain represented by existing source mappings." }
 "linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::plus_tests::plus_status_bit_keeps_existing_unmeasured_activation_behavior", evidence = ["wii-gap-plustrace-reply-provenance-and-unknowns"], reason = "Unknown physical bare-Plus status bit across activation: existing software behavior retained, inactive clear and mapped set even without a child. Built-in presence is distinct from downstream status; no faithful status-bit claim." }
+
+[[functions]]
+id = "motionplus-activation-reattach-status-compat"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "wii_remote::realizations::tests::native_mapping_retains_all_keys_and_source_conversions", evidence = [], reason = "Unavailable: uinput has no addressed HID host status or reporting-mode channel; native controls remain represented." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::activation_tests::activation_edge_matrix_preserves_pause_resend_and_alternation", evidence = ["wii-gap-wiibrew-motionplus-deactivation", "wii-w9f-dolphin-motionplus-nunchuk-on-host", "wii-w9f-dolphin-motionplus-control-host"], reason = "Compat creation option, default on, for Original and Plus. Activation or active mode switch with an already-set extension bit sends unplugged/current status, retaining AwaitingMode until 0x12. MP-only initial activation and deactivation unchanged. The cited pair is documented only for deactivation; W9f records the consumer boundary, not activation fidelity. Activation has no physical record; future wii-gap-mpstatus research decides faithful classification or retirement. W9g host acceptance pending." }

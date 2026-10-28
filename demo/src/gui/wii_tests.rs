@@ -634,6 +634,12 @@ fn plus_label_and_inactive_id_compat_are_revision_scoped() {
                 revision == WiiRemoteRevision::Tr
             );
             assert!(!options.motionplus_inactive_id_external_style);
+            assert!(options.motionplus_activation_reattach_status);
+            assert!(
+                labels
+                    .iter()
+                    .any(|(s, _)| s == "Activation re-attach status (compat)")
+            );
             assert_eq!(
                 wii_import::available(target),
                 target == RealizationId::LINUX_UHID_BLUETOOTH

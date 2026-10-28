@@ -263,7 +263,7 @@
     },
     "struct.WiiRemoteCreationOptions.html": {
       "declarations": [
-        "pub struct WiiRemoteCreationOptions { pub motionplus_passthrough_id_mirror: bool, pub motionplus_passthrough_calibration_copy: bool, pub motionplus_inactive_id_external_style: bool, }"
+        "pub struct WiiRemoteCreationOptions { pub motionplus_passthrough_id_mirror: bool, pub motionplus_passthrough_calibration_copy: bool, pub motionplus_inactive_id_external_style: bool, pub motionplus_activation_reattach_status: bool, }"
       ],
       "traits": [
         "impl Clone for WiiRemoteCreationOptions",

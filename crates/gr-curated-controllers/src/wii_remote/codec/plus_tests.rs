@@ -13,6 +13,7 @@ fn protocol(revision: WiiRemoteRevision, external: bool) -> WiiProtocol {
         ),
         WiiRemoteCreationOptions {
             motionplus_inactive_id_external_style: external,
+            motionplus_activation_reattach_status: false,
             ..Default::default()
         },
     );

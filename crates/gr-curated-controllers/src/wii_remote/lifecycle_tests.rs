@@ -768,6 +768,7 @@ fn compat_creation_options_are_per_controller_and_replies_cleanup_once() {
         motionplus_passthrough_id_mirror: false,
         motionplus_passthrough_calibration_copy: false,
         motionplus_inactive_id_external_style: false,
+        motionplus_activation_reattach_status: false,
     };
     let (mut first, one) = create_with_options(WiiEepromImage::default(), off);
     let (mut second, two) = create_with_options(

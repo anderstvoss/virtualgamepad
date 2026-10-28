@@ -768,9 +768,31 @@ is not a physical assertion about that downstream status bit. A deterministic
 test pins the unchanged behavior; no new faithful status-bit claim follows.
 
 The approved supporting API snapshot deliberately adds the creation-option
-field; the ordinary root API stays unchanged. Source pin: research #56,
-774b004 (203 Wii-prefixed claims), including the prior #57 boundary. Kernel-
+field; the ordinary root API stays unchanged. Source pin: research main
+e19cadb (210 Wii-prefixed claims), including W9f #62 and Plus P1 #63. Kernel-
 bound Plus qualification is recorded separately as wii-p1-* in research PR #63;
-these unmerged live records are not added to the source-pinned acceptance rows. Unbound
+these live records are not adopted by the source-only Plus acceptance rows. Unbound
 Plus passthrough is out of scope until W9f passes; #258 gates release use of
 the special-driver window. Physical captures remain deferred under #52.
+
+
+### Activation re-attach status compatibility (W9g)
+
+`WiiRemoteCreationOptions::motionplus_activation_reattach_status` defaults to
+true for Original and Wii Remote Plus. Activation or an active mode switch
+while the extension bit is already set queues an unplugged status then the
+current status. The existing reporting pause still requires a host 0x12
+reselection. With the option off, the previous single status remains. An
+initial MP-only activation from a clear bit still sends one status; deactivation
+keeps its existing pair. The demo exposes the switch under Advanced, labelled
+compat and disabled for uinput, which has no addressed HID status channel.
+
+This is owner-approved compatibility behavior. The pair is documented for
+**deactivation only** by `wii-gap-wiibrew-motionplus-deactivation`. W9f #62
+records the MP+Nunchuk reporting pause while its MP-only control reselects
+reporting. Neither source establishes physical activation behavior. Activation
+has no record yet; the `wii-gap-mpstatus-*` research pass will decide faithful
+classification or retirement. F6, F7, the separate 0x20 and 0x40 banks, caller
+calibration and error 7 at 0x50 keep their existing scope. W9g consumer runs
+are separate from this deterministic codec coverage; #258 still gates release
+use of generic binding.
