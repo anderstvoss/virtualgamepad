@@ -130,13 +130,16 @@ fn active_mode_switch_and_stop_keep_status_pair_atomic() {
         WiiExtension::Nunchuk(WiiNunchukState::default()),
         true,
     );
+    send(&mut p, 0x12, &[0, 0x37]);
+    tick(&mut p);
+    assert!(p.reporting == Reporting::Running);
     for _ in 0..MAX_PENDING - 2 {
         send(&mut p, 0x15, &[0]);
     }
     let r = request(0x53, 0xfe, 5);
     assert_eq!(p.request(&r, 1).0, Reply::Set(Err(ReplyError::Busy)));
     assert_eq!(p.memory.mp_mode, None);
-    assert!(p.reporting == Reporting::AwaitingMode);
+    assert!(p.reporting == Reporting::Running);
     assert_eq!(p.pending.len(), MAX_PENDING - 2);
     p.pending.pop_front();
     assert_eq!(p.request(&r, 1).0, Reply::Set(Ok(())));
