@@ -52,7 +52,10 @@ jobs:
           # CodeQL pulls bundle + database from a wider set of GitHub
           # CDN endpoints than the standard rust-toolchain flow, so
           # this allowlist is slightly broader than ci.yml's.
-          egress-policy: block
+          # Audit, not block: block mode intermittently drops GitHub IPs on
+          # checkout and runner status reporting, stalling jobs as in_progress.
+          # The allowlist stays as the documented expected egress.
+          egress-policy: audit
           allowed-endpoints: >
             archive.ubuntu.com:443
             security.ubuntu.com:443
@@ -152,7 +155,10 @@ jobs:
         with:
           # The analyze job's GitHub endpoints, in case upload-sarif
           # fetches the CodeQL bundle to process the SARIF.
-          egress-policy: block
+          # Audit, not block: block mode intermittently drops GitHub IPs on
+          # checkout and runner status reporting, stalling jobs as in_progress.
+          # The allowlist stays as the documented expected egress.
+          egress-policy: audit
           allowed-endpoints: >
             api.github.com:443
             github.com:443

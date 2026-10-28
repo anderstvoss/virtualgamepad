@@ -44,8 +44,9 @@ This repo enforces:
   pre-commit + pre-push policy replay on the same matrix; `cargo-deny`
   + `cargo-audit`; `actions/dependency-review-action` on PRs.
 - All third-party actions SHA-pinned; `step-security/harden-runner`
-  with egress-policy `block` and an explicit allowlist on every Linux
-  job.
+  with egress-policy `audit` and an explicit documented allowlist on
+  every Linux job (block mode intermittently dropped GitHub IPs and
+  stalled jobs; revisit when harden-runner fixes it).
 - Weekly full-history gitleaks scan over every ref (branches and
   tags), plus `scripts/deep-scan.sh` for ad-hoc operator runs.
 - OpenSSF Scorecard on push to `main`, weekly cron, and

@@ -32,7 +32,10 @@ jobs:
       - name: Harden runner
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
-          egress-policy: block
+          # Audit, not block: block mode intermittently drops GitHub IPs on
+          # checkout and runner status reporting, stalling jobs as in_progress.
+          # The allowlist stays as the documented expected egress.
+          egress-policy: audit
           allowed-endpoints: >
             archive.ubuntu.com:443
             security.ubuntu.com:443
@@ -96,7 +99,10 @@ jobs:
       - name: Harden runner
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
-          egress-policy: block
+          # Audit, not block: block mode intermittently drops GitHub IPs on
+          # checkout and runner status reporting, stalling jobs as in_progress.
+          # The allowlist stays as the documented expected egress.
+          egress-policy: audit
           allowed-endpoints: >
             archive.ubuntu.com:443
             security.ubuntu.com:443
@@ -176,7 +182,10 @@ jobs:
         if: runner.os == 'Linux'
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
-          egress-policy: block
+          # Audit, not block: block mode intermittently drops GitHub IPs on
+          # checkout and runner status reporting, stalling jobs as in_progress.
+          # The allowlist stays as the documented expected egress.
+          egress-policy: audit
           allowed-endpoints: >
             archive.ubuntu.com:443
             security.ubuntu.com:443
@@ -262,7 +271,10 @@ jobs:
         if: runner.os == 'Linux'
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
-          egress-policy: block
+          # Audit, not block: block mode intermittently drops GitHub IPs on
+          # checkout and runner status reporting, stalling jobs as in_progress.
+          # The allowlist stays as the documented expected egress.
+          egress-policy: audit
           allowed-endpoints: >
             api.github.com:443
             github.com:443
@@ -313,7 +325,10 @@ jobs:
       - name: Harden runner
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
-          egress-policy: block
+          # Audit, not block: block mode intermittently drops GitHub IPs on
+          # checkout and runner status reporting, stalling jobs as in_progress.
+          # The allowlist stays as the documented expected egress.
+          egress-policy: audit
           allowed-endpoints: >
             api.github.com:443
             github.com:443
@@ -368,7 +383,10 @@ jobs:
           # each package (see src/scorecard.ts in the action). Both
           # are required or the action fails with a generic
           # "fetch failed".
-          egress-policy: block
+          # Audit, not block: block mode intermittently drops GitHub IPs on
+          # checkout and runner status reporting, stalling jobs as in_progress.
+          # The allowlist stays as the documented expected egress.
+          egress-policy: audit
           allowed-endpoints: >
             api.deps.dev:443
             api.github.com:443
@@ -407,7 +425,10 @@ jobs:
       - name: Harden runner
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
-          egress-policy: block
+          # Audit, not block: block mode intermittently drops GitHub IPs on
+          # checkout and runner status reporting, stalling jobs as in_progress.
+          # The allowlist stays as the documented expected egress.
+          egress-policy: audit
           allowed-endpoints: >
             static.rust-lang.org:443
             api.github.com:443

@@ -22,7 +22,10 @@ jobs:
       - name: Harden runner
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
-          egress-policy: block
+          # Audit, not block: block mode intermittently drops GitHub IPs on
+          # checkout and runner status reporting, stalling jobs as in_progress.
+          # The allowlist stays as the documented expected egress.
+          egress-policy: audit
           allowed-endpoints: >
             archive.ubuntu.com:443
             security.ubuntu.com:443

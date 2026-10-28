@@ -8,6 +8,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Run `step-security/harden-runner` in egress `audit` mode instead of `block`
+  in every workflow. Block mode intermittently dropped GitHub IPs during
+  checkout and runner status reporting, leaving jobs stuck in progress. The
+  allowlists stay as documented expected egress.
 - Documentation reorganized after Alpha 1: decision records moved to `docs/adr/`,
   the API snapshot and inventory to `docs/api/`, and Alpha 1 planning, gate and
   evidence records to `docs/history/alpha-1/`. Added `docs/STATUS.md` and a

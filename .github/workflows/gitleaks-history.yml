@@ -32,7 +32,10 @@ jobs:
           # gitleaks-action downloads the gitleaks release binary from
           # GitHub release assets and uploads a report artifact on
           # findings; nothing else leaves the runner.
-          egress-policy: block
+          # Audit, not block: block mode intermittently drops GitHub IPs on
+          # checkout and runner status reporting, stalling jobs as in_progress.
+          # The allowlist stays as the documented expected egress.
+          egress-policy: audit
           allowed-endpoints: >
             api.github.com:443
             github.com:443
