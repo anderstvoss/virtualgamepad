@@ -1,3 +1,4 @@
+import ast
 import hashlib
 import json
 import importlib.util
@@ -114,13 +115,14 @@ class ResearchWorkflow(unittest.TestCase):
     def test_physical_steam_descriptor_is_compiled_without_byte_changes(self):
         MODULE.check(self.root, write=True)
         generated = self.root / 'tests/fixtures/protocol-research'
-        raw = (generated / 'steam-s3-1302-report-descriptor.bin').read_bytes()
+        raw = bytes(ast.literal_eval(
+            (generated / 'steam-s3-1302-report-descriptor.rs').read_text()))
         self.assertEqual(len(raw), 372)
         self.assertEqual(raw, bytes.fromhex(
             (generated / 'steam-s3-1302-report-descriptor.hex').read_text()))
         self.assertEqual(hashlib.sha256(raw).hexdigest(),
                          '315a037c849ef9510d222ae520bb18c1b72552d26eb116c91b0750901a5c51fd')
-        (generated / 'steam-s3-1302-report-descriptor.bin').write_bytes(bytes(372))
+        (generated / 'steam-s3-1302-report-descriptor.rs').write_text('[0]\n')
         with self.assertRaisesRegex(ValueError, 'stale generated fixture'):
             MODULE.check(self.root)
 

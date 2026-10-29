@@ -152,7 +152,9 @@ def check(root, write=False, verify_remote=False):
             if hashlib.sha256(raw).hexdigest() != (
                     '315a037c849ef9510d222ae520bb18c1b72552d26eb116c91b0750901a5c51fd'):
                 raise ValueError('physical descriptor raw hash mismatch: ' + name)
-            outputs[name + '.bin'] = raw
+            outputs[name + '.rs'] = ('[\n' + ''.join(
+                '    ' + ', '.join(f'0x{byte:02x}' for byte in raw[index:index + 16]) + ',\n'
+                for index in range(0, len(raw), 16)) + ']\n').encode()
         inputs[record_path] = hashlib.sha256(record_bytes).hexdigest()
         inputs[record['path']] = record['sha256']
         outputs[name + extension] = data

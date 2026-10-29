@@ -26,8 +26,8 @@ Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
 - **14a complete:** family/state metadata and the exact wired `28de:1302`
   descriptor are adopted. The generator verifies the 372-byte raw SHA-256
   `315a037c849ef9510d222ae520bb18c1b72552d26eb116c91b0750901a5c51fd`,
-  imports the public hex fixture and writes an identical binary for compile-time
-  inclusion. Rust tests bind those bytes to the hex fixture and parse every
+  imports the public hex fixture and writes a text Rust byte array for compile-time
+  inclusion (the repository forbids binary artifacts). Rust tests bind those bytes to the hex fixture and parse every
   declared report ID/length. No descriptor item is edited, reordered or synthesized.
 - **14a supporting API approved:** [owner decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6492166698)
   permits `SteamController2026State`, `SteamController2026Button`,

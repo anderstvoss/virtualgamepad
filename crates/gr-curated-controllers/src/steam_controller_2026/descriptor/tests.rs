@@ -40,7 +40,7 @@ pub(in crate::steam_controller_2026) fn declared_reports() -> BTreeMap<(u8, u8),
 #[test]
 fn compiled_bytes_match_the_exact_imported_physical_fixture() {
     // Raw SHA-256 is independently enforced by the fixture generator and Python
-    // regression. This equality binds that hashed binary to compiled bytes.
+    // regression. This equality binds that hashed data to compiled bytes.
     let hex = include_str!(
         "../../../../../tests/fixtures/protocol-research/steam-s3-1302-report-descriptor.hex"
     );
