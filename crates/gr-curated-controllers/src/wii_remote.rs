@@ -40,8 +40,8 @@ pub struct WiiRemoteCreationOptions {
     /// Plus-only compat: use external-style inactive MP identity for Cemu activation.
     /// Default false; Original always retains its external identity.
     pub motionplus_inactive_id_external_style: bool,
-    /// Compat: re-attach status edge on activation or mode switch with a child present.
-    /// Default true; activation fidelity awaits wii-gap-mpstatus research.
+    /// Compat: re-attach status edge on activation from inactive with a child present.
+    /// Default true; physical activation fidelity remains unmeasured.
     pub motionplus_activation_reattach_status: bool,
 }
 impl Default for WiiRemoteCreationOptions {

@@ -109,15 +109,38 @@ fn active_mode_switch_and_stop_keep_status_pair_atomic() {
                 enabled,
             );
             write(&mut p, 0x53, 0xfe, 5);
-            statuses(
-                &write(&mut p, 0x52, 0xfe, 7),
-                if enabled { &[0, 2] } else { &[2] },
-            );
+            // An already-active selector never creates a compat detect edge.
+            statuses(&write(&mut p, 0x52, 0xfe, 7), &[2]);
             assert!(tick(&mut p).is_empty());
             send(&mut p, 0x12, &[0, 0x37]);
             tick(&mut p);
-            let r = request(0x52, 0xfe, 5);
+            for _ in 0..MAX_PENDING - 2 {
+                send(&mut p, 0x15, &[0]);
+            }
+            // Active switches need only the existing ACK and single status.
+            let switch = request(0x52, 0xfe, 5);
+            assert_eq!(p.request(&switch, 1).0, Reply::Set(Ok(())));
+            assert_eq!(p.pending.len(), MAX_PENDING);
+            assert_eq!(p.memory.mp_mode, Some(5));
+            let queued = tick(&mut p);
+            statuses(&queued[queued.len() - 2..], &[2]);
+            send(&mut p, 0x12, &[0, 0x37]);
+            tick(&mut p);
+            for _ in 0..MAX_PENDING - 2 {
+                send(&mut p, 0x15, &[0]);
+            }
+            // Deactivation still reserves all three replies atomically.
+            let r = request(0x52, 0xf0, 0x55);
+            assert_eq!(p.request(&r, 1).0, Reply::Set(Err(ReplyError::Busy)));
+            assert_eq!(p.memory.mp_mode, Some(5));
+            assert!(p.reporting == Reporting::Running);
+            assert_eq!(p.pending.len(), MAX_PENDING - 2);
+            p.pending.pop_front();
             assert_eq!(p.request(&r, 1).0, Reply::Set(Ok(())));
+            assert_eq!(p.pending.len(), MAX_PENDING);
+            assert_eq!(p.memory.mp_mode, None);
+            let queued = p.pending.iter().cloned().collect::<Vec<_>>();
+            statuses(&queued[queued.len() - 3..], &[0, 2]);
             p.lifecycle(Lifecycle::Stop, 1);
             p.lifecycle(Lifecycle::Stop, 1);
             assert!(p.pending.is_empty());

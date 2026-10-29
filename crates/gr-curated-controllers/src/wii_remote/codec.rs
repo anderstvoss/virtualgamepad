@@ -310,10 +310,11 @@ impl WiiProtocol {
             && p[1] >> 1 == 0x52
             && p[4] == 1
             && ((p[3] == 0xf0 && p[5] == 0x55) || (p[3] == 0xfe && !matches!(p[5], 4 | 5 | 7)));
-        // Compat activation edge: W9f stalled without a status-bit transition.
+        // Compat activation from inactive: W9f stalled without a status-bit edge.
         // wii-gap-wiibrew-motionplus-deactivation documents this pair only for
-        // deactivation. Activation fidelity awaits wii-gap-mpstatus research.
+        // deactivation. Physical activation fidelity remains unmeasured.
         let activation_reattach = id == 0x16
+            && self.memory.mp_mode.is_none()
             && self.memory.options.motionplus_activation_reattach_status
             && self.memory.present(&self.state)
             && {
