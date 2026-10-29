@@ -769,12 +769,12 @@ test pins the unchanged behavior; no new faithful status-bit claim follows.
 
 The approved supporting API snapshot deliberately adds the creation-option
 field; the ordinary root API stays unchanged. Source pin: research main
-b4107e7 (225 Wii-prefixed claims), including W9f #62, Plus P1 #63, W9g #66
-and activation-status source review #65. Kernel-
-bound Plus qualification is recorded separately as wii-p1-* in research PR #63;
-these live records are not adopted by the source-only Plus acceptance rows. Unbound
-Plus passthrough is out of scope until W9f passes; #258 gates release use of
-the special-driver window. Physical captures remain deferred under #52.
+14243caabb002795b341fdac2ae63cb21eec26e5 (230 Wii-prefixed claims), including W9f #62, Plus P1 #63, W9g #66
+and activation-status source review #65, plus W9h #71. Earlier kernel-bound
+Plus qualification is recorded separately as wii-p1-* in research PR #63.
+The W9h acceptance rows below adopt independent bounded Plus results; none
+is inherited from Original. #258 gates release use of the special-driver
+window. Physical captures remain deferred under #52.
 
 
 ### Activation re-attach status compatibility (W9g)
@@ -836,7 +836,7 @@ The native 2503 source names signed X/Y inputs; a corrected fresh profile was
 rerun and is the sole accepted stick result. Original mode 05 exercises and requires the F6/F7 mirror and re-attach
 option on this path. The 0x40 copy remained on in all arms; its necessity was
 not isolated, so its acceptance cell remains unchanged. Classic mode 07 and
-Plus remain source/synthetic only. Corrected-run buttons are not separately qualified. Prior bound-kernel
+Plus have separate W9h qualification below; none is inherited from this W9g run. Corrected-run buttons are not separately qualified. Prior bound-kernel
 Dolphin contention remains a recorded limitation. Cemu gyro remains out of scope.
 
 The manifest retains its software `source-evidence` classification and states
@@ -844,3 +844,49 @@ the bounded pass and exact preconditions; a virtual run is not physical evidence
 Activation remains compat with the merged #65 source provenance above; #258 still
 gates release use. No binding-mode creation option or other API/model change is
 introduced by adoption. All consumers and devices were closed and removal verified.
+
+### W9h: copy isolation, Classic and independent Plus acceptance
+
+W9h research #71 records a kernel-bound Tr MP+Nunchuk gate and four generic
+native Dolphin 2503 arms, all with imported synthetic caller calibration.
+The kernel gate changes evdev/xwiimote gyro and has no A4/A6 F0 re-initialisation
+in the first 18 seconds after mapping; the first writes occur at reader-close
+cleanup after 22.2 seconds. This does not establish physical timing or calibration.
+
+Original Nunchuk copy-off keeps re-attach and F6 on, reaches MP calibration,
+then receives error 7 at child 0x40/16. Decoded gyro and Nunchuk buttons still
+respond, but the correctly bound stick stays centered. Compared with the W9g
+copied-block pass under the same imports, this isolates copy necessity for the
+decoded Original Nunchuk stick on this path. Copy is not shown necessary for
+gyro, all child controls, Classic or Plus. The copy cell now records only that
+scoped requirement; active MP and child calibration banks remain distinct.
+
+Original Classic mode 07 passes changing decoded gyro, both sticks and selected
+A/B button transitions. The F6 and both calibration reads succeed after mode
+reselection. Caller Classic data derives from pinned Dolphin emulator constants
+and checksums, not invented retail data. Other buttons/triggers are not separately
+qualified; there is no Plus Classic pass or consumer workaround.
+
+Tr MP+Nunchuk has independent decoded gyro/stick passes with the default built-in
+inactive ID policy and an external-style ID control. Both styles pass, so the
+external-style option is not shown necessary for native Dolphin. An initial
+Plus run had insufficient saved stick sampling; it is retained as partial and
+excluded from complete stick acceptance. A repeat in a fresh consumer profile
+on the same device captured opposite decoded stick positions with dense owned-window sampling and separate gyro
+samples. No Original acceptance is inherited by Plus.
+
+These bounded passes require the recorded configuration: **hid-wiimote not bound
+(test/dev host setup, #258)**, **activation re-attach compat on**, **F6 mirror on**,
+with calibration copy on and imported synthetic blocks. Copy necessity is isolated
+only for Original Nunchuk stick; Classic/Plus shim necessity is not independently
+isolated. Exact caller blocks match the successful reads. Raw post-map frames
+and full-consumer rate denominators are transport observations, not decoded,
+physical-rate or timing oracles. No radio, game, release or whole-controller
+acceptance follows. All consumers and virtual devices were closed; node removal
+was verified. No model, API, descriptor or runtime behavior changes are adopted.
+
+W9h Plus scope: the fully sampled default-option repeat used the same virtual
+device after mode 05 deactivation, with pre-map inactive FE mode byte 05. The
+preliminary fresh-device run had byte 00 but insufficient decoded stick sampling.
+Fresh mode 00 decoded-stick acceptance and a controlled fresh-device ID-style
+comparison remain unqualified; the external-style arm was a separate fresh device.
