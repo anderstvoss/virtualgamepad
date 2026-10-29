@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.xbox360"
-research_revision = "abffb5db67032d3661436a209d1310da89ca0f17"
+research_revision = "83724ef213809f683814eb84c3b2d9fc937c70f4"
 realizations = ["linux.uinput", "linux.uhid.usb", "linux.dummy_hcd.usb-hid", "linux.usbip.usb-audio"]
 refused_operations = []
 persistent_resources = []
@@ -8,24 +8,24 @@ persistent_resources = []
 [[functions]]
 id = "buttons"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/buttons", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/buttons", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/buttons", evidence = ["x360-vg-exp0011-evdev-mapping"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/buttons", evidence = ["x360-vg-exp0016-uhid-individual-correction", "x360-vg-exp0017-individual-uhid"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/buttons", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/buttons", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
 [[functions]]
 id = "sticks"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/sticks", evidence = ["x360-vg-exp0011-evdev-mapping"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/sticks", evidence = ["x360-vg-exp0009-standard-hid-controls", "x360-vg-exp0017-individual-uhid"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/sticks", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
 [[functions]]
 id = "triggers"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/triggers", evidence = ["x360-vg-exp0011-evdev-mapping"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/triggers", evidence = ["x360-vg-exp0009-standard-hid-controls", "x360-vg-exp0017-individual-uhid"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/triggers", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
@@ -40,15 +40,15 @@ id = "identity"
 [[functions]]
 id = "lifecycle"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/lifecycle", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/lifecycle", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/lifecycle", evidence = ["x360-vg-exp0010-evdev-ff"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/lifecycle", evidence = ["x360-vg-exp0009-standard-hid-controls", "x360-vg-exp0017-individual-uhid"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/lifecycle", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/lifecycle", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
 [[functions]]
 id = "rumble"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = ["x360-vg-exp0010-evdev-ff", "x360-vg-exp0011-evdev-mapping"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
