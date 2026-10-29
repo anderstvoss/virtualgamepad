@@ -1,5 +1,7 @@
 use super::*;
-use crate::steam_controller_2026::{Button, Motion, Pad};
+use crate::steam_controller_2026::{
+    SteamController2026Button as Button, SteamMotionSample as Motion, SteamTrackpadState as Pad,
+};
 use gr_hid::{HostEvent, Limits, Request, RequestId, Runtime, Transport};
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
@@ -829,5 +831,81 @@ fn raw_input_and_battery_fields_keep_distinct_native_offsets() {
         [
             0x43, 2, 3, 0x34, 0x12, 0x45, 0x23, 0x56, 0x34, 0x67, 0x45, 0x78, 0x56, 0x89, 0x67
         ]
+    );
+}
+
+#[test]
+fn unknown_setting_rejects_atomically_and_cannot_reuse_an_optional_get_reply() {
+    let mut protocol = SteamProtocol::default();
+    protocol.request(&set("feature-lizard-disable-sdl"), 0);
+    protocol.request(&set("feature-serial-get"), 1);
+    let before = protocol.outputs.clone();
+    // Valid key 9 would change retained lizard intent to true. The unknown
+    // second key must reject the whole request, not acknowledge partial work.
+    let mut wire = fixture("feature-lizard-disable-kernel");
+    wire[4] = 1;
+    wire[6] = 0xfe;
+    let setting = RequestKind::Set(Report::from_wire(ReportType::Feature, true, &wire).unwrap());
+    assert_eq!(
+        protocol.request(&setting, 2),
+        (Reply::Set(Err(ReplyError::Unsupported)), None)
+    );
+    assert_eq!(protocol.outputs, before);
+    assert_eq!(
+        protocol.request(&get(), 3),
+        (Reply::Get(Err(ReplyError::Unsupported)), None)
+    );
+    assert_eq!(
+        protocol.request(&set("feature-imu-on"), 4),
+        (Reply::Set(Ok(())), None)
+    );
+    assert_eq!(protocol.outputs.imu, Some(0x18));
+    assert_eq!(protocol.outputs.lizard, Some(false));
+}
+
+#[test]
+fn supporting_state_preserves_consumer_menu_view_order_and_independent_native_inputs() {
+    let mut state = State::default();
+    state.pads[0] = Pad {
+        position: [i16::MIN, i16::MAX],
+        pressure: u16::MAX,
+        touch: true,
+        click: true,
+    };
+    state.pads[1].position = [123, -456];
+    state.sticks = [[-100, 200], [300, -400]];
+    state.triggers = [5, 6];
+    state.stick_touch = [true, false];
+    state.grip_touch = [false, true];
+    state.motion = Motion {
+        timestamp_us: 1234,
+        accelerometer: [1, 2, 3],
+        gyroscope: [4, 5, 6],
+        quaternion: [7, 8, 9, 10],
+    };
+    let analog = state.clone();
+    // sc2-july historical encoder is not evidence: retain consumer Menu bit 6
+    // and View bit 14 from steam-c6-input-buttons.
+    for (button, bytes) in [
+        (Button::Menu, [0x40, 0, 0, 0]),
+        (Button::View, [0, 0x40, 0, 0]),
+    ] {
+        state.set_button(button, true);
+        assert!(state.pressed(button));
+        let wire = input(&state, 0, Format::Primary42).wire();
+        let base = input(&analog, 0, Format::Primary42).wire();
+        for index in 0..4 {
+            assert_eq!(wire[2 + index], base[2 + index] | bytes[index]);
+        }
+        assert_eq!(&wire[6..], &base[6..]);
+        state.set_button(button, false);
+        assert!(!state.pressed(button));
+        assert_eq!(state, analog);
+    }
+    state.neutralize();
+    assert_eq!(state, State::default());
+    assert_eq!(
+        input(&state, 0, Format::Primary42).wire(),
+        fixture("neutral-42")
     );
 }

@@ -1,12 +1,13 @@
 //! Compat only: steam-c6-input-42/45/47, steam-c6-feature-kernel-exchange,
 //! steam-c6-output-80-81 and steam-c6-output-82-85. No device ACKs or timers.
-use super::{Battery, State};
+use super::{Battery, SteamController2026State as State};
 use gr_hid::{
     Command, Delivery, Error, Lifecycle, Protocol, Reply, ReplyError, Report, ReportType,
     RequestKind,
 };
 
 // steam-c6-input-42/45/47: lengths INCLUDE the numbered report byte.
+// sc2-july-wired-input-42: 0x42 length is physical (historical capture, raw not revalidated).
 #[derive(Debug, Clone, Copy)]
 enum Format {
     Primary42,
@@ -144,6 +145,8 @@ impl Haptic {
         }
         let b = report.payload();
         // steam-c6-output-80-81 and steam-c6-output-82-85: payload sizes exclude ID.
+        // sc2-july-wired-descriptor-report-shapes: physical (historical capture,
+        // raw not revalidated) BODY lengths only; semantics remain compat.
         Ok(match (report.id(), b.len()) {
             (Some(0x80), 9) => Self::Rumble {
                 kind: b[0],
@@ -250,6 +253,9 @@ impl SteamProtocol {
                         9 => return Err(ReplyError::Invalid),
                         48 => next.imu = Some(value),
                         71 => next.watchdog = Some(value),
+                        // Compat policy: reject the whole SET atomically rather than
+                        // silently accepting unmodelled Steam-client semantics. The
+                        // planned steam-s3-steam-client-settings run will test this.
                         _ => return Err(ReplyError::Unsupported),
                     }
                 }
@@ -259,6 +265,7 @@ impl SteamProtocol {
                 // steam-c6-feature-kernel-exchange / reply-attributes-short:
                 // reject SET, and provide a deliberately short exchange reply
                 // if a host still GETs it. Kernel detects -EPROTO, not stale data.
+                // This fits the kernel error path; it is not device behaviour.
                 self.query = Some(b[0]);
                 return Err(ReplyError::Unsupported);
             }

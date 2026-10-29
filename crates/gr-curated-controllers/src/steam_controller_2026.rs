@@ -1,13 +1,35 @@
-//! Private S3 groundwork. No registry entry, descriptor, provider or public API
-//! is advertised until the descriptor and API gates on #159 are cleared.
-//! All served behaviour is compat, grounded in consumer-source records rather
-//! than physical readback. See `docs/STEAM_CONTROLLER_2026.md`.
+//! Steam Controller 2026 native supporting state (S3 steps 14a/14b).
+//!
+//! No registry entry, descriptor, provider or controller creation path is
+//! advertised. Field semantics remain compat consumer-source interpretations;
+//! historical physical report lengths do not validate field meanings.
+//! See `docs/STEAM_CONTROLLER_2026.md`.
+//!
+//! ```
+//! use gr_curated_controllers::steam_controller_2026::{
+//!     SteamController2026Button, SteamController2026State,
+//!     SteamMotionSample, SteamTrackpadState,
+//! };
+//! let mut state = SteamController2026State::default();
+//! state.set_button(SteamController2026Button::Menu, true);
+//! state.pads[0] = SteamTrackpadState {
+//!     position: [-100, 200], pressure: 123, touch: true, click: false,
+//! };
+//! state.motion = SteamMotionSample { gyroscope: [10, -20, 30], ..Default::default() };
+//! assert!(state.pressed(SteamController2026Button::Menu));
+//! state.neutralize();
+//! assert_eq!(state, SteamController2026State::default());
+//! ```
 
+// Protocol integration still waits for the physical descriptor (14a).
+#[allow(dead_code)]
 mod codec;
 
-// steam-c6-input-buttons: native button bit order, excluding capacitive bits.
-#[derive(Debug, Clone, Copy)]
-enum Button {
+/// Native digital controls; capacitive touch and pad clicks are separate state.
+/// Record: `steam-c6-input-buttons` (consumer order, not the historical encoder).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SteamController2026Button {
     A,
     B,
     X,
@@ -31,7 +53,7 @@ enum Button {
     RightTrigger,
     LeftTrigger,
 }
-impl Button {
+impl SteamController2026Button {
     const fn bit(self) -> u32 {
         match self {
             Self::A => 0,
@@ -62,32 +84,60 @@ impl Button {
 
 // steam-c6-input-scaling: keep raw native s16 coordinates/u16 pressure, with no
 // SDL transforms, invented calibration or clipping to consumer normalized units.
+/// One trackpad in native units. Record: `steam-c6-input-scaling`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct Pad {
-    position: [i16; 2],
-    pressure: u16,
-    touch: bool,
-    click: bool,
+pub struct SteamTrackpadState {
+    /// Native signed X/Y, before consumer scaling or Y inversion.
+    pub position: [i16; 2],
+    /// Native unsigned pressure; no physical maximum/calibration is inferred.
+    pub pressure: u16,
+    /// Capacitive contact, independent of coordinates and pressure.
+    pub touch: bool,
+    /// Digital pad click, independent of contact and pressure.
+    pub click: bool,
 }
+/// Native IMU sample. Records: `steam-c6-input-42`, `steam-c6-input-scaling`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct Motion {
-    timestamp_us: u32,
-    accelerometer: [i16; 3],
-    gyroscope: [i16; 3],
-    quaternion: [i16; 4],
+pub struct SteamMotionSample {
+    /// Native 0x42/0x45 timestamp interpreted as microseconds by SDL.
+    pub timestamp_us: u32,
+    /// Raw accelerometer X/Y/Z; no factory calibration or one-g default.
+    pub accelerometer: [i16; 3],
+    /// Raw gyroscope X/Y/Z, before consumer axis reordering/scaling.
+    pub gyroscope: [i16; 3],
+    /// Raw quaternion W/X/Y/Z tail in 0x42; zero is not an orientation claim.
+    pub quaternion: [i16; 4],
 }
+/// Application-owned native inputs; default is raw zero with no calibration claim.
+/// Records: `steam-c6-input-buttons`, `steam-c6-input-scaling`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct State {
+pub struct SteamController2026State {
     buttons: u32,
-    sticks: [[i16; 2]; 2],
-    triggers: [i16; 2],
-    pads: [Pad; 2],
-    stick_touch: [bool; 2],
-    grip_touch: [bool; 2],
-    motion: Motion,
+    /// Left/right sticks, each native signed X/Y.
+    pub sticks: [[i16; 2]; 2],
+    /// Left/right analog triggers as signed raw consumer fields.
+    pub triggers: [i16; 2],
+    /// Left/right trackpads, with independent touch, click and pressure.
+    pub pads: [SteamTrackpadState; 2],
+    /// Left/right capacitive stick contact.
+    pub stick_touch: [bool; 2],
+    /// Left/right capacitive grip contact, separate from L4/L5/R4/R5 presses.
+    pub grip_touch: [bool; 2],
+    /// Native motion and timestamp, without consumer transforms.
+    pub motion: SteamMotionSample,
 }
-impl State {
-    fn set_button(&mut self, button: Button, pressed: bool) {
+impl SteamController2026State {
+    /// Clear every native input, touch flag, pressure and timestamp to raw zero.
+    pub fn neutralize(&mut self) {
+        *self = Self::default();
+    }
+    /// Whether a native digital control is pressed.
+    #[must_use]
+    pub const fn pressed(&self, button: SteamController2026Button) -> bool {
+        self.buttons & (1 << button.bit()) != 0
+    }
+    /// Set one digital control without changing touch, pressure or analog state.
+    pub fn set_button(&mut self, button: SteamController2026Button, pressed: bool) {
         let bit = 1 << button.bit();
         self.buttons = (self.buttons & !bit) | if pressed { bit } else { 0 };
     }
@@ -113,6 +163,7 @@ impl State {
 
 // steam-c6-battery-43: optional caller-supplied raw status; no manufactured
 // voltage, charge state or report cadence is emitted at creation.
+#[allow(dead_code)] // Optional private encoder; no battery API or creation path yet.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct Battery {
     state: u8,

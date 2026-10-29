@@ -31,9 +31,7 @@
 pub mod audio;
 mod common;
 mod sony_evdev;
-// S3 groundwork remains private until descriptor and supporting API approval.
-#[allow(dead_code)]
-mod steam_controller_2026;
+pub mod steam_controller_2026;
 pub use common::WorkerBridge;
 pub use dualsense::create_dualsense_usb_worker;
 pub use dualshock4::create_dualshock4_usb_worker;
