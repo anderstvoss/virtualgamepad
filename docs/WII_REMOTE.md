@@ -731,3 +731,46 @@ These reduced results are adopted from research PR #50, merged as
 The W9 MP-only control used mode 05 without a child; the earlier W8 mode 04
 observation remains separate evidence. No F6 or child-copy gate is required in
 that MP-only state.
+
+
+## Wii Remote Plus P1 creation policy
+
+`WiiRemoteRevision::Tr` is shown as **Wii Remote Plus** under Advanced options;
+the enum and internal -TR name remain unchanged. The family ID remains
+`virtualgamepad.wii-remote`, with Plus-scoped rows in its acceptance manifest.
+EarlyIntegratedPlus remains refused. No Original acceptance is inherited.
+
+For an inactive Plus, A600FA/6 defaults to `00 00 A4 20 00 05`. The suffix is
+faithful-class source evidence from two independent consumers, recorded in
+`wii-gap-plustrace-wiiuse-builtin-id-and-classic-gap` and
+`wii-gap-plustrace-cemu-builtin-identity-nonactivation`; it is not physically
+measured. The two leading zero bytes remain the existing unknown bytes.
+The Plus-only `motionplus_inactive_id_external_style` creation option is off
+by default. When enabled it serves `00 00 A6 20 00 05` for pinned Cemu's
+activation check. The GUI labels it compat, shows it only for Plus and disables
+it for uinput. Cemu gyro export remains out of scope. Original ignores the
+option and retains its external MP identity and existing deactivation policy.
+
+After F0 deactivation, both Plus ID styles retain the previous mode byte,
+following `wii-gap-wiibrew-motionplus-deactivation` for the external model.
+The integrated Plus post-deactivation byte is unknown; this reuse is a model
+policy, not physical evidence. Fresh inactive IDs still have mode byte 00.
+Active IDs remain `A4 20 <mode> 05` in modes
+04/05/07 for both revisions. FE/1 and FE/2 are bounded identity slices; invalid
+F9/FF straddles fail as whole reads. F6, 0x40 and fixed F7 0x02 retain the same
+active passthrough scope, caller imports and independent creation switches;
+0x50 remains error 7. No calibration defaults or descriptor changes are added.
+
+The physical status extension bit for a bare Plus across activation remains
+unknown in the pinned records. Existing software behavior is retained: clear
+while inactive, set when MP is mapped even without a child. Built-in presence
+is not a physical assertion about that downstream status bit. A deterministic
+test pins the unchanged behavior; no new faithful status-bit claim follows.
+
+The approved supporting API snapshot deliberately adds the creation-option
+field; the ordinary root API stays unchanged. Source pin: research #56,
+774b004 (203 Wii-prefixed claims), including the prior #57 boundary. Kernel-
+bound Plus qualification is recorded separately as wii-p1-* in research PR #63;
+these unmerged live records are not added to the source-pinned acceptance rows. Unbound
+Plus passthrough is out of scope until W9f passes; #258 gates release use of
+the special-driver window. Physical captures remain deferred under #52.
