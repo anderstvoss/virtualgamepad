@@ -34,16 +34,20 @@ Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
   `SteamTrackpadState` and `SteamMotionSample` in the supporting module.
   A [follow-up owner decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6492492101)
   approves its separate supporting snapshot/check, mirroring Wii's. The checker
-  records the native types, supporting family metadata constants, and state
+  records the four native types, the supporting ID constant, and state
   declarations, fields, variants, methods and traits;
   changes fail until explicitly reviewed and refreshed with `--write` using
   fresh documentation builds. `--doc-root` infers the Steam supporting docs next
   to the root docs; `--steam-doc-root` can select them explicitly. Controller,
   surface and output types and a controller constructor remain for their authorized step.
   There are no root exports, creation-options type or broker changes. This
-  scope now includes `STEAM_CONTROLLER_2026`, `STEAM_CONTROLLER_2026_ID` and
-  `SteamController2026State::input_topology`; these supporting additions are
-  named for review and included in the refreshed Steam snapshot. Root and Wii
+  [owner decision on the follow-up](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6502745647)
+  keeps exactly these public items: `SteamController2026State`,
+  `SteamController2026Button`, `SteamTrackpadState`, `SteamMotionSample` and
+  `STEAM_CONTROLLER_2026_ID`, with the state methods including
+  `SteamController2026State::input_topology()`. The `FamilySpec` constant stays
+  internal wiring in `gr_controller_wire::registry::STEAM_CONTROLLER_2026`;
+  the supporting module does not re-export it. Root and Wii
   snapshots remain byte-identical. For a Steam-only `--write` refresh, verify
   that the root and Wii snapshot diffs are empty before committing.
 - **14c/14d and C6 checkpoint PR:** held for step 16 on the owner's kernel
