@@ -31,6 +31,7 @@
 pub mod audio;
 mod common;
 mod sony_evdev;
+pub mod steam_controller_2026;
 pub use common::WorkerBridge;
 pub use dualsense::create_dualsense_usb_worker;
 pub use dualshock4::create_dualshock4_usb_worker;

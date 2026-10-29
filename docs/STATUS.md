@@ -37,6 +37,14 @@ an API freeze do not promote a cell.
 
 ## Next release
 
+Steam S3 exposes the approved native supporting state API, with private
+report/feature/haptic handling and deterministic fixture tests. July capture
+notes corroborate report lengths only; field meanings remain compat. The family
+is not registered or constructible; step 14a waits for the physical descriptor
+on #159. Root and Wii API snapshots remain unchanged.
+Steps 14c/14d and the C6 checkpoint remain gated by step 16 on the owner's
+kernel 7.3+ host. See [Steam Controller 2026](STEAM_CONTROLLER_2026.md).
+
 The next release targets validated controller creation per controller, with
 per-controller acceptance issues and new Wii Remote, Steam Controller (2026)
 and Xbox Series families. Work is sequenced to land the compiled controller
