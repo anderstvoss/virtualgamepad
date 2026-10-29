@@ -121,6 +121,7 @@ fn addressed_device_wins_in_all_modes_and_mp_reads_are_chunked() {
             motionplus_passthrough_id_mirror: false,
             motionplus_passthrough_calibration_copy: false,
             motionplus_inactive_id_external_style: false,
+            motionplus_activation_reattach_status: true,
         };
         attach(&mut p, ext, true);
         init(&mut p);
@@ -203,72 +204,76 @@ fn compat_switches_are_independent_and_f7_never_claims_challenge_readiness() {
             motionplus_passthrough_id_mirror: true,
             motionplus_passthrough_calibration_copy: true,
             motionplus_inactive_id_external_style: false,
+            motionplus_activation_reattach_status: true,
         }
     );
     let (_, n, c) = super::super::calibration::synthetic_blocks();
-    for mirror in [false, true] {
-        for copy in [false, true] {
-            for (ext, mode, id, block) in [
-                (
-                    WiiExtension::Nunchuk(WiiNunchukState::default()),
-                    5,
-                    [0, 2, 0, 0],
-                    n,
-                ),
-                (
-                    WiiExtension::Classic(WiiClassicState::default()),
-                    7,
-                    [1, 2, 0, 1],
-                    c,
-                ),
-            ] {
-                let mut p = imported();
-                p.memory.options = WiiRemoteCreationOptions {
-                    motionplus_passthrough_id_mirror: mirror,
-                    motionplus_passthrough_calibration_copy: copy,
-                    motionplus_inactive_id_external_style: false,
-                };
-                attach(&mut p, ext, true);
-                init(&mut p);
-                // Inactive MP and active mode 04 never expose the compat windows.
-                error(&mut p, 0x52, 0xf6, 4);
-                error(&mut p, 0x52, 0x40, 16);
-                write(&mut p, 0x53, 0xfe, 4, 0);
-                error(&mut p, 0x52, 0xf7, 1);
-                error(&mut p, 0x52, 0x40, 16);
-                write(&mut p, 0x52, 0xfe, mode, 0);
-                if mirror {
-                    assert_eq!(&read(&mut p, 0x52, 0xf6, 4)[5..9], &id);
-                    assert_eq!(read(&mut p, 0x52, 0xf7, 1)[5], 0x02);
-                    // Repeated polls/reads never promote the fixed non-ready byte.
-                    for _ in 0..3 {
-                        assert_eq!(read(&mut p, 0x52, 0xf7, 1)[5], 0x02);
-                    }
-                } else {
-                    error(&mut p, 0x52, 0xf6, 4);
-                    error(&mut p, 0x52, 0xf7, 1);
-                }
-                if copy {
-                    assert_eq!(&read(&mut p, 0x52, 0x40, 16)[5..], &block);
-                } else {
-                    error(&mut p, 0x52, 0x40, 16);
-                }
-                // F5 is unmodelled. Straddles reject whole; no invented prefix/F7 leak.
-                for (offset, size) in [
-                    (0xf5, 6),
-                    (0xf6, 5),
-                    (0xf9, 2),
-                    (0x3f, 18),
-                    (0x40, 17),
-                    (0x4f, 2),
-                    (0x50, 16),
+    for reattach in [false, true] {
+        for mirror in [false, true] {
+            for copy in [false, true] {
+                for (ext, mode, id, block) in [
+                    (
+                        WiiExtension::Nunchuk(WiiNunchukState::default()),
+                        5,
+                        [0, 2, 0, 0],
+                        n,
+                    ),
+                    (
+                        WiiExtension::Classic(WiiClassicState::default()),
+                        7,
+                        [1, 2, 0, 1],
+                        c,
+                    ),
                 ] {
-                    error(&mut p, 0x52, offset, size);
+                    let mut p = imported();
+                    p.memory.options = WiiRemoteCreationOptions {
+                        motionplus_passthrough_id_mirror: mirror,
+                        motionplus_passthrough_calibration_copy: copy,
+                        motionplus_inactive_id_external_style: false,
+                        motionplus_activation_reattach_status: reattach,
+                    };
+                    attach(&mut p, ext, true);
+                    init(&mut p);
+                    // Inactive MP and active mode 04 never expose the compat windows.
+                    error(&mut p, 0x52, 0xf6, 4);
+                    error(&mut p, 0x52, 0x40, 16);
+                    write(&mut p, 0x53, 0xfe, 4, 0);
+                    error(&mut p, 0x52, 0xf7, 1);
+                    error(&mut p, 0x52, 0x40, 16);
+                    write(&mut p, 0x52, 0xfe, mode, 0);
+                    if mirror {
+                        assert_eq!(&read(&mut p, 0x52, 0xf6, 4)[5..9], &id);
+                        assert_eq!(read(&mut p, 0x52, 0xf7, 1)[5], 0x02);
+                        // Repeated polls/reads never promote the fixed non-ready byte.
+                        for _ in 0..3 {
+                            assert_eq!(read(&mut p, 0x52, 0xf7, 1)[5], 0x02);
+                        }
+                    } else {
+                        error(&mut p, 0x52, 0xf6, 4);
+                        error(&mut p, 0x52, 0xf7, 1);
+                    }
+                    if copy {
+                        assert_eq!(&read(&mut p, 0x52, 0x40, 16)[5..], &block);
+                    } else {
+                        error(&mut p, 0x52, 0x40, 16);
+                    }
+                    // F5 is unmodelled. Straddles reject whole; no invented prefix/F7 leak.
+                    for (offset, size) in [
+                        (0xf5, 6),
+                        (0xf6, 5),
+                        (0xf9, 2),
+                        (0x3f, 18),
+                        (0x40, 17),
+                        (0x4f, 2),
+                        (0x50, 16),
+                    ] {
+                        error(&mut p, 0x52, offset, size);
+                    }
+                    assert_eq!(
+                        &read(&mut p, 0x52, 0xfa, 6)[5..11],
+                        &[0, 0, 0xa4, 0x20, mode, 5]
+                    );
                 }
-                assert_eq!(
-                    &read(&mut p, 0x52, 0xfa, 6)[5..11],
-                    &[0, 0, 0xa4, 0x20, mode, 5]
-                );
             }
         }
     }

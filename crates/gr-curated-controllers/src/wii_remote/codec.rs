@@ -310,9 +310,21 @@ impl WiiProtocol {
             && p[1] >> 1 == 0x52
             && p[4] == 1
             && ((p[3] == 0xf0 && p[5] == 0x55) || (p[3] == 0xfe && !matches!(p[5], 4 | 5 | 7)));
+        // Compat activation from inactive: W9f stalled without a status-bit edge.
+        // wii-gap-wiibrew-motionplus-deactivation documents this pair only for
+        // deactivation. Physical activation fidelity remains unmeasured.
+        let activation_reattach = id == 0x16
+            && self.memory.mp_mode.is_none()
+            && self.memory.options.motionplus_activation_reattach_status
+            && self.memory.present(&self.state)
+            && {
+                let mut candidate = self.memory.clone();
+                candidate.write(&self.state, p);
+                candidate.mp_mode.is_some() && candidate.mp_mode != self.memory.mp_mode
+            };
         // wii-gap-wiibrew-motionplus-deactivation: ACK plus unplug/current-port
         // statuses must all fit before any protocol or retained state changes.
-        let replies = if deactivating {
+        let replies = if deactivating || activation_reattach {
             3
         } else if id == 0x16 {
             2
@@ -359,7 +371,7 @@ impl WiiProtocol {
                 if before != self.memory.mp_mode {
                     self.reporting = Reporting::AwaitingMode;
                     let status = self.status();
-                    if deactivating {
+                    if deactivating || activation_reattach {
                         let mut unplugged = status.payload().to_vec();
                         unplugged[2] &= !2;
                         self.pending.push_back(input(0x20, unplugged));
@@ -561,3 +573,6 @@ mod calibration_tests;
 
 #[cfg(test)]
 mod plus_tests;
+
+#[cfg(test)]
+mod activation_tests;
