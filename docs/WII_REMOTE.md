@@ -769,10 +769,10 @@ test pins the unchanged behavior; no new faithful status-bit claim follows.
 
 The approved supporting API snapshot deliberately adds the creation-option
 field; the ordinary root API stays unchanged. Source pin: research main
-14243caabb002795b341fdac2ae63cb21eec26e5 (230 Wii-prefixed claims), including W9f #62, Plus P1 #63, W9g #66
-and activation-status source review #65, plus W9h #71. Earlier kernel-bound
+719befa86bbff044cb0cdc524d66085a4b610800 (232 Wii-prefixed claims), including W9f #62, Plus P1 #63, W9g #66
+and activation-status source review #65, plus W9h #71 and W9i #72. Earlier kernel-bound
 Plus qualification is recorded separately as wii-p1-* in research PR #63.
-The W9h acceptance rows below adopt independent bounded Plus results; none
+The W9h and W9i acceptance rows below adopt independent bounded Plus results; none
 is inherited from Original. #258 gates release use of the special-driver
 window. Physical captures remain deferred under #52.
 
@@ -888,5 +888,25 @@ was verified. No model, API, descriptor or runtime behavior changes are adopted.
 W9h Plus scope: the fully sampled default-option repeat used the same virtual
 device after mode 05 deactivation, with pre-map inactive FE mode byte 05. The
 preliminary fresh-device run had byte 00 but insufficient decoded stick sampling.
-Fresh mode 00 decoded-stick acceptance and a controlled fresh-device ID-style
-comparison remain unqualified; the external-style arm was a separate fresh device.
+That W9h repeat did not qualify fresh mode 00 decoded stick or a controlled
+fresh-device ID-style comparison. The separate W9i evidence below closes that gap.
+
+### W9i: fresh Plus mode 00 acceptance
+
+Two independent fresh Tr MP+Nunchuk devices, one default ID option and one
+external-style option, pass the same native Dolphin 2503 ladder. Neither had
+a previous consumer, activation/deactivation or host output. Each consumer
+reads A600FE/1 = 00 before its first mode 05 activation, re-sends 0x12, and
+reads F6 plus exact imported MP 0x20/32 and Nunchuk 0x40/16 calibration. Dense
+owned-window sampling captures opposite decoded stick positions; independent
+motion samples show changing gyro. Native post-map A400F0=55 and A600F0=55
+counts are zero. Post-map MP/child counts are 4483/4483 and 4483/4482 over
+180 seconds, without a guaranteed or physical rate claim.
+
+Same runtime, imports, stimulus and isolated profile setup; only ID style differs.
+Both native FE mode bytes are read back, but full inactive identities are source
+configuration. These results replace the retained-mode caveat on the two Plus
+Nunchuk cells. All W9h test/dev binding (#258), compat and synthetic-calibration
+preconditions remain; no Original inheritance, new shim necessity, whole-control,
+physical, game, radio or release qualification. No kernel rerun or runtime change.
+Both consumers and devices closed with verified HID/raw removal.
