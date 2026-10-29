@@ -310,9 +310,11 @@ impl WiiProtocol {
             && p[1] >> 1 == 0x52
             && p[4] == 1
             && ((p[3] == 0xf0 && p[5] == 0x55) || (p[3] == 0xfe && !matches!(p[5], 4 | 5 | 7)));
-        // Compat activation from inactive: W9f stalled without a status-bit edge.
-        // wii-gap-wiibrew-motionplus-deactivation documents this pair only for
-        // deactivation. Physical activation fidelity remains unmeasured.
+        // Compat activation from inactive, modeled by Dolphin's emulated detect pin:
+        // wii-gap-mpstatus-dolphin-emulator-detect-model. Active mode switches have
+        // no intrinsic pulse: wii-gap-mpstatus-dolphin-mode-and-child.
+        // wii-gap-mpstatus-wiibrew-transition-bounds does not establish a universal
+        // physical activation pair. No hardware record; the label remains compat.
         let activation_reattach = id == 0x16
             && self.memory.mp_mode.is_none()
             && self.memory.options.motionplus_activation_reattach_status

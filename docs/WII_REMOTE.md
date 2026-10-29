@@ -769,7 +769,8 @@ test pins the unchanged behavior; no new faithful status-bit claim follows.
 
 The approved supporting API snapshot deliberately adds the creation-option
 field; the ordinary root API stays unchanged. Source pin: research main
-83c026c (215 Wii-prefixed claims), including W9f #62, Plus P1 #63 and W9g #66. Kernel-
+b4107e7 (225 Wii-prefixed claims), including W9f #62, Plus P1 #63, W9g #66
+and activation-status source review #65. Kernel-
 bound Plus qualification is recorded separately as wii-p1-* in research PR #63;
 these live records are not adopted by the source-only Plus acceptance rows. Unbound
 Plus passthrough is out of scope until W9f passes; #258 gates release use of
@@ -788,16 +789,22 @@ initial MP-only activation from a clear bit still sends one status; deactivation
 keeps its existing pair. The demo exposes the switch under Advanced, labelled
 compat and disabled for uinput, which has no addressed HID status channel.
 
-This is owner-approved compatibility behavior. The pair is documented for
-**deactivation only** by `wii-gap-wiibrew-motionplus-deactivation`. W9f #62
-records the MP+Nunchuk reporting pause while its MP-only control reselects
-reporting. Neither source establishes physical activation behavior. Physical activation remains unmeasured; draft research #65 is not cited until
-it merges. F6, F7, the separate 0x20 and 0x40 banks, caller
-calibration and error 7 at 0x50 keep their existing scope. W9g #66 records an Original generic-bound decoded gyro/Nunchuk-stick pass
-with the option on, the reporting pause with it off, and the F6-off error gate.
-All arms activate from inactive, so narrowing the trigger requires no host
-rerun. These consumer results are separate from physical fidelity; #258 still
-gates release use of generic binding.
+This is owner-approved compatibility behavior. Merged research #65 supplies
+`wii-gap-mpstatus-dolphin-emulator-detect-model`: Dolphin's emulated detect pin
+models the activation pair with a downstream child. Its
+`wii-gap-mpstatus-dolphin-mode-and-child` records no intrinsic detect-pin pulse
+for an already-active mode switch, the basis for the inactive-only trigger.
+`wii-gap-mpstatus-wiibrew-transition-bounds` distinguishes documented
+deactivation and report-mode reselection from an unestablished universal
+activation pair. These are emulator/community sources, with no hardware record;
+the label remains compat and physical activation fidelity remains unmeasured.
+
+F6, F7, the separate 0x20 and 0x40 banks, caller calibration and error 7 at 0x50
+keep their existing scope. W9g #66 records an Original generic-bound decoded
+gyro/Nunchuk-stick pass with the option on, the reporting pause with it off,
+and the F6-off error gate. All arms activate from inactive, so narrowing the
+trigger requires no host rerun. These consumer results are separate from
+physical fidelity; #258 still gates release use of generic binding.
 
 
 ### W9g bounded consumer acceptance
@@ -834,6 +841,6 @@ Dolphin contention remains a recorded limitation. Cemu gyro remains out of scope
 
 The manifest retains its software `source-evidence` classification and states
 the bounded pass and exact preconditions; a virtual run is not physical evidence.
-Activation remains compat; draft research #65 is not cited, and #258 still
+Activation remains compat with the merged #65 source provenance above; #258 still
 gates release use. No binding-mode creation option or other API/model change is
 introduced by adoption. All consumers and devices were closed and removal verified.
