@@ -8,6 +8,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- CI: harden-runner now uses `audit` instead of `block` on the macOS and
+  Windows legs of the multi-OS jobs. Its pre-step ignores the step-level `if`,
+  and on Windows block mode dropped OCSP/CRL and early DNS lookups (#260).
+  Linux jobs stay in `block`.
 - CI: bump `step-security/harden-runner` to v2.22.3, which fixes block mode
   dropping allowed connections on GitHub-hosted Linux runners (the cause of
   stuck CodeQL and secret-scan jobs, #260). Egress policy stays `block`.

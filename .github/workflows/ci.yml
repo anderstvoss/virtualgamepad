@@ -176,7 +176,10 @@ jobs:
         if: runner.os == 'Linux'
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
-          egress-policy: block
+          # The harden-runner pre-step ignores the step-level `if`, so it
+          # also runs on non-Linux runners. Block there drops OCSP/CRL and
+          # DNS lookups (CRYPT_E_REVOCATION_OFFLINE, #150, #260); audit instead.
+          egress-policy: ${{ runner.os == 'Linux' && 'block' || 'audit' }}
           allowed-endpoints: >
             archive.ubuntu.com:443
             security.ubuntu.com:443
@@ -262,7 +265,10 @@ jobs:
         if: runner.os == 'Linux'
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
-          egress-policy: block
+          # The harden-runner pre-step ignores the step-level `if`, so it
+          # also runs on non-Linux runners. Block there drops OCSP/CRL and
+          # DNS lookups (CRYPT_E_REVOCATION_OFFLINE, #150, #260); audit instead.
+          egress-policy: ${{ runner.os == 'Linux' && 'block' || 'audit' }}
           allowed-endpoints: >
             api.github.com:443
             github.com:443
