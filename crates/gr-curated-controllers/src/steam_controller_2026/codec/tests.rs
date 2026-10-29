@@ -361,7 +361,8 @@ fn malformed_features_are_atomic_unknowns_reply_explicitly_and_wired_feature2_is
     let (Reply::Get(Ok(short)), _) = protocol.request(&get(), 0) else {
         panic!("defined short response");
     };
-    assert_eq!(short.wire(), [1, 255, 1]);
+    assert_eq!(&short.wire()[..3], &[1, 255, 255]);
+    assert_eq!(short.payload().len(), 63);
     assert!(short.payload().len() < 2 + usize::from(short.payload()[1])); // kernel -EPROTO condition
     for kind in [
         ReportType::Input,
@@ -907,5 +908,104 @@ fn supporting_state_preserves_consumer_menu_view_order_and_independent_native_in
     assert_eq!(
         input(&state, 0, Format::Primary42).wire(),
         fixture("neutral-42")
+    );
+}
+
+#[test]
+fn rejected_command_error_echo_keeps_declared_feature_size_and_protocol_error() {
+    let mut protocol = SteamProtocol::default();
+    let mut wire = fixture("feature-attrs-get");
+    wire[1] = 0xff;
+    assert_eq!(
+        protocol
+            .request(
+                &RequestKind::Set(Report::from_wire(ReportType::Feature, true, &wire).unwrap()),
+                0
+            )
+            .0,
+        Reply::Set(Err(ReplyError::Unsupported))
+    );
+    let (Reply::Get(Ok(reply)), _) = protocol.request(&get(), 1) else {
+        panic!("error echo");
+    };
+    assert_eq!(reply.payload().len(), 63);
+    assert!(reply.payload().len() < 2 + usize::from(reply.payload()[1]));
+}
+
+#[test]
+fn wired_codec_emissions_and_acceptance_match_the_physical_descriptor() {
+    let declared = crate::steam_controller_2026::descriptor::tests::declared_reports();
+    let check = |report: &Report| {
+        let kind = match report.kind {
+            ReportType::Input => 8,
+            ReportType::Output => 9,
+            ReportType::Feature => 11,
+            ReportType::Other(_) => panic!("report type"),
+        };
+        assert_eq!(
+            declared.get(&(kind, report.id().unwrap())),
+            Some(&report.payload().len())
+        );
+    };
+    for format in [Format::Primary42, Format::Alternate45] {
+        check(&wired_input(&all_buttons(), 0, format).unwrap());
+    }
+    check(&battery(&Battery::default()));
+    assert_eq!(
+        wired_input(
+            &State::default(),
+            0,
+            Format::Sdl47 {
+                pad_timestamp: 0,
+                imu_ticks: 0
+            }
+        ),
+        Err(Error::InvalidState)
+    );
+    let mut protocol = SteamProtocol::default();
+    for now in 0..=256 {
+        for report in protocol.input(&State::default(), now).unwrap() {
+            check(&report);
+            assert_ne!(report.id(), Some(0x47));
+        }
+    }
+    for id in 1..=u8::MAX {
+        for len in 0..=64 {
+            let report = Report::new(ReportType::Output, Some(id), vec![0; len]).unwrap();
+            if Haptic::decode(&report).is_ok() {
+                check(&report);
+            }
+            let mut payload = vec![0; len];
+            if let Some(command) = payload.first_mut() {
+                *command = 0x85;
+            }
+            let feature = Report::new(ReportType::Feature, Some(id), payload).unwrap();
+            if protocol.feature(&feature).is_ok() {
+                check(&feature);
+            }
+        }
+    }
+    for name in FEATURES {
+        protocol.request(&set(name), 0);
+        if let (Reply::Get(Ok(report)), _) = protocol.request(&get(), 0) {
+            check(&report);
+        }
+    }
+    // Feature 2 is declared, but no wired transaction semantics are invented.
+    assert_eq!(declared.get(&(11, 2)), Some(&63));
+    assert_eq!(
+        protocol.request(
+            &RequestKind::Get {
+                kind: ReportType::Feature,
+                id: Some(2)
+            },
+            0
+        ),
+        (Reply::Get(Err(ReplyError::Unsupported)), None)
+    );
+    let feature2 = Report::new(ReportType::Feature, Some(2), vec![0; 63]).unwrap();
+    assert_eq!(
+        protocol.request(&RequestKind::Set(feature2), 0),
+        (Reply::Set(Err(ReplyError::Unsupported)), None)
     );
 }

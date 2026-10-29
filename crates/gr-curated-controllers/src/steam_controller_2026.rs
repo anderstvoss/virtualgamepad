@@ -1,8 +1,8 @@
 //! Steam Controller 2026 native supporting state (S3 steps 14a/14b).
 //!
-//! No registry entry, descriptor, provider or controller creation path is
-//! advertised. Field semantics remain compat consumer-source interpretations;
-//! historical physical report lengths do not validate field meanings.
+//! Staged registry metadata describes planned targets, blocked at 14c/step 16. There is
+//! no provider or controller creation path. Descriptor bytes/shapes come from
+//! fresh physical capture; field semantics remain compat consumer interpretations.
 //! See `docs/STEAM_CONTROLLER_2026.md`.
 //!
 //! ```
@@ -21,9 +21,19 @@
 //! assert_eq!(state, SteamController2026State::default());
 //! ```
 
-// Protocol integration still waits for the physical descriptor (14a).
+// Protocol/provider integration remains gated at 14c/step 16.
 #[allow(dead_code)]
 mod codec;
+mod definition;
+#[allow(dead_code)] // Exact compiled capture is reserved for the gated 14c provider.
+mod descriptor;
+mod topology;
+pub(crate) use definition::SteamController2026Definition;
+
+/// Staged family metadata; not advertised by the active registry. No host profile.
+pub use gr_controller_wire::registry::STEAM_CONTROLLER_2026;
+/// Stable compiled family ID, without a constructor or realization fallback.
+pub use gr_controller_wire::registry::ids::STEAM_CONTROLLER_2026 as STEAM_CONTROLLER_2026_ID;
 
 /// Native digital controls; capacitive touch and pad clicks are separate state.
 /// Record: `steam-c6-input-buttons` (consumer order, not the historical encoder).
@@ -127,6 +137,11 @@ pub struct SteamController2026State {
     pub motion: SteamMotionSample,
 }
 impl SteamController2026State {
+    /// Native control schema. This does not advertise a constructible realization.
+    #[must_use]
+    pub const fn input_topology(&self) -> &'static gr_controller_contract::InputTopology {
+        &topology::TOPOLOGY
+    }
     /// Clear every native input, touch flag, pressure and timestamp to raw zero.
     pub fn neutralize(&mut self) {
         *self = Self::default();

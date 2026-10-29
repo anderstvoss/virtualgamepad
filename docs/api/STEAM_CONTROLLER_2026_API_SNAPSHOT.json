@@ -1,5 +1,17 @@
 {
   "items": {
+    "constant.STEAM_CONTROLLER_2026.html": {
+      "declarations": [
+        "pub const STEAM_CONTROLLER_2026: FamilySpec;"
+      ],
+      "traits": []
+    },
+    "constant.STEAM_CONTROLLER_2026_ID.html": {
+      "declarations": [
+        "pub const STEAM_CONTROLLER_2026_ID: ControllerId;"
+      ],
+      "traits": []
+    },
     "enum.SteamController2026Button.html": {
       "declarations": [
         "#[non_exhaustive]pub enum SteamController2026Button { Show 22 variants A, B, X, Y, Qam, RightStick, Menu, R4, R5, RightShoulder, Down, Right, Left, Up, View, LeftStick, Steam, L4, L5, LeftShoulder, RightTrigger, LeftTrigger, }"
@@ -20,6 +32,7 @@
     "struct.SteamController2026State.html": {
       "declarations": [
         "pub struct SteamController2026State { pub sticks: [[i16; 2]; 2], pub triggers: [i16; 2], pub pads: [SteamTrackpadState; 2], pub stick_touch: [bool; 2], pub grip_touch: [bool; 2], pub motion: SteamMotionSample, /* private fields */ }",
+        "pub const fn input_topology(&self) -> &'static InputTopology",
         "pub fn neutralize(&mut self)",
         "pub const fn pressed(&self, button: SteamController2026Button) -> bool",
         "pub fn set_button(&mut self, button: SteamController2026Button, pressed: bool)"

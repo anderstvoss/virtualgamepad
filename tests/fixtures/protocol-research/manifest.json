@@ -1,5 +1,5 @@
 {
-  "corpus_commit": "bae43833979c9a253b0285a0115aae81af303c04",
+  "corpus_commit": "7a887f43fe4ce25a652c8381a5f962bb2dc927b0",
   "generator_version": 4,
   "inputs": {
     "fixtures/ds-cross.hex": "cf780dad4726100617c5c663522e37d6927393eca727a52c3285b50597437eda",
@@ -41,6 +41,7 @@
     "fixtures/steam-c6-stick-trigger-min-42.hex": "d7393aa60c82cb21a52146ae2250dc835d98bb5fa057890124615688525748a8",
     "fixtures/steam-c6-timestamp-touch-47.hex": "0027934f97ae5bc2d360f430d634d2012a1957e782ec1bc3e04369c61281dffb",
     "fixtures/steam-c6-touch-corners-pressure-42.hex": "eb340cd2547d003ffb0b47c1b77dda4690f57e84d3009bf2560ef642a28081ae",
+    "fixtures/steam-s3-1302-report-descriptor.hex": "56848c99f7eb6fd9bf3a2f10a2bff90fdc91b1f9b546f0e9189cb238c4b1c563",
     "fixtures/wii-c5-evdev-golden.json": "d2e6c08c9f7f1f11255a66aff864179f198a39873c3fe6a95de581d69ada0281",
     "fixtures/wii-c5-functional-descriptor.hex": "8e7e615100a234ea0896cbe3b4b9cbcf82a6b962d0fc6c3a40d71f8726aa121d",
     "fixtures/wii-c5-neutral-30.hex": "e4e12ac21cfa89c5bbf867e96c730ce106cf3f7b4250f01024f262ffb213312b",
@@ -96,6 +97,7 @@
     "records/fixture/steam-c6-stick-trigger-min-42.json": "039f48435196fca3175c25f3136635845582007cc3eea27a6c0f33b7f38e2d82",
     "records/fixture/steam-c6-timestamp-touch-47.json": "14ffd362a4634170ca32a755901ee7767b899d150dd9ace1d372f3782710a7f3",
     "records/fixture/steam-c6-touch-corners-pressure-42.json": "c68d26726e4d6a799af41eac4fa44ad482cd1a853d6a07071c7c9558ae9770ad",
+    "records/fixture/steam-s3-1302-report-descriptor.json": "99b039cb5488e38d1897bd824d6353c4b42f0cb60c545461d1dcb818a0b5e8a4",
     "records/fixture/wii-c5-evdev-golden.json": "96e7a8e6745048c5208b441f91f96a8fc54de23c2b9b255804633ac6b63f2118",
     "records/fixture/wii-c5-functional-descriptor.json": "9a4f07eedfefe4de0c44cd25d4b55f965284ef3def742fdf5919cd6bb05a1a38",
     "records/fixture/wii-c5-neutral-30.json": "7fe882ca42be6e1f908bd43f7ef59e58723468ea6ca46bc3064cb163be2290cc",

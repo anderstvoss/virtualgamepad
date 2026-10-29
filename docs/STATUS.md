@@ -37,11 +37,13 @@ an API freeze do not promote a cell.
 
 ## Next release
 
-Steam S3 exposes the approved native supporting state API, with private
-report/feature/haptic handling and deterministic fixture tests. July capture
-notes corroborate report lengths only; field meanings remain compat. The family
-is not registered or constructible; step 14a waits for the physical descriptor
-on #159. Root and Wii API snapshots remain unchanged.
+Steam S3 (14a/14b) stages native family metadata and planned targets, adopts
+the exact fresh physical wired descriptor, and exposes the reviewed supporting
+state/topology API. Field meanings and feature replies remain compat; haptic
+effects, boot sequence, firmware tracking and physical cadence remain open.
+There is no provider, driver, constructor, public registry advertisement or
+acceptance cell. Root and Wii snapshots are unchanged;
+the separate Steam snapshot includes supporting metadata/topology additions.
 Steps 14c/14d and the C6 checkpoint remain gated by step 16 on the owner's
 kernel 7.3+ host. See [Steam Controller 2026](STEAM_CONTROLLER_2026.md).
 
