@@ -385,6 +385,34 @@ mod tests {
         }
     }
     #[test]
+    fn plus_native_roles_preserve_all_source_controls_with_plus_identity() {
+        for role in [
+            Role::Core,
+            Role::Accel,
+            Role::Ir,
+            Role::MotionPlus,
+            Role::Nunchuk,
+            Role::Classic,
+        ] {
+            let NativeControllerRealization::Evdev(plus) =
+                specification(role, WiiRemoteRevision::Tr)
+            else {
+                unreachable!()
+            };
+            let NativeControllerRealization::Evdev(original) =
+                specification(role, WiiRemoteRevision::Original)
+            else {
+                unreachable!()
+            };
+            assert_eq!(plus.identity.product_id, 0x0330);
+            assert_eq!(plus.identity.vendor_id, 0x057e);
+            assert_eq!(plus.key_codes, original.key_codes);
+            assert_eq!(plus.absolute_axes, original.absolute_axes);
+            assert_eq!(plus.force_feedback_codes, original.force_feedback_codes);
+        }
+    }
+
+    #[test]
     fn bluetooth_identity_numbering_and_synthetic_descriptor_are_exact() {
         for (revision, name, pid) in [
             (WiiRemoteRevision::Original, "Nintendo RVL-CNT-01", 0x0306),

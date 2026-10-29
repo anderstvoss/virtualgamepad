@@ -47,6 +47,7 @@ pub(super) fn available(target: RealizationId) -> bool {
 pub(super) fn draw_compat(
     ui: &mut egui::Ui,
     target: RealizationId,
+    revision: super::WiiRemoteRevision,
     options: &mut super::WiiRemoteCreationOptions,
 ) {
     ui.strong("MotionPlus compatibility");
@@ -64,6 +65,13 @@ pub(super) fn draw_compat(
             "Child calibration copy (compat)",
         );
         ui.small("Exact imported child block at 0x40 during active passthrough.");
+        if revision == super::WiiRemoteRevision::Tr {
+            ui.checkbox(
+                &mut options.motionplus_inactive_id_external_style,
+                "External-style inactive MotionPlus ID (compat)",
+            );
+            ui.small("Use A6200005 instead of built-in A4200005 for Cemu activation.");
+        }
     });
 }
 

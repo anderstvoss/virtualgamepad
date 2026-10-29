@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.wii-remote"
-research_revision = "ceaa48a30b57485a0ef687800c09c4e197e8868e"
+research_revision = "774b004b06315572f4a385ced6e2b241645c9a83"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
 refused_operations = ["speaker-audio", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
 persistent_resources = ["caller-imported-eeprom", "caller-imported-extension-calibration"]
@@ -319,3 +319,45 @@ id = "motionplus-passthrough-calibration-copy"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Unavailable in this realization: no addressed HID register channel for the compat calibration copy." }
 "linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::calibration_tests::passthrough_three_banks_never_alias_and_detach_never_serves_a_stale_child", evidence = ["wii-gap-dolphin-attach-active-passthrough-calibration-copy-40", "wii-gap-dolphin-emulated-motionplus-modes-passthrough", "wii-gap-cross-cemu-fa20-no-f6-40", "wii-w9-dolphin-motionplus-nunchuk-on-result", "wii-w9-dolphin-motionplus-nunchuk-off-result"], reason = "Class compat: exact caller-imported child block at active 0x40, only mode 05/Nunchuk or 07/Classic. No import or disabled switch gives error 7. Active 0x20 remains MP calibration and inactive 0x20 remains child calibration; no bank alias, repair or default. Source-model regression only, no physical or decoded consumer pass. W9 native on/off MP+Nunchuk both stop at F6 after non-Dolphin reinitialization; the live shim windows are not demonstrated and no passthrough consumer pass is claimed." }
+
+[[functions]]
+id = "plus-identity-discovery"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::plus_native_roles_preserve_all_source_controls_with_plus_identity", evidence = ["wii-gap-plustrace-acceptance-and-revision-contract", "wii-c5-evdev-native-values"], reason = "Plus-scoped native source regression preserves core, gyro and child capabilities with product 0330. No live Plus acceptance or HID register behavior is inherited from Original." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::bluetooth_identity_numbering_and_synthetic_descriptor_are_exact", evidence = ["wii-gap-plus-bluetooth-identities", "wii-gap-plustrace-acceptance-and-revision-contract"], reason = "Plus Tr creation uses Bluetooth 057e:0330 and Nintendo RVL-CNT-01-TR; synthetic descriptor, no physical capture or inherited Original acceptance." }
+
+[[functions]]
+id = "plus-builtin-motionplus-probe-activation"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Plus-scoped HID consumer qualification unavailable in uinput: no addressed register channel or HID parent; native controls remain represented by existing source mappings." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::plus_tests::plus_inactive_id_defaults_builtin_and_toggle_never_changes_original", evidence = ["wii-gap-plustrace-wiiuse-builtin-id-and-classic-gap", "wii-gap-plustrace-cemu-builtin-identity-nonactivation", "wii-gap-plustrace-kernel-mp-id-predicate-and-fallback", "wii-gap-wiibrew-motionplus-deactivation"], reason = "Faithful-class source constants: fresh Plus inactive A4200005, leading zero bytes unknown and retained. Both ID styles preserve the previous mode after deactivation as external-model policy; integrated Plus post-deactivation byte is unknown. FE probes and activation source-tested; physical integrated identity and timing unmeasured." }
+
+[[functions]]
+id = "plus-motionplus-gyro"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::plus_native_roles_preserve_all_source_controls_with_plus_identity", evidence = ["wii-gap-plustrace-acceptance-and-revision-contract", "wii-c5-evdev-native-values"], reason = "Plus-scoped native source regression preserves core, gyro and child capabilities with product 0330. No live Plus acceptance or HID register behavior is inherited from Original." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::plus_tests::plus_mapped_ids_and_deactivation_do_not_leak_the_inactive_toggle", evidence = ["wii-gap-plustrace-kernel-gen2-ladder", "wii-gap-plustrace-sdl-fe-probe-classic-limit"], reason = "Plus-scoped synthetic/source regression only; no Original gyro pass inherited. Separate wii-p1 live qualification is recorded in research PR #63; this cell awaits merged host evidence and does not adopt its unmerged results." }
+
+[[functions]]
+id = "plus-motionplus-nunchuk"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::plus_native_roles_preserve_all_source_controls_with_plus_identity", evidence = ["wii-gap-plustrace-acceptance-and-revision-contract", "wii-c5-evdev-native-values"], reason = "Plus-scoped native source regression preserves core, gyro and child capabilities with product 0330. No live Plus acceptance or HID register behavior is inherited from Original." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::plus_tests::plus_shims_keep_original_scope_and_distinct_calibration_banks", evidence = ["wii-gap-plustrace-dolphin-ciface-f6-40-sequence", "wii-gap-plustrace-reply-provenance-and-unknowns"], reason = "Plus mode 05 keeps caller MP and child calibration distinct and preserves optional F6/40 shims. Source/synthetic only; no decoded Plus passthrough pass." }
+
+[[functions]]
+id = "plus-motionplus-classic"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::plus_native_roles_preserve_all_source_controls_with_plus_identity", evidence = ["wii-gap-plustrace-acceptance-and-revision-contract", "wii-c5-evdev-native-values"], reason = "Plus-scoped native source regression preserves core, gyro and child capabilities with product 0330. No live Plus acceptance or HID register behavior is inherited from Original." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::plus_tests::plus_shims_keep_original_scope_and_distinct_calibration_banks", evidence = ["wii-gap-plustrace-dolphin-ciface-f6-40-sequence", "wii-gap-plustrace-sdl-fe-probe-classic-limit"], reason = "Plus mode 07 source/synthetic only; no Original or Nunchuk pass inherited. SDL Classic gyro may be unavailable by the pinned consumer design." }
+
+[[functions]]
+id = "plus-inactive-id-compat-toggle"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Plus-scoped HID consumer qualification unavailable in uinput: no addressed register channel or HID parent; native controls remain represented by existing source mappings." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::plus_tests::plus_inactive_id_defaults_builtin_and_toggle_never_changes_original", evidence = ["wii-gap-plustrace-cemu-builtin-identity-nonactivation"], reason = "Plus-only creation compat, default off: A6200005 enables pinned Cemu activation. Original is unaffected. Cemu decoded gyro remains out of scope; no API fallback." }
+
+[[functions]]
+id = "plus-status-extension-bit"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Plus-scoped HID consumer qualification unavailable in uinput: no addressed register channel or HID parent; native controls remain represented by existing source mappings." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::plus_tests::plus_status_bit_keeps_existing_unmeasured_activation_behavior", evidence = ["wii-gap-plustrace-reply-provenance-and-unknowns"], reason = "Unknown physical bare-Plus status bit across activation: existing software behavior retained, inactive clear and mapped set even without a child. Built-in presence is distinct from downstream status; no faithful status-bit claim." }

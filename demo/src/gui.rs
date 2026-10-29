@@ -217,7 +217,7 @@ fn wii_revision_label(revision: WiiRemoteRevision) -> &'static str {
     match revision {
         WiiRemoteRevision::Original => "Original",
         WiiRemoteRevision::EarlyIntegratedPlus => "Early integrated Plus",
-        WiiRemoteRevision::Tr => "-TR",
+        WiiRemoteRevision::Tr => "Wii Remote Plus",
         _ => "Unknown revision",
     }
 }
@@ -308,7 +308,7 @@ fn draw_advanced_options(
                     draw_wii_revision_selector(ui, kind, wii_revision);
                     if kind == Kind::WiiRemote {
                         wii_imports.draw(ui, target);
-                        wii_import::draw_compat(ui, target, wii_compat);
+                        wii_import::draw_compat(ui, target, *wii_revision, wii_compat);
                     }
                     ui.strong("Audio configuration");
                     audio_lab::draw_creation(ui, audio_creation, target, kind.supports_audio());

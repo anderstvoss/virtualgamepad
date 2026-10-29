@@ -616,3 +616,28 @@ fn wii_ir_renders_shared_touch_controls_without_actuation_or_legacy_list() {
             .any(|(label, _)| label == "Deflection" || label.starts_with("Point "))
     );
 }
+
+#[test]
+fn plus_label_and_inactive_id_compat_are_revision_scoped() {
+    assert_eq!(wii_revision_label(WiiRemoteRevision::Tr), "Wii Remote Plus");
+    for revision in [WiiRemoteRevision::Original, WiiRemoteRevision::Tr] {
+        for target in [
+            RealizationId::LINUX_UHID_BLUETOOTH,
+            RealizationId::LINUX_UINPUT,
+        ] {
+            let mut options = WiiRemoteCreationOptions::default();
+            let labels = render(|ui| wii_import::draw_compat(ui, target, revision, &mut options));
+            assert_eq!(
+                labels
+                    .iter()
+                    .any(|(s, _)| s == "External-style inactive MotionPlus ID (compat)"),
+                revision == WiiRemoteRevision::Tr
+            );
+            assert!(!options.motionplus_inactive_id_external_style);
+            assert_eq!(
+                wii_import::available(target),
+                target == RealizationId::LINUX_UHID_BLUETOOTH
+            );
+        }
+    }
+}
