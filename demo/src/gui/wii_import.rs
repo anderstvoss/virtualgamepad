@@ -65,6 +65,11 @@ pub(super) fn draw_compat(
             "Child calibration copy (compat)",
         );
         ui.small("Exact imported child block at 0x40 during active passthrough.");
+        ui.checkbox(
+            &mut options.motionplus_activation_reattach_status,
+            "Activation re-attach status (compat)",
+        );
+        ui.small("Send a status edge so consumers reselect reporting after MotionPlus activation.");
         if revision == super::WiiRemoteRevision::Tr {
             ui.checkbox(
                 &mut options.motionplus_inactive_id_external_style,

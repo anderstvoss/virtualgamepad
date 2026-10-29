@@ -31,6 +31,7 @@ impl WiiRemoteRevision {
 /// These reads are consumer compatibility behavior, not physical fidelity.
 /// None of these options implements `MotionPlus` challenge data or readiness progression.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)] // Independent owner-approved creation switches.
 pub struct WiiRemoteCreationOptions {
     /// Mirror downstream identity at F6/F8/F9 with fixed compat F7 = 0x02.
     pub motionplus_passthrough_id_mirror: bool,
@@ -39,6 +40,9 @@ pub struct WiiRemoteCreationOptions {
     /// Plus-only compat: use external-style inactive MP identity for Cemu activation.
     /// Default false; Original always retains its external identity.
     pub motionplus_inactive_id_external_style: bool,
+    /// Compat: re-attach status edge on activation from inactive with a child present.
+    /// Default true; physical activation fidelity remains unmeasured.
+    pub motionplus_activation_reattach_status: bool,
 }
 impl Default for WiiRemoteCreationOptions {
     fn default() -> Self {
@@ -46,6 +50,7 @@ impl Default for WiiRemoteCreationOptions {
             motionplus_passthrough_id_mirror: true,
             motionplus_passthrough_calibration_copy: true,
             motionplus_inactive_id_external_style: false,
+            motionplus_activation_reattach_status: true,
         }
     }
 }
