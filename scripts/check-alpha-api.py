@@ -14,6 +14,7 @@ inventory = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(inventory)
 BASELINE = ROOT/'docs/api/ALPHA_API_SNAPSHOT.json'
 WII_BASELINE = ROOT/'docs/api/WII_REMOTE_API_SNAPSHOT.json'
+STEAM_BASELINE = ROOT/'docs/api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json'
 
 
 def snapshot(doc_root, manifest):
@@ -50,15 +51,35 @@ def wii_snapshot(doc_root):
     }
 
 
+def steam_snapshot(doc_root):
+    """Review the Steam supporting API separately from the ordinary root promise."""
+    compiler_traits = ('Freeze', 'UnsafeUnpin', 'StructuralPartialEq')
+    return {
+        'schema': 1,
+        'scope': 'gr-curated-controllers Steam Controller 2026 supporting API; not ordinary root',
+        'items': {
+            name: {'declarations': declarations,
+                   'traits': sorted(trait for trait in traits
+                                    if not any(f' {kind} for ' in trait
+                                               for kind in compiler_traits))}
+            for name, (declarations, traits) in inventory.public_surface(doc_root).items()
+        },
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--write', action='store_true', help='explicitly refresh the baseline for review')
     parser.add_argument('--doc-root', type=Path, help='inspect already built docs instead of invoking Cargo')
     parser.add_argument('--wii-doc-root', type=Path,
                         help='Wii supporting docs accompanying --doc-root; otherwise inferred')
+    parser.add_argument('--steam-doc-root', type=Path,
+                        help='Steam supporting docs accompanying --doc-root; otherwise inferred')
     args = parser.parse_args()
     if args.wii_doc_root is not None and args.doc_root is None:
         parser.error('--wii-doc-root requires --doc-root')
+    if args.steam_doc_root is not None and args.doc_root is None:
+        parser.error('--steam-doc-root requires --doc-root')
     manifest = tomllib.loads((ROOT/'Cargo.toml').read_text())
     views = {}
     if args.doc_root is not None:
@@ -67,6 +88,8 @@ def main():
         views['all'] = snapshot(args.doc_root, manifest)
         wii = wii_snapshot(args.wii_doc_root or
                            args.doc_root.parent/'gr_curated_controllers/wii_remote')
+        steam = steam_snapshot(args.steam_doc_root or
+                               args.doc_root.parent/'gr_curated_controllers/steam_controller_2026')
     else:
         # Isolate documentation from workspace/dev-dependency feature unification.
         target = ROOT/'target/alpha-api'
@@ -78,17 +101,22 @@ def main():
         subprocess.run(['cargo', 'doc', '--locked', '-p', 'gr-curated-controllers',
                         '--all-features', '--no-deps'], cwd=ROOT, env=env, check=True)
         wii = wii_snapshot(target/'doc/gr_curated_controllers/wii_remote')
+        steam = steam_snapshot(target/'doc/gr_curated_controllers/steam_controller_2026')
     current = {'schema': 2, 'views': views}
     if args.write:
         BASELINE.write_text(json.dumps(current, indent=2, sort_keys=True) + '\n')
         WII_BASELINE.write_text(json.dumps(wii, indent=2, sort_keys=True) + '\n')
+        STEAM_BASELINE.write_text(json.dumps(steam, indent=2, sort_keys=True) + '\n')
     elif any(json.loads(BASELINE.read_text())['views'].get(view) != data for view, data in views.items()):
         parser.exit(1, 'Alpha root API changed. Review necessity and migration notes before refreshing the snapshot.\n')
     elif not WII_BASELINE.exists() or json.loads(WII_BASELINE.read_text()) != wii:
         parser.exit(1, 'Wii supporting API changed. Review the imported-resource API before refreshing the snapshot.\n')
+    elif not STEAM_BASELINE.exists() or json.loads(STEAM_BASELINE.read_text()) != steam:
+        parser.exit(1, 'Steam supporting API changed. Review the native-state API before refreshing the snapshot.\n')
     else:
         print(f'Alpha root API matches the reviewed snapshot ({len(views["all"]["items"])} items).')
         print(f'Wii supporting API matches its separate reviewed snapshot ({len(wii["items"])} items).')
+        print(f'Steam supporting API matches its separate reviewed snapshot ({len(steam["items"])} items).')
 
 
 if __name__ == '__main__':
