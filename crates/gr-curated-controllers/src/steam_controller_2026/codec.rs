@@ -7,7 +7,8 @@ use gr_hid::{
 };
 
 // steam-c6-input-42/45/47: lengths INCLUDE the numbered report byte.
-// sc2-july-wired-input-42: 0x42 length is physical (historical capture, raw not revalidated).
+// steam-s3-1302-report-shapes: declared lengths are faithful (fresh physical capture).
+// Field semantics remain compat consumer interpretations.
 #[derive(Debug, Clone, Copy)]
 enum Format {
     Primary42,
@@ -70,6 +71,15 @@ fn input(state: &State, sequence: u8, format: Format) -> Report {
         }
     }
     Report::from_wire(ReportType::Input, true, &wire).expect("compiled Steam frame")
+}
+
+// steam-s3-1302-sdl47-descriptor-conflict: never submit the diagnostic-only
+// SDL alternate through a wired path described by the captured bytes.
+fn wired_input(state: &State, sequence: u8, format: Format) -> Result<Report, Error> {
+    if matches!(format, Format::Sdl47 { .. }) {
+        return Err(Error::InvalidState);
+    }
+    Ok(input(state, sequence, format))
 }
 
 fn battery(state: &Battery) -> Report {
@@ -263,7 +273,7 @@ impl SteamProtocol {
             0xae | 0x83 | 0x81 | 0x85 | 0x8e => return Err(ReplyError::Invalid),
             _ => {
                 // steam-c6-feature-kernel-exchange / reply-attributes-short:
-                // reject SET, and provide a deliberately short exchange reply
+                // reject SET, and provide a deliberately malformed exchange reply
                 // if a host still GETs it. Kernel detects -EPROTO, not stale data.
                 // This fits the kernel error path; it is not device behaviour.
                 self.query = Some(b[0]);
@@ -286,10 +296,12 @@ impl SteamProtocol {
             Some(0xae) => wire[1..4].copy_from_slice(&[0xae, 1, 1]),
             Some(0x83) => wire[1..5].copy_from_slice(&[0x83, 2, 0, 0]),
             Some(command) => {
-                return Ok(
-                    Report::from_wire(ReportType::Feature, true, &[1, command, 1])
-                        .expect("bounded short protocol-error reply"),
-                );
+                // Preserve the kernel -EPROTO fit without violating the captured
+                // descriptor's 63-byte feature body. The impossible message
+                // length is intentionally malformed compat error framing, not
+                // a physical-device reply or manufactured device data.
+                wire[1] = command;
+                wire[2] = u8::MAX;
             }
             None => return Err(ReplyError::Unsupported),
         }
@@ -325,7 +337,7 @@ impl Protocol for SteamProtocol {
         }
         // steam-c6-disagreement-47-kernel/sdl: only 0x42 in the normal stream.
         self.refresh = None;
-        let report = input(state, self.sequence, Format::Primary42);
+        let report = wired_input(state, self.sequence, Format::Primary42)?;
         self.sequence = self.sequence.wrapping_add(1);
         Ok(vec![report])
     }

@@ -123,13 +123,16 @@ def check(root, write=False, verify_remote=False):
                                 ('steam-c6-feature-imu-off', 64),
                                 ('steam-c6-reply-serial-empty', 64),
                                 ('steam-c6-reply-attributes-empty', 64),
-                                ('steam-c6-reply-attributes-short', 3)]:
+                                ('steam-c6-reply-attributes-short', 3),
+                                ('steam-s3-1302-report-descriptor', 372)]:
         record_path = 'records/fixture/' + name + '.json'
         record_bytes = (research / record_path).read_bytes()
         record = json.loads(record_bytes)
         path = (research / record['path']).resolve()
-        if not path.is_relative_to(research) or record['kind'] != 'synthetic':
-            raise ValueError('expected a research-local synthetic fixture')
+        physical = name == 'steam-s3-1302-report-descriptor'
+        expected_kind = 'physical' if physical else 'synthetic'
+        if not path.is_relative_to(research) or record['kind'] != expected_kind:
+            raise ValueError('expected a research-local ' + expected_kind + ' fixture')
         data = path.read_bytes()
         if hashlib.sha256(data).hexdigest() != record['sha256']:
             raise ValueError('fixture hash mismatch: ' + name)
@@ -142,6 +145,16 @@ def check(root, write=False, verify_remote=False):
                 raise ValueError('unexpected consumer shape: ' + name)
         elif len(bytes.fromhex(data.decode().strip())) != expected_size:
             raise ValueError('unexpected fixture size: ' + name)
+        if physical:
+            # steam-s3-1302-report-shapes / steam-s3-1302-usb-interface.
+            # Compile the exact decoded capture, without parsing profiles at runtime.
+            raw = bytes.fromhex(data.decode())
+            if hashlib.sha256(raw).hexdigest() != (
+                    '315a037c849ef9510d222ae520bb18c1b72552d26eb116c91b0750901a5c51fd'):
+                raise ValueError('physical descriptor raw hash mismatch: ' + name)
+            outputs[name + '.rs'] = ('[\n' + ''.join(
+                '    ' + ', '.join(f'0x{byte:02x}' for byte in raw[index:index + 16]) + ',\n'
+                for index in range(0, len(raw), 16)) + ']\n').encode()
         inputs[record_path] = hashlib.sha256(record_bytes).hexdigest()
         inputs[record['path']] = record['sha256']
         outputs[name + extension] = data
