@@ -11,6 +11,8 @@ The curated controllers are Xbox 360, DualSense, DualShock 4, and Switch Pro. Du
 
 See [deployment](docs/DEPLOYMENT_AND_VALIDATION.md) for installation and the privilege boundary, and [architecture](docs/CORE_ARCHITECTURE.md) for the target model.
 
+Historical [Steam Controller (2026) capture research](docs/STEAM_CONTROLLER_2026_CAPTURE_NOTES.md) records the physical input campaigns, report shapes, experimental implementation history, and unresolved protocol work.
+
 ## Development
 
 ```bash
