@@ -30,8 +30,6 @@ mod descriptor;
 mod topology;
 pub(crate) use definition::SteamController2026Definition;
 
-/// Staged family metadata; not advertised by the active registry. No host profile.
-pub use gr_controller_wire::registry::STEAM_CONTROLLER_2026;
 /// Stable compiled family ID, without a constructor or realization fallback.
 pub use gr_controller_wire::registry::ids::STEAM_CONTROLLER_2026 as STEAM_CONTROLLER_2026_ID;
 
