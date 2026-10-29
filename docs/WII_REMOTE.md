@@ -798,3 +798,42 @@ with the option on, the reporting pause with it off, and the F6-off error gate.
 All arms activate from inactive, so narrowing the trigger requires no host
 rerun. These consumer results are separate from physical fidelity; #258 still
 gates release use of generic binding.
+
+
+### W9g bounded consumer acceptance
+
+W9g research #66 records Original-only kernel and native Dolphin arms at code
+7445bfa (test-only follow-up f918725). Both bound kernel/xwiimote gyro regressions
+pass, with two driven values per axis over 18 seconds. The new Nunchuk status
+edge is observed; no A4/A6 F0=55 occurs in the first 18 seconds after mapping.
+The first re-initialisation writes coincide with reader-close cleanup.
+
+Native Dolphin 2503 passes bounded decoded gyro and Nunchuk stick only with
+**hid-wiimote not bound (test/dev host setup, #258)**, **activation re-attach
+compat on** and **F6 mirror on**, with caller synthetic EEPROM/MP/Nunchuk
+calibration imported. It re-sends 0x12 after mode 05, reads F6 with fixed F7 0x02,
+and receives distinct MP 0x20/32 and child 0x40/16 blocks matching the imports.
+Owned-window samples provide the decoded oracle. The raw trace counts 4480 MP
+and 4479 child frames after mapping over the full 180-second consumer bound,
+including setup: 24.888889 and 24.883333 frames per second. This is a measured
+count denominator, not timing, physical-rate or game acceptance.
+
+The edge-off control keeps both register shims on and reproduces the W9f pause:
+no post-map 0x12 resend, F6 read or data frames. The F6-off control keeps the edge
+and copy on; 0x12 is re-sent but F6 returns error 7 before calibration. Raw MP
+and child frames arrive while the decoded view stays stationary. Neither raw
+transport nor frame count establishes a decoded consumer pass on its own.
+
+A preliminary private profile used incorrect directional Nunchuk input names.
+The native 2503 source names signed X/Y inputs; a corrected fresh profile was
+rerun and is the sole accepted stick result. Original mode 05 exercises and requires the F6/F7 mirror and re-attach
+option on this path. The 0x40 copy remained on in all arms; its necessity was
+not isolated, so its acceptance cell remains unchanged. Classic mode 07 and
+Plus remain source/synthetic only. Corrected-run buttons are not separately qualified. Prior bound-kernel
+Dolphin contention remains a recorded limitation. Cemu gyro remains out of scope.
+
+The manifest retains its software `source-evidence` classification and states
+the bounded pass and exact preconditions; a virtual run is not physical evidence.
+Activation remains compat; draft research #65 is not cited, and #258 still
+gates release use. No binding-mode creation option or other API/model change is
+introduced by adoption. All consumers and devices were closed and removal verified.
