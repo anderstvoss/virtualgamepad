@@ -5,8 +5,10 @@ The public `gr_curated_controllers::steam_controller_2026` supporting module
 exposes native state, button, trackpad and motion types. The report/feature/output
 protocol remains private and deterministically tested. There is no registry
 entry, descriptor or controller creation path; this cannot create a virtual
-Steam Controller. Ordinary-root and Wii supporting
-API snapshots remain unchanged. No Steam supporting snapshot is introduced.
+Steam Controller. Ordinary-root and Wii supporting API snapshots remain unchanged.
+The approved Steam supporting API has its own reviewed snapshot,
+[`api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json`](api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json),
+checked by `python3 scripts/check-alpha-api.py` alongside the root and Wii APIs.
 
 Research pin: `bae43833979c9a253b0285a0115aae81af303c04`, which contains
 `b9c6369` and research PRs 27, 32, 73 through 76 and 79 (July capture notes). The generated fixture
@@ -24,9 +26,13 @@ Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
 - **14a supporting API approved:** [owner decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6492166698)
   permits `SteamController2026State`, `SteamController2026Button`,
   `SteamTrackpadState` and `SteamMotionSample` in the supporting module.
-  The existing API checker needs no change to expose this module; no separate
-  Steam supporting snapshot/check is needed or added. Controller, surface and
-  output types and a controller constructor remain for their authorized step.
+  A [follow-up owner decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6492492101)
+  approves its separate supporting snapshot/check, mirroring Wii's. The checker
+  records the four types' declarations, fields, variants, methods and traits;
+  changes fail until explicitly reviewed and refreshed with `--write` using
+  fresh documentation builds. `--doc-root` infers the Steam supporting docs next
+  to the root docs; `--steam-doc-root` can select them explicitly. Controller,
+  surface and output types and a controller constructor remain for their authorized step.
   There are no root exports, creation-options type or broker changes. This
   approval does not complete 14a while the descriptor gate remains open.
 - **14c/14d and C6 checkpoint PR:** held for step 16 on the owner's kernel

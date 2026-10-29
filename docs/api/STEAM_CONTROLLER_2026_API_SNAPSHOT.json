@@ -1,0 +1,78 @@
+{
+  "items": {
+    "enum.SteamController2026Button.html": {
+      "declarations": [
+        "#[non_exhaustive]pub enum SteamController2026Button { Show 22 variants A, B, X, Y, Qam, RightStick, Menu, R4, R5, RightShoulder, Down, Right, Left, Up, View, LeftStick, Steam, L4, L5, LeftShoulder, RightTrigger, LeftTrigger, }"
+      ],
+      "traits": [
+        "impl Clone for SteamController2026Button",
+        "impl Copy for SteamController2026Button",
+        "impl Debug for SteamController2026Button",
+        "impl Eq for SteamController2026Button",
+        "impl PartialEq for SteamController2026Button",
+        "impl RefUnwindSafe for SteamController2026Button",
+        "impl Send for SteamController2026Button",
+        "impl Sync for SteamController2026Button",
+        "impl Unpin for SteamController2026Button",
+        "impl UnwindSafe for SteamController2026Button"
+      ]
+    },
+    "struct.SteamController2026State.html": {
+      "declarations": [
+        "pub struct SteamController2026State { pub sticks: [[i16; 2]; 2], pub triggers: [i16; 2], pub pads: [SteamTrackpadState; 2], pub stick_touch: [bool; 2], pub grip_touch: [bool; 2], pub motion: SteamMotionSample, /* private fields */ }",
+        "pub fn neutralize(&mut self)",
+        "pub const fn pressed(&self, button: SteamController2026Button) -> bool",
+        "pub fn set_button(&mut self, button: SteamController2026Button, pressed: bool)"
+      ],
+      "traits": [
+        "impl Clone for SteamController2026State",
+        "impl Debug for SteamController2026State",
+        "impl Default for SteamController2026State",
+        "impl Eq for SteamController2026State",
+        "impl PartialEq for SteamController2026State",
+        "impl RefUnwindSafe for SteamController2026State",
+        "impl Send for SteamController2026State",
+        "impl Sync for SteamController2026State",
+        "impl Unpin for SteamController2026State",
+        "impl UnwindSafe for SteamController2026State"
+      ]
+    },
+    "struct.SteamMotionSample.html": {
+      "declarations": [
+        "pub struct SteamMotionSample { pub timestamp_us: u32, pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], pub quaternion: [i16; 4], }"
+      ],
+      "traits": [
+        "impl Clone for SteamMotionSample",
+        "impl Debug for SteamMotionSample",
+        "impl Default for SteamMotionSample",
+        "impl Eq for SteamMotionSample",
+        "impl PartialEq for SteamMotionSample",
+        "impl RefUnwindSafe for SteamMotionSample",
+        "impl Send for SteamMotionSample",
+        "impl Sync for SteamMotionSample",
+        "impl Unpin for SteamMotionSample",
+        "impl UnwindSafe for SteamMotionSample"
+      ]
+    },
+    "struct.SteamTrackpadState.html": {
+      "declarations": [
+        "pub struct SteamTrackpadState { pub position: [i16; 2], pub pressure: u16, pub touch: bool, pub click: bool, }"
+      ],
+      "traits": [
+        "impl Clone for SteamTrackpadState",
+        "impl Copy for SteamTrackpadState",
+        "impl Debug for SteamTrackpadState",
+        "impl Default for SteamTrackpadState",
+        "impl Eq for SteamTrackpadState",
+        "impl PartialEq for SteamTrackpadState",
+        "impl RefUnwindSafe for SteamTrackpadState",
+        "impl Send for SteamTrackpadState",
+        "impl Sync for SteamTrackpadState",
+        "impl Unpin for SteamTrackpadState",
+        "impl UnwindSafe for SteamTrackpadState"
+      ]
+    }
+  },
+  "schema": 1,
+  "scope": "gr-curated-controllers Steam Controller 2026 supporting API; not ordinary root"
+}
