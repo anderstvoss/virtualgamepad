@@ -194,14 +194,29 @@ fn creation_labels(
     restored: bool,
 ) -> Result<(String, String), ProviderError> {
     let suffix = next_instance_suffix()?;
-    Ok((
-        format!("{physical_path}/{suffix}"),
-        if restored {
-            unique_id.to_owned()
-        } else {
-            format!("{unique_id}-{suffix}")
-        },
-    ))
+    let input_lab_path = input_lab_physical_path(physical_path, input_lab_enabled());
+    let physical_path = input_lab_path.as_deref().unwrap_or(physical_path);
+    let unique_id = if restored {
+        unique_id.to_owned()
+    } else {
+        format!("{unique_id}-{suffix}")
+    };
+    Ok((format!("{physical_path}/{suffix}"), unique_id))
+}
+
+fn input_lab_enabled() -> bool {
+    std::env::var_os("VIRTUALGAMEPAD_INPUT_LAB").as_deref() == Some(std::ffi::OsStr::new("1"))
+}
+
+fn input_lab_physical_path(physical_path: &str, enabled: bool) -> Option<String> {
+    if !enabled {
+        return None;
+    }
+    match physical_path {
+        "virtualgamepad/uhid/dualsense" => Some("virtualgamepad/input-lab/uhid/dualsense".into()),
+        "virtualgamepad/uhid/dualshock4" => Some("virtualgamepad/input-lab/uhid/dualshock4".into()),
+        _ => None,
+    }
 }
 
 pub(crate) fn create_with_identity<D>(
@@ -375,6 +390,30 @@ mod tests {
             Some(unique.as_str())
         );
         assert_eq!(association.observed_host_path, None);
+    }
+
+    #[test]
+    fn input_lab_identity_is_explicit_and_limited_to_sony_uhid_families() {
+        assert_eq!(
+            input_lab_physical_path("virtualgamepad/uhid/dualsense", true).as_deref(),
+            Some("virtualgamepad/input-lab/uhid/dualsense")
+        );
+        assert_eq!(
+            input_lab_physical_path("virtualgamepad/uhid/dualshock4", true).as_deref(),
+            Some("virtualgamepad/input-lab/uhid/dualshock4")
+        );
+        for path in [
+            "virtualgamepad/uhid/dualsense",
+            "virtualgamepad/uhid/dualshock4",
+            "virtualgamepad/uhid/switch-pro",
+            "virtualgamepad/uinput",
+        ] {
+            assert_eq!(input_lab_physical_path(path, false), None);
+        }
+        assert_eq!(
+            input_lab_physical_path("virtualgamepad/uhid/switch-pro", true),
+            None
+        );
     }
 
     #[test]

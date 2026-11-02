@@ -16,8 +16,28 @@ use std::{
     time::{Duration, Instant},
 };
 
+fn input_lab_enabled() -> bool {
+    std::env::var_os("VIRTUALGAMEPAD_INPUT_LAB").as_deref() == Some(std::ffi::OsStr::new("1"))
+}
+
+fn uhid_phys_root(family: &str) -> &'static str {
+    input_lab_phys_root(family, input_lab_enabled())
+}
+
+fn input_lab_phys_root(family: &str, enabled: bool) -> &'static str {
+    if enabled && matches!(family, "dualsense" | "dualshock4") {
+        "virtualgamepad/input-lab/uhid"
+    } else {
+        "virtualgamepad/uhid"
+    }
+}
+
 fn matches_process(properties: &str, process: u32) -> bool {
-    let prefix = format!("HID_PHYS=virtualgamepad/uhid/dualsense/p{process:x}-i");
+    matches_process_under_root(properties, process, uhid_phys_root("dualsense"))
+}
+
+fn matches_process_under_root(properties: &str, process: u32, root: &str) -> bool {
+    let prefix = format!("HID_PHYS={root}/dualsense/p{process:x}-i");
     properties.lines().any(|line| {
         line.strip_prefix(&prefix).is_some_and(|instance| {
             !instance.is_empty() && instance.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -26,17 +46,39 @@ fn matches_process(properties: &str, process: u32) -> bool {
 }
 
 #[test]
+fn input_lab_selection_preserves_unrelated_family_discovery() {
+    for family in ["dualsense", "dualshock4", "switch-pro", "xbox360", ""] {
+        assert_eq!(input_lab_phys_root(family, false), "virtualgamepad/uhid");
+        assert_eq!(
+            input_lab_phys_root(family, true),
+            if matches!(family, "dualsense" | "dualshock4") {
+                "virtualgamepad/input-lab/uhid"
+            } else {
+                "virtualgamepad/uhid"
+            }
+        );
+    }
+}
+
+#[test]
 fn identity_selection_excludes_siblings_and_truncated_instances() {
-    assert!(matches_process(
+    assert!(matches_process_under_root(
         "HID_PHYS=virtualgamepad/uhid/dualsense/p2a-i0\n",
-        42
+        42,
+        "virtualgamepad/uhid"
     ));
     for value in ["p2b-i0", "p2a-i", "p2aa-i0", "p2a-i0/sibling"] {
-        assert!(!matches_process(
+        assert!(!matches_process_under_root(
             &format!("HID_PHYS=virtualgamepad/uhid/dualsense/{value}"),
-            42
+            42,
+            "virtualgamepad/uhid"
         ));
     }
+    assert!(matches_process_under_root(
+        "HID_PHYS=virtualgamepad/input-lab/uhid/dualsense/p2a-i0\n",
+        42,
+        "virtualgamepad/input-lab/uhid"
+    ));
 }
 
 fn owned_devices() -> Vec<PathBuf> {
@@ -422,12 +464,12 @@ fn spawn_sdl(
     )
 }
 fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
-    run_sdl_script::<C>(
-        target,
-        C::script,
-        C::MODE,
-        matches!(C::PREFIX, "dualsense" | "dualshock4"),
+    let active_contacts = matches!(C::PREFIX, "dualsense" | "dualshock4");
+    assert!(
+        !active_contacts || target == RealizationTarget::LINUX_UINPUT || input_lab_enabled(),
+        "active contacts require VIRTUALGAMEPAD_INPUT_LAB=1"
     );
+    run_sdl_script::<C>(target, C::script, C::MODE, active_contacts);
 }
 
 fn input_is_isolated(properties: &str, seat: &str) -> bool {
@@ -445,6 +487,60 @@ fn input_is_isolated(properties: &str, seat: &str) -> bool {
             .count()
             == 1
         && values.contains(&"LIBINPUT_IGNORE_DEVICE=1")
+}
+
+fn input_lab_rule_trace(node: &std::path::Path) -> String {
+    let Ok(output) = Command::new("udevadm")
+        .args(["test", "--action=add"])
+        .arg(node)
+        .output()
+    else {
+        return "udevadm test could not run".into();
+    };
+    let trace = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let relevant: Vec<_> = trace
+        .lines()
+        .filter(|line| {
+            [
+                "71-virtualgamepad-input-lab.rules: ",
+                "/usr/lib/udev/virtualgamepad-input-lab-seat.py",
+                "ID_SEAT=",
+                "LIBINPUT_IGNORE_DEVICE=",
+                "VG_INPUT_LAB_SEAT=",
+            ]
+            .iter()
+            .any(|needle| line.contains(needle))
+        })
+        .map(str::to_owned)
+        .collect();
+    if relevant.is_empty() {
+        format!(
+            "udevadm test exited {} with no matching rule trace",
+            output.status
+        )
+    } else {
+        relevant.join(" | ")
+    }
+}
+
+fn input_lab_hidraw_is_openable(family: &str) -> bool {
+    let devices = owned_family_devices(family);
+    let [device] = devices.as_slice() else {
+        return false;
+    };
+    let paths = consumer_paths(device, true);
+    let [path] = paths.as_slice() else {
+        return false;
+    };
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .is_ok()
 }
 
 #[test]
@@ -468,8 +564,16 @@ fn verify_contact_isolation<C: AcceptanceController>(
     controller: &mut C,
     target: RealizationTarget,
 ) {
-    let seat = std::env::var("VIRTUALGAMEPAD_INPUT_LAB_SEAT")
-        .expect("active contacts require the reviewed, process-owned input lab");
+    let seat = if target == RealizationTarget::LINUX_UINPUT {
+        std::env::var("VIRTUALGAMEPAD_INPUT_LAB_SEAT")
+            .expect("uinput contacts require separately reviewed process-owned input isolation")
+    } else {
+        assert!(
+            input_lab_enabled(),
+            "UHID contacts require VIRTUALGAMEPAD_INPUT_LAB=1"
+        );
+        format!("seat-vg-alpha-p{:x}", std::process::id())
+    };
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         controller.feedback(); // Required host probes progress while udev settles.
@@ -503,12 +607,18 @@ fn verify_contact_isolation<C: AcceptanceController>(
             && properties
                 .iter()
                 .all(|(_, properties)| input_is_isolated(properties, &seat))
+            && (target == RealizationTarget::LINUX_UINPUT
+                || input_lab_hidraw_is_openable(C::PREFIX))
         {
             return;
         }
         assert!(
             Instant::now() < deadline,
-            "input isolation was not verified; contacts remain neutral; nodes: {properties:?}; HID devices: {:?}",
+            "input isolation or private SDL hidraw access was not verified; contacts remain neutral; nodes: {properties:?}; udev rule trace: {:?}; HID devices: {:?}",
+            nodes
+                .iter()
+                .map(|node| (node, input_lab_rule_trace(node)))
+                .collect::<Vec<_>>(),
             owned_family_devices(C::PREFIX)
         );
         thread::sleep(Duration::from_millis(10));
@@ -794,15 +904,13 @@ trait AcceptanceController: Sized {
 }
 
 fn owned_family_devices(family: &str) -> Vec<PathBuf> {
+    let root = uhid_phys_root(family);
     let family = if family.is_empty() {
         String::new()
     } else {
         format!("{family}/")
     };
-    let prefix = format!(
-        "HID_PHYS=virtualgamepad/uhid/{family}p{:x}-i",
-        std::process::id()
-    );
+    let prefix = format!("HID_PHYS={}/{family}p{:x}-i", root, std::process::id());
     fs::read_dir("/sys/bus/hid/devices")
         .unwrap()
         .filter_map(Result::ok)
