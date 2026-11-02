@@ -2819,6 +2819,7 @@ dependencies = [
  "gr-curated-controllers",
  "gr-hid",
  "gr-privileged-broker",
+ "gr-provider-linux-uhid",
  "gr-realization-api",
  "gr-root-audio",
 ]

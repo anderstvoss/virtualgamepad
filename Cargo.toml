@@ -72,12 +72,17 @@ audio-pipewire = ["gr-root-audio/audio-pipewire"]
 audio-usbip = ["gr-root-audio/audio-usbip"]
 
 [dev-dependencies]
+gr-provider-linux-uhid = { path = "crates/gr-provider-linux-uhid", version = "0.1" }
 gr-root-audio = { path = "crates/gr-root-audio", version = "0.1", features = ["test-support"] }
 gr-curated-controllers = { path = "crates/gr-curated-controllers", version = "0.1", features = ["test-support"] }
 
 [[example]]
 name = "usb_audio_root"
 required-features = ["audio-usbip"]
+
+[[example]]
+name = "steam_uhid_probe"
+required-features = ["experimental"]
 
 [[example]]
 name = "usb_audio_acceptance"
