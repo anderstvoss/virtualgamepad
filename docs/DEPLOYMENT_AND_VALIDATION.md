@@ -166,6 +166,45 @@ manual module loading. As with the UHID opt-in, remove only the unchanged
 installed file to undo it, and do not unload a module in use. No entry is
 needed when `CONFIG_INPUT_UINPUT=y`. Keep the UHID template scoped to `uhid`.
 
+### Optional Sony UHID input-lab isolation
+
+Active DualSense/DS4 touch tests can move the opted-in test input nodes onto an
+inactive process-specific seat and set `LIBINPUT_IGNORE_DEVICE=1`. This policy
+is limited to the reviewed Sony UHID lab identity; it does not isolate uinput
+contacts or replace their separate input-isolation prerequisites.
+
+The helper runs as root from udev on device-supplied `HID_PHYS`. It accepts only
+full-string ASCII lab labels for `dualsense` or `dualshock4`, at most 63 bytes,
+with a canonical positive lowercase hexadecimal Linux PID (1 through
+`0x7fffffff`) and bounded instance counter. The producer encodes these numeric
+IDs in hexadecimal. Python isolated mode ignores user Python environment and
+import paths. Helper logic performs no file/network access or shell invocation;
+invalid labels or argument counts exit nonzero without output. Only successful
+validation publishes the seat property used by input/event/hidraw rules.
+
+After reviewing the helper and rules, inspect existing destination files and
+install both artifacts from the repository root:
+
+```bash
+sudo install -o root -g root -m 0755 udev/virtualgamepad-input-lab-seat.py /usr/lib/udev/virtualgamepad-input-lab-seat.py
+sudo install -o root -g root -m 0644 udev/71-virtualgamepad-input-lab.rules /etc/udev/rules.d/71-virtualgamepad-input-lab.rules
+sudo udevadm control --reload
+```
+
+Both destination directories must be administrator-owned. Recreate the lab
+device after reloading; do not use cached device numbers. The creating test
+must explicitly set `VIRTUALGAMEPAD_INPUT_LAB=1`; normal demo/Steam creation
+keeps its original identity. Keep Steam closed for active-contact SDL tests.
+Before any active contacts, verify every owned event node's process-specific
+`ID_SEAT` and `LIBINPUT_IGNORE_DEVICE=1`, and ordinary-user access to the exact
+owned hidraw node. The ignored acceptance test enforces those gates.
+
+To undo the opt-in, first close the lab controllers, remove only these unchanged
+installed helper/rule files, and reload udev. No general input-group enrollment
+or blanket hidraw permission is needed. See
+[SDL acceptance](SDL_ACCEPTANCE.md#active-sony-touch-acceptance-isolation) and the
+[host inventory](plans/pre-controller-buildout/HOST_SETUP_HANDOFF.md#exact-udev-and-module-inventory).
+
 Consumers need access to their session's hidraw/event nodes, not the creation
 device or broker socket. SDL development files, Steam, capture tools, corpus
 credentials, and physical reference devices are validation prerequisites only.
