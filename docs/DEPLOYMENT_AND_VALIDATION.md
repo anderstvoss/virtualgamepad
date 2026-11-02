@@ -151,6 +151,21 @@ policy. Verify ordinary-user creation after reboot without manual module loading
 To undo this opt-in, an administrator removes only this unchanged installed file;
 do not unload the module while controllers may be using it.
 
+For `linux.uinput` on kernels with `CONFIG_INPUT_UINPUT=m`, an administrator
+can separately opt into boot registration using the
+[`virtualgamepad-uinput.conf`](../modules-load.d/virtualgamepad-uinput.conf)
+template. Inspect the destination before installing:
+
+```bash
+sudo install -o root -g root -m 0644 modules-load.d/virtualgamepad-uinput.conf /etc/modules-load.d/virtualgamepad-uinput.conf
+```
+
+This loads only `uinput`; it grants no permissions and does not replace the
+explicit udev/group policy. Verify ordinary-user creation after reboot without
+manual module loading. As with the UHID opt-in, remove only the unchanged
+installed file to undo it, and do not unload a module in use. No entry is
+needed when `CONFIG_INPUT_UINPUT=y`. Keep the UHID template scoped to `uhid`.
+
 Consumers need access to their session's hidraw/event nodes, not the creation
 device or broker socket. SDL development files, Steam, capture tools, corpus
 credentials, and physical reference devices are validation prerequisites only.

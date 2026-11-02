@@ -32,6 +32,10 @@ is interactive and must not be represented as an ordinary CI pass. The current
 repository has no SDL3 development package installed, so this gate remains a
 supported-host prerequisite rather than an ordinary automated test.
 
+For the D9 host conclusions, exact udev rule inventory, installation modes and
+future setup checks, see the
+[host setup handoff](plans/pre-controller-buildout/HOST_SETUP_HANDOFF.md).
+
 ## Steam physical/virtual A/B
 
 With Steam running and its `console_log.txt` available, run the opt-in virtual
