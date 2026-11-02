@@ -21,8 +21,8 @@ virtual-consumer results; it does not promote physical fidelity or gameplay.
 - [Research PR #90](https://github.com/anderstvoss/controller-protocol-research/pull/90),
   commit `9db1a78cac606bc2326bc559e9bc1627950542b8`, publishes sanitized
   six-run observations, commands, source/binary/patch hashes and limitations.
-  CI, CodeQL and Secret scan all passed as of this handoff; PR review/merge
-  remains outstanding.
+  CI, CodeQL and Secret scan passed. Research PR #90 merged as
+  [`c9262690e0fb217802bd72dda66c605e7049e8f7`](https://github.com/anderstvoss/controller-protocol-research/commit/c9262690e0fb217802bd72dda66c605e7049e8f7).
 
 | Case | SDL alone, Steam closed | Steam alone, SDL helper absent |
 | --- | --- | --- |
@@ -61,10 +61,11 @@ UHID node.
 
 ## Exact udev and module inventory
 
-These are the installed artifacts verified on this host. Review existing
-destination files before installing elsewhere. The optional lab source files
-are currently local changes and must be carried into a reviewed change before
-another clone can rely on obtaining them from main.
+These are the installed artifacts recorded on this host. The reusable lab
+helper, rules, identity code and regression tests accompany this setup in the
+repository. Review existing destination files before installing elsewhere; the
+root-helper opt-in requires owner review and is not a D10 self-merge. The
+hardened source must not be assumed installed merely because its PR is ready.
 
 | Repository source / package | Installed destination | Owner / mode | Purpose |
 | --- | --- | --- | --- |
@@ -96,16 +97,20 @@ The complete optional lab rules are:
 
 ```udev
 SUBSYSTEM=="hid", ENV{HID_PHYS}=="virtualgamepad/input-lab/uhid/*/p*-i*", PROGRAM=="/usr/lib/udev/virtualgamepad-input-lab-seat.py %E{HID_PHYS}", ENV{VG_INPUT_LAB_SEAT}="%c"
-SUBSYSTEM=="input", KERNEL=="input*", IMPORT{parent}="VG_INPUT_LAB_SEAT", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}"
-SUBSYSTEM=="input", KERNEL=="event*", IMPORT{parent}="VG_INPUT_LAB_SEAT", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-SUBSYSTEM=="hidraw", IMPORT{parent}="HID_PHYS", ENV{HID_PHYS}=="virtualgamepad/input-lab/uhid/*/p*-i*", TAG+="uaccess"
+SUBSYSTEM=="input", KERNEL=="input*", IMPORT{parent}="VG_INPUT_LAB_SEAT", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}"
+SUBSYSTEM=="input", KERNEL=="event*", IMPORT{parent}="VG_INPUT_LAB_SEAT", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="hidraw", IMPORT{parent}="VG_INPUT_LAB_SEAT", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", TAG+="uaccess"
 ```
 
 The helper accepts only `dualsense` and `dualshock4` families in that test
-namespace, and outputs `seat-vg-alpha-p<hex-process-id>`. The hidraw rule uses
-the reserved lab namespace glob. The rule file alone is insufficient: the
+namespace, and outputs `seat-vg-alpha-p<hex-process-id>`. It bounds the entire
+ASCII label to 63 bytes, validates a positive numeric PID through `0x7fffffff`,
+and rejects malformed/noncanonical IDs. The hidraw rule imports the
+helper-validated seat property; the namespace glob alone grants no access. The rule file alone is insufficient: the
 executable helper and `VIRTUALGAMEPAD_INPUT_LAB=1` in the test process are also
-required. Ordinary demo/Steam runs do not enable the lab identity.
+required. It runs Python in isolated mode and performs no input-dependent
+file/network access or command execution. Ordinary demo/Steam runs do not
+enable the lab identity. See the [opt-in install](../../DEPLOYMENT_AND_VALIDATION.md#optional-sony-uhid-input-lab-isolation).
 
 Matching child input `phys` failed because it was empty; input `uniq` changed
 under hid-playstation. Importing the stable HID-parent `HID_PHYS` and carrying
@@ -143,17 +148,18 @@ For a future setup, after approved group/rule/module installation:
 
 ## Coordinator next actions and workspace disposition
 
-1. Review research PR #90 and its explicit limits; merge under the project's
-   policy. Step 16 remains unchecked pending that review/merge. Assess its
-   unknown delivery cells before treating the entire consumer objective as
-   accepted; D9 itself is already cleared.
+1. Research PR #90 is merged; retain its exact qualification when closing the
+   tracker: `linux.uhid.usb meets brief 03's wired kernel-or-SDL criterion;
+   Steam listing stub-limited, report delivery unmeasured.` D9 is cleared;
+   missing delivery observations do not become full consumer acceptance.
 2. Preserve root working changes. At the end of the host work, the original checkout remained on `main`, base
    `8f60dcce577ab02bd8ed8b3426349729d417393c`, with research submodule still
    pinned to `719befa86bbff044cb0cdc524d66085a4b610800`. No root commit or
    submodule update was made during that host work. Research work used a separate checkout and
    branch `codex/steam-uhid-host-closeout`.
-3. Split the reusable input-lab identity, udev helper/rules, regression tests
-   and setup documentation into a reviewed root change. Keep the throwaway
+3. Owner-review the reusable input-lab identity, hardened helper/rules,
+   CI-executed Python regressions and setup documentation as a root-helper
+   change; it must not self-merge under D10. Keep the throwaway
    `steam_uhid_probe` example, its Cargo registration/dev dependency and the
    metadata helper out of merged production changes as brief 03 requires.
 4. Treat future Steam compatibility work as a consumer/protocol task: improve
