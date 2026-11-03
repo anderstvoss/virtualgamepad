@@ -201,11 +201,45 @@ fn creation_labels(
     } else {
         format!("{unique_id}-{suffix}")
     };
-    Ok((format!("{physical_path}/{suffix}"), unique_id))
+    Ok((physical_label(physical_path, &suffix)?, unique_id))
 }
 
-fn input_lab_enabled() -> bool {
+pub(crate) fn input_lab_enabled() -> bool {
     std::env::var_os("VIRTUALGAMEPAD_INPUT_LAB").as_deref() == Some(std::ffi::OsStr::new("1"))
+}
+
+fn physical_label(base: &str, suffix: &str) -> Result<String, ProviderError> {
+    let label = format!("{base}/{suffix}");
+    if base.starts_with("virtualgamepad/input-lab/") && label.len() > 63 {
+        return Err(ProviderError::Open {
+            reason: "input-lab physical label exceeds 63 bytes".into(),
+        });
+    }
+    Ok(label)
+}
+
+fn input_lab_uinput_root(controller: &str, enabled: bool) -> Option<&'static str> {
+    if !enabled {
+        return None;
+    }
+    match controller {
+        "virtualgamepad.dualsense" => Some("virtualgamepad/input-lab/uinput/dualsense"),
+        "virtualgamepad.dualshock4" => Some("virtualgamepad/input-lab/uinput/dualshock4"),
+        _ => None,
+    }
+}
+
+pub(crate) fn input_lab_uinput_labels(
+    controller: &str,
+    enabled: bool,
+) -> Result<Option<[String; 2]>, ProviderError> {
+    let Some(base) = input_lab_uinput_root(controller, enabled) else {
+        return Ok(None);
+    };
+    Ok(Some([
+        physical_label(base, &next_instance_suffix()?)?,
+        physical_label(base, &next_instance_suffix()?)?,
+    ]))
 }
 
 fn input_lab_physical_path(physical_path: &str, enabled: bool) -> Option<String> {
@@ -390,6 +424,37 @@ mod tests {
             Some(unique.as_str())
         );
         assert_eq!(association.observed_host_path, None);
+    }
+
+    #[test]
+    fn uinput_lab_labels_are_opt_in_sony_only_distinct_and_bounded() {
+        for family in ["dualsense", "dualshock4"] {
+            let id = format!("virtualgamepad.{family}");
+            assert_eq!(input_lab_uinput_labels(&id, false).unwrap(), None);
+            let labels = input_lab_uinput_labels(&id, true).unwrap().unwrap();
+            assert_ne!(labels[0], labels[1]);
+            for label in labels {
+                assert!(label.starts_with(&format!(
+                    "virtualgamepad/input-lab/uinput/{family}/p{:x}-i",
+                    std::process::id()
+                )));
+                assert!(label.len() <= 63);
+            }
+        }
+        for id in [
+            "virtualgamepad.switch-pro",
+            "virtualgamepad.xbox360",
+            "virtualgamepad.wii-remote",
+            "virtualgamepad.dualsense-edge",
+        ] {
+            assert_eq!(input_lab_uinput_labels(id, true).unwrap(), None);
+        }
+        let base = "virtualgamepad/input-lab/uinput/dualshock4";
+        let suffix = "p7fffffff-iffffffffffffffff";
+        assert!(physical_label(base, suffix).is_err());
+        let exact = "x".repeat(63 - base.len() - 1);
+        assert_eq!(physical_label(base, &exact).unwrap().len(), 63);
+        assert!(physical_label(base, &(exact + "x")).is_err());
     }
 
     #[test]

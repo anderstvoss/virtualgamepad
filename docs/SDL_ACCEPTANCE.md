@@ -43,10 +43,11 @@ rule. Install `udev/virtualgamepad-input-lab-seat.py` as
 `/usr/lib/udev/virtualgamepad-input-lab-seat.py` (root:root, mode `0755`) and
 `udev/71-virtualgamepad-input-lab.rules` as
 `/etc/udev/rules.d/71-virtualgamepad-input-lab.rules` (root:root, mode `0644`),
-then reload udev. The rule matches only Sony UHID nodes created by a test run
-with `VIRTUALGAMEPAD_INPUT_LAB=1`; their test-only `HID_PHYS` path carries the
-creating process ID. The udev rule carries a corresponding inactive seat from
-the HID parent through the input device to its event nodes, which also receive
+then reload udev. The rule matches only Sony UHID/uinput nodes created by a test run with
+`VIRTUALGAMEPAD_INPUT_LAB=1`; their test-only physical label carries the
+creating process ID. For UHID, validation occurs on the HID parent and is
+imported into inputN; uinput validates inputN itself through its raw sysfs
+`phys`. Both carry the inactive seat into event nodes, which also receive
 `LIBINPUT_IGNORE_DEVICE=1`. Only nodes carrying the helper-validated parent seat property receive the
 lab hidraw `uaccess` tag; an active local logind session can grant SDL access. The live test verifies both event-node
 properties before it sends active contacts.
@@ -56,14 +57,18 @@ cannot act as a competing consumer.
 
 The installed rule changes needed for this isolation are:
 
-1. Match the HID parent's `HID_PHYS` only under
-   `virtualgamepad/input-lab/uhid/{dualsense,dualshock4}/p*-i*`, then call the
-   helper to derive a process-specific inactive seat.
-2. Import that seat from the HID parent into each `input*` node and set
-   `ID_SEAT`; on `event*`, also set `LIBINPUT_IGNORE_DEVICE=1`.
+1. Validate the HID parent's `HID_PHYS` for UHID or inputN's `ATTR{phys}`
+   for uinput under the corresponding Sony lab namespace. The helper accepts
+   only `uhid`/`uinput`, `dualsense`/`dualshock4` and bounded canonical IDs.
+2. Import the UHID parent seat before guarding inputN, or use inputN's own
+   helper-validated uinput seat. Import eventN's parent property in a separate
+   rule before the guard sets `ID_SEAT` and `LIBINPUT_IGNORE_DEVICE=1`.
 3. On hidraw, import the helper-validated parent seat property and require it
    before adding `TAG+="uaccess"`. A broad lab namespace glob alone never
-   grants hidraw access.
+   grants hidraw access. For uinput events, require both the validated marker
+   and uinput parent `phys` before assigning dedicated group
+   `virtualgamepad-uinput` and mode 0660. This provides ordinary-user SDL
+   access without relying on a logind ACL for an inactive seat.
 
 Matching the input node's `phys` did not work because it was empty, and matching
 its `uniq` did not work because the PlayStation driver rewrites that value. The
@@ -72,9 +77,11 @@ test process ID. The exact installed rules are in
 `udev/71-virtualgamepad-input-lab.rules`.
 
 The helper rejects malformed, overlong, non-Sony and noncanonical numeric
-identities before producing any seat. The new rules cover UHID only; uinput
-active-contact tests still require separately reviewed process-owned isolation.
-See [deployment instructions](DEPLOYMENT_AND_VALIDATION.md#optional-sony-uhid-input-lab-isolation)
+identities before producing any seat. Both paths derive the expected inactive
+seat from the process ID and require the explicit opt-in; applications must
+not set it. Uinput labels cover both gamepad and touch companions, and every
+owned event node must have the required properties and access before contacts.
+See [deployment instructions](DEPLOYMENT_AND_VALIDATION.md#optional-sony-input-lab-isolation)
 for the opt-in install.
 
 Run the ignored active-contact test as the ordinary user, with the private SDL
@@ -86,7 +93,7 @@ VIRTUALGAMEPAD_SDL_PROBE="$PWD/scripts/run-sdl3-gamepad-probe.sh" \
 PKG_CONFIG_PATH="$HOME/.local/opt/sdl3-<shortrev>/lib/pkgconfig" \
 LD_LIBRARY_PATH="$HOME/.local/opt/sdl3-<shortrev>/lib" \
   cargo test --locked -p gr-curated-controllers --test dualsense_uhid_live \
-    dualsense_sdl_observes_motion_and_returns_output -- --ignored --nocapture
+    dualsense_sdl_observes_motion_and_returns_output -- --ignored --test-threads=1 --nocapture
 ```
 
 Use the actual private SDL prefix in place of `<shortrev>`. The test refuses to
