@@ -7,7 +7,17 @@ use gr_curated_controllers::{
 };
 use std::io::Read;
 use std::process::{Child, Command, Stdio};
-static LIVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+use std::sync::{Mutex, MutexGuard, PoisonError};
+static LIVE_LOCK: Mutex<()> = Mutex::new(());
+
+// Only serializes host access; there is no protected controller state to repair.
+fn recover_live_lock(lock: &Mutex<()>) -> MutexGuard<'_, ()> {
+    lock.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn live_lock() -> MutexGuard<'static, ()> {
+    recover_live_lock(&LIVE_LOCK)
+}
 use gr_realization_api::{RealizationSessionId, RealizationTarget};
 use std::{
     fs,
@@ -81,6 +91,115 @@ fn identity_selection_excludes_siblings_and_truncated_instances() {
     ));
 }
 
+fn is_owned_live_label(label: &str, process: u32) -> bool {
+    if let Some(rest) = label.strip_prefix(&format!("virtualgamepad/p{process:x}/")) {
+        let Some((creation, component)) = rest.split_once('/') else {
+            return false;
+        };
+        return creation.len() == 32
+            && creation.bytes().all(|byte| byte.is_ascii_hexdigit())
+            && component.strip_prefix('c').is_some_and(|value| {
+                value.len() == 4 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+            });
+    }
+    let namespace = [
+        "virtualgamepad/uhid/",
+        "virtualgamepad/uinput/",
+        "virtualgamepad/input-lab/uhid/",
+        "virtualgamepad/input-lab/uinput/",
+    ];
+    namespace.iter().any(|root| label.starts_with(root))
+        && label.rsplit('/').next().is_some_and(|suffix| {
+            suffix
+                .strip_prefix(&format!("p{process:x}-i"))
+                .is_some_and(|instance| {
+                    !instance.is_empty() && instance.bytes().all(|byte| byte.is_ascii_hexdigit())
+                })
+        })
+}
+
+fn assert_no_owned_live_devices() {
+    let mut leftovers = Vec::new();
+    for entry in fs::read_dir("/sys/bus/hid/devices")
+        .expect("live HID inventory")
+        .filter_map(Result::ok)
+    {
+        let node = entry.path();
+        if fs::read_to_string(node.join("uevent")).is_ok_and(|properties| {
+            properties.lines().any(|line| {
+                line.strip_prefix("HID_PHYS=")
+                    .is_some_and(|label| is_owned_live_label(label, std::process::id()))
+            })
+        }) {
+            leftovers.push(node);
+        }
+    }
+    for entry in fs::read_dir("/sys/class/input")
+        .expect("live input inventory")
+        .filter_map(Result::ok)
+    {
+        let node = entry.path();
+        if entry.file_name().to_string_lossy().starts_with("input")
+            && fs::read_to_string(node.join("phys"))
+                .is_ok_and(|label| is_owned_live_label(label.trim_end(), std::process::id()))
+        {
+            leftovers.push(node);
+        }
+    }
+    assert!(
+        leftovers.is_empty(),
+        "owned controller nodes remain from a preceding test: {leftovers:?}"
+    );
+}
+
+#[test]
+fn poisoned_live_serialization_lock_recovers_without_losing_exclusion() {
+    let lock = std::sync::Arc::new(Mutex::new(()));
+    let failed = std::sync::Arc::clone(&lock);
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = failed.lock().unwrap();
+            panic!("injected live-test failure");
+        })
+        .join()
+        .is_err()
+    );
+    assert!(lock.is_poisoned());
+    for _ in 0..2 {
+        let guard = recover_live_lock(&lock);
+        assert!(matches!(
+            lock.try_lock(),
+            Err(std::sync::TryLockError::WouldBlock)
+        ));
+        drop(guard);
+    }
+}
+
+#[test]
+fn leftover_selection_covers_compounds_and_lab_nodes_without_foreign_matches() {
+    for label in [
+        "virtualgamepad/uhid/dualsense/p2a-i0",
+        "virtualgamepad/uhid/dualshock4/p2a-i1",
+        "virtualgamepad/uinput/p2a-i1",
+        "virtualgamepad/input-lab/uinput/dualshock4/p2a-i2",
+        "virtualgamepad/input-lab/uhid/dualsense/p2a-i2",
+        "virtualgamepad/p2a/00000000000000000000000000000000/c0001",
+    ] {
+        assert!(is_owned_live_label(label, 42), "{label}");
+        assert!(!is_owned_live_label(label, 43), "{label}");
+    }
+    for label in [
+        "foreign/p2a-i0",
+        "virtualgamepad/uhid/dualsense/p2a-i",
+        "virtualgamepad/uhid/dualsense/p2a-i0/sibling",
+        "virtualgamepad/uhid/dualsense/p2aa-i0",
+        "virtualgamepad/p2a/truncated/c0000",
+        "virtualgamepad/p2a/00000000000000000000000000000000/c0000/sibling",
+    ] {
+        assert!(!is_owned_live_label(label, 42), "{label}");
+    }
+}
+
 fn owned_devices() -> Vec<PathBuf> {
     fs::read_dir("/sys/bus/hid/devices")
         .expect("HID sysfs inventory")
@@ -96,7 +215,8 @@ fn owned_devices() -> Vec<PathBuf> {
 #[test]
 #[ignore = "requires prepared UHID access and Linux hid-playstation; run in isolation"]
 fn dualsense_services_kernel_startup_and_removes_its_device() {
-    let _guard = LIVE_LOCK.lock().unwrap();
+    let _guard = live_lock();
+    assert_no_owned_live_devices();
     let session = 0x4c49_5645;
     assert!(
         owned_devices().is_empty(),
@@ -632,7 +752,8 @@ fn run_sdl_script<C: AcceptanceController>(
     active_contacts: bool,
 ) {
     let owned_devices = || owned_family_devices(C::PREFIX);
-    let _guard = LIVE_LOCK.lock().unwrap();
+    let _guard = live_lock();
+    assert_no_owned_live_devices();
     let binary = std::env::var_os("VIRTUALGAMEPAD_SDL_PROBE").expect("private compiled SDL probe");
     assert!(owned_devices().is_empty());
     for session in [7, 7, 7 + (1 << 16)] {
@@ -756,7 +877,8 @@ fn sony_touch_free_sdl_motion_and_feedback() {
 #[test]
 #[ignore = "requires isolated prepared UHID host; verifies concurrent repeated application IDs"]
 fn repeated_application_ids_keep_three_kernel_sessions_independent() {
-    let _guard = LIVE_LOCK.lock().unwrap();
+    let _guard = live_lock();
+    assert_no_owned_live_devices();
     assert!(owned_devices().is_empty());
     let mut controllers: Vec<_> = [7, 7, 7 + (1 << 16)]
         .into_iter()
@@ -819,7 +941,8 @@ fn repeated_application_ids_keep_three_kernel_sessions_independent() {
 #[test]
 #[ignore = "requires private SDL probe; injects consumer exit and controller removal"]
 fn sdl_failure_boundaries_reap_consumer_and_remove_controller() {
-    let _guard = LIVE_LOCK.lock().unwrap();
+    let _guard = live_lock();
+    assert_no_owned_live_devices();
     let binary = std::env::var_os("VIRTUALGAMEPAD_SDL_PROBE").expect("private SDL probe");
     for remove_controller in [false, true] {
         assert!(owned_devices().is_empty());
@@ -1575,7 +1698,8 @@ sony_mapping!(
 fn run_isolated_mapping<C: MappingController>(target: RealizationTarget) {
     use std::io::Read;
     use std::os::fd::AsRawFd;
-    let _guard = LIVE_LOCK.lock().unwrap();
+    let _guard = live_lock();
+    assert_no_owned_live_devices();
     let binary = std::env::var_os("VIRTUALGAMEPAD_SDL_PROBE").expect("private compiled SDL probe");
     for id in [7, 7, 65543] {
         let mut probe = None;
@@ -1873,7 +1997,8 @@ fn contact_frames_require_complete_events_and_sync_and_reject_loss() {
 
 fn run_evdev_contacts<C: AcceptanceController>() {
     use std::os::unix::fs::OpenOptionsExt;
-    let _guard = LIVE_LOCK.lock().unwrap();
+    let _guard = live_lock();
+    assert_no_owned_live_devices();
     for session in [7, 7, 7 + (1 << 16)] {
         let mut controller = C::create(session, RealizationTarget::LINUX_UINPUT);
         verify_contact_isolation(&mut controller, RealizationTarget::LINUX_UINPUT);
