@@ -97,16 +97,21 @@ The complete optional lab rules are:
 
 ```udev
 SUBSYSTEM=="hid", ENV{HID_PHYS}=="virtualgamepad/input-lab/uhid/*/p*-i*", PROGRAM=="/usr/lib/udev/virtualgamepad-input-lab-seat.py %E{HID_PHYS}", ENV{VG_INPUT_LAB_SEAT}="%c"
-SUBSYSTEM=="input", KERNEL=="input*", IMPORT{parent}="VG_INPUT_LAB_SEAT", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}"
-SUBSYSTEM=="input", KERNEL=="event*", IMPORT{parent}="VG_INPUT_LAB_SEAT", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-SUBSYSTEM=="hidraw", IMPORT{parent}="VG_INPUT_LAB_SEAT", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", TAG+="uaccess"
+SUBSYSTEM=="input", KERNEL=="input*", IMPORT{parent}="VG_INPUT_LAB_SEAT"
+SUBSYSTEM=="input", KERNEL=="input*", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}"
+SUBSYSTEM=="input", KERNEL=="event*", IMPORT{parent}="VG_INPUT_LAB_SEAT"
+SUBSYSTEM=="input", KERNEL=="event*", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="hidraw", IMPORT{parent}="VG_INPUT_LAB_SEAT"
+SUBSYSTEM=="hidraw", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", TAG+="uaccess"
 ```
 
 The helper accepts only `dualsense` and `dualshock4` families in that test
 namespace, and outputs `seat-vg-alpha-p<hex-process-id>`. It bounds the entire
 ASCII label to 63 bytes, validates a positive numeric PID through `0x7fffffff`,
 and rejects malformed/noncanonical IDs. The hidraw rule imports the
-helper-validated seat property; the namespace glob alone grants no access. The rule file alone is insufficient: the
+helper-validated seat property; the namespace glob alone grants no access.
+Import rules must precede their guards as separate rules because udev evaluates
+ENV matches before IMPORT within one rule. The rule file alone is insufficient: the
 executable helper and `VIRTUALGAMEPAD_INPUT_LAB=1` in the test process are also
 required. It runs Python in isolated mode and performs no input-dependent
 file/network access or command execution. Ordinary demo/Steam runs do not

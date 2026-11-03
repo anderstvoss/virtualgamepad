@@ -1,6 +1,8 @@
 """Untrusted HID_PHYS validation for the opt-in root udev helper."""
 
 import ast
+import fnmatch
+import re
 import importlib.util
 import io
 from pathlib import Path
@@ -113,14 +115,68 @@ class InputLabSeatTests(unittest.TestCase):
             for label in [*VALID, *INVALID]:
                 MODULE.seat_for_phys(label)
 
-    def test_all_child_rules_require_helper_validated_parent_property(self):
+    @staticmethod
+    def child_policy(rules, subsystem, kernel, parent):
+        """Model the used rule subset: ENV matching precedes parent imports.
+
+        The installed-rule failure reproduced with udevadm test on the host:
+        an ENV guard on the IMPORT line cannot see the imported property.
+        """
+        properties = {}
+        tags = set()
+        for line in rules.splitlines():
+            if not line.startswith(f'SUBSYSTEM=="{subsystem}"'):
+                continue
+            pattern = re.search(r'KERNEL=="([^\"]+)"', line)
+            if pattern and not fnmatch.fnmatchcase(kernel, pattern[1]):
+                continue
+            matches = re.findall(r'ENV\{([^}]+)\}=="([^\"]+)"', line)
+            if any(not fnmatch.fnmatchcase(properties.get(key, ''), pattern)
+                   for key, pattern in matches):
+                continue
+            imports = re.findall(r'IMPORT\{parent\}="([^\"]+)"', line)
+            if any(key not in parent for key in imports):
+                continue
+            for key in imports:
+                properties[key] = parent[key]
+            for key, value in re.findall(r'ENV\{([^}]+)\}="([^\"]*)"', line):
+                properties[key] = re.sub(r'%E\{([^}]+)\}',
+                                         lambda match: properties.get(match[1], ''), value)
+            tags.update(re.findall(r'TAG\+="([^\"]+)"', line))
+        return properties, tags
+
+    def test_validated_parent_reaches_each_child_before_guard(self):
         rules = HELPER.with_name('71-virtualgamepad-input-lab.rules').read_text()
-        children = [line for line in rules.splitlines()
-                    if line.startswith(('SUBSYSTEM=="input"', 'SUBSYSTEM=="hidraw"'))]
-        self.assertEqual(len(children), 3)
-        for line in children:
-            self.assertIn('IMPORT{parent}="VG_INPUT_LAB_SEAT"', line)
-            self.assertIn('ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*"', line)
+        seat = 'seat-vg-alpha-p2a'
+        for subsystem, kernel in [('input', 'input1'), ('input', 'event1'),
+                                  ('hidraw', 'hidraw1')]:
+            with self.subTest(subsystem=subsystem, kernel=kernel):
+                properties, tags = self.child_policy(rules, subsystem, kernel,
+                                                     {'VG_INPUT_LAB_SEAT': seat})
+                if subsystem == 'hidraw':
+                    self.assertIn('uaccess', tags)
+                else:
+                    self.assertEqual(properties.get('ID_SEAT'), seat)
+                if kernel.startswith('event'):
+                    self.assertEqual(properties.get('LIBINPUT_IGNORE_DEVICE'), '1')
+                for parent in [{}, {'VG_INPUT_LAB_SEAT': ''},
+                               {'VG_INPUT_LAB_SEAT': 'seat0'},
+                               {'VG_INPUT_LAB_SEAT': 'seat-vg-alpha-p'}]:
+                    properties, tags = self.child_policy(rules, subsystem, kernel, parent)
+                    self.assertNotIn('ID_SEAT', properties)
+                    self.assertNotIn('LIBINPUT_IGNORE_DEVICE', properties)
+                    self.assertNotIn('uaccess', tags)
+
+    def test_same_rule_import_guard_regression_drops_valid_parent(self):
+        seat = 'seat-vg-alpha-p2a'
+        broken = ('SUBSYSTEM=="input", KERNEL=="event*", '
+                  'IMPORT{parent}="VG_INPUT_LAB_SEAT", '
+                  'ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", '
+                  'ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}", '
+                  'ENV{LIBINPUT_IGNORE_DEVICE}="1"')
+        properties, tags = self.child_policy(broken, 'input', 'event1',
+                                             {'VG_INPUT_LAB_SEAT': seat})
+        self.assertEqual((properties, tags), ({}, set()))
 
 
 if __name__ == '__main__':
