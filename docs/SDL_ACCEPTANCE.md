@@ -32,6 +32,74 @@ is interactive and must not be represented as an ordinary CI pass. The current
 repository has no SDL3 development package installed, so this gate remains a
 supported-host prerequisite rather than an ordinary automated test.
 
+For the D9 host conclusions, exact udev rule inventory, installation modes and
+future setup checks, see the
+[host setup handoff](plans/pre-controller-buildout/HOST_SETUP_HANDOFF.md).
+
+## Active Sony touch acceptance isolation
+
+Active DualSense/DS4 touch acceptance requires the optional input-lab udev
+rule. Install `udev/virtualgamepad-input-lab-seat.py` as
+`/usr/lib/udev/virtualgamepad-input-lab-seat.py` (root:root, mode `0755`) and
+`udev/71-virtualgamepad-input-lab.rules` as
+`/etc/udev/rules.d/71-virtualgamepad-input-lab.rules` (root:root, mode `0644`),
+then reload udev. The rule matches only Sony UHID/uinput nodes created by a test run with
+`VIRTUALGAMEPAD_INPUT_LAB=1`; their test-only physical label carries the
+creating process ID. For UHID, validation occurs on the HID parent and is
+imported into inputN; uinput validates inputN itself through its raw sysfs
+`phys`. Both carry the inactive seat into event nodes, which also receive
+`LIBINPUT_IGNORE_DEVICE=1`. Only nodes carrying the helper-validated parent seat property receive the
+lab hidraw `uaccess` tag; an active local logind session can grant SDL access. The live test verifies both event-node
+properties before it sends active contacts.
+Ordinary demo and Steam sessions do not set this opt-in and keep their existing
+device identity. Keep Steam closed during the active-contact SDL test so it
+cannot act as a competing consumer.
+
+The installed rule changes needed for this isolation are:
+
+1. Validate the HID parent's `HID_PHYS` for UHID or inputN's `ATTR{phys}`
+   for uinput under the corresponding Sony lab namespace. The helper accepts
+   only `uhid`/`uinput`, `dualsense`/`dualshock4` and bounded canonical IDs.
+2. Import the UHID parent seat before guarding inputN, or use inputN's own
+   helper-validated uinput seat. Import eventN's parent property in a separate
+   rule before the guard sets `ID_SEAT` and `LIBINPUT_IGNORE_DEVICE=1`.
+3. On hidraw, import the helper-validated parent seat property and require it
+   before adding `TAG+="uaccess"`. A broad lab namespace glob alone never
+   grants hidraw access. For uinput events, require both the validated marker
+   and uinput parent `phys` before assigning dedicated group
+   `virtualgamepad-uinput` and mode 0660. This provides ordinary-user SDL
+   access without relying on a logind ACL for an inactive seat.
+
+Matching the input node's `phys` did not work because it was empty, and matching
+its `uniq` did not work because the PlayStation driver rewrites that value. The
+HID parent `HID_PHYS` remains stable across those child events and carries the
+test process ID. The exact installed rules are in
+`udev/71-virtualgamepad-input-lab.rules`.
+
+The helper rejects malformed, overlong, non-Sony and noncanonical numeric
+identities before producing any seat. Both paths derive the expected inactive
+seat from the process ID and require the explicit opt-in; applications must
+not set it. Uinput labels cover both gamepad and touch companions, and every
+owned event node must have the required properties and access before contacts.
+See [deployment instructions](DEPLOYMENT_AND_VALIDATION.md#optional-sony-input-lab-isolation)
+for the opt-in install.
+
+Run the ignored active-contact test as the ordinary user, with the private SDL
+prefix scoped to this command:
+
+```bash
+VIRTUALGAMEPAD_INPUT_LAB=1 \
+VIRTUALGAMEPAD_SDL_PROBE="$PWD/scripts/run-sdl3-gamepad-probe.sh" \
+PKG_CONFIG_PATH="$HOME/.local/opt/sdl3-<shortrev>/lib/pkgconfig" \
+LD_LIBRARY_PATH="$HOME/.local/opt/sdl3-<shortrev>/lib" \
+  cargo test --locked -p gr-curated-controllers --test dualsense_uhid_live \
+    dualsense_sdl_observes_motion_and_returns_output -- --ignored --test-threads=1 --nocapture
+```
+
+Use the actual private SDL prefix in place of `<shortrev>`. The test refuses to
+send contacts if the opt-in is absent or any created event node lacks the
+process-owned seat and libinput-ignore properties.
+
 ## Steam physical/virtual A/B
 
 With Steam running and its `console_log.txt` available, run the opt-in virtual

@@ -276,6 +276,56 @@ impl NativeProviderSession for Session {
     }
 }
 
+fn prepare_lab_components(
+    identity: CompoundIdentity,
+    request: ProviderOpenRequest,
+    paths: &[String; 2],
+) -> Result<([ProviderOpenRequest; 2], crate::ControllerAssociation), ProviderError> {
+    let mut prepared = requests(request)?;
+    for (request, path) in prepared.iter_mut().zip(paths) {
+        let NativeControllerRealization::Evdev(spec) = &mut request.realization else {
+            unreachable!("Sony requests are evdev");
+        };
+        spec.physical_path = Some(path.clone());
+    }
+    let mut association = crate::ControllerAssociation::requested(&prepared[0].realization);
+    association.requested_unique_id = Some(identity.component(GAMEPAD).unique_id);
+    association.companions.push(crate::CompanionAssociation {
+        role: "touch",
+        requested_physical_path: Some(paths[1].clone()),
+        requested_unique_id: Some(identity.component(TOUCH).unique_id),
+    });
+    Ok((prepared, association))
+}
+
+fn open_lab_components(
+    identity: CompoundIdentity,
+    prepared: [ProviderOpenRequest; 2],
+    factory: &Arc<dyn NativeProviderFactory>,
+) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
+    let application_id = prepared[0].session;
+    let compound = CompoundSession::open_associated_prepared_evdev(
+        identity,
+        prepared
+            .into_iter()
+            .zip([GAMEPAD, TOUCH])
+            .map(|(request, id)| ComponentOpen {
+                id,
+                factory: Arc::clone(factory),
+                request,
+            })
+            .collect(),
+    )
+    .map_err(|error| ProviderError::Open {
+        reason: error.to_string(),
+    })?;
+    Ok(Box::new(Session {
+        compound,
+        application_id,
+        sequence: 0,
+    }))
+}
+
 pub(crate) fn open_native(
     request: gr_realization_api::ProviderOpenRequest,
     association: &mut crate::ControllerAssociation,
@@ -297,10 +347,92 @@ pub(crate) fn open_native(
         logical: creation,
         creation,
     };
+    if let Some(paths) = common::input_lab_uinput_labels(
+        request.selection.controller.as_str(),
+        common::input_lab_enabled(),
+    )? {
+        let (prepared, lab_association) = prepare_lab_components(identity, request, &paths)?;
+        let factory: Arc<dyn NativeProviderFactory> =
+            Arc::new(gr_provider_linux_uinput::LinuxUinputProvider);
+        let session = open_lab_components(identity, prepared, &factory)?;
+        *association = lab_association;
+        return Ok(session);
+    }
     *association = self::association(identity, &request)?;
     open(
         identity,
         request,
         std::sync::Arc::new(gr_provider_linux_uinput::LinuxUinputProvider),
     )
+}
+
+#[cfg(test)]
+mod lab_tests {
+    use super::*;
+    use gr_realization_api::{
+        ControllerId, ProviderRequirements, RealizationSelection, RealizationTarget,
+    };
+
+    fn request(product: u16) -> ProviderOpenRequest {
+        let mut realization = crate::dualsense::realization();
+        let NativeControllerRealization::Evdev(spec) = &mut realization else {
+            panic!("evdev");
+        };
+        // Synthetic Sony-shape requests exercise both touch identity policies.
+        spec.identity.product_id = product;
+        spec.physical_path = Some("synthetic-input".into());
+        ProviderOpenRequest {
+            session: RealizationSessionId(7),
+            requirements: ProviderRequirements::default(),
+            selection: RealizationSelection {
+                controller: ControllerId::new("test.sony-lab"),
+                target: RealizationTarget::LINUX_UINPUT,
+            },
+            realization,
+        }
+    }
+
+    #[test]
+    fn lab_components_preserve_controls_and_exact_association_for_both_sony_shapes() {
+        for product in [0x0ce6, 0x05c4] {
+            let identity = CompoundIdentity {
+                logical: [7; 16],
+                creation: [8; 16],
+            };
+            let paths = [
+                "virtualgamepad/input-lab/uinput/dualsense/p2a-i0".to_owned(),
+                "virtualgamepad/input-lab/uinput/dualsense/p2a-i1".to_owned(),
+            ];
+            let original = requests(request(product)).unwrap();
+            let (prepared, association) =
+                prepare_lab_components(identity, request(product), &paths).unwrap();
+            assert_eq!(
+                association.requested_physical_path.as_deref(),
+                Some(paths[0].as_str())
+            );
+            assert_eq!(
+                association.companions[0].requested_physical_path.as_deref(),
+                Some(paths[1].as_str())
+            );
+            assert_eq!(
+                association.requested_unique_id,
+                Some(identity.component(GAMEPAD).unique_id)
+            );
+            for (index, (actual, expected)) in prepared.iter().zip(&original).enumerate() {
+                let (
+                    NativeControllerRealization::Evdev(actual),
+                    NativeControllerRealization::Evdev(expected),
+                ) = (&actual.realization, &expected.realization)
+                else {
+                    panic!("evdev");
+                };
+                assert_eq!(actual.physical_path.as_deref(), Some(paths[index].as_str()));
+                assert_eq!(actual.key_codes, expected.key_codes);
+                assert_eq!(actual.event_codes, expected.event_codes);
+                assert_eq!(actual.absolute_axes, expected.absolute_axes);
+                assert_eq!(actual.force_feedback_codes, expected.force_feedback_codes);
+                assert_eq!(actual.identity, expected.identity);
+            }
+        }
+    }
 }

@@ -39,6 +39,12 @@ can be read from USB/UHID handles, and can be restored through the explicit
 `create_*_with_identity` constructors. No files are read/written for persistence.
 Concurrent controllers should use distinct persistent identities.
 
+For opt-in acceptance tests only, `VIRTUALGAMEPAD_INPUT_LAB=1` relabels
+DualSense/DS4 UHID or uinput `phys` into the corresponding
+`virtualgamepad/input-lab/{uhid,uinput}/` namespace.
+Applications must not set this variable. See the
+[optional input-lab setup](DEPLOYMENT_AND_VALIDATION.md#optional-sony-input-lab-isolation).
+
 Association exposes `components()`, each with typed `kind()`, a display role,
 optional input surface or audio endpoint metadata, and transport-specific requested
 identity. Audio components do not populate requested HID identity fields. Consumers
