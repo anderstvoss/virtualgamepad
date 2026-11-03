@@ -1,40 +1,70 @@
-//! 14a declarative family registration. No driver, provider or constructor.
+//! Wired Steam realization definitions.
 use crate::registry::{
     ControllerFamily, FamilyRealization, FamilySpec, PermissionClass, RealizationTier,
 };
 use gr_controller_contract::{
-    ControllerSurface, InputTopology, RealizationControllerDefinition, RealizationManifest,
-    RealizationManifestEntry, RealizationValidationStatus, TargetRestriction,
+    ControlError, ControllerSurface, DigitalControlUpdate, InputTopology, MotorRole, OutputKind,
+    RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
+    RealizationValidationStatus, TargetAwareControllerDriver, TargetRestriction,
     construction::ControllerSurfaceSpec,
 };
-use gr_realization_api::{ControllerId, ProviderRequirements, RealizationTarget};
-
-pub(crate) struct SteamController2026Definition;
-const BLOCKED: TargetRestriction = TargetRestriction {
-    feature: "14a planned target only",
-    reason: "Blocked at 14c/step 16: no provider, driver or constructor; kernel/SDL acceptance requires the 7.3+ host",
+use gr_realization_api::{
+    ControllerId, ProviderFrame, ProviderRequirements, RealizationSelection, RealizationSessionId,
+    RealizationTarget,
 };
-const fn surface(target: RealizationTarget) -> ControllerSurface {
+
+pub(crate) struct SteamController2026Definition(pub(crate) String);
+const REDUCED: &[TargetRestriction] = &[
+    TargetRestriction {
+        feature: "motion sensors",
+        reason: "the uinput provider cannot declare INPUT_PROP_ACCELEROMETER or MSC_TIMESTAMP",
+    },
+    TargetRestriction {
+        feature: "axis fuzz and resolution",
+        reason: "the native evdev axis contract exposes range and flat only",
+    },
+    TargetRestriction {
+        feature: "HID feature exchange, touch metadata and vendor haptics",
+        reason: "evdev provides gamepad keys, axes and FF_RUMBLE rather than vendor reports",
+    },
+    TargetRestriction {
+        feature: "host-visible unit serial",
+        reason: "the uinput provider exposes a physical correlation path and has no unique-ID setter",
+    },
+];
+const fn surface(
+    target: RealizationTarget,
+    restrictions: &'static [TargetRestriction],
+    evdev: bool,
+) -> ControllerSurface {
     ControllerSurfaceSpec {
         target,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &[],
         axes: &[],
         outputs: &[],
-        output_kinds: &[],
-        restrictions: &[BLOCKED],
+        output_kinds: if evdev {
+            &[OutputKind::Rumble {
+                motors: &[MotorRole::Strong, MotorRole::Weak],
+            }]
+        } else {
+            &[OutputKind::Rumble {
+                motors: &[MotorRole::Left, MotorRole::Right],
+            }]
+        },
+        restrictions,
         input_topology: &super::topology::TOPOLOGY,
     }
     .build()
 }
-static UINPUT: ControllerSurface = surface(RealizationTarget::LINUX_UINPUT);
-static WIRED: ControllerSurface = surface(RealizationTarget::LINUX_UHID_USB);
+pub(super) static UINPUT: ControllerSurface =
+    surface(RealizationTarget::LINUX_UINPUT, REDUCED, true);
+pub(super) static WIRED: ControllerSurface = surface(RealizationTarget::LINUX_UHID_USB, &[], false);
 impl RealizationControllerDefinition for SteamController2026Definition {
     fn controller_id(&self) -> ControllerId {
         gr_controller_wire::registry::STEAM_CONTROLLER_2026.id
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        // Declares planned targets under 14a, not a provider open request.
         static ENTRIES: &[RealizationManifestEntry] = &[
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UINPUT,
@@ -54,7 +84,88 @@ impl RealizationControllerDefinition for SteamController2026Definition {
         RealizationManifest::new(ENTRIES)
     }
 }
+impl TargetAwareControllerDriver for SteamController2026Definition {
+    type State = super::SteamController2026State;
+    type Frame = ProviderFrame;
+
+    fn neutral_state(&self) -> Self::State {
+        Self::State::default()
+    }
+
+    fn apply_digital(
+        &self,
+        state: &mut Self::State,
+        update: DigitalControlUpdate,
+    ) -> Result<(), ControlError> {
+        use super::SteamController2026Button as Button;
+        use gr_controller_contract::{DpadDirection, FaceButton};
+        let (button, pressed) = match update {
+            DigitalControlUpdate::FaceButton { button, pressed } => (
+                match button {
+                    FaceButton::North => Button::Y,
+                    FaceButton::South => Button::A,
+                    FaceButton::East => Button::B,
+                    FaceButton::West => Button::X,
+                },
+                pressed,
+            ),
+            DigitalControlUpdate::Dpad { direction, pressed } => (
+                match direction {
+                    DpadDirection::Up => Button::Up,
+                    DpadDirection::Down => Button::Down,
+                    DpadDirection::Left => Button::Left,
+                    DpadDirection::Right => Button::Right,
+                },
+                pressed,
+            ),
+        };
+        state.set_button(button, pressed);
+        Ok(())
+    }
+
+    fn validate_state(
+        &self,
+        selection: RealizationSelection,
+        _: &Self::State,
+    ) -> Result<(), ControlError> {
+        if matches!(
+            selection.target,
+            RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UINPUT
+        ) {
+            Ok(())
+        } else {
+            Err(crate::common::unavailable(selection.target))
+        }
+    }
+
+    fn encode(
+        &self,
+        selection: RealizationSelection,
+        state: &Self::State,
+    ) -> Result<Self::Frame, ControlError> {
+        self.validate_state(selection, state)?;
+        Ok(if selection.target == RealizationTarget::LINUX_UINPUT {
+            super::evdev::frame(state)
+        } else {
+            super::codec::provider_frame(state)
+        })
+    }
+}
+impl crate::common::HidDriver for SteamController2026Definition {
+    type Hid = super::codec::SteamHidProtocol;
+
+    fn neutralize_state(state: &mut Self::State) {
+        state.neutralize();
+    }
+
+    fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
+        Self::Hid::with_serial(self.0.clone())
+    }
+}
 impl ControllerFamily for SteamController2026Definition {
+    const OUTPUT_KINDS: &'static [OutputKind] = &[OutputKind::Rumble {
+        motors: &[MotorRole::Left, MotorRole::Right],
+    }];
     const SPEC: &'static FamilySpec = &gr_controller_wire::registry::STEAM_CONTROLLER_2026;
     fn topology() -> &'static InputTopology {
         &super::topology::TOPOLOGY
@@ -71,7 +182,7 @@ impl ControllerFamily for SteamController2026Definition {
         TARGETS
     }
     fn manifest() -> RealizationManifest {
-        Self.realization_manifest()
+        Self(String::new()).realization_manifest()
     }
 }
 
@@ -79,13 +190,12 @@ impl ControllerFamily for SteamController2026Definition {
 mod tests {
     use super::*;
     #[test]
-    fn compiled_family_declares_only_blocked_planned_targets_without_host_profiles() {
-        let id = SteamController2026Definition.controller_id();
-        let family = crate::registry::STAGED_FAMILIES
+    fn compiled_family_advertises_supported_targets_without_host_profiles() {
+        let id = SteamController2026Definition(String::new()).controller_id();
+        let family = crate::registry::FAMILIES
             .iter()
             .find(|f| f.id == id)
             .unwrap();
-        assert!(!crate::registry::FAMILIES.iter().any(|f| f.id == id));
         assert!(gr_controller_wire::registry::find(id).is_none());
         assert_eq!((family.manifest)().entries().len(), 2);
         assert!(family.broker_tag.is_none() && family.spec.dummy_hcd_tag.is_none());
@@ -107,16 +217,15 @@ mod tests {
                 target.surface.validation_status(),
                 RealizationValidationStatus::ResearchBacked
             );
-            assert!(
-                target
-                    .surface
-                    .restrictions()
-                    .iter()
-                    .any(|r| r.reason.contains("no provider, driver or constructor"))
+            assert_eq!(
+                target.surface.restrictions(),
+                if target.surface.target() == RealizationTarget::LINUX_UINPUT {
+                    REDUCED
+                } else {
+                    &[]
+                },
             );
-            assert!(
-                target.surface.outputs().is_empty() && target.surface.output_kinds().is_empty()
-            );
+            assert!(!target.surface.output_kinds().is_empty());
             assert_eq!(
                 target.surface.input_topology(),
                 &super::super::topology::TOPOLOGY

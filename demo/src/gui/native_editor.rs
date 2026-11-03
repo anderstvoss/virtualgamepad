@@ -1180,13 +1180,18 @@ mod registry_tests {
         assert_eq!(state.motion_plus().gyroscope, [8192, 8192, 16383]);
     }
     #[test]
-    fn every_compiled_family_produces_a_native_topology_editor() {
+    fn every_demo_family_produces_a_native_topology_editor() {
         let registered = Kind::registered();
-        assert_eq!(
-            registered.len(),
-            gr_curated_controllers::registry::FAMILIES.len()
-        );
-        for entry in gr_curated_controllers::registry::FAMILIES {
+        // Steam C6 adds a library and acceptance runner adapter. Its native
+        // demo editor is outside the wired realization step.
+        let (library_only, demo): (Vec<_>, Vec<_>) = gr_curated_controllers::registry::FAMILIES
+            .iter()
+            .partition(|entry| {
+                entry.id == gr_curated_controllers::steam_controller_2026::STEAM_CONTROLLER_2026_ID
+            });
+        assert_eq!(library_only.len(), 1);
+        assert_eq!(registered.len(), demo.len());
+        for entry in demo {
             let kind = registered
                 .iter()
                 .copied()

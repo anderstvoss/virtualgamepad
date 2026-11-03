@@ -390,10 +390,10 @@ fn malformed_features_are_atomic_unknowns_reply_explicitly_and_wired_feature2_is
     );
 }
 
-const OUTPUTS: &[(&str, Haptic)] = &[
+const OUTPUTS: &[(&str, SteamController2026Haptic)] = &[
     (
         "output-rumble-80-fields",
-        Haptic::Rumble {
+        SteamController2026Haptic::Rumble {
             kind: 1,
             intensity: 0x1234,
             left_speed: 0x5678,
@@ -404,7 +404,7 @@ const OUTPUTS: &[(&str, Haptic)] = &[
     ),
     (
         "output-pulse-81-fields",
-        Haptic::Pulse {
+        SteamController2026Haptic::Pulse {
             side: 2,
             on_us: 0x1234,
             off_us: 0x4567,
@@ -413,7 +413,7 @@ const OUTPUTS: &[(&str, Haptic)] = &[
     ),
     (
         "output-command-82-fields",
-        Haptic::Command {
+        SteamController2026Haptic::Command {
             side: 1,
             command: 2,
             gain_db: 3,
@@ -421,7 +421,7 @@ const OUTPUTS: &[(&str, Haptic)] = &[
     ),
     (
         "output-lfo-83-fields",
-        Haptic::Lfo {
+        SteamController2026Haptic::Lfo {
             side: 1,
             gain_db: 2,
             frequency: 0x1234,
@@ -432,7 +432,7 @@ const OUTPUTS: &[(&str, Haptic)] = &[
     ),
     (
         "output-sweep-84-fields",
-        Haptic::Sweep {
+        SteamController2026Haptic::Sweep {
             side: 2,
             gain_db: 3,
             duration_ms: 0x1234,
@@ -442,7 +442,7 @@ const OUTPUTS: &[(&str, Haptic)] = &[
     ),
     (
         "output-script-85-fields",
-        Haptic::Script {
+        SteamController2026Haptic::Script {
             side: 1,
             script: 2,
             gain_db: 3,
@@ -463,7 +463,7 @@ fn haptics_decode_every_distinct_field_and_retain_each_report_without_device_ack
         );
         assert_eq!(protocol.outputs.revision, revision);
         let zero = name.strip_suffix("-fields").unwrap();
-        assert!(Haptic::decode(&report(ReportType::Output, zero)).is_ok());
+        assert!(SteamController2026Haptic::decode(&report(ReportType::Output, zero)).is_ok());
     }
     assert!(protocol.outputs.haptics.iter().all(Option::is_some));
     assert_eq!(protocol.deadline(), None);
@@ -476,6 +476,110 @@ fn haptics_decode_every_distinct_field_and_retain_each_report_without_device_ack
 }
 
 #[test]
+fn hid_adapter_returns_exact_acknowledgements_and_raw_haptic_observations() {
+    let mut protocol = SteamHidProtocol::default();
+    let started = Lifecycle::Start {
+        numbered_input: true,
+        numbered_output: true,
+        numbered_feature: true,
+    };
+    assert_eq!(
+        protocol.lifecycle(started, 0),
+        Some(gr_realization_api::RawReverseEvent::HidLifecycle(started))
+    );
+    for (name, _) in OUTPUTS {
+        let request = report(ReportType::Output, name);
+        let expected_event = gr_realization_api::RawReverseEvent::HidOutput {
+            report_id: request.id(),
+            bytes: request.payload().to_vec(),
+        };
+        assert_eq!(
+            protocol.request(&RequestKind::Set(request), 1),
+            (Reply::Set(Ok(())), Some(expected_event))
+        );
+    }
+    assert_eq!(
+        protocol.request(
+            &RequestKind::Get {
+                kind: ReportType::Feature,
+                id: Some(2),
+            },
+            2,
+        ),
+        (Reply::Get(Err(ReplyError::Unsupported)), None)
+    );
+    assert_eq!(
+        protocol.request(
+            &RequestKind::Set(Report::new(ReportType::Output, Some(0x86), vec![0; 3]).unwrap()),
+            3,
+        ),
+        (Reply::Set(Err(ReplyError::Unsupported)), None)
+    );
+    assert_eq!(
+        protocol
+            .outputs
+            .haptics
+            .iter()
+            .filter(|haptic| haptic.is_some())
+            .count(),
+        6
+    );
+}
+
+#[test]
+fn fake_hid_runtime_completes_each_haptic_request_and_closes_once() {
+    let fake = Fake::default();
+    let mut runtime = Runtime::new(
+        SteamHidProtocol::default(),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    runtime.service(0).unwrap();
+    for (index, (name, _)) in OUTPUTS.iter().enumerate() {
+        let ordinal = u64::try_from(index).unwrap();
+        let request = report(ReportType::Output, name);
+        let expected_event = gr_realization_api::RawReverseEvent::HidOutput {
+            report_id: request.id(),
+            bytes: request.payload().to_vec(),
+        };
+        enqueue(&fake, ordinal, RequestKind::Set(request));
+        assert_eq!(runtime.service(ordinal + 1).unwrap(), vec![expected_event]);
+        assert_eq!(
+            fake.0.borrow().commands.last(),
+            Some(&Command::Reply {
+                token: RequestId {
+                    session: 1,
+                    ordinal,
+                },
+                reply: Reply::Set(Ok(())),
+            })
+        );
+        assert!(!runtime.wants_write());
+    }
+    enqueue(
+        &fake,
+        6,
+        RequestKind::Set(Report::new(ReportType::Output, Some(0x86), vec![0; 3]).unwrap()),
+    );
+    assert!(runtime.service(7).unwrap().is_empty());
+    assert_eq!(
+        fake.0.borrow().commands.last(),
+        Some(&Command::Reply {
+            token: RequestId {
+                session: 1,
+                ordinal: 6,
+            },
+            reply: Reply::Set(Err(ReplyError::Unsupported)),
+        })
+    );
+    runtime.close().unwrap();
+    runtime.close().unwrap();
+    assert_eq!(fake.0.borrow().closes, 1);
+}
+
+#[test]
 fn all_rumble_gain_bytes_survive_including_kernel_two_zero_and_sdl_zero_zero() {
     for (left, right) in [(2, 0), (0, 0)]
         .into_iter()
@@ -484,11 +588,13 @@ fn all_rumble_gain_bytes_survive_including_kernel_two_zero_and_sdl_zero_zero() {
         let mut wire = fixture("output-rumble-80-fields");
         wire[6] = left;
         wire[9] = right;
-        let output =
-            Haptic::decode(&Report::from_wire(ReportType::Output, true, &wire).unwrap()).unwrap();
+        let output = SteamController2026Haptic::decode(
+            &Report::from_wire(ReportType::Output, true, &wire).unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             output,
-            Haptic::Rumble {
+            SteamController2026Haptic::Rumble {
                 kind: 1,
                 intensity: 0x1234,
                 left_speed: 0x5678,
@@ -506,13 +612,15 @@ fn all_rumble_gain_bytes_survive_including_kernel_two_zero_and_sdl_zero_zero() {
     ] {
         let mut wire = fixture(name);
         wire[offset] = 0x80;
-        let output =
-            Haptic::decode(&Report::from_wire(ReportType::Output, true, &wire).unwrap()).unwrap();
+        let output = SteamController2026Haptic::decode(
+            &Report::from_wire(ReportType::Output, true, &wire).unwrap(),
+        )
+        .unwrap();
         match output {
-            Haptic::Command { gain_db, .. }
-            | Haptic::Lfo { gain_db, .. }
-            | Haptic::Sweep { gain_db, .. }
-            | Haptic::Script { gain_db, .. } => assert_eq!(gain_db, i8::MIN),
+            SteamController2026Haptic::Command { gain_db, .. }
+            | SteamController2026Haptic::Lfo { gain_db, .. }
+            | SteamController2026Haptic::Sweep { gain_db, .. }
+            | SteamController2026Haptic::Script { gain_db, .. } => assert_eq!(gain_db, i8::MIN),
             _ => panic!("gain dB field"),
         }
     }
@@ -542,7 +650,9 @@ fn all_output_lengths_and_report_classes_have_exact_success_or_error_without_mut
         }
         for kind in [ReportType::Input, ReportType::Feature, ReportType::Other(4)] {
             assert_eq!(
-                Haptic::decode(&Report::from_wire(kind, true, &original).unwrap()),
+                SteamController2026Haptic::decode(
+                    &Report::from_wire(kind, true, &original).unwrap()
+                ),
                 Err(ReplyError::Unsupported)
             );
         }
@@ -972,7 +1082,7 @@ fn wired_codec_emissions_and_acceptance_match_the_physical_descriptor() {
     for id in 1..=u8::MAX {
         for len in 0..=64 {
             let report = Report::new(ReportType::Output, Some(id), vec![0; len]).unwrap();
-            if Haptic::decode(&report).is_ok() {
+            if SteamController2026Haptic::decode(&report).is_ok() {
                 check(&report);
             }
             let mut payload = vec![0; len];
@@ -1008,4 +1118,20 @@ fn wired_codec_emissions_and_acceptance_match_the_physical_descriptor() {
         protocol.request(&RequestKind::Set(feature2), 0),
         (Reply::Set(Err(ReplyError::Unsupported)), None)
     );
+}
+
+#[test]
+fn serial_reply_supports_the_kernel_request_length() {
+    let mut protocol = SteamHidProtocol::with_serial("VGP-TEST".into());
+    let mut wire = [0; 64];
+    wire[..4].copy_from_slice(&[1, 0xae, 0x16, 1]);
+    let request = Report::from_wire(ReportType::Feature, true, &wire).unwrap();
+    assert_eq!(
+        protocol.request(&RequestKind::Set(request), 0).0,
+        Reply::Set(Ok(()))
+    );
+    let (Reply::Get(Ok(reply)), _) = protocol.request(&get(), 0) else {
+        panic!("serial query should succeed");
+    };
+    assert_eq!(&reply.wire()[..13], b"\x01\xae\x09\x01VGP-TEST\0");
 }

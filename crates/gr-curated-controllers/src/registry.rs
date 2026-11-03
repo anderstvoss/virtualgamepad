@@ -105,18 +105,12 @@ macro_rules! typed_registry {
     ($(($module:ident, $definition:ident, $spec:ident, [$($variant:ident)?]),)*) => {
         pub static FAMILIES: &[FamilyEntry] = &[
             $(family_entry::<crate::$module::$definition>(),)*
+            family_entry::<crate::steam_controller_2026::SteamController2026Definition>(),
             #[cfg(test)] family_entry::<test_family::Fifth>(),
         ];
     };
 }
 gr_controller_wire::compiled_families!(typed_registry);
-// 14a may register metadata without an advertised driver/provider. Promotion to
-// FAMILIES is a separate 14c change after step 16; existing constructor adapters
-// remain an invariant of every publicly advertised family.
-#[allow(dead_code)]
-pub(crate) static STAGED_FAMILIES: &[FamilyEntry] = &[family_entry::<
-    crate::steam_controller_2026::SteamController2026Definition,
->()];
 #[cfg(test)]
 mod test_family;
 #[cfg(test)]

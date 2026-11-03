@@ -1,8 +1,7 @@
 //! Steam Controller 2026 native supporting state (S3 steps 14a/14b).
 //!
-//! Staged registry metadata describes planned targets, blocked at 14c/step 16. There is
-//! no provider or controller creation path. Descriptor bytes/shapes come from
-//! fresh physical capture; field semantics remain compat consumer interpretations.
+//! The wired HID descriptor comes from physical capture. Feature replies and
+//! field semantics are compatibility interpretations.
 //! See `docs/STEAM_CONTROLLER_2026.md`.
 //!
 //! ```
@@ -21,16 +20,22 @@
 //! assert_eq!(state, SteamController2026State::default());
 //! ```
 
-// Protocol/provider integration remains gated at 14c/step 16.
 #[allow(dead_code)]
 mod codec;
+mod controller;
 mod definition;
-#[allow(dead_code)] // Exact compiled capture is reserved for the gated 14c provider.
+#[allow(dead_code)] // Exact compiled capture is used by the private 14c UHID path.
 mod descriptor;
+mod evdev;
 mod topology;
+pub use codec::{SteamController2026Haptic, SteamController2026Outputs};
+pub use controller::{
+    SteamController2026Controller, SteamController2026CreationOptions,
+    create_steam_controller_2026, create_steam_controller_2026_with_options,
+};
 pub(crate) use definition::SteamController2026Definition;
 
-/// Stable compiled family ID, without a constructor or realization fallback.
+/// Stable compiled family ID for the wired Steam family.
 pub use gr_controller_wire::registry::ids::STEAM_CONTROLLER_2026 as STEAM_CONTROLLER_2026_ID;
 
 /// Native digital controls; capacitive touch and pad clicks are separate state.
