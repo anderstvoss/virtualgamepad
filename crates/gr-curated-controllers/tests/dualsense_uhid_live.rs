@@ -466,7 +466,7 @@ fn spawn_sdl(
 fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
     let active_contacts = matches!(C::PREFIX, "dualsense" | "dualshock4");
     assert!(
-        !active_contacts || target == RealizationTarget::LINUX_UINPUT || input_lab_enabled(),
+        !active_contacts || input_lab_enabled(),
         "active contacts require VIRTUALGAMEPAD_INPUT_LAB=1"
     );
     run_sdl_script::<C>(target, C::script, C::MODE, active_contacts);
@@ -564,16 +564,11 @@ fn verify_contact_isolation<C: AcceptanceController>(
     controller: &mut C,
     target: RealizationTarget,
 ) {
-    let seat = if target == RealizationTarget::LINUX_UINPUT {
-        std::env::var("VIRTUALGAMEPAD_INPUT_LAB_SEAT")
-            .expect("uinput contacts require separately reviewed process-owned input isolation")
-    } else {
-        assert!(
-            input_lab_enabled(),
-            "UHID contacts require VIRTUALGAMEPAD_INPUT_LAB=1"
-        );
-        format!("seat-vg-alpha-p{:x}", std::process::id())
-    };
+    assert!(
+        input_lab_enabled(),
+        "active contacts require VIRTUALGAMEPAD_INPUT_LAB=1"
+    );
+    let seat = format!("seat-vg-alpha-p{:x}", std::process::id());
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         controller.feedback(); // Required host probes progress while udev settles.

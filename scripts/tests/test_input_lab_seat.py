@@ -15,15 +15,25 @@ HELPER = Path(__file__).resolve().parents[2] / 'udev/virtualgamepad-input-lab-se
 SPEC = importlib.util.spec_from_file_location('input_lab_seat', HELPER)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
-PREFIX = 'virtualgamepad/input-lab/uhid/'
+LAB_ROOT = 'virtualgamepad/input-lab/'
+PREFIX = LAB_ROOT + 'uhid/'
+UINPUT_PREFIX = LAB_ROOT + 'uinput/'
 VALID = {
     PREFIX + 'dualsense/p2a-i0': 'seat-vg-alpha-p2a',
     PREFIX + 'dualshock4/p3f-i10': 'seat-vg-alpha-p3f',
     PREFIX + 'dualsense/p7fffffff-i0': 'seat-vg-alpha-p7fffffff',
     PREFIX + 'dualshock4/p1-iffffffffffffffff': 'seat-vg-alpha-p1',
+    UINPUT_PREFIX + 'dualsense/p2a-i0': 'seat-vg-alpha-p2a',
+    UINPUT_PREFIX + 'dualshock4/p3f-i10': 'seat-vg-alpha-p3f',
+    UINPUT_PREFIX + 'dualsense/p7fffffff-i0': 'seat-vg-alpha-p7fffffff',
+    UINPUT_PREFIX + 'dualshock4/p1-iffffffffffffffff': 'seat-vg-alpha-p1',
 }
 INVALID = [
     '', 'seat0', 'virtualgamepad/uhid/dualsense/p2a-i0',
+    *[LAB_ROOT + transport + '/dualsense/p2a-i0'
+      for transport in ['usb', 'evdev', 'UHID', 'UINPUT', 'uInput', 'uhid/uinput']],
+    UINPUT_PREFIX + 'DualSense/p2a-i0', UINPUT_PREFIX + 'dualsense/p2a-i0/extra',
+    UINPUT_PREFIX + 'switch-pro/p2a-i0', UINPUT_PREFIX + 'dualsense/p2a-i0\n',
     PREFIX + 'switch-pro/p2a-i0', PREFIX + 'dualsense-edge/p2a-i0',
     PREFIX + 'dualshock4/../dualsense/p2a-i0',
     PREFIX + 'dualsense/p0-i0', PREFIX + 'dualsense/p00-i0',
@@ -68,15 +78,13 @@ class InputLabSeatTests(unittest.TestCase):
                     self.assertEqual((output.getvalue(), errors.getvalue()), ('', ''))
 
     def test_phys_length_bound_including_exact_boundary(self):
-        label = PREFIX + 'dualsense/p2a-i' + 'f' * 16
-        self.assertLessEqual(len(label), 63)
-        # For this fixed family and instance, the PID fills the remaining space.
-        prefix = PREFIX + 'dualsense/p'
-        digits = 63 - len(prefix) - len('-i') - 16
-        boundary = prefix + '1' * digits + '-i' + 'f' * 16
-        self.assertEqual(len(boundary), 63)
-        self.assertIsNotNone(MODULE.seat_for_phys(boundary))
-        self.assertIsNone(MODULE.seat_for_phys(prefix + '1' * (digits + 1) + '-i' + 'f' * 16))
+        for transport in ['uhid', 'uinput']:
+            prefix = LAB_ROOT + transport + '/dualsense/p'
+            digits = 63 - len(prefix) - len('-i') - 16
+            boundary = prefix + '1' * digits + '-i' + 'f' * 16
+            self.assertEqual(len(boundary), 63)
+            self.assertIsNotNone(MODULE.seat_for_phys(boundary))
+            self.assertIsNone(MODULE.seat_for_phys(prefix + '1' * (digits + 1) + '-i' + 'f' * 16))
 
     def test_wrong_argument_count_is_silent_failure(self):
         for argv in [['helper'], ['helper', next(iter(VALID)), 'extra']]:
@@ -116,12 +124,14 @@ class InputLabSeatTests(unittest.TestCase):
                 MODULE.seat_for_phys(label)
 
     @staticmethod
-    def child_policy(rules, subsystem, kernel, parent):
+    def child_policy(rules, subsystem, kernel, parent, attributes=None, ancestor_attributes=None):
         """Model the used rule subset: ENV matching precedes parent imports.
 
         The installed-rule failure reproduced with udevadm test on the host:
         an ENV guard on the IMPORT line cannot see the imported property.
         """
+        attributes = attributes or {}
+        ancestor_attributes = ancestor_attributes or {}
         properties = {}
         tags = set()
         for line in rules.splitlines():
@@ -130,18 +140,32 @@ class InputLabSeatTests(unittest.TestCase):
             pattern = re.search(r'KERNEL=="([^\"]+)"', line)
             if pattern and not fnmatch.fnmatchcase(kernel, pattern[1]):
                 continue
+            attrs = re.findall(r'(ATTRS?)\{([^}]+)\}=="([^\"]+)"', line)
+            if any(not fnmatch.fnmatchcase((ancestor_attributes if kind == 'ATTRS' else attributes).get(key, ''), pattern)
+                   for kind, key, pattern in attrs):
+                continue
             matches = re.findall(r'ENV\{([^}]+)\}=="([^\"]+)"', line)
             if any(not fnmatch.fnmatchcase(properties.get(key, ''), pattern)
                    for key, pattern in matches):
                 continue
+            program_result = None
+            if 'PROGRAM==' in line:
+                program_result = MODULE.seat_for_phys(attributes.get('phys', ''))
+                if program_result is None:
+                    continue
             imports = re.findall(r'IMPORT\{parent\}="([^\"]+)"', line)
             if any(key not in parent for key in imports):
                 continue
             for key in imports:
                 properties[key] = parent[key]
             for key, value in re.findall(r'ENV\{([^}]+)\}="([^\"]*)"', line):
+                if value == '%c':
+                    properties[key] = program_result
+                    continue
                 properties[key] = re.sub(r'%E\{([^}]+)\}',
                                          lambda match: properties.get(match[1], ''), value)
+            for key, value in re.findall(r'(GROUP|MODE)="([^\"]+)"', line):
+                properties['@' + key] = value
             tags.update(re.findall(r'TAG\+="([^\"]+)"', line))
         return properties, tags
 
@@ -166,6 +190,41 @@ class InputLabSeatTests(unittest.TestCase):
                     self.assertNotIn('ID_SEAT', properties)
                     self.assertNotIn('LIBINPUT_IGNORE_DEVICE', properties)
                     self.assertNotIn('uaccess', tags)
+
+    def test_uinput_validates_sysfs_phys_and_propagates_to_event(self):
+        rules = HELPER.with_name('71-virtualgamepad-input-lab.rules').read_text()
+        self.assertIn('ATTR{phys}==', rules)
+        self.assertIn('%s{phys}', rules)
+        for label, seat in VALID.items():
+            if '/uinput/' not in label:
+                continue
+            with self.subTest(label=label):
+                parent, _ = self.child_policy(rules, 'input', 'input1', {}, {'phys': label})
+                self.assertEqual(parent.get('ID_SEAT'), seat)
+                event, _ = self.child_policy(rules, 'input', 'event1', parent, ancestor_attributes={'phys': label})
+                self.assertEqual(event.get('ID_SEAT'), seat)
+                self.assertEqual(event.get('LIBINPUT_IGNORE_DEVICE'), '1')
+                self.assertEqual(event.get('@GROUP'), 'virtualgamepad-uinput')
+                self.assertEqual(event.get('@MODE'), '0660')
+        for label in [*INVALID, '"' + next(iter(VALID)) + '"']:
+            parent, _ = self.child_policy(rules, 'input', 'input1', {}, {'phys': label})
+            event, tags = self.child_policy(rules, 'input', 'event1', parent, ancestor_attributes={'phys': label})
+            self.assertNotIn('@GROUP', event)
+            self.assertNotIn('@MODE', event)
+            self.assertNotIn('ID_SEAT', event)
+            self.assertNotIn('LIBINPUT_IGNORE_DEVICE', event)
+            self.assertNotIn('uaccess', tags)
+
+    def test_uinput_event_access_requires_both_validated_marker_and_uinput_parent(self):
+        rules = HELPER.with_name('71-virtualgamepad-input-lab.rules').read_text()
+        seat = 'seat-vg-alpha-p2a'
+        label = UINPUT_PREFIX + 'dualsense/p2a-i0'
+        for parent, phys in [({}, label), ({'VG_INPUT_LAB_SEAT': 'seat0'}, label),
+                             ({'VG_INPUT_LAB_SEAT': seat}, PREFIX + 'dualsense/p2a-i0')]:
+            properties, _ = self.child_policy(rules, 'input', 'event1', parent,
+                                              ancestor_attributes={'phys': phys})
+            self.assertNotIn('@GROUP', properties)
+            self.assertNotIn('@MODE', properties)
 
     def test_same_rule_import_guard_regression_drops_valid_parent(self):
         seat = 'seat-vg-alpha-p2a'

@@ -66,12 +66,14 @@ helper, rules, identity code and regression tests accompany this setup in the
 repository. Review existing destination files before installing elsewhere; the
 root-helper opt-in requires owner review and is not a D10 self-merge. The
 hardened source must not be assumed installed merely because its PR is ready.
+The uinput extension is an owner-reviewed design: both Sony component labels
+are prepared before open, retaining exact physical association metadata.
 
 | Repository source / package | Installed destination | Owner / mode | Purpose |
 | --- | --- | --- | --- |
 | `udev/70-virtualgamepad-uhid.rules` | `/etc/udev/rules.d/70-virtualgamepad-uhid.rules` | root:root / 0644 | `/dev/uhid`: group `virtualgamepad-uhid`, mode 0660 |
 | `udev/70-virtualgamepad-uinput.rules` | `/etc/udev/rules.d/70-virtualgamepad-uinput.rules` | root:root / 0644 | `/dev/uinput`: group `virtualgamepad-uinput`, mode 0660 |
-| `udev/71-virtualgamepad-input-lab.rules` | `/etc/udev/rules.d/71-virtualgamepad-input-lab.rules` | root:root / 0644 | Optional opt-in Sony touch-test isolation and lab hidraw access |
+| `udev/71-virtualgamepad-input-lab.rules` | `/etc/udev/rules.d/71-virtualgamepad-input-lab.rules` | root:root / 0644 | Optional Sony UHID/uinput touch-test isolation and scoped consumer access |
 | `udev/virtualgamepad-input-lab-seat.py` | `/usr/lib/udev/virtualgamepad-input-lab-seat.py` | root:root / 0755 | Validate Sony lab identity and derive inactive per-process seat |
 | `modules-load.d/virtualgamepad-uhid.conf`, plus host's uinput boot entry | `/etc/modules-load.d/virtualgamepad-uhid.conf` | root:root / 0644 | Installed file loads both `uhid` and `uinput`; repository template loads only `uhid` |
 | `steam-devices` package | `/usr/lib/udev/rules.d/60-steam-input.rules` | Package managed | Valve/Sony consumer access; left unchanged |
@@ -97,16 +99,18 @@ The complete optional lab rules are:
 
 ```udev
 SUBSYSTEM=="hid", ENV{HID_PHYS}=="virtualgamepad/input-lab/uhid/*/p*-i*", PROGRAM=="/usr/lib/udev/virtualgamepad-input-lab-seat.py %E{HID_PHYS}", ENV{VG_INPUT_LAB_SEAT}="%c"
+SUBSYSTEM=="input", KERNEL=="input*", ATTR{phys}=="virtualgamepad/input-lab/uinput/*/p*-i*", PROGRAM=="/usr/lib/udev/virtualgamepad-input-lab-seat.py %s{phys}", ENV{VG_INPUT_LAB_SEAT}="%c"
 SUBSYSTEM=="input", KERNEL=="input*", IMPORT{parent}="VG_INPUT_LAB_SEAT"
 SUBSYSTEM=="input", KERNEL=="input*", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}"
 SUBSYSTEM=="input", KERNEL=="event*", IMPORT{parent}="VG_INPUT_LAB_SEAT"
 SUBSYSTEM=="input", KERNEL=="event*", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", KERNEL=="event*", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ATTRS{phys}=="virtualgamepad/input-lab/uinput/*/p*-i*", GROUP="virtualgamepad-uinput", MODE="0660"
 SUBSYSTEM=="hidraw", IMPORT{parent}="VG_INPUT_LAB_SEAT"
 SUBSYSTEM=="hidraw", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", TAG+="uaccess"
 ```
 
 The helper accepts only `dualsense` and `dualshock4` families in that test
-namespace, and outputs `seat-vg-alpha-p<hex-process-id>`. It bounds the entire
+namespace for `uhid` or `uinput`, and outputs `seat-vg-alpha-p<hex-process-id>`. It bounds the entire
 ASCII label to 63 bytes, validates a positive numeric PID through `0x7fffffff`,
 and rejects malformed/noncanonical IDs. The hidraw rule imports the
 helper-validated seat property; the namespace glob alone grants no access.
@@ -115,7 +119,7 @@ ENV matches before IMPORT within one rule. The rule file alone is insufficient: 
 executable helper and `VIRTUALGAMEPAD_INPUT_LAB=1` in the test process are also
 required. It runs Python in isolated mode and performs no input-dependent
 file/network access or command execution. Ordinary demo/Steam runs do not
-enable the lab identity. See the [opt-in install](../../DEPLOYMENT_AND_VALIDATION.md#optional-sony-uhid-input-lab-isolation).
+enable the lab identity. See the [opt-in install](../../DEPLOYMENT_AND_VALIDATION.md#optional-sony-input-lab-isolation).
 
 Matching child input `phys` failed because it was empty; input `uniq` changed
 under hid-playstation. Importing the stable HID-parent `HID_PHYS` and carrying
@@ -144,7 +148,10 @@ For a future setup, after approved group/rule/module installation:
    opens. Kernel modules alone do not grant access.
 4. Start only one owned test device. Identify all nodes by its session ancestry,
    not cached node numbers. Check ordinary-user read/write access to its exact
-   hidraw node. If needed, grant a temporary ACL only to that verified node.
+   hidraw node for UHID. For uinput, verify all exact event nodes belong to the
+   dedicated `virtualgamepad-uinput` group at mode 0660 and are openable by
+   the ordinary user. This grant also requires the validated seat marker and
+   a uinput lab parent label; UHID event permissions remain unchanged.
 5. Before active Sony contacts, require the expected process-specific `ID_SEAT`
    and `LIBINPUT_IGNORE_DEVICE=1` on every owned event node. The live test gates
    contacts on these checks. Keep Steam closed for this isolated SDL test.

@@ -1,9 +1,9 @@
 #!/usr/bin/python3 -I
-"""Validate an opt-in Sony UHID label and emit only its inactive seat name.
+"""Validate an opt-in Sony UHID/uinput label and emit only its inactive seat name.
 
 The producer uses lowercase hexadecimal numeric IDs. No device-supplied value
-is used as a command, path, or network address. UHID phys is at most 63 bytes
-plus its terminating NUL; accepted input is ASCII, so characters equal bytes.
+is used as a command, path, or network address. Both transports use the 63-byte
+UHID lab-label budget; accepted input is ASCII, so characters equal bytes.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import sys
 _MAX_PHYS_LENGTH = 63
 _MAX_PID = (1 << 31) - 1  # Linux pid_t is a signed 32-bit integer.
 _PHYS = re.compile(
-    r"virtualgamepad/input-lab/uhid/(?:dualsense|dualshock4)/"
+    r"virtualgamepad/input-lab/(?:uhid|uinput)/(?:dualsense|dualshock4)/"
     r"p([1-9a-f][0-9a-f]{0,7})-i(0|[1-9a-f][0-9a-f]{0,15})",
     re.ASCII,
 )

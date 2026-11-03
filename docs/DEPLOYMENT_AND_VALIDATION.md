@@ -166,21 +166,35 @@ manual module loading. As with the UHID opt-in, remove only the unchanged
 installed file to undo it, and do not unload a module in use. No entry is
 needed when `CONFIG_INPUT_UINPUT=y`. Keep the UHID template scoped to `uhid`.
 
-### Optional Sony UHID input-lab isolation
+<a id="optional-sony-uhid-input-lab-isolation"></a>
+
+### Optional Sony input-lab isolation
 
 Active DualSense/DS4 touch tests can move the opted-in test input nodes onto an
 inactive process-specific seat and set `LIBINPUT_IGNORE_DEVICE=1`. This policy
-is limited to the reviewed Sony UHID lab identity; it does not isolate uinput
-contacts or replace their separate input-isolation prerequisites.
+is limited to reviewed Sony UHID/uinput lab identities. For uinput, both the
+gamepad and touch companion receive distinct process-owned lab labels; neither
+is left on the normal desktop input path.
 
-The helper runs as root from udev on device-supplied `HID_PHYS`. It accepts only
-full-string ASCII lab labels for `dualsense` or `dualshock4`, at most 63 bytes,
+The helper runs as root from udev on the HID parent's `HID_PHYS` for UHID or
+the inputN sysfs `ATTR{phys}` for uinput. It accepts only full-string ASCII lab
+labels under `virtualgamepad/input-lab/{uhid,uinput}/{dualsense,dualshock4}/`,
+at most 63 bytes,
 with a canonical positive lowercase hexadecimal Linux PID (1 through
 `0x7fffffff`) and bounded instance counter. The producer encodes these numeric
 IDs in hexadecimal. Python isolated mode ignores user Python environment and
 import paths. Helper logic performs no file/network access or shell invocation;
 invalid labels or argument counts exit nonzero without output. Only successful
 validation publishes the seat property used by input/event/hidraw rules.
+Uinput validation uses `%s{phys}` from sysfs, not the quoted uevent `PHYS`.
+Imports and the guards depending on them must remain separate, ordered rules.
+
+For helper-validated uinput lab events only, an additional guard also checks
+the uinput parent `ATTRS{phys}` and sets group `virtualgamepad-uinput`, mode
+0660. The user must already belong to that dedicated creation group. Inactive
+seats have no active-session ACL, so this narrow group grant enables SDL
+read/write access while retaining the inactive seat and libinput-ignore gate.
+It grants no physical-input access and does not change UHID event permissions.
 
 After reviewing the helper and rules, inspect existing destination files and
 install both artifacts from the repository root:
@@ -197,7 +211,10 @@ must explicitly set `VIRTUALGAMEPAD_INPUT_LAB=1`; normal demo/Steam creation
 keeps its original identity. Keep Steam closed for active-contact SDL tests.
 Before any active contacts, verify every owned event node's process-specific
 `ID_SEAT` and `LIBINPUT_IGNORE_DEVICE=1`, and ordinary-user access to the exact
-owned hidraw node. The ignored acceptance test enforces those gates.
+owned hidraw node for UHID, or every exact owned event node for uinput. The
+ignored acceptance test enforces those gates. All live runs use
+`--test-threads=1`; the expected seat is derived from the creating process ID,
+with no separately supplied seat environment variable.
 
 To undo the opt-in, first close the lab controllers, remove only these unchanged
 installed helper/rule files, and reload udev. No general input-group enrollment
