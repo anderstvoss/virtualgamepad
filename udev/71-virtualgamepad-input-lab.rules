@@ -1,7 +1,11 @@
 # Opt-in DualSense/DS4 UHID SDL acceptance nodes only. The root helper validates
 # the entire lab label before publishing a seat. Import that validated property
 # through inputN/eventN and into hidraw; unvalidated labels receive no lab policy.
+# ENV matches run before IMPORT in one rule. Import in a separate earlier rule.
 SUBSYSTEM=="hid", ENV{HID_PHYS}=="virtualgamepad/input-lab/uhid/*/p*-i*", PROGRAM=="/usr/lib/udev/virtualgamepad-input-lab-seat.py %E{HID_PHYS}", ENV{VG_INPUT_LAB_SEAT}="%c"
-SUBSYSTEM=="input", KERNEL=="input*", IMPORT{parent}="VG_INPUT_LAB_SEAT", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}"
-SUBSYSTEM=="input", KERNEL=="event*", IMPORT{parent}="VG_INPUT_LAB_SEAT", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-SUBSYSTEM=="hidraw", IMPORT{parent}="VG_INPUT_LAB_SEAT", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", TAG+="uaccess"
+SUBSYSTEM=="input", KERNEL=="input*", IMPORT{parent}="VG_INPUT_LAB_SEAT"
+SUBSYSTEM=="input", KERNEL=="input*", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}"
+SUBSYSTEM=="input", KERNEL=="event*", IMPORT{parent}="VG_INPUT_LAB_SEAT"
+SUBSYSTEM=="input", KERNEL=="event*", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="hidraw", IMPORT{parent}="VG_INPUT_LAB_SEAT"
+SUBSYSTEM=="hidraw", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", TAG+="uaccess"
