@@ -1,19 +1,13 @@
-# Steam Controller 2026 wired: S3 reports and supporting state
+# Steam Controller 2026 wired
 
-Scope: checkpoint C6 steps 14a and 14b, direct wired `28de:1302` only.
-The public `gr_curated_controllers::steam_controller_2026` supporting module
-exposes native state, button, trackpad and motion types. The report/feature/output
-protocol remains private and deterministically tested. A private compiled staging catalog
-records the family and two planned targets with explicit 14c/step 16 restrictions;
-the advertised registry is unchanged.
-The exact physical wired descriptor is compiled in, but there is no provider,
-driver or controller creation path; this cannot create a virtual Steam Controller.
-Ordinary-root and Wii supporting API snapshots remain unchanged.
+C6 covers direct wired USB `28de:1302`. The Steam supporting module opens
+the full wired UHID realization and a reduced uinput gamepad.
+
 The approved Steam supporting API has its own reviewed snapshot,
 [`api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json`](api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json),
 checked by `python3 scripts/check-alpha-api.py` alongside the root and Wii APIs.
 
-Research pin: `7a887f43fe4ce25a652c8381a5f962bb2dc927b0`, including the merged
+Research pin: `fc6964ac8799f0b7a38ffb9526361450f0b1b87a`, including the merged
 fresh physical descriptor research PR 82 (`aeac7a5`), July notes and PR 81
 research leads. The generated fixture
 manifest records the exact revision and both fixture/record file digests.
@@ -50,24 +44,55 @@ Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
   the supporting module does not re-export it. Root and Wii
   snapshots remain byte-identical. For a Steam-only `--write` refresh, verify
   that the root and Wii snapshot diffs are empty before committing.
-- **14c/14d and C6 checkpoint PR:** held for step 16 on the owner's kernel
-  7.3 or newer machine. No kernel, SDL, Steam, physical or timing acceptance
-  follows from these deterministic tests. An optional SDL run on the 6.12
-  generic HID path still needs the owner's separate OK.
+- **14c API:** the [owner decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6616502032)
+  approves the controller, constructor, options constructor and retained haptic types.
 
-No acceptance manifest or cell is added. The private staged registry contains
-metadata only; public registry advertisement remains 14c work. Existing registry,
-demo and test-runner assertions continue to require constructor adapters for
-every advertised family and are unchanged. Full/reduced staged tiers are planned
-levels, not completed realizations. The internal metadata contract requires only
-the definition contract, without requiring a driver implementation. This keeps
-14a registration separate from 14c and adds no fake provider or constructor.
+## Realization differences
 
-The native topology covers buttons, sticks, digital/analog triggers, pads,
-raw IMU, six D2 `CapacitiveTouch` kinds and two `PressureButton` kinds. Coordinate
-ranges/extents are source field domains, not physical resolution or calibration.
-Actual uinput mapping/limitations remain 14c work; native schema registration
-must not be mistaken for an evdev realization.
+| Capability | Wired UHID | Reduced uinput |
+| --- | --- | --- |
+| Gamepad | Exact descriptor and compatibility `0x42` encoding | Kernel gamepad name, USB identity, keys, axis codes/ranges/flat and conventional FF_RUMBLE from `steam-c6-kernel-ibex-gamepad-evdev` |
+| Axis fuzz and resolution | Determined by the bound kernel driver | Zero in the provider. Its axis specification supports range and flat |
+| Motion | Native motion through `0x42` | No companion motion node. The provider cannot declare the accelerometer property or timestamp event |
+| Touch | Native pad coordinates, click, pressure and touch flags | Pad click and contact-gated coordinates. The kernel gamepad mapping has no independent pressure, stick/grip touch or pad-contact key |
+| Host output | Retained vendor haptics, reports `0x80`–`0x85` | Conventional rumble via reverse events. There is no vendor haptic payload for the six retained slots |
+| Unit serial | Compatibility feature string. Physical format: No evidence | No HID feature channel or evdev unique-ID setter |
+
+The default unit serial is a process-local synthetic label allocated once per
+instance. Caller values must contain 1–21 printable ASCII bytes. The limit
+comes from Linux v7.3-rc1 [hid-steam.c lines 399–414 and 667–685](https://github.com/torvalds/linux/blob/cee9395acd8043be0644b25c34bfa86623f2b935/drivers/hid/hid-steam.c#L667-L685).
+The kernel uses a 22-byte buffer with NUL termination and does not validate
+a character class. Printable ASCII is this project's compatibility policy.
+Pinned [SDL Triton lines 453–471](https://github.com/libsdl-org/SDL/blob/e0232c5b9d972ad394d597ce858185cd15a0f1a7/src/joystick/hidapi/SDL_hidapi_steam_triton.c#L453-L471)
+register wired controllers without querying the feature serial, so that driver
+imposes no additional wire bound.
+
+## Demo editor
+
+The demo includes a native Steam editor for both realizations: buttons, sticks,
+trigger axes and clicks, both trackpads, independent capacitive contacts and pad
+pressure, and raw motion. Edits use the bounded worker queue and native state;
+per-target restrictions remain visible. No additional public API is introduced.
+
+## D9 wired acceptance
+
+The shared acceptance runner used one cycle per realization on Linux
+`7.3.0-1-mainline`, with the private SDL `e0232c5` build and Steam HIDAPI
+enabled for the UHID run.
+
+- Both realizations exposed associated nodes and removed them on close.
+- UHID bound to `hid-steam`. Sysfs showed the golden gamepad and motion-node
+  names, USB IDs, key and absolute-axis bits, and sensor property and
+  timestamp bits. The kernel gamepad exposed additional FF bits alongside
+  FF_RUMBLE. The uinput gamepad matched its key and axis masks and exposed
+  conventional FF_RUMBLE.
+- SDL opened the associated hidraw device, observed neutral state, button
+  and axis changes across its 22-button and six-axis masks, touch events,
+  and changing accelerometer and gyro samples. This is SDL decoding evidence
+  for the scripted `0x42` stream.
+- Direct evdev opens returned permission denied. Kernel `0x42` event decoding,
+  ioctl-level axis attributes, output delivery and Steam client behavior
+  have no acceptance evidence from this run.
 
 ## Faithful versus compat behaviour
 
@@ -92,7 +117,7 @@ historical/raw-not-revalidated corroboration; the fresh fixture is separate.
 | SDL-only diagnostic `0x47`, 46 bytes | **Not declared** by the fresh wired descriptor (`steam-s3-1302-sdl47-descriptor-conflict`). `steam-c6-input-47` is a source decoder, not physical declaration. Wired encoder rejects it; normal protocol only emits 0x42 | Version-pinned SDL timestamp/trackpad capture and decoding |
 | Buttons, pad position/pressure, stick/pad/grip touch, IMU | `steam-c6-input-buttons`, `steam-c6-input-scaling`; raw native fields retain signedness; touch and pressure are independent | One-control-at-a-time wired capture, physical sensor and pressure correlation |
 | Optional battery `0x43`, 15 bytes | Declared length **faithful (fresh physical capture)**; field meaning **compat** `steam-c6-battery-43`; encoder accepts caller data, no automatic status or made-up voltage/cadence | Physical wired battery/status capture |
-| Feature 1 SET/GET, 64-byte host buffer | `steam-c6-feature-kernel-exchange`, `steam-c6-feature-registration`; serial and attributes return empty structural fixture shapes | Physical GET readback; step 16 good/short/missing optional-GET host gates |
+| Feature 1 SET/GET, 64-byte host buffer | `steam-c6-feature-kernel-exchange`, `steam-c6-feature-registration`; serial returns virtual identity and attributes retain the empty structural shape | Physical GET readback; step 16 good/short/missing optional-GET host gates |
 | Feature 2 on wired | Declaration **faithful (fresh physical capture)**: 63 body bytes (`steam-s3-1302-feature2-declaration`). Wired requests/replies remain **No evidence** (`steam-c6-no-wired-feature2`); GET and SET explicitly complete Unsupported | Separately authorized physical feature transaction capture; no fabricated reply |
 | Kernel and SDL open orders | `steam-c6-feature-kernel-lizard`, `steam-c6-feature-sdl-lizard`, `steam-c6-feature-imu`; neither requires the other's GETs | Both opening orders with kernel bound/unbound, with settings readback |
 | Retained lizard/mapping/IMU/watchdog intent | Same feature claims; unknown initial/default values remain unknown; restore-defaults discards assumed settings rather than fabricating values | Physical initial/default-settings readback and mode transition trace |

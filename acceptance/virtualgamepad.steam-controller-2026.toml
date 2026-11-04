@@ -1,0 +1,60 @@
+schema_version = 1
+controller = "virtualgamepad.steam-controller-2026"
+research_revision = "fc6964ac8799f0b7a38ffb9526361450f0b1b87a"
+realizations = ["linux.uinput", "linux.uhid.usb"]
+refused_operations = []
+persistent_resources = []
+
+[[functions]]
+id = "lifecycle"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/lifecycle", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/lifecycle", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+
+[[functions]]
+id = "buttons"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/buttons", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/buttons", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+
+[[functions]]
+id = "sticks"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/sticks", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/sticks", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+
+[[functions]]
+id = "triggers"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/triggers", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/triggers", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+
+[[functions]]
+id = "pads"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/pads", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/pads", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+
+[[functions]]
+id = "motion"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/motion", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/motion", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+
+[[functions]]
+id = "haptics"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/haptics", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/haptics", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+
+[[functions]]
+id = "serial"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/serial", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/serial", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+
+[[functions]]
+id = "steam-client"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/steam-client", evidence = [], reason = "No evidence recorded for this acceptance cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/steam-client", evidence = [], reason = "No evidence recorded for this acceptance cell." }

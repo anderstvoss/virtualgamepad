@@ -5,6 +5,8 @@ use gr_hid::{
     Command, Delivery, Error, Lifecycle, Protocol, Reply, ReplyError, Report, ReportType,
     RequestKind,
 };
+use gr_realization_api::ProviderFrame;
+use gr_realization_api::RawReverseEvent;
 
 // steam-c6-input-42/45/47: lengths INCLUDE the numbered report byte.
 // steam-s3-1302-report-shapes: declared lengths are faithful (fresh physical capture).
@@ -73,6 +75,14 @@ fn input(state: &State, sequence: u8, format: Format) -> Report {
     Report::from_wire(ReportType::Input, true, &wire).expect("compiled Steam frame")
 }
 
+pub(super) fn provider_frame(state: &State) -> ProviderFrame {
+    let report = input(state, 0, Format::Primary42);
+    ProviderFrame::HidInput {
+        report_id: report.id(),
+        bytes: report.payload().to_vec(),
+    }
+}
+
 // steam-s3-1302-sdl47-descriptor-conflict: never submit the diagnostic-only
 // SDL alternate through a wired path described by the captured bytes.
 fn wired_input(state: &State, sequence: u8, format: Format) -> Result<Report, Error> {
@@ -99,7 +109,7 @@ fn battery(state: &Battery) -> Report {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Haptic {
+pub enum SteamController2026Haptic {
     // steam-c6-output-80-81 / disagreement-gain-kernel/sdl: gains stay raw.
     Rumble {
         kind: u8,
@@ -148,7 +158,7 @@ fn le(bytes: &[u8], offset: usize) -> u16 {
 fn signed(byte: u8) -> i8 {
     i8::from_le_bytes([byte])
 }
-impl Haptic {
+impl SteamController2026Haptic {
     fn decode(report: &Report) -> Result<Self, ReplyError> {
         if report.kind != ReportType::Output {
             return Err(ReplyError::Unsupported);
@@ -206,7 +216,7 @@ impl Haptic {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct Outputs {
     revision: u64,
-    haptics: [Option<Haptic>; 6],
+    pub haptics: [Option<SteamController2026Haptic>; 6],
     // steam-c6-feature-kernel-lizard / feature-sdl-lizard / feature-imu.
     // Unknown defaults remain None, not invented retail settings.
     mappings: Option<bool>,
@@ -216,6 +226,7 @@ struct Outputs {
 }
 #[derive(Debug, Clone, Default)]
 struct SteamProtocol {
+    serial: String,
     sequence: u8,
     outputs: Outputs,
     query: Option<u8>,
@@ -238,8 +249,8 @@ impl SteamProtocol {
         }
         let mut next = self.outputs.clone();
         match b[0] {
-            // steam-c6-feature-registration / reply-serial-empty: no unit data.
-            0xae if b[1] == 0x15 && b[2] == 1 => self.query = Some(0xae),
+            // hid-steam v7.3-rc1, lines 667–685: current request and documented historical length.
+            0xae if matches!(b[1], 0x15 | 0x16) && b[2] == 1 => self.query = Some(0xae),
             0x83 if b[1] == 0 => self.query = Some(0x83),
             // steam-c6-feature-kernel-lizard: mapping and settings are distinct.
             0x81 if b[1] == 0 => next.mappings = Some(false),
@@ -288,12 +299,19 @@ impl SteamProtocol {
     }
     fn get_feature(&self) -> Result<Report, ReplyError> {
         // steam-c6-feature-registration / reply-serial-empty / reply-attributes-empty.
-        // Compat structural replies only. Empty serial delegates fallback to kernel;
-        // no sensor interval, firmware, calibration or serial is manufactured.
+        // The serial is virtual instance identity. Other registration data is structural.
         let mut wire = vec![0; 64];
         wire[0] = 1;
         match self.query {
-            Some(0xae) => wire[1..4].copy_from_slice(&[0xae, 1, 1]),
+            Some(0xae) => {
+                let serial = self.serial.as_bytes();
+                wire[1..4].copy_from_slice(&[
+                    0xae,
+                    u8::try_from(serial.len() + 1).map_err(|_| ReplyError::Invalid)?,
+                    1,
+                ]);
+                wire[4..4 + serial.len()].copy_from_slice(serial);
+            }
             Some(0x83) => wire[1..5].copy_from_slice(&[0x83, 2, 0, 0]),
             Some(command) => {
                 // Preserve the kernel -EPROTO fit without violating the captured
@@ -307,8 +325,8 @@ impl SteamProtocol {
         }
         Ok(Report::from_wire(ReportType::Feature, true, &wire).expect("compiled feature reply"))
     }
-    fn accept_output(&mut self, report: &Report) -> Result<Haptic, ReplyError> {
-        let haptic = Haptic::decode(report)?;
+    fn accept_output(&mut self, report: &Report) -> Result<SteamController2026Haptic, ReplyError> {
+        let haptic = SteamController2026Haptic::decode(report)?;
         let index = usize::from(report.id().expect("decoded ID") - 0x80);
         if self.outputs.haptics[index].as_ref() != Some(&haptic) {
             self.outputs.haptics[index] = Some(haptic.clone());
@@ -319,7 +337,7 @@ impl SteamProtocol {
 }
 impl Protocol for SteamProtocol {
     type State = State;
-    type Output = Haptic;
+    type Output = SteamController2026Haptic;
     fn neutral(&self) -> State {
         State::default()
     }
@@ -346,7 +364,11 @@ impl Protocol for SteamProtocol {
         // No evidence for a device rumble timeout or native report cadence.
         self.refresh
     }
-    fn request(&mut self, kind: &RequestKind, _: u64) -> (Reply, Option<Haptic>) {
+    fn request(
+        &mut self,
+        kind: &RequestKind,
+        _: u64,
+    ) -> (Reply, Option<SteamController2026Haptic>) {
         match kind {
             RequestKind::Get {
                 kind: ReportType::Feature,
@@ -362,13 +384,17 @@ impl Protocol for SteamProtocol {
             RequestKind::Set(report) => (Reply::Set(self.feature(report)), None),
         }
     }
-    fn output(&mut self, report: Report, _: u64) -> Result<Option<Haptic>, Error> {
+    fn output(
+        &mut self,
+        report: Report,
+        _: u64,
+    ) -> Result<Option<SteamController2026Haptic>, Error> {
         // steam-c6-no-haptic-ack: retain outputs, never queue an input 0x44 ACK.
         self.accept_output(&report)
             .map(Some)
             .map_err(|_| Error::InvalidRequest)
     }
-    fn lifecycle(&mut self, event: Lifecycle, now: u64) -> Option<Haptic> {
+    fn lifecycle(&mut self, event: Lifecycle, now: u64) -> Option<SteamController2026Haptic> {
         match event {
             Lifecycle::Start {
                 numbered_input,
@@ -389,6 +415,121 @@ impl Protocol for SteamProtocol {
         None
     }
     fn delivered(&mut self, _: &Command, _: Delivery) {}
+}
+
+/// UHID session adapter: the protocol retains decoded haptics privately while
+/// the shared controller session reports accepted host output as raw events.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SteamHidProtocol {
+    protocol: SteamProtocol,
+    outputs: SteamController2026Outputs,
+}
+impl SteamHidProtocol {
+    pub(crate) fn with_serial(serial: String) -> Self {
+        Self {
+            protocol: SteamProtocol {
+                serial,
+                ..SteamProtocol::default()
+            },
+            ..Self::default()
+        }
+    }
+}
+impl Protocol for SteamHidProtocol {
+    type State = State;
+    type Output = RawReverseEvent;
+
+    fn neutral(&self) -> Self::State {
+        self.protocol.neutral()
+    }
+
+    fn validate(&self, state: &Self::State) -> Result<(), Error> {
+        self.protocol.validate(state)
+    }
+
+    fn input(&mut self, state: &Self::State, now: u64) -> Result<Vec<Report>, Error> {
+        self.protocol.input(state, now)
+    }
+
+    fn deadline(&self) -> Option<u64> {
+        self.protocol.deadline()
+    }
+
+    fn request(&mut self, kind: &RequestKind, now: u64) -> (Reply, Option<Self::Output>) {
+        let (reply, output) = self.protocol.request(kind, now);
+        let observed = output.and_then(|haptic| match kind {
+            RequestKind::Set(report) => {
+                self.outputs.retain(report.id(), haptic);
+                Some(observe(report))
+            }
+            RequestKind::Get { .. } => None,
+        });
+        (reply, observed)
+    }
+
+    fn output(&mut self, report: Report, now: u64) -> Result<Option<Self::Output>, Error> {
+        let observed = observe(&report);
+        let report_id = report.id();
+        self.protocol.output(report, now).map(|output| {
+            output.map(|haptic| {
+                self.outputs.retain(report_id, haptic);
+                observed
+            })
+        })
+    }
+
+    fn lifecycle(&mut self, event: Lifecycle, now: u64) -> Option<Self::Output> {
+        self.protocol.lifecycle(event, now);
+        Some(RawReverseEvent::HidLifecycle(event))
+    }
+
+    fn delivered(&mut self, command: &Command, delivery: Delivery) {
+        self.protocol.delivered(command, delivery);
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SteamController2026Outputs {
+    pub revision: u64,
+    pub haptics: [Option<SteamController2026Haptic>; 6],
+}
+impl SteamController2026Outputs {
+    fn retain(&mut self, report_id: Option<u8>, haptic: SteamController2026Haptic) {
+        let Some(index) = report_id
+            .filter(|id| (0x80..=0x85).contains(id))
+            .map(|id| usize::from(id - 0x80))
+        else {
+            return;
+        };
+        if self.haptics[index].as_ref() != Some(&haptic) {
+            self.haptics[index] = Some(haptic);
+            self.revision = self.revision.wrapping_add(1);
+        }
+    }
+}
+impl crate::retained::OutputState for SteamController2026Outputs {
+    fn apply(&mut self, report: &Report) -> Result<(), ReplyError> {
+        self.retain(report.id(), SteamController2026Haptic::decode(report)?);
+        Ok(())
+    }
+
+    fn from_native(_: crate::retained::NativePlayback) -> Self {
+        Self::default()
+    }
+}
+impl crate::retained::RetainedProtocol for SteamHidProtocol {
+    type Outputs = SteamController2026Outputs;
+
+    fn retained(&self) -> &Self::Outputs {
+        &self.outputs
+    }
+}
+
+fn observe(report: &Report) -> RawReverseEvent {
+    RawReverseEvent::HidOutput {
+        report_id: report.id(),
+        bytes: report.payload().to_vec(),
+    }
 }
 
 #[cfg(test)]
