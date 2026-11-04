@@ -1030,6 +1030,12 @@ impl SteamEditor {
                     .changed();
             });
         }
+        ui.horizontal(|ui| {
+            ui.label("Raw motion timestamp (microseconds)");
+            changed |= ui
+                .add(super::egui::DragValue::new(&mut next.motion.timestamp_us))
+                .changed();
+        });
         if changed {
             self.queue_steam_state(next);
         }
