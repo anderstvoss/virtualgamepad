@@ -37,15 +37,20 @@ an API freeze do not promote a cell.
 
 ## Next release
 
-Steam S3 (14a/14b) stages native family metadata and planned targets, adopts
-the exact fresh physical wired descriptor, and exposes the reviewed supporting
-state/topology API. Field meanings and feature replies remain compat; haptic
-effects, boot sequence, firmware tracking and physical cadence remain open.
-There is no provider, driver, constructor, public registry advertisement or
-acceptance cell. Root and Wii snapshots are unchanged;
-the separate Steam snapshot includes supporting metadata/topology additions.
-Steps 14c/14d and the C6 checkpoint remain gated by step 16 on the owner's
-kernel 7.3+ host. See [Steam Controller 2026](STEAM_CONTROLLER_2026.md).
+Steam C6 integrates the exact fresh physical wired descriptor, reviewed
+supporting API with validated virtual serial identity, wired UHID and reduced
+uinput realizations, active registry advertisement and native demo editor.
+Step 16's kernel-or-SDL gate is closed; 14c #298 and 14d #300 are merged into
+the buildout branch for the owner-reviewed C6 checkpoint. Root and Wii API
+snapshots are unchanged; the Steam supporting snapshot is independently checked.
+
+Field meanings and feature replies remain compat. D9 timing covers N1/N4 on both
+realizations with owned-node cleanup; the latest SDL run has partial button
+coverage. Direct kernel event decoding and ABS ioctls remain No evidence pending
+owner-reviewed policy #299 and installed-policy acceptance. Steam client
+acceptance is manual and untested; physical haptics, serial format, boot sequence,
+firmware, calibration and cadence remain open. See [Steam Controller 2026](STEAM_CONTROLLER_2026.md)
+and the [C6 D9 report](C6_D9_ACCEPTANCE.md) for exact evidence and owner steps.
 
 The next release targets validated controller creation per controller, with
 per-controller acceptance issues and new Wii Remote, Steam Controller (2026)
