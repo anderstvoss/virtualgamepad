@@ -67,7 +67,44 @@ pub(super) enum Controller {
     DualShock4(DualShock4Controller),
     SwitchPro(SwitchProController),
     WiiRemote(gr_curated_controllers::wii_remote::WiiRemoteController),
-    Steam(gr_curated_controllers::steam_controller_2026::SteamController2026Controller),
+    Steam(SteamDemoController),
+}
+
+// Keep UI edit bookkeeping in the demo; the supporting API needs no dirty accessor.
+pub(super) struct SteamDemoController {
+    inner: gr_curated_controllers::steam_controller_2026::SteamController2026Controller,
+    dirty: bool,
+}
+impl std::ops::Deref for SteamDemoController {
+    type Target = gr_curated_controllers::steam_controller_2026::SteamController2026Controller;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+impl std::ops::DerefMut for SteamDemoController {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+impl SteamDemoController {
+    pub(super) fn set_inputs(
+        &mut self,
+        state: gr_curated_controllers::steam_controller_2026::SteamController2026State,
+    ) -> Result<(), virtualgamepad::ControlError> {
+        self.inner.set_inputs(state)?;
+        self.dirty = true;
+        Ok(())
+    }
+    fn neutralize(&mut self) -> Result<(), virtualgamepad::ControlError> {
+        self.inner.neutralize()?;
+        self.dirty = true;
+        Ok(())
+    }
+    fn commit(&mut self) -> Result<(), virtualgamepad::CommitError> {
+        self.inner.commit()?;
+        self.dirty = false;
+        Ok(())
+    }
 }
 
 impl Kind {
@@ -118,7 +155,12 @@ impl Kind {
                     options.target,
                     options.id,
                 )
-                .map(Controller::Steam)
+                .map(|inner| {
+                    Controller::Steam(SteamDemoController {
+                        inner,
+                        dirty: false,
+                    })
+                })
                 .map_err(|e| virtualgamepad::ControllerError::Open {
                     reason: e.to_string(),
                 })
@@ -283,7 +325,7 @@ impl Controller {
             Self::DualShock4(controller) => controller.is_dirty(),
             Self::SwitchPro(controller) => controller.is_dirty(),
             Self::WiiRemote(controller) => controller.is_dirty(),
-            Self::Steam(_) => true,
+            Self::Steam(controller) => controller.dirty,
         }
     }
     pub(super) fn poll_output(
