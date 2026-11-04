@@ -156,3 +156,9 @@ Follow-up raw-record SHA-256 (retained locally, not published captures):
 - `steam-closed-baseline`: `35a48ca668e10d51f5677f0310cb9996e032f69bec486a6a164c4c9c8007b593`
 - `bbf-baseline`: `39ca5b75fc62285078c629f1e52cde5a12556ec173900d35e37e00f1431bb277`
 - `final`: `51a39765491ecd2d0acace6ae1267dd8c250bf488cd3d785e2d3e400666bfbd0`
+
+A final rerun from tracked-clean step source `a2ce0b5` (including current main)
+confirmed the same full masks and both-pad results, with **168** distinct valid
+samples from each sensor. Steam/helper absence was checked before and after.
+This rerun also removed all owned nodes and restored resource baselines.
+Raw-record SHA-256: `af227e9e190182f3fdf5ce04f04e58f91f250653cda4904e82287c60661026a8`.
