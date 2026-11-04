@@ -478,6 +478,7 @@ fn target_identifier_abbreviation(target: RealizationId) -> &'static str {
     match target {
         RealizationId::LINUX_UINPUT => "UIN",
         RealizationId::LINUX_UHID_USB => "HID",
+        RealizationId::LINUX_UHID_BLUETOOTH => "HBT",
         RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB",
         RealizationId::LINUX_USBIP_USB_AUDIO => "UIP",
         _ => "UNK",
@@ -676,11 +677,63 @@ fn draw_kind_selector(ui: &mut egui::Ui, kind: &mut Kind) -> egui::Response {
     response
 }
 
+// Registry membership excludes fixture-only transports. USB/IP also needs its
+// compiled factory; host permissions are checked when the user creates a device.
+fn creation_targets(kind: Kind) -> Vec<RealizationId> {
+    (kind.entry().realizations)()
+        .iter()
+        .map(|realization| realization.surface.target())
+        .filter(|target| {
+            *target != RealizationId::LINUX_USBIP_USB_AUDIO || cfg!(feature = "audio-usbip")
+        })
+        .collect()
+}
+
+fn valid_creation_target(kind: Kind, current: RealizationId) -> RealizationId {
+    let targets = creation_targets(kind);
+    if targets.contains(&current) {
+        return current;
+    }
+    let preferred = if kind == Kind::WiiRemote {
+        RealizationId::LINUX_UHID_BLUETOOTH
+    } else {
+        audio_lab::default_creation_target()
+    };
+    if targets.contains(&preferred) {
+        preferred
+    } else {
+        *targets
+            .first()
+            .expect("compiled demo family has a realization")
+    }
+}
+
+// Wii resources and Steam creation options belong to their saved sessions.
+fn recreation_options(
+    kind: Kind,
+    saved: &ControllerOptions,
+    choices: ControllerOptions,
+) -> ControllerOptions {
+    if matches!(kind, Kind::WiiRemote | Kind::Steam) {
+        ControllerOptions {
+            id: choices.id,
+            ..saved.clone()
+        }
+    } else {
+        ControllerOptions {
+            target: valid_creation_target(kind, choices.target),
+            ..choices
+        }
+    }
+}
+
 fn draw_target_selector(
     ui: &mut egui::Ui,
     target: &mut RealizationId,
+    kind: Kind,
     row_width: f32,
 ) -> (egui::Rect, Option<egui::Rect>) {
+    *target = valid_creation_target(kind, *target);
     let mut help_rect = None;
     let row = ui
         .horizontal(|ui| {
@@ -699,12 +752,7 @@ fn draw_target_selector(
                         .truncate()
                         .width(combo_width)
                         .show_ui(ui, |ui| {
-                            for option in [
-                                RealizationId::LINUX_UINPUT,
-                                RealizationId::LINUX_UHID_USB,
-                                RealizationId::LINUX_USBIP_USB_AUDIO,
-                                RealizationId::LINUX_DUMMY_HCD_USB_HID,
-                            ] {
+                            for option in creation_targets(kind) {
                                 ui.selectable_value(target, option, target_label(option));
                             }
                         })
@@ -1597,8 +1645,8 @@ impl App {
         }
     }
 
-    fn create_one(&mut self) {
-        let options = ControllerOptions {
+    fn creation_options(&self) -> ControllerOptions {
+        ControllerOptions {
             target: self.target,
             id: self.next_controller_id,
             audio: self.audio_creation,
@@ -1606,7 +1654,14 @@ impl App {
             wii_imports: self.wii_imports.clone(),
             wii_compat: self.wii_compat,
             steam_options: self.steam_options.clone(),
-        };
+        }
+    }
+
+    fn create_one(&mut self) {
+        self.create_one_with_options(self.creation_options());
+    }
+
+    fn create_one_with_options(&mut self, options: ControllerOptions) {
         let result = self.kind.create(&options);
         match result {
             Ok(mut controller) => {
@@ -1814,6 +1869,7 @@ impl eframe::App for App {
                                     let _ = draw_target_selector(
                                         ui,
                                         &mut self.target,
+                                        self.kind,
                                         target_row_width,
                                     );
                                     ui.end_row();
@@ -2360,10 +2416,12 @@ impl eframe::App for App {
             Some(LifecycleAction::Remove(index)) => self.remove_controller(index),
             Some(LifecycleAction::Recreate(index)) => {
                 let named = &self.controllers[index];
-                if let Err(error) = self
-                    .audio_creation
-                    .options(self.target, named.kind.supports_audio())
-                    .and_then(|_| validate_wii_recreation(named.kind, self.wii_revision))
+                let options =
+                    recreation_options(named.kind, &named.options, self.creation_options());
+                if let Err(error) = options
+                    .audio
+                    .options(options.target, named.kind.supports_audio())
+                    .and_then(|_| validate_wii_recreation(named.kind, options.wii_revision))
                 {
                     self.diagnostic_log.push(DiagnosticLogEntry {
                         message: format!("Recreation rejected; original stays open: {error}"),
@@ -2373,7 +2431,7 @@ impl eframe::App for App {
                     self.kind = named.kind;
                     self.name_draft = named.name.clone();
                     self.remove_controller(index);
-                    self.create_one();
+                    self.create_one_with_options(options);
                 }
             }
             None => {}
@@ -2503,9 +2561,16 @@ fn draw_controller_state(
                 audio_action = audio_lab::draw_diagnostics(ui, audio_view);
             },
             |ui| {
+                let (label, help) = if controller.kind == Kind::WiiRemote {
+                    ("Recreate with original creation choices", "Closes this Wii first, then recreates its saved target, revision, calibration imports and compatibility options. Siblings stay open.")
+                } else if controller.kind == Kind::Steam {
+                    ("Recreate with original creation choices", "Closes this Steam controller first, then recreates its saved target and Steam options. Siblings stay open.")
+                } else {
+                    ("Recreate with current creation choices", "Closes this creation first, then creates the same family with supported sidebar realization/audio choices. Siblings stay open.")
+                };
                 if ui
-                    .button("Recreate with current creation choices")
-                    .on_hover_text("Closes this creation first, then creates the same family with the sidebar realization/audio choices. Siblings stay open.")
+                    .button(label)
+                    .on_hover_text(help)
                     .clicked()
                 {
                     *recreation_clicked = true;
@@ -3220,6 +3285,10 @@ mod tests {
     #[test]
     fn controller_ids_use_the_requested_target_and_type_abbreviations() {
         assert_eq!(
+            controller_id(9, RealizationId::LINUX_UHID_BLUETOOTH, Kind::WiiRemote),
+            "009-HBT-WII"
+        );
+        assert_eq!(
             controller_id(0, RealizationId::LINUX_UINPUT, Kind::Xbox360),
             "000-UIN-XB360"
         );
@@ -3239,14 +3308,13 @@ mod tests {
 
     #[test]
     fn creation_selectors_name_family_and_target_on_keyboard_focus() {
-        for original_target in [
-            RealizationId::LINUX_UINPUT,
-            RealizationId::LINUX_UHID_USB,
-            RealizationId::LINUX_USBIP_USB_AUDIO,
-            RealizationId::LINUX_DUMMY_HCD_USB_HID,
-        ] {
+        for (original_kind, original_target) in Kind::registered().into_iter().flat_map(|kind| {
+            creation_targets(kind)
+                .into_iter()
+                .map(move |target| (kind, target))
+        }) {
             let context = egui::Context::default();
-            let mut kind = Kind::Xbox360;
+            let mut kind = original_kind;
             let mut target = original_target;
             let mut labels = std::collections::BTreeSet::new();
             for frame in 0..17 {
@@ -3272,7 +3340,7 @@ mod tests {
                     |context| {
                         egui::CentralPanel::default().show(context, |ui| {
                             let family = draw_kind_selector(ui, &mut kind);
-                            draw_target_selector(ui, &mut target, family.rect.width());
+                            draw_target_selector(ui, &mut target, kind, family.rect.width());
                             let _ = ui.button("Adjacent control");
                         });
                     },
@@ -3285,7 +3353,10 @@ mod tests {
                         .filter_map(|event| event.widget_info().label.clone()),
                 );
             }
-            assert!(labels.contains("Controller family: Xbox 360"), "{labels:?}");
+            assert!(
+                labels.contains(&format!("Controller family: {}", original_kind.label())),
+                "{labels:?}"
+            );
             assert!(
                 labels.contains(&format!(
                     "Controller target: {}",
@@ -3294,7 +3365,7 @@ mod tests {
                 "{labels:?}"
             );
             assert!(labels.contains("Adjacent control"), "{labels:?}");
-            assert!(matches!(kind, Kind::Xbox360));
+            assert!(kind == original_kind);
             assert_eq!(target, original_target);
         }
     }
@@ -3401,7 +3472,7 @@ mod tests {
                 },
                 |context| {
                     egui::CentralPanel::default().show(context, |ui| {
-                        draw_target_selector(ui, &mut target, 220.0);
+                        draw_target_selector(ui, &mut target, Kind::Xbox360, 220.0);
                         adjacent_focused |= ui.button("Adjacent control").has_focus();
                     });
                 },
@@ -3432,11 +3503,17 @@ mod tests {
     #[test]
     fn target_help_button_stays_inside_narrow_selector_row() {
         for mut target in [
+            RealizationId::LINUX_UHID_BLUETOOTH,
             RealizationId::LINUX_UINPUT,
             RealizationId::LINUX_UHID_USB,
             RealizationId::LINUX_USBIP_USB_AUDIO,
             RealizationId::LINUX_DUMMY_HCD_USB_HID,
         ] {
+            let kind = if target == RealizationId::LINUX_UHID_BLUETOOTH {
+                Kind::WiiRemote
+            } else {
+                Kind::Xbox360
+            };
             let context = egui::Context::default();
             let mut rect = egui::Rect::NOTHING;
             let mut help_rect = None;
@@ -3474,6 +3551,7 @@ mod tests {
                                         (rect, help_rect) = draw_target_selector(
                                             ui,
                                             &mut target,
+                                            kind,
                                             type_selector_rect.width(),
                                         );
                                         ui.end_row();

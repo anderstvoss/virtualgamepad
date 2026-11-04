@@ -351,6 +351,19 @@ mod tests {
         assert_eq!(image, expected);
         assert!(imports.clone().picker.is_none());
         assert_eq!(imports.clone().paths, imports.paths);
+        let app = super::super::App::default();
+        let saved = super::super::ControllerOptions {
+            target: RealizationId::LINUX_UHID_BLUETOOTH,
+            wii_imports: imports,
+            ..app.creation_options()
+        };
+        let recreated = super::super::recreation_options(
+            super::super::Kind::WiiRemote,
+            &saved,
+            app.creation_options(),
+        );
+        assert_eq!(recreated.wii_imports.paths, saved.wii_imports.paths);
+        assert!(recreated.wii_imports.picker.is_none());
     }
 
     #[test]
