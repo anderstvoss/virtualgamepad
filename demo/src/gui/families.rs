@@ -56,6 +56,29 @@ impl Kind {
         }
     }
 }
+/// Stable selector order across families; unknown future targets sort last.
+fn target_display_rank(target: virtualgamepad::RealizationId) -> usize {
+    use virtualgamepad::RealizationId;
+    [
+        RealizationId::LINUX_UINPUT,
+        RealizationId::LINUX_UHID_USB,
+        RealizationId::LINUX_UHID_BLUETOOTH,
+        RealizationId::LINUX_USBIP_USB_AUDIO,
+        RealizationId::LINUX_DUMMY_HCD_USB_HID,
+    ]
+    .iter()
+    .position(|known| *known == target)
+    .unwrap_or(usize::MAX)
+}
+const fn tier_rank(tier: gr_curated_controllers::registry::RealizationTier) -> u8 {
+    use gr_curated_controllers::registry::RealizationTier;
+    match tier {
+        RealizationTier::PlayableReduced => 0,
+        RealizationTier::PlayableFull => 1,
+        RealizationTier::FaithfulUsb => 2,
+        RealizationTier::FaithfulRadio => 3,
+    }
+}
 pub(super) enum Controller {
     Xbox(Xbox360Controller),
     DualSense(DualSenseController),
@@ -91,6 +114,51 @@ impl Kind {
                     .any(|entry| entry.id == kind.id())
             })
             .collect()
+    }
+    /// Creation targets this family realizes, read from the compiled registry so
+    /// the GUI never offers a path the family does not declare.
+    pub(super) fn realization_targets(self) -> Vec<virtualgamepad::RealizationId> {
+        let mut targets: Vec<_> = (self.entry().realizations)()
+            .iter()
+            .map(|realization| realization.surface.target())
+            .collect();
+        targets.sort_by_key(|target| target_display_rank(*target));
+        targets
+    }
+    pub(super) fn supports_target(self, target: virtualgamepad::RealizationId) -> bool {
+        (self.entry().realizations)()
+            .iter()
+            .any(|realization| realization.surface.target() == target)
+    }
+    /// Highest-fidelity realization that needs no root broker; falls back to the
+    /// first declared realization when every path is privileged.
+    pub(super) fn preferred_target(self) -> virtualgamepad::RealizationId {
+        use gr_curated_controllers::registry::PermissionClass;
+        let realizations = (self.entry().realizations)();
+        realizations
+            .iter()
+            .filter(|realization| realization.permission != PermissionClass::RootBroker)
+            .max_by_key(|realization| {
+                // Ties keep the earlier registry entry (max_by_key keeps the last).
+                (
+                    tier_rank(realization.tier),
+                    std::cmp::Reverse(target_display_rank(realization.surface.target())),
+                )
+            })
+            .or_else(|| realizations.first())
+            .map(|realization| realization.surface.target())
+            .expect("registered family declares a realization")
+    }
+    /// Keep a still-valid selection; otherwise move to the family's preferred path.
+    pub(super) fn coerce_target(
+        self,
+        target: virtualgamepad::RealizationId,
+    ) -> virtualgamepad::RealizationId {
+        if self.supports_target(target) {
+            target
+        } else {
+            self.preferred_target()
+        }
     }
     pub(super) fn supports_audio(self) -> bool {
         self.entry()

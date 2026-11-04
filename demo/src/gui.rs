@@ -665,11 +665,16 @@ fn draw_kind_selector(ui: &mut egui::Ui, kind: &mut Kind) -> egui::Response {
     response
 }
 
+/// Offers only the targets `kind` realizes; an unsupported selection is moved
+/// to the family's preferred realization before the combo is drawn.
 fn draw_target_selector(
     ui: &mut egui::Ui,
+    kind: Kind,
     target: &mut RealizationId,
     row_width: f32,
 ) -> (egui::Rect, Option<egui::Rect>) {
+    *target = kind.coerce_target(*target);
+    let options = kind.realization_targets();
     let mut help_rect = None;
     let row = ui
         .horizontal(|ui| {
@@ -688,12 +693,7 @@ fn draw_target_selector(
                         .truncate()
                         .width(combo_width)
                         .show_ui(ui, |ui| {
-                            for option in [
-                                RealizationId::LINUX_UINPUT,
-                                RealizationId::LINUX_UHID_USB,
-                                RealizationId::LINUX_USBIP_USB_AUDIO,
-                                RealizationId::LINUX_DUMMY_HCD_USB_HID,
-                            ] {
+                            for option in options.iter().copied() {
                                 ui.selectable_value(target, option, target_label(option));
                             }
                         })
@@ -1799,6 +1799,7 @@ impl eframe::App for App {
                                     ui.label("Target");
                                     let _ = draw_target_selector(
                                         ui,
+                                        self.kind,
                                         &mut self.target,
                                         target_row_width,
                                     );
@@ -2345,17 +2346,32 @@ impl eframe::App for App {
             Some(LifecycleAction::Remove(index)) => self.remove_controller(index),
             Some(LifecycleAction::Recreate(index)) => {
                 let named = &self.controllers[index];
+                let kind = named.kind;
+                // Current creation choices apply, limited to targets this family realizes.
+                let target = kind.coerce_target(self.target);
                 if let Err(error) = self
                     .audio_creation
-                    .options(self.target, named.kind.supports_audio())
-                    .and_then(|_| validate_wii_recreation(named.kind, self.wii_revision))
+                    .options(target, kind.supports_audio())
+                    .and_then(|_| validate_wii_recreation(kind, self.wii_revision))
                 {
                     self.diagnostic_log.push(DiagnosticLogEntry {
                         message: format!("Recreation rejected; original stays open: {error}"),
                         success: false,
                     });
                 } else {
-                    self.kind = named.kind;
+                    if target != self.target {
+                        self.diagnostic_log.push(DiagnosticLogEntry {
+                            message: format!(
+                                "{} does not support {}; recreating on {}",
+                                kind.label(),
+                                target_label(self.target),
+                                target_label(target)
+                            ),
+                            success: true,
+                        });
+                    }
+                    self.kind = kind;
+                    self.target = target;
                     self.name_draft = named.name.clone();
                     self.remove_controller(index);
                     self.create_one();
@@ -3257,7 +3273,7 @@ mod tests {
                     |context| {
                         egui::CentralPanel::default().show(context, |ui| {
                             let family = draw_kind_selector(ui, &mut kind);
-                            draw_target_selector(ui, &mut target, family.rect.width());
+                            draw_target_selector(ui, kind, &mut target, family.rect.width());
                             let _ = ui.button("Adjacent control");
                         });
                     },
@@ -3282,6 +3298,113 @@ mod tests {
             assert!(matches!(kind, Kind::Xbox360));
             assert_eq!(target, original_target);
         }
+    }
+
+    #[test]
+    fn target_selector_lists_only_registry_realizations_per_family() {
+        use RealizationId as R;
+        for kind in Kind::registered() {
+            let targets = kind.realization_targets();
+            assert!(!targets.is_empty(), "{}", kind.label());
+            assert_eq!(
+                targets.len(),
+                (kind.entry().realizations)().len(),
+                "{}",
+                kind.label()
+            );
+            for target in &targets {
+                assert!(kind.supports_target(*target));
+                assert_ne!(target_label(*target), "Unknown target", "{target}");
+            }
+            assert!(targets.contains(&kind.preferred_target()));
+        }
+        assert_eq!(
+            Kind::WiiRemote.realization_targets(),
+            [R::LINUX_UINPUT, R::LINUX_UHID_BLUETOOTH]
+        );
+        assert_eq!(
+            Kind::Xbox360.realization_targets(),
+            [
+                R::LINUX_UINPUT,
+                R::LINUX_UHID_USB,
+                R::LINUX_USBIP_USB_AUDIO,
+                R::LINUX_DUMMY_HCD_USB_HID
+            ]
+        );
+        assert_eq!(
+            Kind::SwitchPro.realization_targets(),
+            [
+                R::LINUX_UINPUT,
+                R::LINUX_UHID_USB,
+                R::LINUX_DUMMY_HCD_USB_HID
+            ]
+        );
+        for kind in [
+            Kind::Xbox360,
+            Kind::DualSense,
+            Kind::DualShock4,
+            Kind::SwitchPro,
+        ] {
+            assert!(
+                !kind
+                    .realization_targets()
+                    .contains(&R::LINUX_UHID_BLUETOOTH)
+            );
+        }
+    }
+
+    #[test]
+    fn family_switch_keeps_valid_targets_and_moves_invalid_ones_to_preferred() {
+        use RealizationId as R;
+        assert_eq!(Kind::WiiRemote.preferred_target(), R::LINUX_UHID_BLUETOOTH);
+        for kind in [
+            Kind::Xbox360,
+            Kind::DualSense,
+            Kind::DualShock4,
+            Kind::SwitchPro,
+        ] {
+            assert_eq!(
+                kind.preferred_target(),
+                R::LINUX_UHID_USB,
+                "{}",
+                kind.label()
+            );
+        }
+        for invalid in [
+            R::LINUX_UHID_USB,
+            R::LINUX_USBIP_USB_AUDIO,
+            R::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            assert_eq!(
+                Kind::WiiRemote.coerce_target(invalid),
+                R::LINUX_UHID_BLUETOOTH
+            );
+        }
+        assert_eq!(
+            Kind::WiiRemote.coerce_target(R::LINUX_UINPUT),
+            R::LINUX_UINPUT
+        );
+        assert_eq!(
+            Kind::Xbox360.coerce_target(R::LINUX_UHID_BLUETOOTH),
+            R::LINUX_UHID_USB
+        );
+        assert_eq!(
+            Kind::SwitchPro.coerce_target(R::LINUX_USBIP_USB_AUDIO),
+            R::LINUX_UHID_USB
+        );
+        assert_eq!(
+            Kind::DualSense.coerce_target(R::LINUX_DUMMY_HCD_USB_HID),
+            R::LINUX_DUMMY_HCD_USB_HID
+        );
+
+        let context = egui::Context::default();
+        let mut target = R::LINUX_USBIP_USB_AUDIO;
+        let _ = context.run(egui::RawInput::default(), |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                draw_target_selector(ui, Kind::WiiRemote, &mut target, 200.0);
+            });
+        });
+        assert_eq!(target, R::LINUX_UHID_BLUETOOTH);
     }
 
     #[test]
@@ -3386,7 +3509,7 @@ mod tests {
                 },
                 |context| {
                     egui::CentralPanel::default().show(context, |ui| {
-                        draw_target_selector(ui, &mut target, 220.0);
+                        draw_target_selector(ui, Kind::Xbox360, &mut target, 220.0);
                         adjacent_focused |= ui.button("Adjacent control").has_focus();
                     });
                 },
@@ -3458,6 +3581,7 @@ mod tests {
                                         ui.label("Target");
                                         (rect, help_rect) = draw_target_selector(
                                             ui,
+                                            Kind::Xbox360,
                                             &mut target,
                                             type_selector_rect.width(),
                                         );
