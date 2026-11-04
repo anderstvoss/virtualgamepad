@@ -15,31 +15,31 @@ id = "lifecycle"
 id = "buttons"
 [functions.cells]
 "linux.uinput" = { status = "source-evidence", test_id = "steam_controller_2026::evdev::tests::reduced_gamepad_matches_pinned_ibex_capabilities", evidence = ["steam-c6-kernel-ibex-gamepad-evdev"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. " }
-"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. SDL rerun: axes and changing sensors observed; button mask only 0x300000, with touch events but missing structured touch verdict. Full per-control acceptance: No evidence." }
+"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. Closed-Steam follow-up: down/up 0x3fffff, axes 0x3f, both pads down/up/motion, gyro/accelerometer valid and changing. The neutral-ready handshake fixes an independent first-button startup race. Historical Steam-running 0x300000 result retained in docs/C6_D9_ACCEPTANCE.md. Physical fidelity and kernel decoding: No evidence." }
 
 [[functions]]
 id = "sticks"
 [functions.cells]
 "linux.uinput" = { status = "source-evidence", test_id = "steam_controller_2026::evdev::tests::reduced_gamepad_matches_pinned_ibex_capabilities", evidence = ["steam-c6-kernel-ibex-gamepad-evdev"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. " }
-"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. SDL rerun: axes and changing sensors observed; button mask only 0x300000, with touch events but missing structured touch verdict. Full per-control acceptance: No evidence." }
+"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. Closed-Steam follow-up: down/up 0x3fffff, axes 0x3f, both pads down/up/motion, gyro/accelerometer valid and changing. The neutral-ready handshake fixes an independent first-button startup race. Historical Steam-running 0x300000 result retained in docs/C6_D9_ACCEPTANCE.md. Physical fidelity and kernel decoding: No evidence." }
 
 [[functions]]
 id = "triggers"
 [functions.cells]
 "linux.uinput" = { status = "source-evidence", test_id = "steam_controller_2026::evdev::tests::reduced_gamepad_matches_pinned_ibex_capabilities", evidence = ["steam-c6-kernel-ibex-gamepad-evdev"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. " }
-"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. SDL rerun: axes and changing sensors observed; button mask only 0x300000, with touch events but missing structured touch verdict. Full per-control acceptance: No evidence." }
+"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. Closed-Steam follow-up: down/up 0x3fffff, axes 0x3f, both pads down/up/motion, gyro/accelerometer valid and changing. The neutral-ready handshake fixes an independent first-button startup race. Historical Steam-running 0x300000 result retained in docs/C6_D9_ACCEPTANCE.md. Physical fidelity and kernel decoding: No evidence." }
 
 [[functions]]
 id = "pads"
 [functions.cells]
 "linux.uinput" = { status = "source-evidence", test_id = "steam_controller_2026::evdev::tests::reduced_gamepad_matches_pinned_ibex_capabilities", evidence = ["steam-c6-kernel-ibex-gamepad-evdev"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. Contact-gated coordinates/click only; independent pressure/contact/stick/grip touch metadata unavailable because the kernel gamepad mapping has no corresponding keys/axes." }
-"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. SDL rerun: axes and changing sensors observed; button mask only 0x300000, with touch events but missing structured touch verdict. Full per-control acceptance: No evidence." }
+"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. Closed-Steam follow-up: down/up 0x3fffff, axes 0x3f, both pads down/up/motion, gyro/accelerometer valid and changing. The neutral-ready handshake fixes an independent first-button startup race. Historical Steam-running 0x300000 result retained in docs/C6_D9_ACCEPTANCE.md. Physical fidelity and kernel decoding: No evidence." }
 
 [[functions]]
 id = "motion"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: provider cannot declare accelerometer property or timestamp companion." }
-"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. SDL rerun: axes and changing sensors observed; button mask only 0x300000, with touch events but missing structured touch verdict. Full per-control acceptance: No evidence." }
+"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. Closed-Steam follow-up: down/up 0x3fffff, axes 0x3f, both pads down/up/motion, gyro/accelerometer valid and changing. The neutral-ready handshake fixes an independent first-button startup race. Historical Steam-running 0x300000 result retained in docs/C6_D9_ACCEPTANCE.md. Physical fidelity and kernel decoding: No evidence." }
 
 [[functions]]
 id = "haptics"
@@ -51,7 +51,7 @@ id = "haptics"
 id = "serial"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: provider has no evdev unique-ID setter or feature channel." }
-"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::serial_reply_supports_the_kernel_request_length", evidence = ["steam-c6-feature-registration"], reason = "Compat synthetic identity only. Validated caller values, distinct defaults and wire replies tested. Physical format and live host serial readback: No evidence." }
+"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::serial_reply_supports_the_kernel_request_length", evidence = ["steam-c6-feature-registration"], reason = "Compat synthetic v<pid-hex>-<counter-hex> identity. Concurrent process IDs and checked 44-bit counter prevent default collisions; 21-byte maximum and exhaustion refusal tested. Caller validation and wire replies tested. Physical format and live host serial readback: No evidence." }
 
 [[functions]]
 id = "steam-client"
