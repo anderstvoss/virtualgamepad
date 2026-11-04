@@ -1,0 +1,84 @@
+schema_version = 1
+controller = "virtualgamepad.steam-controller-2026"
+research_revision = "fc6964ac8799f0b7a38ffb9526361450f0b1b87a"
+realizations = ["linux.uinput", "linux.uhid.usb"]
+refused_operations = []
+persistent_resources = []
+
+[[functions]]
+id = "lifecycle"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/lifecycle", evidence = [], reason = "Observed locally: ten cycles each at N1/N4, owned-node removal and baseline resources, repeated close; see docs/C6_D9_ACCEPTANCE.md. No formal research run record or identity-reuse evidence." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/lifecycle", evidence = [], reason = "Observed locally: ten cycles each at N1/N4, owned-node removal and baseline resources, repeated close; see docs/C6_D9_ACCEPTANCE.md. No formal research run record or identity-reuse evidence." }
+
+[[functions]]
+id = "buttons"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "steam_controller_2026::evdev::tests::reduced_gamepad_matches_pinned_ibex_capabilities", evidence = ["steam-c6-kernel-ibex-gamepad-evdev"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. " }
+"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. Closed-Steam follow-up: down/up 0x3fffff, axes 0x3f, both pads down/up/motion, gyro/accelerometer valid and changing. The neutral-ready handshake fixes an independent first-button startup race. Historical Steam-running 0x300000 result retained in docs/C6_D9_ACCEPTANCE.md. Physical fidelity and kernel decoding: No evidence." }
+
+[[functions]]
+id = "sticks"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "steam_controller_2026::evdev::tests::reduced_gamepad_matches_pinned_ibex_capabilities", evidence = ["steam-c6-kernel-ibex-gamepad-evdev"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. " }
+"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. Closed-Steam follow-up: down/up 0x3fffff, axes 0x3f, both pads down/up/motion, gyro/accelerometer valid and changing. The neutral-ready handshake fixes an independent first-button startup race. Historical Steam-running 0x300000 result retained in docs/C6_D9_ACCEPTANCE.md. Physical fidelity and kernel decoding: No evidence." }
+
+[[functions]]
+id = "triggers"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "steam_controller_2026::evdev::tests::reduced_gamepad_matches_pinned_ibex_capabilities", evidence = ["steam-c6-kernel-ibex-gamepad-evdev"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. " }
+"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. Closed-Steam follow-up: down/up 0x3fffff, axes 0x3f, both pads down/up/motion, gyro/accelerometer valid and changing. The neutral-ready handshake fixes an independent first-button startup race. Historical Steam-running 0x300000 result retained in docs/C6_D9_ACCEPTANCE.md. Physical fidelity and kernel decoding: No evidence." }
+
+[[functions]]
+id = "pads"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "steam_controller_2026::evdev::tests::reduced_gamepad_matches_pinned_ibex_capabilities", evidence = ["steam-c6-kernel-ibex-gamepad-evdev"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. Contact-gated coordinates/click only; independent pressure/contact/stick/grip touch metadata unavailable because the kernel gamepad mapping has no corresponding keys/axes." }
+"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. Closed-Steam follow-up: down/up 0x3fffff, axes 0x3f, both pads down/up/motion, gyro/accelerometer valid and changing. The neutral-ready handshake fixes an independent first-button startup race. Historical Steam-running 0x300000 result retained in docs/C6_D9_ACCEPTANCE.md. Physical fidelity and kernel decoding: No evidence." }
+
+[[functions]]
+id = "motion"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: provider cannot declare accelerometer property or timestamp companion." }
+"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::input_encoders_match_every_independent_neutral_and_edge_fixture", evidence = ["steam-c6-input-42"], reason = "Source/synthetic regression passed. Kernel event decoding and ioctl attributes: No evidence. Closed-Steam follow-up: down/up 0x3fffff, axes 0x3f, both pads down/up/motion, gyro/accelerometer valid and changing. The neutral-ready handshake fixes an independent first-button startup race. Historical Steam-running 0x300000 result retained in docs/C6_D9_ACCEPTANCE.md. Physical fidelity and kernel decoding: No evidence." }
+
+[[functions]]
+id = "haptics"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "steam_controller_2026::evdev::tests::reduced_gamepad_matches_pinned_ibex_capabilities", evidence = ["steam-c6-kernel-ibex-gamepad-evdev"], reason = "Source/synthetic retained haptics tested; uinput has conventional FF_RUMBLE only. SDL submitted rumble, but controller delivery and physical actuator effects: No evidence." }
+"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::fake_hid_runtime_completes_each_haptic_request_and_closes_once", evidence = ["steam-c6-output-80-81"], reason = "Source/synthetic retained haptics tested; uinput has conventional FF_RUMBLE only. SDL submitted rumble, but controller delivery and physical actuator effects: No evidence." }
+
+[[functions]]
+id = "serial"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: provider has no evdev unique-ID setter or feature channel." }
+"linux.uhid.usb" = { status = "source-evidence", test_id = "steam_controller_2026::codec::tests::serial_reply_supports_the_kernel_request_length", evidence = ["steam-c6-feature-registration"], reason = "Compat synthetic v<pid-hex>-<counter-hex> identity. Concurrent process IDs and checked 44-bit counter prevent default collisions; 21-byte maximum and exhaustion refusal tested. Caller validation and wire replies tested. Physical format and live host serial readback: No evidence." }
+
+[[functions]]
+id = "steam-client"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/steam-client", evidence = [], reason = "No evidence. Manual and untested; exact owner procedure in docs/C6_D9_ACCEPTANCE.md and the C6 checkpoint PR. Step 16 stub was not listed." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/steam-client", evidence = [], reason = "No evidence. Manual and untested; exact owner procedure in docs/C6_D9_ACCEPTANCE.md and the C6 checkpoint PR. Step 16 stub was not listed." }
+
+[[functions]]
+id = "kernel-evdev-decoding"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/kernel-evdev-decoding", evidence = [], reason = "No evidence: exact evdev node opens returned EACCES. Proposed input-lab policy needs owner merge/install; no host change made." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/kernel-evdev-decoding", evidence = [], reason = "No evidence: exact evdev node opens returned EACCES. Proposed input-lab policy needs owner merge/install; no host change made." }
+
+[[functions]]
+id = "evdev-abs-ioctl"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/evdev-abs-ioctl", evidence = [], reason = "No evidence: exact evdev node opens returned EACCES. Proposed input-lab policy needs owner merge/install; no host change made." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/evdev-abs-ioctl", evidence = [], reason = "No evidence: exact evdev node opens returned EACCES. Proposed input-lab policy needs owner merge/install; no host change made." }
+
+[[functions]]
+id = "physical-serial-format"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/physical-serial-format", evidence = [], reason = "No evidence. See docs/C6_D9_ACCEPTANCE.md; no physical or consumer acceptance inferred." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/physical-serial-format", evidence = [], reason = "No evidence. See docs/C6_D9_ACCEPTANCE.md; no physical or consumer acceptance inferred." }
+
+[[functions]]
+id = "output-delivery"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/output-delivery", evidence = [], reason = "No evidence. See docs/C6_D9_ACCEPTANCE.md; no physical or consumer acceptance inferred." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/output-delivery", evidence = [], reason = "No evidence. See docs/C6_D9_ACCEPTANCE.md; no physical or consumer acceptance inferred." }

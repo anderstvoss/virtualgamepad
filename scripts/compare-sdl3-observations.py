@@ -43,6 +43,18 @@ def validate_value(field, value):
         'touch': {'down_mask': int, 'up_mask': int, 'motion': bool},
         'output_calls': {'rumble': bool, 'led': bool},
     }
+    if field == 'touch' and isinstance(value, dict) and 'pads' in value:
+        pads = value['pads']
+        if not isinstance(pads, list) or len(pads) > 2:
+            raise ValueError('expected at most two touchpad summaries')
+        for index, pad in enumerate(pads):
+            if (not isinstance(pad, dict) or set(pad) != {'index', 'down_mask', 'up_mask', 'motion'}
+                    or type(pad['index']) is not int or pad['index'] != index
+                    or type(pad['motion']) is not bool
+                    or any(type(pad[key]) is not int or not 0 <= pad[key] <= 0xffffffff
+                           for key in ('down_mask', 'up_mask'))):
+                raise ValueError('invalid touchpad summary')
+        value = {key: item for key, item in value.items() if key != 'pads'}
     shape = shapes.get(field)
     if shape:
         if set(value) != set(shape) or any(type(value[key]) is not kind for key, kind in shape.items()):

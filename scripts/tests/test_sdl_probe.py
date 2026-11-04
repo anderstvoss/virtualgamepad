@@ -97,6 +97,25 @@ class ProbeIntegration(unittest.TestCase):
         self.assertIsNone(obs['controller_reverse']['value'])
         self.assertIsNone(obs['device_removed']['value'])
 
+    def test_both_touchpads_report_independent_down_up_and_motion(self):
+        result, record = self.run_probe('two-pads')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        touch = record['observations']['touch']['value']
+        self.assertIsNotNone(touch)
+        self.assertEqual(touch['pads'], [
+            {'index': index, 'down_mask': 1, 'up_mask': 1, 'motion': True}
+            for index in range(2)])
+        self.assertTrue(record['consumer_closed'])
+
+    def test_touchpad_extension_keeps_legacy_validation_and_rejects_bad_summaries(self):
+        legacy = {'down_mask': 1, 'up_mask': 1, 'motion': True}
+        COMPARE.validate_value('touch', legacy)
+        for pads in [None, [{'index': 1, 'down_mask': 1, 'up_mask': 1, 'motion': True}],
+                     [{'index': 0, 'down_mask': -1, 'up_mask': 1, 'motion': True}],
+                     [{'index': 0, 'down_mask': 1, 'up_mask': 1, 'motion': 1}]]:
+            with self.subTest(pads=pads), self.assertRaises(ValueError):
+                COMPARE.validate_value('touch', legacy | {'pads': pads})
+
     def test_existing_control_mode_and_new_reopen_flag_compose(self):
         result, record = self.run_probe('normal', '--control-0', '--reopen')
         self.assertEqual(result.returncode, 0, result.stdout)
