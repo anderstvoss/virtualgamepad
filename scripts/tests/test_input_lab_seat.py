@@ -19,6 +19,8 @@ LAB_ROOT = 'virtualgamepad/input-lab/'
 PREFIX = LAB_ROOT + 'uhid/'
 UINPUT_PREFIX = LAB_ROOT + 'uinput/'
 VALID = {
+    PREFIX + "steam-controller-2026/p2a-i0": "seat-vg-alpha-p2a",
+    UINPUT_PREFIX + "steam-controller-2026/p2a-i0": "seat-vg-alpha-p2a",
     PREFIX + 'dualsense/p2a-i0': 'seat-vg-alpha-p2a',
     PREFIX + 'dualshock4/p3f-i10': 'seat-vg-alpha-p3f',
     PREFIX + 'dualsense/p7fffffff-i0': 'seat-vg-alpha-p7fffffff',
@@ -58,6 +60,23 @@ INVALID = [
 
 
 class InputLabSeatTests(unittest.TestCase):
+    def test_steam_label_is_bounded_and_event_grant_requires_validated_parent(self):
+        for transport in ['uhid', 'uinput']:
+            base = LAB_ROOT + transport + '/steam-controller-2026/'
+            self.assertEqual(MODULE.seat_for_phys(base + 'p2a-i0'), 'seat-vg-alpha-p2a')
+            for suffix in ['p0-i0', 'p02a-i0', 'p2a-i0/extra', 'p2a-i0\n',
+                           'p7fffffff-iffffffffffffffff']:
+                self.assertIsNone(MODULE.seat_for_phys(base + suffix))
+        rules = HELPER.with_name('71-virtualgamepad-input-lab.rules').read_text()
+        grants = [line for line in rules.splitlines()
+                  if 'VG_INPUT_LAB_STEAM' in line and 'GROUP=' in line]
+        self.assertEqual(len(grants), 1)
+        self.assertIn('ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*"', grants[0])
+        self.assertIn('ENV{VG_INPUT_LAB_STEAM}=="1"', grants[0])
+        self.assertIn('ENV{HID_PHYS}=="virtualgamepad/input-lab/uhid/steam-controller-2026/p*-i*"', rules)
+        self.assertEqual(rules.count('IMPORT{parent}="VG_INPUT_LAB_STEAM"'), 2)
+        self.assertIn('GROUP="virtualgamepad-uhid", MODE="0660"', grants[0])
+
     def test_accepts_only_canonical_sony_numeric_identities(self):
         for label, seat in VALID.items():
             with self.subTest(label=label):

@@ -143,10 +143,9 @@ fn bound_driver(node: &Path) -> Option<String> {
             .map(|s| s.to_string_lossy().into_owned())
     })
 }
-fn drive_steam_sample(
-    steam: &mut gr_curated_controllers::steam_controller_2026::SteamController2026Controller,
+fn steam_sample(
     sample: i16,
-) -> Result<(), String> {
+) -> gr_curated_controllers::steam_controller_2026::SteamController2026State {
     use gr_curated_controllers::steam_controller_2026::SteamController2026Button as B;
     const BUTTONS: [B; 22] = [
         B::A,
@@ -172,7 +171,8 @@ fn drive_steam_sample(
         B::RightTrigger,
         B::LeftTrigger,
     ];
-    let mut state = steam.state().clone();
+    let mut state =
+        gr_curated_controllers::steam_controller_2026::SteamController2026State::default();
     state.motion.timestamp_us = u32::from(u16::from_ne_bytes(sample.to_ne_bytes())) * 10_000;
     state.motion.accelerometer = [sample % 250 * 100, 500, 1000];
     state.motion.gyroscope = [sample % 250 * 30, -250, 100];
@@ -187,24 +187,57 @@ fn drive_steam_sample(
     }
     for (index, pad) in state.pads.iter_mut().enumerate() {
         pad.touch = (sample % 20 < 10) == (index == 0);
-        pad.position = [value, -value];
+        pad.position = [value + sample % 10 * 100, -value + sample % 10 * 60];
         pad.pressure = if pad.touch { 1000 } else { 0 };
         pad.click = pad.touch && sample % 5 < 2;
     }
     state.stick_touch = [value > 0, value < 0];
     state.grip_touch = [value < 0, value > 0];
-    steam.set_inputs(state).map_err(|error| error.to_string())?;
+    state
+}
+fn drive_steam_sample(
+    steam: &mut gr_curated_controllers::steam_controller_2026::SteamController2026Controller,
+    sample: i16,
+) -> Result<(), String> {
+    steam
+        .set_inputs(steam_sample(sample))
+        .map_err(|error| error.to_string())?;
     steam.commit().map_err(|error| error.to_string())
+}
+#[derive(Default)]
+struct SteamScript {
+    next_ms: Option<u64>,
+    sample: i16,
+}
+impl SteamScript {
+    fn advance(&mut self, now_ms: u64, ready: bool) -> Option<i16> {
+        if !ready {
+            return None;
+        }
+        let next = *self.next_ms.get_or_insert(now_ms + 10);
+        if now_ms < next {
+            return None;
+        }
+        self.next_ms = Some(now_ms + 10);
+        self.sample += 1;
+        Some(self.sample)
+    }
+}
+fn probe_ready(text: &str) -> bool {
+    text.lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .any(|record| record["record_type"] == "mapping_ready")
 }
 fn wait_child(
     child: &mut Child,
     controller: &mut Controller,
     peers: &mut [&mut Session],
+    capture: &Path,
 ) -> Result<(), String> {
     let start = Instant::now();
     let deadline = start + Duration::from_secs(30);
-    let mut next = start + Duration::from_millis(350);
-    let mut sample = 0_i16;
+    let mut script = SteamScript::default();
+    let mut ready = false;
     loop {
         for peer in peers.iter_mut() {
             peer.service.service(|| peer.controller.service());
@@ -220,14 +253,17 @@ fn wait_child(
             Ok(None) => {}
             Err(error) => return Err(error.to_string()),
         }
-        let result = controller.service().and_then(|()| match controller {
-            Controller::Steam(steam) if Instant::now() >= next => {
-                sample += 1;
-                next += Duration::from_millis(10);
-                drive_steam_sample(steam, sample)
-            }
-            _ => Ok(()),
-        });
+        ready = ready || fs::read_to_string(capture).is_ok_and(|text| probe_ready(&text));
+        let sample = script.advance(
+            u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+            ready,
+        );
+        let result = controller
+            .service()
+            .and_then(|()| match (&mut *controller, sample) {
+                (Controller::Steam(steam), Some(sample)) => drive_steam_sample(steam, sample),
+                _ => Ok(()),
+            });
         if let Err(error) = result {
             let _ = child.kill();
             let _ = child.wait();
@@ -316,7 +352,7 @@ impl Backend for Linux {
                     .arg(self.root.join("scripts/run-sdl3-gamepad-probe.sh"))
                     .arg(node).arg(if steam_hid { "1800" } else { "100" }).stdout(Stdio::from(file)).stderr(Stdio::null())
                     .spawn().map_err(|e|e.to_string())?;
-                let status = wait_child(&mut child, &mut s.controller, peers);
+                let status = wait_child(&mut child, &mut s.controller, peers, &capture.0);
                 let text = fs::read_to_string(&capture.0).map_err(|e|e.to_string())?;
                 let record = text.lines().filter_map(|line|serde_json::from_str::<Value>(line).ok()).find(|r|r["consumer"]=="SDL").ok_or("SDL probe emitted no observation")?;
                 if steam_hid && status.is_err() {
@@ -364,6 +400,33 @@ impl Backend for Linux {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn steam_controls_wait_for_consumer_neutral_after_arbitrary_startup_delay() {
+        use gr_curated_controllers::steam_controller_2026::SteamController2026Button as B;
+        assert!(super::steam_sample(1).pressed(B::A));
+        assert!(!super::steam_sample(4).pressed(B::A));
+        assert!(super::steam_sample(127).pressed(B::LeftTrigger));
+        for pad in 0..2 {
+            assert_ne!(
+                super::steam_sample(1).pads[pad].position,
+                super::steam_sample(2).pads[pad].position
+            );
+        }
+
+        for delay in [0, 350, 1500, 5000] {
+            let mut script = super::SteamScript::default();
+            assert_eq!(script.advance(delay, false), None);
+            assert_eq!(script.advance(delay, true), None);
+            for sample in 1..=138 {
+                assert_eq!(
+                    script.advance(delay + sample * 10, true),
+                    Some(i16::try_from(sample).unwrap())
+                );
+            }
+        }
+        assert!(!super::probe_ready("{\"consumer\":\"SDL\"}\n{partial"));
+        assert!(super::probe_ready("{\"record_type\":\"mapping_ready\"}\n"));
+    }
     #[test]
     fn every_registry_family_has_a_public_constructor_adapter() {
         let mut mapped = super::MAPPED_IDS.to_vec();

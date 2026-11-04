@@ -64,7 +64,10 @@ pub fn create_steam_controller_2026_with_options(
 }
 
 fn resolve_serial(serial: Option<String>) -> Result<String, ProviderError> {
-    let serial = serial.unwrap_or_else(default_serial);
+    let serial = match serial {
+        Some(serial) => serial,
+        None => default_serial()?,
+    };
     // hid-steam v7.3-rc1 hid-steam.c:399,414,667–685 allows 21 bytes
     // plus NUL. SDL Triton e0232c5 InitDevice:453–471 does not query
     // the feature serial. Printable ASCII is the virtual identity policy.
@@ -78,11 +81,25 @@ fn resolve_serial(serial: Option<String>) -> Result<String, ProviderError> {
     Ok(serial)
 }
 
-fn default_serial() -> String {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    let id = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("virt-{id:016x}")
+// Eight PID digits, eleven counter digits, a synthetic prefix and separator:
+// 1 + 8 + 1 + 11 = 21 printable ASCII bytes, even at the largest PID.
+const MAX_SERIAL_COUNTER: u64 = (1_u64 << 44) - 1;
+
+fn allocate_serial(pid: u32, next: &std::sync::atomic::AtomicU64) -> Result<String, ProviderError> {
+    use std::sync::atomic::Ordering;
+    let counter = next
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            (value <= MAX_SERIAL_COUNTER).then(|| value + 1)
+        })
+        .map_err(|_| ProviderError::Open {
+            reason: "synthetic serial identity space exhausted".into(),
+        })?;
+    Ok(format!("v{pid:x}-{counter:x}"))
+}
+
+fn default_serial() -> Result<String, ProviderError> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    allocate_serial(std::process::id(), &NEXT)
 }
 
 fn wired_realization() -> NativeControllerRealization {
@@ -228,6 +245,39 @@ mod tests {
             assert!(resolve_serial(Some(invalid)).is_err());
         }
         assert_ne!(resolve_serial(None).unwrap(), resolve_serial(None).unwrap());
+    }
+
+    #[test]
+    fn default_serial_encodes_process_and_never_wraps_or_exceeds_the_wire_bound() {
+        use std::sync::atomic::AtomicU64;
+        let next = AtomicU64::new(0);
+        assert_eq!(allocate_serial(0x2a, &next).unwrap(), "v2a-0");
+        assert_eq!(allocate_serial(0x2a, &next).unwrap(), "v2a-1");
+        assert_eq!(allocate_serial(0x2b, &AtomicU64::new(0)).unwrap(), "v2b-0");
+        let last = AtomicU64::new(MAX_SERIAL_COUNTER);
+        let serial = allocate_serial(0x7fff_ffff, &last).unwrap();
+        assert_eq!(serial, "v7fffffff-fffffffffff");
+        assert_eq!(serial.len(), 21);
+        assert!(serial.bytes().all(|byte| byte.is_ascii_graphic()));
+        assert_eq!(resolve_serial(Some(serial.clone())).unwrap(), serial);
+        assert!(allocate_serial(0x7fff_ffff, &last).is_err());
+        assert!(allocate_serial(0x7fff_ffff, &last).is_err());
+        let generated = default_serial().unwrap();
+        let (process, counter) = generated
+            .strip_prefix('v')
+            .unwrap()
+            .split_once('-')
+            .unwrap();
+        assert_eq!(
+            u32::from_str_radix(process, 16).unwrap(),
+            std::process::id()
+        );
+        assert!(
+            counter
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        );
+        assert_ne!(generated, default_serial().unwrap());
     }
 
     #[test]

@@ -56,10 +56,13 @@ Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
 | Motion | Native motion through `0x42` | No companion motion node. The provider cannot declare the accelerometer property or timestamp event |
 | Touch | Native pad coordinates, click, pressure and touch flags | Pad click and contact-gated coordinates. The kernel gamepad mapping has no independent pressure, stick/grip touch or pad-contact key |
 | Host output | Retained vendor haptics, reports `0x80`–`0x85` | Conventional rumble via reverse events. There is no vendor haptic payload for the six retained slots |
-| Unit serial | Compatibility feature string. Physical format: No evidence | No HID feature channel or evdev unique-ID setter |
+| Unit serial | Compatibility PID/counter feature string. Physical format: No evidence | No HID feature channel or evdev unique-ID setter |
 
-The default unit serial is a process-local synthetic label allocated once per
-instance. Caller values must contain 1–21 printable ASCII bytes. The limit
+The default unit serial is a synthetic `v<pid-hex>-<counter-hex>` label,
+allocated once per instance. The separated PID makes concurrent processes distinct;
+a checked 44-bit counter makes instances within a process distinct. Its maximum
+encoded length is 21 bytes; exhaustion refuses creation instead of wrapping or
+truncating. PID reuse after process exit is not a persistent identity guarantee. Caller values must contain 1–21 printable ASCII bytes. The limit
 comes from Linux v7.3-rc1 [hid-steam.c lines 399–414 and 667–685](https://github.com/torvalds/linux/blob/cee9395acd8043be0644b25c34bfa86623f2b935/drivers/hid/hid-steam.c#L667-L685).
 The kernel uses a 22-byte buffer with NUL termination and does not validate
 a character class. Printable ASCII is this project's compatibility policy.
