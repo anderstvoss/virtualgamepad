@@ -202,3 +202,25 @@ match counts to explain discovery failures. DS4 currently fails gamepad discover
 because its combined touch node is classified as a touchscreen; do not suppress
 touch capabilities or change global udev policy to count a pass. See
 [EXP-0011](history/alpha-1/experiments/EXP-0011-evdev-sdl.md).
+
+### Proposed Steam input-lab extension
+
+The optional `steam-controller-2026` lab label uses the same isolated per-process
+seat as the Sony labels. The helper still validates the entire ASCII label,
+canonical positive PID, instance counter and 63-byte limit. Overlong labels are
+rejected before device creation. Normal creation remains opt-out.
+
+The proposed event rule grants only helper-validated Steam UHID descendants to
+the existing `virtualgamepad-uhid` group at mode 0660. Reduced uinput events use
+the existing validated uinput rule and `virtualgamepad-uinput` group. This gives
+those groups access to intentionally labelled virtual event streams, including
+kernel-created gamepad and sensor nodes; labels are correlation metadata, not
+proof of a physical device or of the creator's identity. A process already able
+to create UHID/uinput devices can choose such a label. No physical-device ID
+match, blanket input group grant or command execution is added. The helper
+performs no input-dependent file/network access. Existing seat isolation and
+libinput-ignore propagation apply before event access.
+
+This is an owner-review-only root-policy proposal under #258. It must be merged
+and installed by Anders before any Steam kernel event/ABS ioctl acceptance is
+claimed. Source changes and passing unit tests do not establish installed policy.
