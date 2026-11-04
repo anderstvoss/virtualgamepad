@@ -1072,6 +1072,13 @@ mod steam_tests {
             e.apply_events(vec![InputEvent::Touch {
                 id: Id::new(id),
                 contact: 0,
+                point: Some((12345, 54321)),
+            }]);
+            assert_eq!(e.state.pads[i].position, [-20423, 21553]);
+
+            e.apply_events(vec![InputEvent::Touch {
+                id: Id::new(id),
+                contact: 0,
                 point: None,
             }]);
             assert!(!e.state.pads[i].touch);
