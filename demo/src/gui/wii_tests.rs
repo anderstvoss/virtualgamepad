@@ -647,3 +647,91 @@ fn plus_label_and_inactive_id_compat_are_revision_scoped() {
         }
     }
 }
+
+#[test]
+fn creation_targets_follow_each_registered_family_and_compiled_factories() {
+    assert_eq!(
+        creation_targets(Kind::WiiRemote),
+        vec![
+            RealizationId::LINUX_UINPUT,
+            RealizationId::LINUX_UHID_BLUETOOTH
+        ]
+    );
+    for kind in Kind::registered() {
+        let targets = creation_targets(kind);
+        let registered: Vec<_> = (kind.entry().realizations)()
+            .iter()
+            .map(|r| r.surface.target())
+            .collect();
+        assert!(!targets.is_empty());
+        for target in &registered {
+            assert_eq!(
+                targets.contains(target),
+                *target != RealizationId::LINUX_USBIP_USB_AUDIO || cfg!(feature = "audio-usbip")
+            );
+        }
+        if kind != Kind::WiiRemote {
+            assert!(!targets.contains(&RealizationId::LINUX_UHID_BLUETOOTH));
+        }
+        for target in targets {
+            assert_eq!(valid_creation_target(kind, target), target);
+        }
+    }
+}
+
+#[test]
+fn unsupported_family_targets_fall_back_and_valid_selections_survive_switches() {
+    for target in [
+        RealizationId::LINUX_UHID_USB,
+        RealizationId::LINUX_USBIP_USB_AUDIO,
+        RealizationId::LINUX_DUMMY_HCD_USB_HID,
+    ] {
+        assert_eq!(
+            valid_creation_target(Kind::WiiRemote, target),
+            RealizationId::LINUX_UHID_BLUETOOTH
+        );
+    }
+    let mut target = RealizationId::LINUX_UHID_USB;
+    render(|ui| {
+        draw_target_selector(ui, &mut target, Kind::WiiRemote, 180.0);
+    });
+    assert_eq!(target, RealizationId::LINUX_UHID_BLUETOOTH);
+    for kind in Kind::registered() {
+        target = valid_creation_target(kind, target);
+        assert!(creation_targets(kind).contains(&target));
+    }
+    assert_eq!(
+        valid_creation_target(Kind::WiiRemote, RealizationId::LINUX_UINPUT),
+        RealizationId::LINUX_UINPUT
+    );
+}
+
+#[test]
+fn wii_recreation_retains_target_revision_and_compat_despite_sidebar_changes() {
+    let app = App::default();
+    for target in creation_targets(Kind::WiiRemote) {
+        for revision in [WiiRemoteRevision::Original, WiiRemoteRevision::Tr] {
+            let mut saved = app.creation_options();
+            saved.target = target;
+            saved.wii_revision = revision;
+            saved.wii_compat = WiiRemoteCreationOptions {
+                motionplus_passthrough_id_mirror: true,
+                motionplus_passthrough_calibration_copy: true,
+                motionplus_inactive_id_external_style: true,
+                motionplus_activation_reattach_status: true,
+            };
+            let mut sidebar = app.creation_options();
+            sidebar.id = 42;
+            sidebar.target = RealizationId::LINUX_UHID_USB;
+            sidebar.wii_revision = WiiRemoteRevision::EarlyIntegratedPlus;
+            let options = recreation_options(Kind::WiiRemote, &saved, sidebar.clone());
+            assert_eq!(options.target, target);
+            assert_eq!(options.wii_revision, revision);
+            assert_eq!(options.wii_compat, saved.wii_compat);
+            assert_eq!(options.id, 42);
+            assert!(validate_wii_recreation(Kind::WiiRemote, options.wii_revision).is_ok());
+            let other = recreation_options(Kind::SwitchPro, &saved, sidebar);
+            assert!(creation_targets(Kind::SwitchPro).contains(&other.target));
+        }
+    }
+}
