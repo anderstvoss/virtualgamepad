@@ -4,6 +4,8 @@ Run date: 2026-11-03 (Pacific). Linux `7.3.0-1-mainline`, x86-64, Intel Core i5-
 
 ## Timing (#166)
 
+[Tracker observation](https://github.com/anderstvoss/virtualgamepad/issues/166#issuecomment-6624965663).
+
 Ten cycles at N1 and N4 for each realization: 100 total samples. The first cycle is cold; the rest warm. N controllers coexist before removal. All operation error lists were empty; every node-gone stage completed. FD, thread, input-node and hidraw-node counts returned to baseline. Missing consumer-open observations retain EACCES. First-valid-neutral has no runner oracle; SDL was not requested for timing.
 
 | Realization | N | Warm samples | API p50 ms | Close p50 ms | Close max ms |
@@ -23,7 +25,7 @@ A separate one-cycle UHID run used private SDL `e0232c5b9d972ad394d597ce858185cd
 
 SDL advertised rumble and submitted a rumble call. Controller-side output delivery/actuator effect is No evidence. The client listing/input test remains manual and untested.
 
-Sysfs capability masks were observed, including the gamepad key/axis masks and hid-steam FF bits beyond FF_RUMBLE. Event decoding and ABS ioctl ranges/fuzz/flat/resolution remain No evidence: direct evdev opens returned EACCES. Driver binding and sysfs capability agreement do not demonstrate packet decoding. The input-lab extension is a separate owner-reviewed proposal; nothing was installed.
+Sysfs capability masks were observed, including the gamepad key/axis masks and hid-steam FF bits beyond FF_RUMBLE. Event decoding and ABS ioctl ranges/fuzz/flat/resolution remain No evidence: direct evdev opens returned EACCES. Driver binding and sysfs capability agreement do not demonstrate packet decoding. The [input-lab extension #299](https://github.com/anderstvoss/virtualgamepad/pull/299) is a separate owner-reviewed proposal; nothing was installed.
 
 ## Missing evidence and restrictions
 
