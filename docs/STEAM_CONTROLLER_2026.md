@@ -74,6 +74,13 @@ trigger axes and clicks, both trackpads, independent capacitive contacts and pad
 pressure, and raw motion. Edits use the bounded worker queue and native state;
 per-target restrictions remain visible. No additional public API is introduced.
 
+## 14d acceptance and timing
+
+The [C6 D9 report](C6_D9_ACCEPTANCE.md) records the new N1/N4 measurements,
+separately qualified SDL rerun, missing kernel/ABS evidence, manual Steam
+procedure and Puck feasibility note. The manifest retains source-only evidence
+levels and explicit missing live cells; none is promoted to physical acceptance.
+
 ## D9 wired acceptance
 
 The shared acceptance runner used one cycle per realization on Linux
