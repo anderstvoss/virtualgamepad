@@ -131,12 +131,15 @@ pub(super) type DualShock4Editor = Editor<DualShock4State, Surface>;
 pub(super) type SwitchProEditor = Editor<SwitchProState, Surface>;
 pub(super) type WiiRemoteEditor =
     Editor<gr_curated_controllers::wii_remote::WiiRemoteState, Surface>;
+pub(super) type SteamEditor =
+    Editor<gr_curated_controllers::steam_controller_2026::SteamController2026State, Surface>;
 pub(super) enum ControllerView {
     Xbox(Xbox360Editor),
     DualSense(DualSenseEditor),
     DualShock4(DualShock4Editor),
     SwitchPro(SwitchProEditor),
     WiiRemote(WiiRemoteEditor),
+    Steam(SteamEditor),
 }
 impl<S> Editor<S, Surface> {
     fn new(
@@ -173,6 +176,9 @@ impl Controller {
             Self::DualSense(c) => view!(c, DualSense),
             Self::DualShock4(c) => view!(c, DualShock4),
             Self::SwitchPro(c) => view!(c, SwitchPro),
+            Self::Steam(c) => {
+                ControllerView::Steam(Editor::new(c.state().clone(), c.surface(), None, None))
+            }
             Self::WiiRemote(c) => {
                 ControllerView::WiiRemote(Editor::new(c.state().clone(), c.surface(), None, None))
             }
@@ -366,6 +372,12 @@ pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
             None,
             None,
         )),
+        super::Kind::Steam => ControllerView::Steam(Editor::new(
+            gr_curated_controllers::steam_controller_2026::SteamController2026State::default(),
+            surface,
+            None,
+            None,
+        )),
         super::Kind::SwitchPro => {
             ControllerView::SwitchPro(Editor::new(SwitchProState::default(), surface, None, None))
         }
@@ -405,6 +417,7 @@ impl ControllerView {
             Self::DualShock4(c) => c.association.as_ref(),
             Self::SwitchPro(c) => c.association.as_ref(),
             Self::WiiRemote(c) => c.association.as_ref(),
+            Self::Steam(c) => c.association.as_ref(),
         }
     }
     pub(super) fn lab_details(&self) -> String {
@@ -413,6 +426,7 @@ impl ControllerView {
             Self::DualSense(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
             Self::DualShock4(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
             Self::SwitchPro(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
+            Self::Steam(_) => "Steam supporting package".into(),
             Self::WiiRemote(_) => "Wii supporting-package diagnostics and association are unavailable in this ordinary-root lab view.".into(),
         }
     }
@@ -424,6 +438,7 @@ impl ControllerView {
             Self::DualShock4(c) => c.queue(edit),
             Self::SwitchPro(c) => c.queue(edit),
             Self::WiiRemote(c) => c.queue(edit),
+            Self::Steam(c) => c.queue(edit),
         }
     }
 
@@ -434,6 +449,7 @@ impl ControllerView {
             Self::DualShock4(c) => c.take_edits(),
             Self::SwitchPro(c) => c.take_edits(),
             Self::WiiRemote(c) => c.take_edits(),
+            Self::Steam(c) => c.take_edits(),
         }
     }
 }
@@ -959,5 +975,132 @@ mod tests {
         assert!(editor.queue(Box::new(|_| Ok(()))).is_err());
         assert!(editor.take_edits().is_err());
         assert_eq!(editor.edits.len(), EDIT_LIMIT);
+    }
+}
+
+impl SteamEditor {
+    pub(super) fn edit_steam(&mut self, events: Vec<super::InputEvent>) {
+        let mut next = self.state.clone();
+        for event in events {
+            if !super::native_editor::apply_steam_event(&mut next, &event) {
+                return;
+            }
+        }
+        self.queue_steam_state(next);
+    }
+    fn queue_steam_state(
+        &mut self,
+        next: gr_curated_controllers::steam_controller_2026::SteamController2026State,
+    ) {
+        if next == self.state {
+            return;
+        }
+        let queued = next.clone();
+        if self
+            .queue(Box::new(move |c| {
+                let Controller::Steam(c) = c else {
+                    return Err("edit family mismatch".into());
+                };
+                c.set_inputs(queued).map_err(|e| e.to_string())
+            }))
+            .is_ok()
+        {
+            self.state = next;
+        }
+    }
+}
+
+impl SteamEditor {
+    pub(super) fn draw_steam(&mut self, ui: &mut super::egui::Ui) {
+        let mut next = self.state.clone();
+        let mut changed = false;
+        for i in 0..2 {
+            ui.horizontal(|ui| {
+                ui.label(if i == 0 { "Left" } else { "Right" });
+                changed |= ui
+                    .checkbox(&mut next.stick_touch[i], "Stick touch")
+                    .changed();
+                changed |= ui.checkbox(&mut next.grip_touch[i], "Grip touch").changed();
+                changed |= ui.checkbox(&mut next.pads[i].touch, "Pad touch").changed();
+                changed |= ui
+                    .add(
+                        super::egui::Slider::new(&mut next.pads[i].pressure, 0..=u16::MAX)
+                            .text("Pad pressure"),
+                    )
+                    .changed();
+            });
+        }
+        if changed {
+            self.queue_steam_state(next);
+        }
+    }
+}
+
+#[cfg(test)]
+mod steam_tests {
+    use super::super::{InputEvent, Kind};
+    use super::*;
+    use virtualgamepad::InputControlId as Id;
+    #[test]
+    fn steam_native_edits_cover_extrema_contacts_release_and_atomic_rejection() {
+        use super::super::native_editor::{InputEditor, apply_steam_event};
+        let ControllerView::Steam(mut e) = neutral_view(Kind::Steam) else {
+            unreachable!()
+        };
+        for (id, i) in [("left_stick", 0), ("right_stick", 1)] {
+            e.apply_events(vec![InputEvent::Axis2 {
+                id: Id::new(id),
+                x: -32768,
+                y: 32767,
+            }]);
+            assert_eq!(e.state.sticks[i], [-32768, 32767]);
+        }
+        for (id, i) in [("left_pad", 0), ("right_pad", 1)] {
+            e.apply_events(vec![InputEvent::Touch {
+                id: Id::new(id),
+                contact: 0,
+                point: Some((0, 65535)),
+            }]);
+            assert_eq!(e.state.pads[i].position, [-32768, 32767]);
+            assert!(e.state.pads[i].touch);
+            e.apply_events(vec![InputEvent::Touch {
+                id: Id::new(id),
+                contact: 0,
+                point: None,
+            }]);
+            assert!(!e.state.pads[i].touch);
+        }
+        for id in ["left_trigger.axis", "right_trigger.axis"] {
+            e.apply_events(vec![InputEvent::Axis1 {
+                id: Id::new(id),
+                value: 32767,
+            }]);
+        }
+        assert_eq!(e.state.triggers, [32767; 2]);
+        e.apply_events(vec![InputEvent::Motion {
+            id: Id::new("imu"),
+            gyroscope: [-32768, 0, 32767],
+            accelerometer: [32767, 0, -32768],
+        }]);
+        assert_eq!(e.state.motion.gyroscope, [-32768, 0, 32767]);
+        let before = e.state.clone();
+        assert!(!apply_steam_event(
+            &mut e.state,
+            &InputEvent::Axis2 {
+                id: Id::new("left_stick"),
+                x: 32768,
+                y: 0
+            }
+        ));
+        assert_eq!(e.state, before);
+        while e.edits.len() < EDIT_LIMIT {
+            e.queue(Box::new(|_| Ok(()))).unwrap();
+        }
+        e.apply_events(vec![InputEvent::Axis1 {
+            id: Id::new("left_trigger.axis"),
+            value: 0,
+        }]);
+        assert_eq!(e.state, before);
+        assert!(e.take_edits().is_err());
     }
 }

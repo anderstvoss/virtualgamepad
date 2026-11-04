@@ -1088,6 +1088,197 @@ fn apply_wii_button(
     state.set_extension_values(extension).is_ok()
 }
 
+impl InputEditor for super::editor::SteamEditor {
+    fn current_topology(&self) -> &'static InputTopology {
+        self.surface().common().input_topology()
+    }
+    fn stick_value(&self, id: InputControlId) -> Option<(i32, i32)> {
+        let i = match id.as_str() {
+            "left_stick" => 0,
+            "right_stick" => 1,
+            _ => return None,
+        };
+        let p = self.state().sticks[i];
+        Some((p[0].into(), p[1].into()))
+    }
+    fn trigger_values(&self) -> Vec<(InputControlId, InputValue)> {
+        use gr_curated_controllers::steam_controller_2026::SteamController2026Button as B;
+        vec![
+            (
+                InputControlId::new("left_trigger.axis"),
+                InputValue::Axis(self.state().triggers[0].into()),
+            ),
+            (
+                InputControlId::new("right_trigger.axis"),
+                InputValue::Axis(self.state().triggers[1].into()),
+            ),
+            (
+                InputControlId::new("left_trigger.click"),
+                InputValue::Button(self.state().pressed(B::LeftTrigger)),
+            ),
+            (
+                InputControlId::new("right_trigger.click"),
+                InputValue::Button(self.state().pressed(B::RightTrigger)),
+            ),
+        ]
+    }
+    fn touch_points(&self, id: InputControlId) -> TouchPoints {
+        let i = match id.as_str() {
+            "left_pad" => 0,
+            "right_pad" => 1,
+            _ => return vec![],
+        };
+        let p = self.state().pads[i];
+        vec![p.touch.then(|| {
+            (
+                u32::try_from(i32::from(p.position[0]) + 32768).expect("shifted s16"),
+                u32::try_from(i32::from(p.position[1]) + 32768).expect("shifted s16"),
+            )
+        })]
+    }
+    fn motion_values(&self, _: InputControlId) -> Option<MotionValues> {
+        Some((
+            self.state().motion.gyroscope.map(i32::from),
+            self.state().motion.accelerometer.map(i32::from),
+        ))
+    }
+    fn apply_events(&mut self, events: Vec<InputEvent>) {
+        self.edit_steam(events);
+    }
+}
+
+pub(super) fn apply_steam_event(
+    state: &mut gr_curated_controllers::steam_controller_2026::SteamController2026State,
+    event: &InputEvent,
+) -> bool {
+    if let Some((button, pressed)) = steam_button(event) {
+        state.set_button(button, pressed);
+        return true;
+    }
+    apply_steam_axes(state, event)
+}
+
+fn steam_button(
+    event: &InputEvent,
+) -> Option<(
+    gr_curated_controllers::steam_controller_2026::SteamController2026Button,
+    bool,
+)> {
+    use gr_curated_controllers::steam_controller_2026::SteamController2026Button as B;
+    use virtualgamepad::{DpadDirection as D, FaceButton as F};
+    match event {
+        InputEvent::Face { button, pressed } => Some((
+            match button {
+                F::South => B::A,
+                F::East => B::B,
+                F::West => B::X,
+                F::North => B::Y,
+            },
+            *pressed,
+        )),
+        InputEvent::Dpad { direction, pressed } => Some((
+            match direction {
+                D::Up => B::Up,
+                D::Down => B::Down,
+                D::Left => B::Left,
+                D::Right => B::Right,
+            },
+            *pressed,
+        )),
+        InputEvent::Button { id, pressed } => Some((
+            match id.as_str() {
+                "qam" => B::Qam,
+                "menu" => B::Menu,
+                "view" => B::View,
+                "steam" => B::Steam,
+                "left_shoulder" => B::LeftShoulder,
+                "right_shoulder" => B::RightShoulder,
+                "l4" => B::L4,
+                "l5" => B::L5,
+                "r4" => B::R4,
+                "r5" => B::R5,
+                "left_stick.click" => B::LeftStick,
+                "right_stick.click" => B::RightStick,
+                "left_trigger.click" => B::LeftTrigger,
+                "right_trigger.click" => B::RightTrigger,
+                _ => return None,
+            },
+            *pressed,
+        )),
+        _ => None,
+    }
+}
+fn apply_steam_axes(
+    state: &mut gr_curated_controllers::steam_controller_2026::SteamController2026State,
+    event: &InputEvent,
+) -> bool {
+    match event {
+        InputEvent::Button { id, pressed }
+            if matches!(id.as_str(), "left_pad.click" | "right_pad.click") =>
+        {
+            state.pads[usize::from(id.as_str() == "right_pad.click")].click = *pressed;
+        }
+        InputEvent::Axis2 { id, x, y } => {
+            let (Ok(x), Ok(y)) = (i16::try_from(*x), i16::try_from(*y)) else {
+                return false;
+            };
+            let i = match id.as_str() {
+                "left_stick" => 0,
+                "right_stick" => 1,
+                _ => return false,
+            };
+            state.sticks[i] = [x, y];
+        }
+        InputEvent::Axis1 { id, value } => {
+            let Ok(v) = i16::try_from(*value) else {
+                return false;
+            };
+            let i = match id.as_str() {
+                "left_trigger.axis" => 0,
+                "right_trigger.axis" => 1,
+                _ => return false,
+            };
+            state.triggers[i] = v;
+        }
+        InputEvent::Touch {
+            id,
+            contact: 0,
+            point,
+        } => {
+            let i = match id.as_str() {
+                "left_pad" => 0,
+                "right_pad" => 1,
+                _ => return false,
+            };
+            if let Some((x, y)) = point {
+                if *x > 65535 || *y > 65535 {
+                    return false;
+                }
+                state.pads[i].position = [
+                    i16::try_from(i64::from(*x) - 32768).expect("bounded pad"),
+                    i16::try_from(i64::from(*y) - 32768).expect("bounded pad"),
+                ];
+            }
+            state.pads[i].touch = point.is_some();
+        }
+        InputEvent::Motion {
+            id,
+            gyroscope,
+            accelerometer,
+        } if id.as_str() == "imu" => {
+            let g = gyroscope.map(i16::try_from);
+            let a = accelerometer.map(i16::try_from);
+            if g.iter().any(Result::is_err) || a.iter().any(Result::is_err) {
+                return false;
+            }
+            state.motion.gyroscope = g.map(Result::unwrap);
+            state.motion.accelerometer = a.map(Result::unwrap);
+        }
+        _ => return false,
+    }
+    true
+}
+
 #[cfg(test)]
 mod registry_tests {
     use super::super::{InputUiState, Kind, Pos2, RealizationId, Vec2, editor, egui};
@@ -1180,18 +1371,13 @@ mod registry_tests {
         assert_eq!(state.motion_plus().gyroscope, [8192, 8192, 16383]);
     }
     #[test]
-    fn every_demo_family_produces_a_native_topology_editor() {
+    fn every_compiled_family_produces_a_native_topology_editor() {
         let registered = Kind::registered();
-        // Steam C6 adds a library and acceptance runner adapter. Its native
-        // demo editor is outside the wired realization step.
-        let (library_only, demo): (Vec<_>, Vec<_>) = gr_curated_controllers::registry::FAMILIES
-            .iter()
-            .partition(|entry| {
-                entry.id == gr_curated_controllers::steam_controller_2026::STEAM_CONTROLLER_2026_ID
-            });
-        assert_eq!(library_only.len(), 1);
-        assert_eq!(registered.len(), demo.len());
-        for entry in demo {
+        assert_eq!(
+            registered.len(),
+            gr_curated_controllers::registry::FAMILIES.len()
+        );
+        for entry in gr_curated_controllers::registry::FAMILIES {
             let kind = registered
                 .iter()
                 .copied()

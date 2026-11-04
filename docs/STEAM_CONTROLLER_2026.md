@@ -67,6 +67,13 @@ Pinned [SDL Triton lines 453–471](https://github.com/libsdl-org/SDL/blob/e0232
 register wired controllers without querying the feature serial, so that driver
 imposes no additional wire bound.
 
+## Demo editor
+
+The demo includes a native Steam editor for both realizations: buttons, sticks,
+trigger axes and clicks, both trackpads, independent capacitive contacts and pad
+pressure, and raw motion. Edits use the bounded worker queue and native state;
+per-target restrictions remain visible. No additional public API is introduced.
+
 ## D9 wired acceptance
 
 The shared acceptance runner used one cycle per realization on Linux
