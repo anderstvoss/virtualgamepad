@@ -251,3 +251,7 @@ view still shows zero for an explicit nonzero gyro test, so complete motion or
 gameplay acceptance is not claimed. The profile does not hard-code Steam's
 configurable Trackpad Lockout policy or add periodic input streaming.
 See [the D9 report](C6_D9_ACCEPTANCE.md) for exact scope and remaining differences.
+
+In the demo, select Steam Controller 2026 and enable **Steam client compatibility**
+in Advanced options before creating the controller. The checkbox defaults to off
+and applies to newly created instances. It has no HID feature effect on uinput.

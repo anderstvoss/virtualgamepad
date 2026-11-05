@@ -15,6 +15,7 @@ use editor::{
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use input_clusters::{InputEvent, InputUiState, InputValue, card};
 
+use gr_curated_controllers::steam_controller_2026::SteamController2026CreationOptions;
 use gr_curated_controllers::wii_remote::{WiiRemoteCreationOptions, WiiRemoteRevision};
 use std::{
     cmp::Ordering,
@@ -49,6 +50,7 @@ struct ControllerOptions {
     wii_revision: WiiRemoteRevision,
     wii_imports: wii_import::Imports,
     wii_compat: WiiRemoteCreationOptions,
+    steam_compat: bool,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
@@ -267,6 +269,7 @@ fn draw_advanced_options(
     target: RealizationId,
     kind: Kind,
     audio_creation: &mut audio_lab::CreationAudio,
+    steam_compat: &mut bool,
     (wii_revision, wii_imports, wii_compat): (
         &mut WiiRemoteRevision,
         &mut wii_import::Imports,
@@ -309,6 +312,10 @@ fn draw_advanced_options(
                     if kind == Kind::WiiRemote {
                         wii_imports.draw(ui, target);
                         wii_import::draw_compat(ui, target, *wii_revision, wii_compat);
+                    }
+                    if kind == Kind::Steam {
+                        ui.checkbox(steam_compat, "Steam client compatibility");
+                        ui.label("Replays captured wired attributes and accepted settings. HID targets only; uinput has no feature channel.");
                     }
                     ui.strong("Audio configuration");
                     audio_lab::draw_creation(ui, audio_creation, target, kind.supports_audio());
@@ -1387,6 +1394,7 @@ pub struct App {
     wii_revision: WiiRemoteRevision,
     wii_imports: wii_import::Imports,
     wii_compat: WiiRemoteCreationOptions,
+    steam_compat: bool,
     name_draft: String,
     create_count: u32,
     advanced_options_open: bool,
@@ -1411,6 +1419,7 @@ impl Default for App {
             wii_revision: WiiRemoteRevision::Original,
             wii_imports: wii_import::Imports::default(),
             wii_compat: WiiRemoteCreationOptions::default(),
+            steam_compat: false,
             name_draft: String::new(),
             create_count: 1,
             advanced_options_open: false,
@@ -1592,6 +1601,7 @@ impl App {
             wii_revision: self.wii_revision,
             wii_imports: self.wii_imports.clone(),
             wii_compat: self.wii_compat,
+            steam_compat: self.steam_compat,
         };
         let result = self.kind.create(&options);
         match result {
@@ -1899,6 +1909,7 @@ impl eframe::App for App {
                                     self.target,
                                     self.kind,
                                     &mut self.audio_creation,
+                                    &mut self.steam_compat,
                                     (&mut self.wii_revision, &mut self.wii_imports, &mut self.wii_compat),
                                 )
                                 .panel_rect;
@@ -4289,6 +4300,7 @@ mod tests {
                                                 audio_lab::default_creation_target(),
                                                 Kind::DualSense,
                                                 &mut audio_creation,
+                                                &mut false,
                                                 (
                                                     &mut WiiRemoteRevision::Original,
                                                     &mut wii_import::Imports::default(),
