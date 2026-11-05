@@ -37,6 +37,21 @@ an API freeze do not promote a cell.
 
 ## Next release
 
+Steam C6 integrates the exact fresh physical wired descriptor, reviewed
+supporting API with validated virtual serial identity, wired UHID and reduced
+uinput realizations, active registry advertisement and native demo editor.
+Step 16's kernel-or-SDL gate is closed; 14c #298 and 14d #300 are merged into
+the buildout branch for the owner-reviewed C6 checkpoint. Root and Wii API
+snapshots are unchanged; the Steam supporting snapshot is independently checked.
+
+Field meanings and feature replies remain compat. D9 timing covers N1/N4 on both
+realizations with owned-node cleanup; the latest SDL run has partial button
+coverage. Direct kernel event decoding and ABS ioctls remain No evidence pending
+owner-reviewed policy #299 and installed-policy acceptance. Steam client
+acceptance is manual and untested; physical haptics, serial format, boot sequence,
+firmware, calibration and cadence remain open. See [Steam Controller 2026](STEAM_CONTROLLER_2026.md)
+and the [C6 D9 report](C6_D9_ACCEPTANCE.md) for exact evidence and owner steps.
+
 The next release targets validated controller creation per controller, with
 per-controller acceptance issues and new Wii Remote, Steam Controller (2026)
 and Xbox Series families. Work is sequenced to land the compiled controller

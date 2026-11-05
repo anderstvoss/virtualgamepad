@@ -30,6 +30,7 @@ fn declared_family_and_selected_output_kinds_match_implemented_paths() {
             ],
             "virtualgamepad.dualshock4" => &[rumble, OutputKind::Led { kind: LedKind::Rgb }],
             "virtualgamepad.switch-pro" => &[rumble, OutputKind::PlayerIndicator { count: 4 }],
+            "virtualgamepad.steam-controller-2026" => &[rumble],
             "virtualgamepad.xbox360" => &[evdev],
             "virtualgamepad.wii-remote" => &[
                 OutputKind::Rumble {
@@ -63,7 +64,10 @@ fn declared_family_and_selected_output_kinds_match_implemented_paths() {
             } else {
                 assert_eq!(surface.output_kinds(), expected, "{id}");
             }
-            if id != "virtualgamepad.wii-remote" {
+            if !matches!(
+                id,
+                "virtualgamepad.wii-remote" | "virtualgamepad.steam-controller-2026"
+            ) {
                 assert!(surface.input_topology().typed_inputs().is_empty());
             }
             assert!(!surface.output_kinds().iter().any(|kind| matches!(
@@ -74,5 +78,5 @@ fn declared_family_and_selected_output_kinds_match_implemented_paths() {
             )));
         }
     }
-    assert_eq!(checked, 5);
+    assert_eq!(checked, 6);
 }
