@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.steam-controller-2026"
-research_revision = "43c9d2e67d23ee169b658b9da70646350ecfee4d"
+research_revision = "8a479b934bb8758988dc5252fb4c2306476dc3b0"
 realizations = ["linux.uinput", "linux.uhid.usb"]
 refused_operations = []
 persistent_resources = []

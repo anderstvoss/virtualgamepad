@@ -527,8 +527,8 @@ Local retest digests (raw artifacts not published):
 ### Native reference and manual Steam checkpoint
 
 The owner completed labelled real wired input captures, plus Steam Ping and
-separate brief SDL rumble channels. The adopted follow-up research records
-`steam-d9-native-input-output-reference` and its linked fixtures preserve selected
+separate brief SDL rumble channels. [Research PR #105](https://github.com/anderstvoss/controller-protocol-research/pull/105)
+proposes `steam-d9-native-input-output-reference` and linked fixtures preserving selected
 non-identifying input/output packets. Physical button/axis/touch offsets agree
 with the encoder. Motion fields froze in the Steam-only motion batch; enabling
 sensors through the provided SDL build produced changing accel/gyro/quaternion.
@@ -631,3 +631,7 @@ qualifications and the unisolated discovery/pose requirements remain.
 
 Streamed audio and MIDI were not tested. The physical Ping chirp and its matched
 script request establish neither a streaming path nor MIDI semantics.
+
+The implementation pin adopts merged research main, including feature evidence
+from #101. The newer input/output reference in #105 is a separate review; no
+unmerged fixture is required by the production attribute/settings generator.
