@@ -211,3 +211,43 @@ replies, all six distinct-field haptic fixtures, raw gain domains, malformed
 lengths, report classes, retained outputs, sequence wrap, stop/restart and two
 independent fake sessions with per-cycle request completion and idempotent close.
 Fixture regeneration also checks independent fixed lengths and hashes.
+
+## Opt-in recorded Steam client profile
+
+`SteamController2026CreationOptions::steam_client_compat` is a per-instance bool,
+default **false**. Enable it through `create_steam_controller_2026_with_options`
+with `SteamController2026CreationOptions { steam_client_compat: true,
+..Default::default() }`. The caller must continue servicing the controller.
+
+On wired UHID, the profile returns the exact recorded 63-byte attribute reply
+from `steam-d9-1302-model-attributes`, scoped to HWID 0x48 and firmware build
+0x6ACFF323, and accepts the sixteen setting keys in
+`steam-d9-steam-setting-acceptance` alongside the existing known settings.
+Captured writes establish transport acceptance only. The private model retains
+last accepted intent atomically, including last-write-wins for duplicate keys;
+restore-settings invalidates known intent without inventing factory defaults.
+Malformed settings and unreviewed keys still fail atomically. Serial identity
+remains synthetic or validated caller-set; its reply behavior is unchanged.
+The profile also acknowledges the exact observed DC/E2 two-byte SET bodies
+without retaining state. For the observed ED SET declaring length 24, it returns
+the reviewed one-byte `00` value in a 63-byte report with fresh zero padding.
+Other ED forms remain unsupported, and opaque reply tails are never replayed; the three
+physical replies have different declared lengths. These choices cite
+`steam-d9-feature-response-framing` and assert no command semantics.
+C1 remains an explicit failure. Linux UHID converts all nonzero SET errors
+to EIO, so it cannot reproduce the physical USB EPIPE/STALL exactly; see the
+D9 report for the direct owned-node ioctl result and fake-provider regression.
+The descriptor and supported input/output reports are unchanged. Uinput has no
+HID feature channel; the option has no effect on its controls or outputs.
+
+This is a firmware-scoped compat profile, not a retail identity or a promise of
+Steam listing across arbitrary clients. The initial attribute/settings-only
+attempt corrected the controller-info failure but remained unlisted. Later
+compat runs with DC/E2 acknowledgement listed and opened the input tester.
+The current profile also includes the reviewed ED reply. Manual buttons, axes,
+pad position/pressure and touch observations are recorded in the D9 report,
+with GUI qualifications and a changed desktop-profile test condition. The gyro
+view still shows zero for an explicit nonzero gyro test, so complete motion or
+gameplay acceptance is not claimed. The profile does not hard-code Steam's
+configurable Trackpad Lockout policy or add periodic input streaming.
+See [the D9 report](C6_D9_ACCEPTANCE.md) for exact scope and remaining differences.

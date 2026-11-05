@@ -79,7 +79,7 @@
     },
     "struct.SteamController2026CreationOptions.html": {
       "declarations": [
-        "pub struct SteamController2026CreationOptions { pub serial: Option<String>, }"
+        "pub struct SteamController2026CreationOptions { pub serial: Option<String>, pub steam_client_compat: bool, }"
       ],
       "traits": [
         "impl Clone for SteamController2026CreationOptions",

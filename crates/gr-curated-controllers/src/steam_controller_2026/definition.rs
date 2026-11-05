@@ -13,7 +13,7 @@ use gr_realization_api::{
     RealizationTarget,
 };
 
-pub(crate) struct SteamController2026Definition(pub(crate) String);
+pub(crate) struct SteamController2026Definition(pub(crate) String, pub(crate) bool);
 const REDUCED: &[TargetRestriction] = &[
     TargetRestriction {
         feature: "motion sensors",
@@ -159,7 +159,7 @@ impl crate::common::HidDriver for SteamController2026Definition {
     }
 
     fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
-        Self::Hid::with_serial(self.0.clone())
+        Self::Hid::with_options(self.0.clone(), self.1)
     }
 }
 impl ControllerFamily for SteamController2026Definition {
@@ -182,7 +182,7 @@ impl ControllerFamily for SteamController2026Definition {
         TARGETS
     }
     fn manifest() -> RealizationManifest {
-        Self(String::new()).realization_manifest()
+        Self(String::new(), false).realization_manifest()
     }
 }
 
@@ -190,8 +190,30 @@ impl ControllerFamily for SteamController2026Definition {
 mod tests {
     use super::*;
     #[test]
+    fn steam_client_feature_option_does_not_change_reduced_uinput_controls() {
+        let strict = SteamController2026Definition("VGP-FAKE".into(), false);
+        let compat = SteamController2026Definition("VGP-FAKE".into(), true);
+        let selection = RealizationSelection {
+            controller: strict.controller_id(),
+            target: RealizationTarget::LINUX_UINPUT,
+        };
+        let mut state = super::super::SteamController2026State::default();
+        state.set_button(super::super::SteamController2026Button::A, true);
+        state.sticks[1] = [1000, -2000];
+        state.pads[0].touch = true;
+        state.pads[0].position = [-1000, 2000];
+        assert_eq!(
+            strict.encode(selection, &state),
+            compat.encode(selection, &state)
+        );
+        assert!(UINPUT.restrictions().iter().any(|restriction| {
+            restriction.feature == "HID feature exchange, touch metadata and vendor haptics"
+        }));
+    }
+
+    #[test]
     fn compiled_family_advertises_supported_targets_without_host_profiles() {
-        let id = SteamController2026Definition(String::new()).controller_id();
+        let id = SteamController2026Definition(String::new(), false).controller_id();
         let family = crate::registry::FAMILIES
             .iter()
             .find(|f| f.id == id)

@@ -8,6 +8,17 @@ use gr_hid::{
 use gr_realization_api::ProviderFrame;
 use gr_realization_api::RawReverseEvent;
 
+// steam-d9-1302-model-attributes / steam-d9-feature-response-framing:
+// exact non-identifying 0x83 reply, firmware build 0x6ACFF323, HW_ID 0x48.
+const STEAM_CLIENT_ATTRIBUTES: &[u8] = &include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/fixtures/protocol-research/steam-d9-1302-attributes.rs"
+));
+// steam-d9-steam-setting-acceptance: observed transport acceptance only.
+// Retention models the last accepted intent, not device readback or effects.
+const STEAM_CLIENT_SETTING_KEYS: &[u8] =
+    &[7, 8, 9, 24, 34, 35, 45, 46, 48, 49, 50, 52, 53, 82, 84, 85];
+
 // steam-c6-input-42/45/47: lengths INCLUDE the numbered report byte.
 // steam-s3-1302-report-shapes: declared lengths are faithful (fresh physical capture).
 // Field semantics remain compat consumer interpretations.
@@ -223,10 +234,12 @@ struct Outputs {
     lizard: Option<bool>,
     watchdog: Option<u16>,
     imu: Option<u16>,
+    compat_settings: std::collections::BTreeMap<u8, u16>,
 }
 #[derive(Debug, Clone, Default)]
 struct SteamProtocol {
     serial: String,
+    steam_client_compat: bool,
     sequence: u8,
     outputs: Outputs,
     query: Option<u8>,
@@ -252,6 +265,15 @@ impl SteamProtocol {
             // hid-steam v7.3-rc1, lines 667–685: current request and documented historical length.
             0xae if matches!(b[1], 0x15 | 0x16) && b[2] == 1 => self.query = Some(0xae),
             0x83 if b[1] == 0 => self.query = Some(0x83),
+            // steam-d9-feature-response-framing: these exact two-byte SET
+            // bodies completed successfully. No semantics or retained state
+            // are inferred from that transport acknowledgement.
+            0xdc if self.steam_client_compat && b[1..4] == [2, 1, 2] => {}
+            0xe2 if self.steam_client_compat && b[1..4] == [2, 1, 0x20] => {}
+            // steam-d9-feature-response-framing: only the first ED exchange
+            // (SET length 24, GET length 1, value 0) has a reviewed body.
+            // Do not retain opaque request bytes or replay opaque reply tails.
+            0xed if self.steam_client_compat && b[1] == 24 => self.query = Some(0xed),
             // steam-c6-feature-kernel-lizard: mapping and settings are distinct.
             0x81 if b[1] == 0 => next.mappings = Some(false),
             0x85 if b[1] == 0 => next.mappings = Some(true),
@@ -260,6 +282,7 @@ impl SteamProtocol {
                 next.lizard = None;
                 next.imu = None;
                 next.watchdog = None;
+                next.compat_settings.clear();
             }
             0x87 => {
                 // steam-c6-feature-kernel-lizard / feature-sdl-lizard / feature-imu.
@@ -274,10 +297,13 @@ impl SteamProtocol {
                         9 => return Err(ReplyError::Invalid),
                         48 => next.imu = Some(value),
                         71 => next.watchdog = Some(value),
-                        // Compat policy: reject the whole SET atomically rather than
-                        // silently accepting unmodelled Steam-client semantics. The
-                        // planned steam-s3-steam-client-settings run will test this.
+                        key if self.steam_client_compat
+                            && STEAM_CLIENT_SETTING_KEYS.contains(&key) => {}
+                        // Unreviewed keys remain atomic failures in both profiles.
                         _ => return Err(ReplyError::Unsupported),
+                    }
+                    if self.steam_client_compat {
+                        next.compat_settings.insert(setting[0], value);
                     }
                 }
             }
@@ -298,11 +324,21 @@ impl SteamProtocol {
         Ok(())
     }
     fn get_feature(&self) -> Result<Report, ReplyError> {
+        if self.steam_client_compat && self.query == Some(0x83) {
+            return Ok(
+                Report::from_wire(ReportType::Feature, true, STEAM_CLIENT_ATTRIBUTES)
+                    .expect("compiled physical model attribute reply"),
+            );
+        }
         // steam-c6-feature-registration / reply-serial-empty / reply-attributes-empty.
-        // The serial is virtual instance identity. Other registration data is structural.
+        // The serial is virtual instance identity. Default attributes are structural.
         let mut wire = vec![0; 64];
         wire[0] = 1;
         match self.query {
+            Some(0xed) if self.steam_client_compat => {
+                wire[1..4].copy_from_slice(&[0xed, 1, 0]);
+                wire.truncate(63);
+            }
             Some(0xae) => {
                 let serial = self.serial.as_bytes();
                 wire[1..4].copy_from_slice(&[
@@ -426,9 +462,14 @@ pub(crate) struct SteamHidProtocol {
 }
 impl SteamHidProtocol {
     pub(crate) fn with_serial(serial: String) -> Self {
+        Self::with_options(serial, false)
+    }
+
+    pub(crate) fn with_options(serial: String, steam_client_compat: bool) -> Self {
         Self {
             protocol: SteamProtocol {
                 serial,
+                steam_client_compat,
                 ..SteamProtocol::default()
             },
             ..Self::default()

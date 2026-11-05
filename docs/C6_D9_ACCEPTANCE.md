@@ -385,3 +385,196 @@ after node cleanup was verified; normal GUI close terminating every process is
 not independently established. There is no listing-disappearance observation
 to make when neither instance was listed. Controls, motion, identify and output remain unobserved
 in Steam for both realizations; no physical equivalence is claimed.
+
+## Recorded feature profile investigation (2026-11-04)
+
+Owner decision #159 comment 6645358188 permits reviewed non-identifying model
+attributes/settings; serials remain synthetic. The bool creation option was
+approved in comment 6646269189, and comment 6646272685 subsequently made the Steam
+supporting API mutable. Root/Wii/core API restrictions are unchanged.
+
+### Fresh controller-log comparison and physical sessions
+
+With no physical controller/Puck or SDL/Dolphin client, unchanged C6 was again
+not listed. Its bounded controller-log window contained 306
+`CGetControllerInfoWorkItem::RunFunc: Read failure` messages, six failed-info
+results and no successful controller-info record. After virtual removal, the
+real wired controller listed with no such failures, HWID 72 and firmware build
+timestamp 0x6ACFF323. Raw logs remain private; account/path/serial data is omitted.
+
+Anders installed wireshark-cli and loaded usbmon himself. The agent performed
+no root operation or host-policy change. A 45-second kernel-only capture and a
+90-second Steam-start/reattach/idle/close capture contain six and 218 paired
+feature exchanges respectively. Their firmware attribute is 0x6ACFF323;
+bcdDevice 0404 is separately a USB version marker. No update prompt or other
+issue was reported. Raw captures stay outside both repositories. The physical
+experiment, reviewed frames and all sanitized exchanges are in research records
+`steam-d9-kernel-feature-capture`, `steam-d9-steam-feature-capture`,
+`steam-d9-1302-model-attributes`, `steam-d9-steam-setting-acceptance` and
+`steam-d9-feature-response-framing` at the adopted research revision.
+
+Physical 0x83 replies contain IDs 1/2/10/4/9/11, values 0x1302/0/0x68D2F92E/
+0x6ACFF323/0x48/4000. All observed GETs delivered 63 bytes including report ID 1;
+C6's former attribute reply delivered 64 and had no entries. Steam accepted
+sixteen setting keys, including 50=900; fourteen are outside C6's 9/48/71 allowlist.
+No physical retention, ranges or effects follow from successful completion.
+Serial contents and unreviewed feature bytes are withheld. All observed control
+requests were paired, but a capture-drop counter was not supplied.
+
+### Compat-on virtual retest
+
+A local caller created one virtual wired controller with
+`steam_client_compat=true`, default synthetic identity, no lab flag and continuous
+reverse-event servicing. The real controller/Puck were disconnected and
+SDL/Dolphin absent. The profile replays the recorded attribute frame and retains
+captured setting intent; it changes no descriptor, serial identity or report
+cadence. Steam logs V1 HID protocol via USB, device opened, and successful
+HWID 72/FWTimestamp 0x6ACFF323 with **zero controller-info failures**.
+
+Anders nevertheless reported **not listed**, both initially and after a fresh
+neutral report was sent following Steam's open. No Steam input test could be
+opened. Per-control, motion, Identify/rumble and gameplay acceptance remain
+unobserved. The controller retained eight Pulse output observations during
+opening; its last retained Pulse had side 1 and zero on/off/count parameters.
+This proves request receipt only, not an owner-triggered Identify operation or
+an actuator effect. Provider diagnostics ended with zero write failures.
+The caller closed twice and every owned HID/input node disappeared.
+
+### Differences after the first replay attempt
+
+The profile establishes progress in the controller-info handshake, not the sole
+cause of UI discovery. Physical DC/E2 SET and ED SET/GET complete successfully
+where the codec still returns Unsupported; physical C1 SETs stall. Those
+semantics are not invented. Synthetic serial behavior remains intentional.
+No new unmeasured successful reply was added to chase listing.
+
+One possible next hypothesis is Steam needing USB-level enumeration
+or metadata absent from UHID, to investigate under #168. The separate Session E
+bootloader-first hypothesis remains unmeasured. Neither is proven by this result,
+and remaining feature differences must be considered before assigning causality
+to transport. No bootloader emulation, USB provider, receiver or Bluetooth work
+was started. Findings are on #159 comment 6646427928. The steam-client cell stays
+`wip` with this negative result; physical feature evidence is not virtual listing
+or controls acceptance.
+
+### Listing after DC/E2 acknowledgement
+
+The same opt-in attribute/settings profile was run with only the captured DC/E2
+SET acknowledgements added. ED replay, a caller serial override, and global
+63-byte GET framing were **not** in the running binary. After an initial
+negative answer, Anders corrected the result to **listed**, displayed name
+**Steam Controller**, with **Begin Test** opening. A read-only target check
+found no other wired 1302 and no physical controller during this virtual run.
+The log window has zero controller-info failures and two successful info records.
+This establishes listing in that run, not that DC/E2 alone caused the change:
+a KDE Remote Control permission dialog for Steam was also shown, and its
+selection/timing relative to listing has not been established.
+
+Manual control acceptance is unresolved. The initial held-button sequence
+closed the tester on B. A separate short synthetic A tap was reported as
+“B then A”. These observations are not passing control results. The owner
+requested a labelled physical input capture before changing the encoder.
+The virtual caller was neutralized and closed twice, with zero write failures;
+all owned HID nodes disappeared before the real wired controller was attached.
+
+Running-binary SHA-256:
+`c1b2d64414a8d582ec65f6a7a8f5d97f4e16f998713de153018c7fd215388811`.
+Sanitized-window source-log SHA-256 (raw remains private):
+`1eecce8ae1cc832806c5ba32d86fdf4eb22c071fe3fcfce0f9e45c1a9fddff2f`.
+
+### Review follow-up: isolate remaining protocol differences
+
+Research PR #101 review requested five smaller checks before assigning the
+remaining discovery failure to USB topology: acknowledge the captured DC/E2
+SETs, review/replay the one-byte ED reply, compare C1 failure status, try a
+synthetic serial with the physical character pattern, and match 63-byte GETs.
+The listing result above preceded the ED/serial/global-framing trials. Input
+acceptance remains unresolved; the physical reference capture is in progress.
+
+Private capture reinspection corrects the ED summary: the three GET replies
+declare lengths 1, 24 and 0 after SET lengths 24, 9 and 11. Only the first
+meaningful byte (`00`) is reviewed for replay. Opaque tails and other ED bodies
+remain withheld; compat zero padding must not be called exact physical replay.
+DC/E2 bodies are respectively `01 02` and `01 20`, both declared length 2.
+The opt-in profile acknowledges those exact bodies without retaining state.
+
+C1 does not fail identically: the physical trace has 100 USB EPIPE
+completions (`-32`). The generic provider encodes Unsupported as `-95`, but
+Linux UHID converts **any nonzero** SET reply error to EIO. A direct ioctl on
+only the owned virtual node confirmed errno 5 (`EIO`), without physical
+feature injection. A shared Stall enum variant would not fix this, so the
+proposal was withdrawn and the shared API remains unchanged. See
+[Linux v7.3-rc1 UHID](https://github.com/torvalds/linux/blob/v7.3-rc1/drivers/hid/uhid.c#L288-L291).
+The deterministic fake-provider sequence checks explicit C1 failure on each
+poll and cleanup; it does not claim to reproduce a USB-level STALL.
+
+The same owned-node check requested a 64-byte attribute GET and received
+exactly 63 bytes, with prefix `01 83 1e`. This confirms UHID supports the
+observed physical response length; matching other GET replies is a separate
+profile change yet to be tested.
+
+The physical serial strings have 13 characters, a declared inner length of 20,
+and selector-1 character classes `UUUDDDDDDDUUD` (uppercase ASCII / decimal
+digit). Actual characters remain private. A caller-set made-up serial can test
+that pattern without changing the public API or copying physical identity.
+
+Local retest digests (raw artifacts not published):
+- controller-log window: `40580043fae8325541459f9bdf783bb16edcf267336f74980aa421bc40da4a00`
+- local probe source: `c03a757528b6f39c2ce0526a39a5ab9eab30a856bf32f33ceb829097d3f61df6`
+- local probe binary: `5df8b8b0c808cf8e0dbdaf32f1f5d74256e0b9e0c9875b3c10c12ddb3706c695`
+
+
+### Native reference and manual Steam checkpoint
+
+The owner completed labelled real wired input captures, plus Steam Ping and
+separate brief SDL rumble channels. The adopted follow-up research records
+`steam-d9-native-input-output-reference` and its linked fixtures preserve selected
+non-identifying input/output packets. Physical button/axis/touch offsets agree
+with the encoder. Motion fields froze in the Steam-only motion batch; enabling
+sensors through the provided SDL build produced changing accel/gyro/quaternion.
+This is a raw reference with documented missed actions, incidental contacts and
+uncalibrated motion, not a universal firmware or force-calibration claim.
+
+The owner later showed per-side Steam **Trackpad Lockout** settings. Treat the
+observed same-side pad suppression as configuration-dependent, not an immutable
+hardware rule. No automatic stick/pad exclusion was added to the encoder.
+
+A fresh virtual compat-on instance (attributes/settings, DC/E2 and reviewed ED
+reply; default synthetic identity) listed and opened the input tester. Periodic
+streaming stayed **off** throughout this checkpoint. Desktop bindings initially
+opened the keyboard on X and entered space on Y, as also seen with the physical
+controller. The owner replaced the desktop profile with the generic **Gyro**
+profile and verified physical inputs were reachable there; virtual X/Y/B then
+registered without keyboard interference. A is also confirmed. The UI latches
+press history; release is separately verified from reports on the exact owned
+hidraw node held by Steam. No account/layout identifier is recorded.
+
+Manual observations on this instance:
+
+- D-pad up/down/left/right, both shoulders and both stick clicks registered in
+  order. Rear L4/L5/R4/R5 reports match the physical bits, but the GUI side/order
+  labels were unclear; retain that qualification for later independent demo use.
+- Both triggers were confirmed right then left at `0 -> 32767 -> 0`.
+- Both sticks moved left/right/up/down and centered. The first right-stick
+  observation was missed; repeats with touch and then without touch worked.
+  There is no demonstrated requirement to force stick touch for axis output.
+- Stick/grip touch indicators were observed. Reverse-view grip indicators are
+  visible; their exact GUI presentation remains for the owner's independent
+  demo check. One decoded binary grip-touch flag exists per side; two drawing
+  elements do not establish a second wire axis.
+- Both pads displayed touch/pressure at 1000 and 16000, returned to zero, and
+  registered the higher-pressure press indication. Both pad X/Y tests matched
+  `(-20000,0)`, `(20000,0)`, `(0,20000)`, `(0,-20000)` with six-second holds.
+- View, Options/Menu and QAM were individually detected with the tester staying
+  open. Steam was last and navigated to Steam's main interface, which the owner
+  accepted as receipt; no latched Steam-button checkbox result is claimed.
+- **Gyro remains unresolved.** In the separate gyro view, raw X/Y/Z pulses of
+  +1024 (about 62.5 degrees/s under the pinned scaling) produced no visible
+  change. The owned-node capture contains the exact three signed gyro vectors
+  and zero vectors on release. The experiment used change-driven reports;
+  sensor mode, fresh-sample pacing and the UI's interpretation need isolation.
+
+The virtual controller is still running at this checkpoint; final removal and
+shutdown for this instance have not yet been recorded. Earlier owned-node cleanup
+results remain scoped to their own runs. No gameplay or complete motion acceptance
+is claimed, and individual discovery changes remain causally unisolated.
