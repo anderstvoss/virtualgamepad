@@ -80,7 +80,7 @@ The source pins are Singer `d809a28`, Pixel player `e06e48d` / TritonLib
 `d470e0d`, and iczero `83c46d7`. See research records
 `steam-d9-midi-lfo-framing`, `steam-d9-midi-channel-routing`,
 `steam-d9-pcm-framing-feedback` and `steam-d9-pcm-stimulus-correspondence` in the
-paired audio/MIDI evidence branch. No raw capture or identifying value is
+[paired audio/MIDI evidence](https://github.com/anderstvoss/controller-protocol-research/blob/5544f98/docs/steam-d9-audio-midi-2026-11-05.md). No raw capture or identifying value is
 imported into this implementation.
 
 The opt-in Linux test `steam_haptics_live` runs those upstream executables
