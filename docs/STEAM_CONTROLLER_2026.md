@@ -174,16 +174,20 @@ historical/raw-not-revalidated corroboration; the fresh fixture is separate.
   not measured device behaviour. The regression failed at 2 versus 63 bytes
   before the fix, and passes with the descriptor-sized response.
 - The normal stream emits only `0x42`. Battery and alternate reports are explicit
-  encoders. There is **No evidence** for an automatic wired cadence; the private
-  protocol uses explicit state updates, without inventing a timer.
+  encoders. The D9 physical reference observed an approximately 4 ms input
+  completion interval; that observation does not establish a required virtual
+  timer. The protocol uses explicit state updates, and manual Steam input and
+  valid-pose X gyro worked with periodic streaming off.
 - There is **No evidence** for rumble timeout/auto-stop. No such timer exists.
   `steam-c6-sdl-rumble-resend-40ms` describes host resend; its roughly 50 ms
   timeout comment needs a physical lapse/resend sweep. Kernel 20 Hz coalescing
   and SDL 4032 microsecond sensor interval are consumer assertions, not device
   scheduling requirements.
 - There is **No evidence** for wired feature 2, `0x44` ACK/flow control, streaming
-  semantics for outputs `0x86` through `0x89` (their declared lengths are known), retail serial/attributes/calibration/firmware,
-  lizard watchdog duration or real-device command responses. These are refused
+  semantics for outputs `0x86` through `0x89` (their declared lengths are known),
+  identifying serial/calibration data, firmware behaviour or lizard watchdog
+  duration. Only the explicitly captured non-identifying attributes, feature
+  replies and output requests described below are adopted. Other responses are refused
   or left unknown. No wired `0x79` is emitted.
 - July notes are now imported through research PR 79. The two cited July
   claims support only historical observed input length and descriptor-declared
@@ -192,14 +196,14 @@ historical/raw-not-revalidated corroboration; the fresh fixture is separate.
   at bit 14 (`steam-c6-input-buttons`); field semantics stay compat. HHD review
   is still missing. Fresh descriptor bytes now come from the separate merged
   experiment/fixture, not the historical encoder or a reconstructed descriptor.
-- **steam-s3-steam-client-settings** and **steam-s3-wired-output-streaming** are
-  planned session names, not existing research records or completed runs. Both
-  need the owner's separate host/capture authorization. The settings run uses
-  the step 16 bound/unbound matrix and the #144 Steam-client host. The output
-  session uses direct wired physical `1302`, pinned Steam client, bidirectional
-  USB capture with sanitized per-report summaries, and actuator observations;
-  input-only hidraw cannot settle these commands. It is haptic/flow-control
-  research, not authorization to implement audio or streaming in S3.
+- D9 Sessions 1 and 3 captured the wired kernel/Steam feature exchange; the
+  profile below adopts only the reviewed fields. The physical input/output
+  follow-up captured Ping and brief SDL rumble, not streamed audio or MIDI.
+  **steam-s3-wired-output-streaming** remains a planned session: streaming
+  commands, buffer/flow control and physical output effects need a separately
+  authorized bidirectional capture. No MIDI interface or command semantics are
+  established by the Ping chirp. These runs do not authorize an audio/streaming
+  implementation.
 - Puck `1304`, receiver `1305`, Bluetooth `1303`, desktop companions, LEDs and
   audio remain outside S3. No broker or host policy changes are needed.
 

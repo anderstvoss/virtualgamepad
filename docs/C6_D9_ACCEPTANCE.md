@@ -628,3 +628,6 @@ reported Closed, 33896 frames sent, 3803 reverse events, zero write failures and
 no last error. Its owned hidraw/input nodes were absent after shutdown. This
 closes the instance previously described as still running; manual GUI label
 qualifications and the unisolated discovery/pose requirements remain.
+
+Streamed audio and MIDI were not tested. The physical Ping chirp and its matched
+script request establish neither a streaming path nor MIDI semantics.
