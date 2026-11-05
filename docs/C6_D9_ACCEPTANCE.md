@@ -635,3 +635,26 @@ script request establish neither a streaming path nor MIDI semantics.
 The implementation pin adopts merged research main, including feature evidence
 from #101. The newer input/output reference in #105 is a separate review; no
 unmerged fixture is required by the production attribute/settings generator.
+
+
+### Supervised audio/MIDI and virtual client follow-up (2026-11-05)
+
+A new owner-authorized study, built on #105/#305, used the unmodified pinned
+SteamHapticsSinger for generated MIDI notes and SteamHapticsPlayer/iczero for
+PCM. The owner heard/felt all channel pairs; initial low-level PCM was quiet,
+then a moderate equal-frequency repeat was clearly heard/felt on both sides.
+The physical reduction confirmed exact generated waveform correspondence,
+64-byte padded MIDI writes, dual-channel PCM and short final mono writes.
+Internal mode0 configuration was accepted and pad mode0 rejected despite
+successful USB completions. Full raw captures remain private.
+
+The new opt-in virtual streaming implementation was tested automatically with
+those same three upstream executables. Four MIDI channels matched, all PCM
+sample bytes matched (39990 dual +40000 mono bytes per channel), the mono client
+consumed acceptance and low/high feedback, and two short final writes matched.
+Explicit stops cleared configuration/buffers. Three controller lifetimes, including shutdown with an active stream, closed
+idempotently with zero write failures and no owned hidraw/input nodes remaining.
+A creation-time access race was reproduced and covered by a bounded retry test;
+no host permissions/policy were changed. Buffer capacity/thresholds are an
+explicit compat model, not a retail FIFO measurement. See
+[Haptic MIDI and PCM](STEAM_HAPTICS_STREAMING.md) for scope and reproduction.

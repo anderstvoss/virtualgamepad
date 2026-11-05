@@ -27,6 +27,7 @@ mod definition;
 #[allow(dead_code)] // Exact compiled capture is used by the private 14c UHID path.
 mod descriptor;
 mod evdev;
+mod streaming;
 mod topology;
 pub use codec::{SteamController2026Haptic, SteamController2026Outputs};
 pub use controller::{
@@ -34,6 +35,7 @@ pub use controller::{
     create_steam_controller_2026, create_steam_controller_2026_with_options,
 };
 pub(crate) use definition::SteamController2026Definition;
+pub use streaming::{SteamController2026StreamOutputs, SteamController2026StreamPacket};
 
 /// Stable compiled family ID for the wired Steam family.
 pub use gr_controller_wire::registry::ids::STEAM_CONTROLLER_2026 as STEAM_CONTROLLER_2026_ID;

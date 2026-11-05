@@ -13,7 +13,11 @@ use gr_realization_api::{
     RealizationTarget,
 };
 
-pub(crate) struct SteamController2026Definition(pub(crate) String, pub(crate) bool);
+pub(crate) struct SteamController2026Definition(
+    pub(crate) String,
+    pub(crate) bool,
+    pub(crate) bool,
+);
 const REDUCED: &[TargetRestriction] = &[
     TargetRestriction {
         feature: "motion sensors",
@@ -26,6 +30,10 @@ const REDUCED: &[TargetRestriction] = &[
     TargetRestriction {
         feature: "HID feature exchange, touch metadata and vendor haptics",
         reason: "evdev provides gamepad keys, axes and FF_RUMBLE rather than vendor reports",
+    },
+    TargetRestriction {
+        feature: "haptic PCM streaming",
+        reason: "evdev FF_RUMBLE has no PCM data/configuration or HID stream-feedback channel",
     },
     TargetRestriction {
         feature: "host-visible unit serial",
@@ -59,7 +67,12 @@ const fn surface(
 }
 pub(super) static UINPUT: ControllerSurface =
     surface(RealizationTarget::LINUX_UINPUT, REDUCED, true);
-pub(super) static WIRED: ControllerSurface = surface(RealizationTarget::LINUX_UHID_USB, &[], false);
+const WIRED_LIMITS: &[TargetRestriction] = &[TargetRestriction {
+    feature: "haptic PCM streaming",
+    reason: "requires haptic_streaming at creation; captured 8-kHz s16le internal streams only, with bounded compat buffering; other modes and output 0x89 are unimplemented",
+}];
+pub(super) static WIRED: ControllerSurface =
+    surface(RealizationTarget::LINUX_UHID_USB, WIRED_LIMITS, false);
 impl RealizationControllerDefinition for SteamController2026Definition {
     fn controller_id(&self) -> ControllerId {
         gr_controller_wire::registry::STEAM_CONTROLLER_2026.id
@@ -159,7 +172,7 @@ impl crate::common::HidDriver for SteamController2026Definition {
     }
 
     fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
-        Self::Hid::with_options(self.0.clone(), self.1)
+        Self::Hid::with_streaming_options(self.0.clone(), self.1, self.2)
     }
 }
 impl ControllerFamily for SteamController2026Definition {
@@ -182,7 +195,7 @@ impl ControllerFamily for SteamController2026Definition {
         TARGETS
     }
     fn manifest() -> RealizationManifest {
-        Self(String::new(), false).realization_manifest()
+        Self(String::new(), false, false).realization_manifest()
     }
 }
 
@@ -191,8 +204,8 @@ mod tests {
     use super::*;
     #[test]
     fn steam_client_feature_option_does_not_change_reduced_uinput_controls() {
-        let strict = SteamController2026Definition("VGP-FAKE".into(), false);
-        let compat = SteamController2026Definition("VGP-FAKE".into(), true);
+        let strict = SteamController2026Definition("VGP-FAKE".into(), false, false);
+        let compat = SteamController2026Definition("VGP-FAKE".into(), true, true);
         let selection = RealizationSelection {
             controller: strict.controller_id(),
             target: RealizationTarget::LINUX_UINPUT,
@@ -213,7 +226,7 @@ mod tests {
 
     #[test]
     fn compiled_family_advertises_supported_targets_without_host_profiles() {
-        let id = SteamController2026Definition(String::new(), false).controller_id();
+        let id = SteamController2026Definition(String::new(), false, false).controller_id();
         let family = crate::registry::FAMILIES
             .iter()
             .find(|f| f.id == id)
@@ -244,7 +257,7 @@ mod tests {
                 if target.surface.target() == RealizationTarget::LINUX_UINPUT {
                     REDUCED
                 } else {
-                    &[]
+                    WIRED_LIMITS
                 },
             );
             assert!(!target.surface.output_kinds().is_empty());

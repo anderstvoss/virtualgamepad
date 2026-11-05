@@ -1,5 +1,8 @@
 //! Compat only: steam-c6-input-42/45/47, steam-c6-feature-kernel-exchange,
 //! steam-c6-output-80-81 and steam-c6-output-82-85. No device ACKs or timers.
+use super::streaming::{
+    SteamController2026StreamOutputs, SteamController2026StreamPacket, StreamState,
+};
 use super::{Battery, SteamController2026State as State};
 use gr_hid::{
     Command, Delivery, Error, Lifecycle, Protocol, Reply, ReplyError, Report, ReportType,
@@ -121,6 +124,8 @@ fn battery(state: &Battery) -> Report {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SteamController2026Haptic {
+    /// Opt-in, captured haptic PCM request; raw callbacks preserve every write.
+    Stream(Box<SteamController2026StreamPacket>),
     // steam-c6-output-80-81 / disagreement-gain-kernel/sdl: gains stay raw.
     Rumble {
         kind: u8,
@@ -175,6 +180,15 @@ impl SteamController2026Haptic {
             return Err(ReplyError::Unsupported);
         }
         let b = report.payload();
+        // steam-d9-midi-lfo-framing: the physical Singer client sends output
+        // 0x83 in a 64-byte zero-padded buffer. Interpret only its declared
+        // nine-byte body; raw observations still preserve the complete write.
+        // Nonzero extensions are unreviewed and remain invalid.
+        let b = if report.id() == Some(0x83) && b.len() == 63 && b[9..].iter().all(|v| *v == 0) {
+            &b[..9]
+        } else {
+            b
+        };
         // steam-c6-output-80-81 and steam-c6-output-82-85: payload sizes exclude ID.
         // sc2-july-wired-descriptor-report-shapes: physical (historical capture,
         // raw not revalidated) BODY lengths only; semantics remain compat.
@@ -218,6 +232,9 @@ impl SteamController2026Haptic {
                 script: b[1],
                 gain_db: signed(b[2]),
             },
+            (Some(0x86..=0x88), _) => {
+                Self::Stream(Box::new(SteamController2026StreamPacket::decode(report)?))
+            }
             (Some(0x80..=0x85), _) => return Err(ReplyError::Invalid),
             _ => return Err(ReplyError::Unsupported),
         })
@@ -240,6 +257,7 @@ struct Outputs {
 struct SteamProtocol {
     serial: String,
     steam_client_compat: bool,
+    stream: Box<StreamState>,
     sequence: u8,
     outputs: Outputs,
     query: Option<u8>,
@@ -361,8 +379,24 @@ impl SteamProtocol {
         }
         Ok(Report::from_wire(ReportType::Feature, true, &wire).expect("compiled feature reply"))
     }
-    fn accept_output(&mut self, report: &Report) -> Result<SteamController2026Haptic, ReplyError> {
+    fn accept_output(
+        &mut self,
+        report: &Report,
+        now: u64,
+    ) -> Result<SteamController2026Haptic, ReplyError> {
+        if matches!(report.id(), Some(0x86..=0x89)) {
+            if !self.stream.outputs.enabled {
+                return Err(ReplyError::Unsupported);
+            }
+            if self.stopped {
+                return Err(ReplyError::Busy);
+            }
+        }
         let haptic = SteamController2026Haptic::decode(report)?;
+        if let SteamController2026Haptic::Stream(packet) = &haptic {
+            self.stream.accept(packet, now)?;
+            return Ok(haptic);
+        }
         let index = usize::from(report.id().expect("decoded ID") - 0x80);
         if self.outputs.haptics[index].as_ref() != Some(&haptic) {
             self.outputs.haptics[index] = Some(haptic.clone());
@@ -384,7 +418,7 @@ impl Protocol for SteamProtocol {
             Ok(())
         }
     }
-    fn input(&mut self, state: &State, _: u64) -> Result<Vec<Report>, Error> {
+    fn input(&mut self, state: &State, now: u64) -> Result<Vec<Report>, Error> {
         self.validate(state)?;
         if self.stopped {
             return Ok(vec![]);
@@ -393,17 +427,19 @@ impl Protocol for SteamProtocol {
         self.refresh = None;
         let report = wired_input(state, self.sequence, Format::Primary42)?;
         self.sequence = self.sequence.wrapping_add(1);
-        Ok(vec![report])
+        let mut reports = vec![report];
+        reports.extend(self.stream.poll(now).map_err(|_| Error::QueueFull)?);
+        Ok(reports)
     }
     fn deadline(&self) -> Option<u64> {
         // steam-c6-sdl-rumble-resend-40ms is HOST pacing, not a device timer.
         // No evidence for a device rumble timeout or native report cadence.
-        self.refresh
+        self.refresh.into_iter().chain(self.stream.deadline()).min()
     }
     fn request(
         &mut self,
         kind: &RequestKind,
-        _: u64,
+        now: u64,
     ) -> (Reply, Option<SteamController2026Haptic>) {
         match kind {
             RequestKind::Get {
@@ -412,7 +448,7 @@ impl Protocol for SteamProtocol {
             } => (Reply::Get(self.get_feature()), None),
             RequestKind::Get { .. } => (Reply::Get(Err(ReplyError::Unsupported)), None),
             RequestKind::Set(report) if report.kind == ReportType::Output => {
-                match self.accept_output(report) {
+                match self.accept_output(report, now) {
                     Ok(output) => (Reply::Set(Ok(())), Some(output)),
                     Err(error) => (Reply::Set(Err(error)), None),
                 }
@@ -423,12 +459,17 @@ impl Protocol for SteamProtocol {
     fn output(
         &mut self,
         report: Report,
-        _: u64,
+        now: u64,
     ) -> Result<Option<SteamController2026Haptic>, Error> {
-        // steam-c6-no-haptic-ack: retain outputs, never queue an input 0x44 ACK.
-        self.accept_output(&report)
-            .map(Some)
-            .map_err(|_| Error::InvalidRequest)
+        // Legacy haptics have no input ACK. Opt-in PCM queues the captured
+        // stream statuses; these are not one acknowledgement per data write.
+        self.accept_output(&report, now).map(Some).map_err(|error| {
+            if error == ReplyError::Busy {
+                Error::QueueFull
+            } else {
+                Error::InvalidRequest
+            }
+        })
     }
     fn lifecycle(&mut self, event: Lifecycle, now: u64) -> Option<SteamController2026Haptic> {
         match event {
@@ -437,11 +478,13 @@ impl Protocol for SteamProtocol {
                 numbered_output,
                 numbered_feature,
             } => {
+                self.stream.reset(now);
                 self.invalid_framing = !(numbered_input && numbered_output && numbered_feature);
                 self.stopped = false;
                 self.refresh = Some(now);
             }
             Lifecycle::Stop => {
+                self.stream.reset(now);
                 self.stopped = true;
                 self.refresh = None;
                 self.query = None;
@@ -466,13 +509,31 @@ impl SteamHidProtocol {
     }
 
     pub(crate) fn with_options(serial: String, steam_client_compat: bool) -> Self {
-        Self {
+        Self::with_streaming_options(serial, steam_client_compat, false)
+    }
+
+    pub(crate) fn with_streaming_options(
+        serial: String,
+        steam_client_compat: bool,
+        haptic_streaming: bool,
+    ) -> Self {
+        let mut protocol = Self {
             protocol: SteamProtocol {
                 serial,
                 steam_client_compat,
+                stream: Box::new(StreamState::new(haptic_streaming)),
                 ..SteamProtocol::default()
             },
             ..Self::default()
+        };
+        protocol.sync_stream();
+        protocol
+    }
+
+    fn sync_stream(&mut self) {
+        if self.outputs.streaming != self.protocol.stream.outputs {
+            self.outputs.streaming = self.protocol.stream.outputs.clone();
+            self.outputs.revision = self.outputs.revision.wrapping_add(1);
         }
     }
 }
@@ -489,7 +550,9 @@ impl Protocol for SteamHidProtocol {
     }
 
     fn input(&mut self, state: &Self::State, now: u64) -> Result<Vec<Report>, Error> {
-        self.protocol.input(state, now)
+        let reports = self.protocol.input(state, now);
+        self.sync_stream();
+        reports
     }
 
     fn deadline(&self) -> Option<u64> {
@@ -505,22 +568,26 @@ impl Protocol for SteamHidProtocol {
             }
             RequestKind::Get { .. } => None,
         });
+        self.sync_stream();
         (reply, observed)
     }
 
     fn output(&mut self, report: Report, now: u64) -> Result<Option<Self::Output>, Error> {
         let observed = observe(&report);
         let report_id = report.id();
-        self.protocol.output(report, now).map(|output| {
+        let result = self.protocol.output(report, now).map(|output| {
             output.map(|haptic| {
                 self.outputs.retain(report_id, haptic);
                 observed
             })
-        })
+        });
+        self.sync_stream();
+        result
     }
 
     fn lifecycle(&mut self, event: Lifecycle, now: u64) -> Option<Self::Output> {
         self.protocol.lifecycle(event, now);
+        self.sync_stream();
         Some(RawReverseEvent::HidLifecycle(event))
     }
 
@@ -533,9 +600,15 @@ impl Protocol for SteamHidProtocol {
 pub struct SteamController2026Outputs {
     pub revision: u64,
     pub haptics: [Option<SteamController2026Haptic>; 6],
+    pub streaming: SteamController2026StreamOutputs,
 }
 impl SteamController2026Outputs {
     fn retain(&mut self, report_id: Option<u8>, haptic: SteamController2026Haptic) {
+        if let SteamController2026Haptic::Stream(packet) = haptic {
+            self.streaming.last_packet = Some(*packet);
+            self.revision = self.revision.wrapping_add(1);
+            return;
+        }
         let Some(index) = report_id
             .filter(|id| (0x80..=0x85).contains(id))
             .map(|id| usize::from(id - 0x80))
@@ -550,7 +623,11 @@ impl SteamController2026Outputs {
 }
 impl crate::retained::OutputState for SteamController2026Outputs {
     fn apply(&mut self, report: &Report) -> Result<(), ReplyError> {
-        self.retain(report.id(), SteamController2026Haptic::decode(report)?);
+        let haptic = SteamController2026Haptic::decode(report)?;
+        if matches!(haptic, SteamController2026Haptic::Stream(_)) {
+            return Err(ReplyError::Unsupported); // Native evdev has no PCM stream channel.
+        }
+        self.retain(report.id(), haptic);
         Ok(())
     }
 

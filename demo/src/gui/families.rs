@@ -503,14 +503,7 @@ fn create_steam_session<T, E>(
         super::SteamController2026CreationOptions,
     ) -> Result<T, E>,
 ) -> Result<T, E> {
-    create(
-        options.target,
-        options.id,
-        super::SteamController2026CreationOptions {
-            steam_client_compat: options.steam_compat,
-            ..Default::default()
-        },
-    )
+    create(options.target, options.id, options.steam_options.clone())
 }
 
 // Keep the application's actual creation token at the supporting-package boundary.
@@ -552,11 +545,18 @@ mod steam_tests {
                 wii_revision: super::super::WiiRemoteRevision::Original,
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteCreationOptions::default(),
-                steam_compat: false,
+                steam_options: super::super::SteamController2026CreationOptions::default(),
             };
             let mut captured = Vec::new();
-            for enabled in [false, true, false] {
-                options.steam_compat = enabled;
+            for (enabled, streaming) in [
+                (false, false),
+                (true, false),
+                (false, true),
+                (true, true),
+                (false, false),
+            ] {
+                options.steam_options.steam_client_compat = enabled;
+                options.steam_options.haptic_streaming = streaming;
                 captured.push(
                     create_steam_session(&options, |observed, id, creation| {
                         assert_eq!(observed, target);
@@ -570,6 +570,9 @@ mod steam_tests {
             assert!(!captured[0].steam_client_compat);
             assert!(captured[1].steam_client_compat);
             assert!(!captured[2].steam_client_compat);
+            assert!(captured[2].haptic_streaming);
+            assert!(captured[3].steam_client_compat && captured[3].haptic_streaming);
+            assert!(!captured[4].steam_client_compat && !captured[4].haptic_streaming);
             assert!(
                 !super::super::SteamController2026CreationOptions::default().steam_client_compat
             );
@@ -594,7 +597,7 @@ mod wii_tests {
                 wii_revision: revision,
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteCreationOptions::default(),
-                steam_compat: false,
+                steam_options: super::super::SteamController2026CreationOptions::default(),
             };
             let state = create_wii_session(&options, |target, session, observed, image, compat| {
                 assert_eq!(target, options.target);
@@ -620,7 +623,7 @@ mod wii_tests {
                 wii_revision: super::super::WiiRemoteRevision::Original,
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteCreationOptions::default(),
-                steam_compat: false,
+                steam_options: super::super::SteamController2026CreationOptions::default(),
             };
             let received =
                 create_wii_session(&options, |target, session, revision, image, compat| {
@@ -665,7 +668,8 @@ mod compat_creation_tests {
                                 wii_revision: revision,
                                 wii_imports: super::super::wii_import::Imports::default(),
                                 wii_compat: compat,
-                                steam_compat: false,
+                                steam_options:
+                                    super::super::SteamController2026CreationOptions::default(),
                             };
                             assert_eq!(
                                 create_wii_session(

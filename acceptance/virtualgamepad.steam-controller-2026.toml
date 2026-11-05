@@ -81,4 +81,11 @@ id = "physical-serial-format"
 id = "output-delivery"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/output-delivery", evidence = [], reason = "No evidence. See docs/C6_D9_ACCEPTANCE.md; no physical or consumer acceptance inferred." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/output-delivery", evidence = [], reason = "No evidence. See docs/C6_D9_ACCEPTANCE.md; no physical or consumer acceptance inferred." }
+"linux.uhid.usb" = { status = "wip", test_id = "steam_haptics_live::upstream_midi_pcm_clients_round_trip_and_cleanup", evidence = [], reason = "D9 opt-in live run with real upstream clients: all four MIDI channels matched padded LFO requests; dual/mono PCM matched every sample byte, including short final writes. Acceptance/rejection and low/high feedback reached the upstream client; explicit stops, double-close and owned hidraw/input cleanup passed with zero write failures. See docs/STEAM_HAPTICS_STREAMING.md. This is virtual protocol evidence, not an audio endpoint or retail FIFO measurement; formal virtual research run not adopted." }
+
+
+[[functions]]
+id = "haptic-midi-pcm"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "steam_controller_2026::codec::tests::streaming_lifecycle_resets_pending_feedback_and_does_not_affect_a_sibling", evidence = [], reason = "evdev FF_RUMBLE has no vendor PCM data/configuration or HID stream-feedback channel. Creation options do not add such a channel; retained native output application rejects stream packets." }
+"linux.uhid.usb" = { status = "wip", test_id = "steam_haptics_live::upstream_midi_pcm_clients_round_trip_and_cleanup", evidence = [], reason = "D9 supervised physical reference and virtual upstream-client E2E completed. MIDI works through captured zero-padded 0x83 requests; haptic_streaming defaults false and enables captured 8-kHz s16le internal PCM via 0x86/87/88 and 0x44 status. The live run matched 79990 PCM bytes per internal channel and all four MIDI channels, verified stops/recreation/node cleanup. Other formats and 0x89 remain unsupported; FIFO capacity/start delay/watermarks are explicitly compat policy, not measured retail values. See docs/STEAM_HAPTICS_STREAMING.md; no USB Audio Class/MIDI interface or calibrated acoustic claim." }
