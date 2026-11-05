@@ -80,9 +80,10 @@ per-target restrictions remain visible. No additional public API is introduced.
 ## 14d acceptance and timing
 
 The [C6 D9 report](C6_D9_ACCEPTANCE.md) records the new N1/N4 measurements,
-separately qualified SDL rerun, missing kernel/ABS evidence, manual Steam
-procedure and Puck feasibility note. The manifest retains source-only evidence
-levels and explicit missing live cells; none is promoted to physical acceptance.
+separately qualified SDL rerun, post-C6 kernel decoding and ABS ioctl results,
+manual Steam procedure and Puck feasibility note. The manifest retains
+source-only evidence levels and explicit missing live cells; none is promoted
+to physical acceptance.
 
 ## D9 wired acceptance
 
@@ -103,6 +104,19 @@ enabled for the UHID run.
 - Direct evdev opens returned permission denied. Kernel `0x42` event decoding,
   ioctl-level axis attributes, output delivery and Steam client behavior
   have no acceptance evidence from this run.
+
+The isolated 2026-11-04 follow-up in that report now verifies direct evdev opens,
+per-control decoding and every ABS attribute. UHID requires a long Menu
+press/release to enable the kernel's per-instance gamepad mode; layered hidraw
+clients such as Dolphin must be absent for kernel-node testing. All UHID ABS
+attributes match the golden gamepad/sensor records. Reduced uinput decodes its
+representable controls but retains zero fuzz/resolution, an explicit provider
+limitation. Historical EACCES results above remain unchanged. No physical tier
+acceptance follows from these kernel observations. In the separate owner manual
+checks, neither wired UHID nor reduced uinput was listed by Stable Steam
+1792618285, including repeat creation; cleanup passed. No Steam input/output
+acceptance is claimed. The report lists the sanitized virtual feature-request
+summary and its limits; no protocol behavior was changed to chase listing.
 
 ## Faithful versus compat behaviour
 

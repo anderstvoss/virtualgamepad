@@ -56,20 +56,20 @@ id = "serial"
 [[functions]]
 id = "steam-client"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/steam-client", evidence = [], reason = "No evidence. Manual and untested; exact owner procedure in docs/C6_D9_ACCEPTANCE.md and the C6 checkpoint PR. Step 16 stub was not listed." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/steam-client", evidence = [], reason = "No evidence. Manual and untested; exact owner procedure in docs/C6_D9_ACCEPTANCE.md and the C6 checkpoint PR. Step 16 stub was not listed." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/steam-client", evidence = [], reason = "Owner observed not listed in Stable Steam 1792618285 after isolated reduced-uinput creation, with controller support enabled. Input test unavailable; no per-control Steam evidence. The ordinary event node was readable. A fresh-demo repeat was also not listed; previous and final owned nodes disappeared, and final normal removal/shutdown had no owner-reported errors. See docs/C6_D9_ACCEPTANCE.md. No HID feature channel exists for this realization." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/steam-client", evidence = [], reason = "Owner observed not listed in Stable Steam 1792618285 after creating merged C6 wired UHID, with controller support enabled. Input test unavailable; no per-control Steam evidence. A diagnostic-only repeat was also not listed; original close and repeated-creation removal completed without errors and owned nodes disappeared. Feature 1 commands ae/83/85/8e/87 and setting IDs 50/9 were logged; request origin/completion and the cause of non-listing are unproven. See docs/C6_D9_ACCEPTANCE.md. Step 16 stub negative remains separate." }
 
 [[functions]]
 id = "kernel-evdev-decoding"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/kernel-evdev-decoding", evidence = [], reason = "No evidence: exact evdev node opens returned EACCES. Proposed input-lab policy needs owner merge/install; no host change made." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/kernel-evdev-decoding", evidence = [], reason = "No evidence: exact evdev node opens returned EACCES. Proposed input-lab policy needs owner merge/install; no host change made." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/kernel-evdev-decoding", evidence = [], reason = "Observed D9 C6 follow-up: 22 buttons, both pad clicks, sticks, positive triggers and contact-gated pad axes decode; touch metadata/motion absent as documented. Negative triggers clamp to zero. Lab seat/group/0660/open and owned-node cleanup pass. See docs/C6_D9_ACCEPTANCE.md; no formal research run record adopted." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/kernel-evdev-decoding", evidence = [], reason = "Observed D9 C6 follow-up: initial kernel mode emits no events; 650 ms Menu press/release enables gamepad mode. Then all 22 buttons, pad clicks/coordinates, sticks/triggers and all six sensor axes/timestamps decode. Negative raw triggers may fall below advertised minimum. Lab seat/group/0660/open and cleanup pass. See docs/C6_D9_ACCEPTANCE.md; no formal research run record adopted." }
 
 [[functions]]
 id = "evdev-abs-ioctl"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/evdev-abs-ioctl", evidence = [], reason = "No evidence: exact evdev node opens returned EACCES. Proposed input-lab policy needs owner merge/install; no host change made." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/evdev-abs-ioctl", evidence = [], reason = "No evidence: exact evdev node opens returned EACCES. Proposed input-lab policy needs owner merge/install; no host change made." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/evdev-abs-ioctl", evidence = [], reason = "Observed D9 C6 follow-up: all ten gamepad axes match golden min/max/flat. Fuzz/resolution are zero: provider-limited disagreement with golden pad fuzz 256 and stick/pad/trigger resolutions 6553/1638/5461. No sensor companion. See docs/C6_D9_ACCEPTANCE.md; no formal research run record adopted." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/evdev-abs-ioctl", evidence = [], reason = "Observed D9 C6 follow-up: all ten gamepad and six sensor axes match every golden min/max/fuzz/flat/resolution attribute. See docs/C6_D9_ACCEPTANCE.md; no formal research run record adopted." }
 
 [[functions]]
 id = "physical-serial-format"

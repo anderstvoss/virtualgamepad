@@ -29,6 +29,9 @@ Sysfs capability masks were observed, including the gamepad key/axis masks and h
 
 ## Missing evidence and restrictions
 
+This list describes the C6 checkpoint. The post-C6 follow-up below adds scoped
+kernel decoding and ABS ioctl observations without relabelling historical runs.
+
 - Both realizations: per-control kernel events, ioctl ABS attributes, controller-side output delivery, Steam client listing/input/gameplay, identity reuse, physical serial format, physical effects/timing/calibration/firmware.
 - UHID: feature 2 transactions, 0x44 ACK/flow control, output 0x86–0x89 streaming, real-device unknown-command responses, bootloader attach sequence, automatic input cadence, rumble auto-stop and lizard watchdog duration.
 - Reduced uinput cannot expose motion companion properties/timestamp, independent pad pressure/contact and grip/stick touch metadata, vendor haptics/features or host-visible serial; axis fuzz/resolution are provider-limited. These are explicit restrictions, not evidence of equivalence.
@@ -43,7 +46,7 @@ Raw files are retained locally; these SHA-256 digests identify the measured reco
 - `uhid-n4`: `61c976085f03e794aecd30cff8ffc74e2e04e0b2241ef692360ca54986cf8fd5`
 - `sdl`: `a7d9b29ea08c6909ec57dcc114b3f4768a317a24ec8165b82d27ea56c99fedf9`
 
-## Manual Steam client procedure (owner, untested)
+## Manual Steam client procedure (owner)
 
 1. Use the reviewed C6 head on the prepared D9 host. Record commit, kernel,
    Steam build/channel and controller support settings. Close SDL probes and
@@ -162,3 +165,223 @@ confirmed the same full masks and both-pad results, with **168** distinct valid
 samples from each sensor. Steam/helper absence was checked before and after.
 This rerun also removed all owned nodes and restored resource baselines.
 Raw-record SHA-256: `af227e9e190182f3fdf5ce04f04e58f91f250653cda4904e82287c60661026a8`.
+
+## Post-C6 kernel evdev follow-up (2026-11-04)
+
+Executable source: merged C6 `ad80ae6`; kernel `7.3.0-1-mainline`, x86-64.
+The local producer uses the unmodified C6 controller packages. A separate local
+reader associates nodes by the complete per-creation physical label and reads
+Linux input events and `EVIOCGABS`; raw output stays local. Each case creates one
+controller with `VIRTUALGAMEPAD_INPUT_LAB=1`, changes one control at a time,
+services reverse events throughout, neutralizes, closes twice and verifies that
+all owned event/hidraw nodes disappear. No descriptor, public API or protocol
+implementation was changed. No firmware/bootloader commands were submitted.
+
+Anders installed #299. The installed rule/helper bytes match both `17936b7`
+and C6, `udevadm verify` passes, and ownership/modes are root:root 0644/0755.
+Every owned event node has the expected process-specific inactive lab seat,
+`LIBINPUT_IGNORE_DEVICE=1`, transport group and mode 0660; ordinary-user read/write
+opens pass. UHID includes a generic HID input node alongside the gamepad and
+motion nodes; the generic node has no absolute axes and emitted no control events.
+
+### Consumer isolation and kernel mode
+
+Dolphin opened the exact layered Steam hidraw node during the first attempt;
+the kernel gamepad and sensor nodes were removed. That attempt is inconclusive,
+not a decoding failure. Steam and Dolphin were absent for the isolated reruns.
+Opening a layered hidraw client and kernel evdev acceptance are separate cases.
+
+With the normal kernel lizard-mode setting, newly created IBEX gamepad/motion
+nodes initially emit no events, even though their capabilities and ABS ioctls are
+available. A **650 ms Menu press/release** enables gamepad mode on that virtual
+instance. No module parameter or system policy was changed. This is consistent
+with the pinned hid-steam mode-switch handler and its input/sensor gates, not a
+codec change. Both the initial-mode silence and subsequent decoding are retained.
+Each later individual Menu test is shorter than the mode-switch threshold.
+
+### Per-control decoding
+
+All 22 digital controls produced matching press=1 and release=0 on both
+realizations. The numeric Linux EV_KEY mapping is:
+
+| Native controls | Kernel key codes, in the same order |
+| --- | --- |
+| A, B, X, Y | 304, 305, 307, 308 |
+| QAM, right-stick click, Menu | 294, 318, 315 |
+| R4, R5, right shoulder | 549, 551, 311 |
+| D-pad down, right, left, up | 545, 547, 546, 544 |
+| View, left-stick click, Steam | 314, 317, 316 |
+| L4, L5, left shoulder | 548, 550, 310 |
+| Right trigger click, left trigger click | 313, 312 |
+
+Both realizations also produced these independent responses:
+
+| Change | Observed EV_KEY / EV_ABS response |
+| --- | --- |
+| Left/right pad click, with or without touch | Key 289 / 290, press=1 and release=0 |
+| Left stick X/Y | ABS 0 / 1; X unchanged, Y inverted |
+| Right stick X/Y | ABS 3 / 4; X unchanged, Y inverted |
+| Left/right trigger | ABS 21 / 20; positive raw values unchanged |
+| Left pad touched X/Y | ABS 16 / 17, native polarity |
+| Right pad touched X/Y | ABS 18 / 19, native polarity |
+| Pad position while untouched | No coordinate event |
+| Pad contact | No independent contact key; contact gates stored coordinates |
+| Pad pressure, stick touch, grip touch | No independent evdev event |
+
+Stick samples included -32768, -10000, 0, 10000 and 32767; the emitted lower
+endpoint was -32767. Pads were moved independently through -10000, 0 and 10000.
+Click and touch were tested separately, including clicks without contact.
+
+After the mode switch, UHID motion changes arrived only on the sensor device.
+Native accel X/Y/Z map to ABS X / negative ABS Z / ABS Y; native gyro X/Y/Z map
+to ABS RX / negative ABS RZ / ABS RY. Positive and negative 10000 and neutral
+were tested separately on all six components. Every one of the 154 control
+samples also produced EV_MSC/MSC_TIMESTAMP. Reduced uinput creates no sensor
+companion and motion changes produce no events, as its target restriction states.
+
+### ABS ioctl attributes
+
+All tuples below are `(minimum, maximum, fuzz, flat, resolution)`, excluding the
+transient current value. Every axis was queried, not inferred from sysfs masks.
+
+| UHID device / axes | Observed tuple |
+| --- | --- |
+| Gamepad ABS_X/Y/RX/RY (0,1,3,4) | (-32767,32767,0,0,6553) |
+| Gamepad ABS_HAT0X/Y/HAT1X/Y (16-19) | (-32767,32767,256,0,1638) |
+| Gamepad ABS_HAT2X/Y (20,21) | (0,32767,0,0,5461) |
+| Sensor ABS_X/Y/Z (0-2) | (-32768,32768,128,0,16384) |
+| Sensor ABS_RX/RY/RZ (3-5) | (-32768,32768,0,0,16) |
+
+These match every attribute in `steam-c6-kernel-ibex-gamepad-evdev` and
+`steam-c6-kernel-ibex-sensor-evdev`. The sensor property mask is 0x40
+(INPUT_PROP_ACCELEROMETER); the gamepad has no property bits.
+Reduced uinput matches all ten gamepad minima, maxima and flat values, but all
+ten axes have fuzz=0 and resolution=0.
+
+### Disagreements and limits
+
+- **Reduced-uinput ABS metadata versus golden:** pad fuzz is 0 rather than 256;
+  stick/pad/trigger resolutions are 0 rather than 6553/1638/5461. The native
+  evdev axis contract exposes only range and flat, and the provider sets the
+  remaining attributes to zero. This is the documented provider limitation.
+- **Negative trigger input:** for synthetic raw -10000, UHID emits -10000 on
+  ABS_HAT2Y/X despite the advertised minimum of zero. Reduced uinput clamps
+  negative trigger input to zero. Positive trigger values match. The golden
+  registration record specifies attributes, not clamping of incoming values;
+  this observation does not change its minimum or justify a codec transform.
+- **Kernel evdev versus SDL controls:** the kernel exposes no independent pad
+  contact/pressure or stick/grip-touch events. Prior closed-Steam SDL evidence
+  includes both-pad contact/motion; it is a different consumer surface. Pad Y
+  is native in evdev; the source-backed SDL transform normalizes and inverts
+  it (`steam-c6-input-scaling`). No new SDL numeric scaling measurement is claimed.
+- No golden ABS disagreement was found for UHID. Initial kernel-mode gating and
+  layered-hidraw consumer interference must remain explicit prerequisites.
+- This is virtual kernel-consumer evidence. It does not establish physical
+  calibration, output delivery, serial fidelity, or manual Steam acceptance.
+
+Both isolated cases completed 154 one-control samples with no operation errors
+or provider write failures. All owned nodes were removed, including the UHID
+layered hidraw and generic input nodes. Repeated close succeeded.
+
+Raw record SHA-256 (kept locally, no raw captures or host paths published):
+- UHID initial-mode silent run: `a932f450ca867a490696c30b2dbb2d6e45b165c824dca98dfc91b3c1c626f374`
+- UHID after Menu mode switch: `eeb78787a9598e2d1d80bc105e47bcfe49f73b9ab473d9bfd498bb1cf3311392`
+- Reduced uinput isolated rerun: `9db537b643a4378ba90939714bab34c8a9b72a1685929ab9795e1011645b870b`
+- Owner's independent reduced-uinput run: `e0fdfdb79545477131036e2f92364674c2442ae7ccd110fe74d27948ce2507b0`
+
+The kernel/ABS cells retain `wip` with these scoped observations because the
+schema has no virtual-live status and no formal research run record is adopted.
+Source evidence and historical runs remain intact. The manual Steam results
+below are separate owner observations, not kernel or physical input acceptance.
+
+### Manual Steam baseline (owner screenshots, 2026-11-04)
+
+Stable Client, Steam version `1792618285`, API `SteamClient023`.
+The About dialog shows client build October 21, 2026 and web build October 19,
+2026. Xbox, Switch Pro and generic Steam Input support are enabled; PlayStation
+Controller Support is Enabled. Guide-button focus and guide-button chords are
+enabled, idle shutdown is 15 minutes, and turning off controllers on Big Picture
+exit is disabled. No controllers are listed before virtual-controller creation.
+This is the pre-creation baseline, not a negative result for either realization.
+The post-creation observations below distinguish both realizations from this empty-list baseline.
+
+### Manual wired UHID: initial owner observation
+
+With the baseline settings above, the owner created one Steam Controller 2026
+using `linux.uhid.usb` in the unmodified C6 demo and left its worker running.
+Steam's Controller settings did **not list** the controller. Therefore its input
+test could not be opened and no per-control or output acceptance is claimed.
+A read-only exact-node check found the Steam process holding the layered hidraw
+node. Access/opening alone does not establish discovery, input decoding or a
+reason for the missing listing. This is a new C6 result, separate from step 16's
+short-reply stub. The owner removed the controller and closed the demo without errors; its owned HID nodes disappeared.
+
+### Wired diagnostic repeat and boot-sequence review
+
+The owner repeated creation with a local C6 demo containing opt-in diagnostic
+logging only in the Steam request handler. The logger changes no request/reply,
+state, descriptor or API behavior, and records only report class/ID, body length,
+inner command and setting IDs. It is not part of this PR. The controller was
+again **not listed**. The owner then removed it; a read-only ancestry check found
+zero remaining owned UHID nodes. No Steam input test or control/output delivery
+could be observed in either attempt.
+
+The completed virtual-only diagnostic log contains 371 feature GET requests and
+442 feature SET requests, all report ID 1; every SET has 63 body bytes (64 with
+report ID). Inner SET command counts are 0xae:24, 0x83:364, 0x85:7, 0x8e:7 and
+0x87:40. The settings requests identify key 50 seven times and key 9 thirty-three
+times. No feature-2 request or output-report request was logged. These counts
+include kernel initialization and userspace traffic; the logger does not identify
+request origin or record completion status. They must not all be attributed to
+Steam or treated as a request/acknowledgement trace.
+
+C6's existing policy rejects unknown setting 50 atomically. This is a possible
+compatibility lead, **not an established cause** of the missing listing. The
+0x83 response remains structural rather than retail attribute data. No setting
+acceptance, attribute values or protocol behavior was changed to chase listing.
+Local diagnostic patch SHA-256:
+`a5b94b48351d1af4bfe371e224a888740d2407f16edaebf68205a7c446b348c4`.
+Completed diagnostic-log SHA-256:
+`9d15d121f97dbdcb4a8affab7b0f9a6ec72b82c66f31c46a62722531f47b517f`.
+
+After the virtual negative result, the owner connected the real controller and
+confirmed its Steam listing/input-test availability. The screenshot identifies
+it as **Steam Controller**, connection **USB**, with **Begin Test** available.
+The owner also mentioned a Puck; no receiver, pairing or Bluetooth result is
+inferred. A passive sysfs-only check of the real wired 28de:1302 found one HID
+interface and the same 372-byte report descriptor SHA-256 as C6:
+`315a037c849ef9510d222ae520bb18c1b72552d26eb116c91b0750901a5c51fd`.
+No real serial, firmware attribute or physical feature query was collected.
+Physical reattachment occurred during the diagnostic session, so its effect on
+virtual-device rescanning is not isolated. Only the virtual codec was logged.
+
+The owner's bootloader-first attach report remains separate from the main-stage
+descriptor result. The pinned physical capture plan records bootloader add →
+removal → main 28de:1302 as an operator observation, with boot-stage identity,
+timing and automatic-versus-host-triggered transition still unmeasured. C6 creates
+the main-stage UHID device directly, following the owner decision on #159
+(comment 6492587335). Main-stage descriptor equality does not establish a matching
+boot/USB lifecycle, and the virtual negative listing does not prove Steam requires
+the transient stage. No pre-attach observation was running during this physical
+reconnection. No bootloader experiment or emulation was performed.
+
+### Manual reduced-uinput observation
+
+The owner disconnected the physical wired controller and Puck, kept Dolphin
+closed, left the demo without a virtual controller and confirmed Steam's list
+was empty. One Steam Controller 2026 was then created using `linux.uinput`.
+It was **not listed**, so no Steam input test, per-control decoding, identify or
+output delivery is claimed. A read-only exact-node check found the ordinary
+(non-lab) Steam Controller event node at mode 0660, group input, with an
+ordinary-user read open succeeding. This ordinary desktop case is separate from
+the dedicated-group input-lab kernel runs. Uinput exposes no HID feature channel;
+there can be no equivalent codec feature-request diagnostic for this case.
+The owner requested a fresh demo launch for the repeat; the preceding demo
+instance and its uinput node were already gone. The new uinput instance was
+also **not listed**. The owner then removed it and closed the demo normally
+without errors. A final read-only check found no remaining virtual uinput event
+nodes. An idle owned demo process remained and was stopped by the agent only
+after node cleanup was verified; normal GUI close terminating every process is
+not independently established. There is no listing-disappearance observation
+to make when neither instance was listed. Controls, motion, identify and output remain unobserved
+in Steam for both realizations; no physical equivalence is claimed.
