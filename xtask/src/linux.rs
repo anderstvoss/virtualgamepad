@@ -25,22 +25,25 @@ impl Drop for Capture {
 
 macro_rules! controllers {
     ($(($variant:ident,$ty:ident,$create:ident,$id:literal)),+ $(,)?) => {
-        pub enum Controller { $($variant(virtualgamepad::$ty),)+ Wii(gr_curated_controllers::wii_remote::WiiRemoteController) }
+        pub enum Controller { $($variant(virtualgamepad::$ty),)+ Wii(gr_curated_controllers::wii_remote::WiiRemoteController), Steam(gr_curated_controllers::steam_controller_2026::SteamController2026Controller) }
         impl Controller {
             fn create(id:&str,target:RealizationId)->Result<Self,String>{
                 if id == "virtualgamepad.wii-remote" {
                     return gr_curated_controllers::wii_remote::create_wii_remote(target, NEXT.fetch_add(1,Ordering::Relaxed)).map(Self::Wii).map_err(|e|e.to_string());
                 }
+                if id == "virtualgamepad.steam-controller-2026" {
+                    return gr_curated_controllers::steam_controller_2026::create_steam_controller_2026(target, NEXT.fetch_add(1,Ordering::Relaxed)).map(Self::Steam).map_err(|e|e.to_string());
+                }
                 match id { $($id=>virtualgamepad::$create(CreationOptions::new(target)).map(Self::$variant).map_err(|e|e.to_string()),)+ _=>Err("unmapped compiled family".into()) }
             }
-            fn physical_paths(&self)->Vec<String> { match self { $(Self::$variant(c)=>c.association().components().iter().filter_map(|c|c.requested_physical_path().map(str::to_owned)).collect(),)+ Self::Wii(c)=>c.association().requested_physical_path.iter().cloned().chain(c.association().companions.iter().filter_map(|c|c.requested_physical_path.clone())).collect() } }
-            fn topology(&self)->&InputTopology { match self { $(Self::$variant(c)=>c.surface().common_surface().input_topology(),)+ Self::Wii(c)=>c.surface().input_topology() } }
-            fn digital(&mut self,update:DigitalControlUpdate)->Result<(),String>{match self {$(Self::$variant(c)=>c.set_digital(update).map_err(|e|e.to_string()),)+ Self::Wii(c)=>c.set_digital(update).map_err(|e|e.to_string())}}
-            fn commit(&mut self)->Result<(),String>{match self {$(Self::$variant(c)=>c.commit().map_err(|e|e.to_string()),)+ Self::Wii(c)=>c.commit().map_err(|e|e.to_string())}}
-            fn service(&mut self)->Result<(),String>{match self {$(Self::$variant(c)=>c.service(&mut |_|{}).map_err(|e|e.to_string()),)+ Self::Wii(c)=>c.service(&mut |_|{}).map_err(|e|e.to_string())}}
-            fn close(&mut self){match self {$(Self::$variant(c)=>c.close(),)+ Self::Wii(c)=>c.close()}}
+            fn physical_paths(&self)->Vec<String> { match self { $(Self::$variant(c)=>c.association().components().iter().filter_map(|c|c.requested_physical_path().map(str::to_owned)).collect(),)+ Self::Steam(c)=>c.association().requested_physical_path.iter().cloned().collect(), Self::Wii(c)=>c.association().requested_physical_path.iter().cloned().chain(c.association().companions.iter().filter_map(|c|c.requested_physical_path.clone())).collect() } }
+            fn topology(&self)->&InputTopology { match self { $(Self::$variant(c)=>c.surface().common_surface().input_topology(),)+ Self::Steam(c)=>c.surface().input_topology(), Self::Wii(c)=>c.surface().input_topology() } }
+            fn digital(&mut self,update:DigitalControlUpdate)->Result<(),String>{match self {$(Self::$variant(c)=>c.set_digital(update).map_err(|e|e.to_string()),)+ Self::Steam(c)=>c.set_digital(update).map_err(|e|e.to_string()), Self::Wii(c)=>c.set_digital(update).map_err(|e|e.to_string())}}
+            fn commit(&mut self)->Result<(),String>{match self {$(Self::$variant(c)=>c.commit().map_err(|e|e.to_string()),)+ Self::Steam(c)=>c.commit().map_err(|e|e.to_string()), Self::Wii(c)=>c.commit().map_err(|e|e.to_string())}}
+            fn service(&mut self)->Result<(),String>{match self {$(Self::$variant(c)=>c.service(&mut |_|{}).map_err(|e|e.to_string()),)+ Self::Steam(c)=>c.service(&mut |_|{}).map_err(|e|e.to_string()), Self::Wii(c)=>c.service(&mut |_|{}).map_err(|e|e.to_string())}}
+            fn close(&mut self){match self {$(Self::$variant(c)=>c.close(),)+ Self::Steam(c)=>c.close(), Self::Wii(c)=>c.close()}}
         }
-        pub const MAPPED_IDS:&[&str]=&[$($id,)+ "virtualgamepad.wii-remote"];
+        pub const MAPPED_IDS:&[&str]=&[$($id,)+ "virtualgamepad.wii-remote", "virtualgamepad.steam-controller-2026"];
     };
 }
 controllers! {
@@ -95,6 +98,30 @@ fn matching_nodes(physical_paths: &[String]) -> BTreeSet<PathBuf> {
     }
     result
 }
+fn evdev_capabilities(node: &Path) -> Option<Value> {
+    if !node.starts_with("/dev/input") {
+        return None;
+    }
+    let device = Path::new("/sys/class/input")
+        .join(node.file_name()?)
+        .join("device");
+    let read = |name: &str| {
+        fs::read_to_string(device.join(name))
+            .ok()
+            .map(|s| s.trim().to_owned())
+    };
+    Some(json!({
+        "name": read("name"),
+        "bus": read("id/bustype"),
+        "vendor": read("id/vendor"),
+        "product": read("id/product"),
+        "properties": read("properties"),
+        "keys": read("capabilities/key"),
+        "absolute_axes": read("capabilities/abs"),
+        "misc": read("capabilities/msc"),
+        "force_feedback": read("capabilities/ff"),
+    }))
+}
 fn bound_driver(node: &Path) -> Option<String> {
     let name = node.file_name()?;
     let class = if node.starts_with("/dev/input") {
@@ -116,12 +143,101 @@ fn bound_driver(node: &Path) -> Option<String> {
             .map(|s| s.to_string_lossy().into_owned())
     })
 }
+fn steam_sample(
+    sample: i16,
+) -> gr_curated_controllers::steam_controller_2026::SteamController2026State {
+    use gr_curated_controllers::steam_controller_2026::SteamController2026Button as B;
+    const BUTTONS: [B; 22] = [
+        B::A,
+        B::B,
+        B::X,
+        B::Y,
+        B::Qam,
+        B::RightStick,
+        B::Menu,
+        B::R4,
+        B::R5,
+        B::RightShoulder,
+        B::Down,
+        B::Right,
+        B::Left,
+        B::Up,
+        B::View,
+        B::LeftStick,
+        B::Steam,
+        B::L4,
+        B::L5,
+        B::LeftShoulder,
+        B::RightTrigger,
+        B::LeftTrigger,
+    ];
+    let mut state =
+        gr_curated_controllers::steam_controller_2026::SteamController2026State::default();
+    state.motion.timestamp_us = u32::from(u16::from_ne_bytes(sample.to_ne_bytes())) * 10_000;
+    state.motion.accelerometer = [sample % 250 * 100, 500, 1000];
+    state.motion.gyroscope = [sample % 250 * 30, -250, 100];
+    let value = if sample % 20 < 10 { 10000 } else { -10000 };
+    state.sticks = [[value, -value], [-value, value]];
+    state.triggers = [value.max(0), (-value).max(0)];
+    for (index, button) in BUTTONS.into_iter().enumerate() {
+        state.set_button(
+            button,
+            usize::try_from(sample / 6).ok() == Some(index) && sample % 6 < 4,
+        );
+    }
+    for (index, pad) in state.pads.iter_mut().enumerate() {
+        pad.touch = (sample % 20 < 10) == (index == 0);
+        pad.position = [value + sample % 10 * 100, -value + sample % 10 * 60];
+        pad.pressure = if pad.touch { 1000 } else { 0 };
+        pad.click = pad.touch && sample % 5 < 2;
+    }
+    state.stick_touch = [value > 0, value < 0];
+    state.grip_touch = [value < 0, value > 0];
+    state
+}
+fn drive_steam_sample(
+    steam: &mut gr_curated_controllers::steam_controller_2026::SteamController2026Controller,
+    sample: i16,
+) -> Result<(), String> {
+    steam
+        .set_inputs(steam_sample(sample))
+        .map_err(|error| error.to_string())?;
+    steam.commit().map_err(|error| error.to_string())
+}
+#[derive(Default)]
+struct SteamScript {
+    next_ms: Option<u64>,
+    sample: i16,
+}
+impl SteamScript {
+    fn advance(&mut self, now_ms: u64, ready: bool) -> Option<i16> {
+        if !ready {
+            return None;
+        }
+        let next = *self.next_ms.get_or_insert(now_ms + 10);
+        if now_ms < next {
+            return None;
+        }
+        self.next_ms = Some(now_ms + 10);
+        self.sample += 1;
+        Some(self.sample)
+    }
+}
+fn probe_ready(text: &str) -> bool {
+    text.lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .any(|record| record["record_type"] == "mapping_ready")
+}
 fn wait_child(
     child: &mut Child,
     controller: &mut Controller,
     peers: &mut [&mut Session],
+    capture: &Path,
 ) -> Result<(), String> {
-    let deadline = Instant::now() + Duration::from_secs(30);
+    let start = Instant::now();
+    let deadline = start + Duration::from_secs(30);
+    let mut script = SteamScript::default();
+    let mut ready = false;
     loop {
         for peer in peers.iter_mut() {
             peer.service.service(|| peer.controller.service());
@@ -137,7 +253,18 @@ fn wait_child(
             Ok(None) => {}
             Err(error) => return Err(error.to_string()),
         }
-        if let Err(error) = controller.service() {
+        ready = ready || fs::read_to_string(capture).is_ok_and(|text| probe_ready(&text));
+        let sample = script.advance(
+            u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+            ready,
+        );
+        let result = controller
+            .service()
+            .and_then(|()| match (&mut *controller, sample) {
+                (Controller::Steam(steam), Some(sample)) => drive_steam_sample(steam, sample),
+                _ => Ok(()),
+            });
+        if let Err(error) = result {
             let _ = child.kill();
             let _ = child.wait();
             return Err(error);
@@ -186,9 +313,20 @@ impl Backend for Linux {
                 loop {
                     for peer in peers.iter_mut() { peer.service.service(|| peer.controller.service()); }
                     let nodes=matching_nodes(&s.physical_paths);
-                    if stage=="node_present" && !nodes.is_empty(){
+                    let steam_hid = matches!(&s.controller, Controller::Steam(c)
+                        if c.surface().target() == RealizationId::LINUX_UHID_USB);
+                    if stage=="node_present" && !nodes.is_empty()
+                        && (!steam_hid || nodes.iter().any(|p| !p.starts_with("/dev/input"))) {
                         s.nodes=nodes;
-                        return Ok(json!({"poll_interval_ns":1_000_000,"devices":s.nodes.iter().map(|p|json!({"path":p,"bound_driver":bound_driver(p),"driver_reason":if bound_driver(p).is_none(){Some("no bound driver observed")}else{None}})).collect::<Vec<_>>() }));
+                        return Ok(json!({"poll_interval_ns":1_000_000,"devices":s.nodes.iter().map(|p| {
+                            let driver = bound_driver(p);
+                            let mut device = json!({"path":p,"bound_driver":driver,"driver_reason":if driver.is_none(){Some("no bound driver observed")}else{None}});
+                            if let Some(capabilities) = matches!(&s.controller, Controller::Steam(_))
+                                .then(|| evdev_capabilities(p)).flatten() {
+                                device["evdev_capabilities"] = capabilities;
+                            }
+                            device
+                        }).collect::<Vec<_>>() }));
                     }
                     if stage=="node_gone" && nodes.is_empty(){return Ok(json!({"poll_interval_ns":1_000_000}));}
                     if Instant::now()>=deadline{return Err(format!("{stage} not observed within two seconds"));}
@@ -204,18 +342,24 @@ impl Backend for Linux {
             "first_neutral"=>Err("no validated consumer neutral-report oracle for this family; API commit is not consumer delivery".into()),
             "sdl_ready"=>{
                 if !self.sdl{return Err("SDL probe not requested".into());}
-                let node=s.nodes.iter().find(|p|p.starts_with("/dev/input")).or_else(||s.nodes.first()).ok_or("no owned node for SDL")?;
+                let steam_hid = matches!(&s.controller, Controller::Steam(c)
+                    if c.surface().target() == RealizationId::LINUX_UHID_USB);
+                let node=s.nodes.iter().find(|p| p.starts_with("/dev/input") != steam_hid).or_else(||s.nodes.first()).ok_or("no owned node for SDL")?;
                 let path = std::env::temp_dir().join(format!("virtualgamepad-acceptance-{}-{}.json", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
                 let file = OpenOptions::new().write(true).create_new(true).open(&path).map_err(|e|e.to_string())?;
                 let capture = Capture(path);
                 let mut child = Command::new("bash")
                     .arg(self.root.join("scripts/run-sdl3-gamepad-probe.sh"))
-                    .arg(node).arg("100").stdout(Stdio::from(file)).stderr(Stdio::null())
+                    .arg(node).arg(if steam_hid { "1800" } else { "100" }).stdout(Stdio::from(file)).stderr(Stdio::null())
                     .spawn().map_err(|e|e.to_string())?;
-                wait_child(&mut child, &mut s.controller, peers)?;
+                let status = wait_child(&mut child, &mut s.controller, peers, &capture.0);
                 let text = fs::read_to_string(&capture.0).map_err(|e|e.to_string())?;
                 let record = text.lines().filter_map(|line|serde_json::from_str::<Value>(line).ok()).find(|r|r["consumer"]=="SDL").ok_or("SDL probe emitted no observation")?;
-                if record["opened"]["value"] != true { return Err("SDL did not observe this exact device opened".into()); }
+                if steam_hid && status.is_err() {
+                    return Err(format!("SDL probe failed: {}", record["error"]));
+                }
+                status?;
+                if record["observations"]["opened"]["value"] != true { return Err("SDL did not observe this exact device opened".into()); }
                 Ok(json!({"consumer":"SDL","timestamp_scope":"probe completion upper bound; discovery may occur earlier","observation":record}))
             }
             _=>Err("unknown stage".into()),
@@ -256,6 +400,33 @@ impl Backend for Linux {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn steam_controls_wait_for_consumer_neutral_after_arbitrary_startup_delay() {
+        use gr_curated_controllers::steam_controller_2026::SteamController2026Button as B;
+        assert!(super::steam_sample(1).pressed(B::A));
+        assert!(!super::steam_sample(4).pressed(B::A));
+        assert!(super::steam_sample(127).pressed(B::LeftTrigger));
+        for pad in 0..2 {
+            assert_ne!(
+                super::steam_sample(1).pads[pad].position,
+                super::steam_sample(2).pads[pad].position
+            );
+        }
+
+        for delay in [0, 350, 1500, 5000] {
+            let mut script = super::SteamScript::default();
+            assert_eq!(script.advance(delay, false), None);
+            assert_eq!(script.advance(delay, true), None);
+            for sample in 1..=138 {
+                assert_eq!(
+                    script.advance(delay + sample * 10, true),
+                    Some(i16::try_from(sample).unwrap())
+                );
+            }
+        }
+        assert!(!super::probe_ready("{\"consumer\":\"SDL\"}\n{partial"));
+        assert!(super::probe_ready("{\"record_type\":\"mapping_ready\"}\n"));
+    }
     #[test]
     fn every_registry_family_has_a_public_constructor_adapter() {
         let mut mapped = super::MAPPED_IDS.to_vec();

@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.dualshock4"
-research_revision = "83724ef213809f683814eb84c3b2d9fc937c70f4"
+research_revision = "8a479b934bb8758988dc5252fb4c2306476dc3b0"
 realizations = ["linux.uinput", "linux.uhid.usb", "linux.dummy_hcd.usb-hid", "linux.usbip.usb-audio"]
 refused_operations = []
 persistent_resources = []

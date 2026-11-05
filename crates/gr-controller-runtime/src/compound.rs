@@ -181,6 +181,44 @@ impl CompoundSession {
         Ok(session)
     }
 
+    /// Open package-prepared evdev labels while retaining logical/role association.
+    ///
+    /// Unlike `open_associated`, this does not replace the requested physical
+    /// labels. This permits a reviewed controller-specific lab namespace without
+    /// losing exact component selection or logical creation metadata. All labels
+    /// must be present and distinct before any provider is opened.
+    pub fn open_associated_prepared_evdev(
+        identity: CompoundIdentity,
+        opens: Vec<ComponentOpen>,
+    ) -> Result<Self, CompoundOpenError> {
+        let mut associations = Vec::new();
+        let mut paths = std::collections::BTreeSet::new();
+        for open in &opens {
+            let gr_realization_api::NativeControllerRealization::Evdev(spec) =
+                &open.request.realization
+            else {
+                return Err(CompoundOpenError::UnsupportedAssociation { component: open.id });
+            };
+            let Some(path) = &spec.physical_path else {
+                return Err(CompoundOpenError::UnsupportedAssociation { component: open.id });
+            };
+            if path.is_empty() || !paths.insert(path.clone()) {
+                return Err(CompoundOpenError::UnsupportedAssociation { component: open.id });
+            }
+            let mut association = identity.component(open.id);
+            association.physical_path.clone_from(path);
+            associations.push(association);
+        }
+        let mut session = Self::open(opens)?;
+        for component in &mut session.components {
+            component.association = associations
+                .iter()
+                .find(|item| item.role == component.id)
+                .cloned();
+        }
+        Ok(session)
+    }
+
     /// Preflight and open all components, rolling back partial opens.
     pub fn open(mut opens: Vec<ComponentOpen>) -> Result<Self, CompoundOpenError> {
         opens.sort_by_key(|open| open.id);
@@ -1180,5 +1218,130 @@ mod tests {
             Err("accessory unavailable")
         );
         assert_eq!(second.framebuffer, [0; 192]);
+    }
+    #[test]
+    fn prepared_evdev_association_keeps_labels_roles_and_idempotent_cleanup() {
+        let opens = Arc::new(Mutex::new(vec![]));
+        let closed = Arc::new(Mutex::new(vec![]));
+        let factory: Arc<dyn NativeProviderFactory> = Arc::new(Factory {
+            fail_open: false,
+            opens: Arc::clone(&opens),
+            closed: Arc::clone(&closed),
+        });
+        let identity = CompoundIdentity {
+            logical: [7; 16],
+            creation: [8; 16],
+        };
+        let components = [9_u16, 2]
+            .into_iter()
+            .map(|role| {
+                let mut request = request(u64::from(role));
+                let NativeControllerRealization::Evdev(spec) = &mut request.realization else {
+                    panic!("evdev");
+                };
+                spec.physical_path = Some(format!(
+                    "virtualgamepad/input-lab/uinput/dualsense/p2a-i{role:x}"
+                ));
+                ComponentOpen {
+                    id: ComponentId(role),
+                    factory: Arc::clone(&factory),
+                    request,
+                }
+            })
+            .collect();
+        let mut session =
+            CompoundSession::open_associated_prepared_evdev(identity, components).unwrap();
+        assert_eq!(*opens.lock().unwrap(), vec![2, 9]);
+        for component in session.diagnostics().components {
+            let association = component.association.unwrap();
+            assert_eq!(association.identity, identity);
+            assert_eq!(association.role, component.component);
+            assert_eq!(
+                association.unique_id,
+                identity.component(component.component).unique_id
+            );
+            assert_eq!(
+                association.physical_path,
+                format!(
+                    "virtualgamepad/input-lab/uinput/dualsense/p2a-i{:x}",
+                    component.component.0
+                )
+            );
+        }
+        session.close();
+        session.close();
+        drop(session);
+        assert_eq!(*closed.lock().unwrap(), vec![9, 2]);
+    }
+
+    #[test]
+    fn prepared_evdev_rejects_missing_duplicate_paths_and_rolls_back_later_open() {
+        for missing in [true, false] {
+            let opens = Arc::new(Mutex::new(vec![]));
+            let closed = Arc::new(Mutex::new(vec![]));
+            let factory: Arc<dyn NativeProviderFactory> = Arc::new(Factory {
+                fail_open: false,
+                opens: Arc::clone(&opens),
+                closed,
+            });
+            let components = (0_u16..2)
+                .map(|role| {
+                    let mut request = request(u64::from(role));
+                    let NativeControllerRealization::Evdev(spec) = &mut request.realization else {
+                        panic!("evdev");
+                    };
+                    spec.physical_path = (!missing).then(|| "same-label".into());
+                    ComponentOpen {
+                        id: ComponentId(role),
+                        factory: Arc::clone(&factory),
+                        request,
+                    }
+                })
+                .collect();
+            assert!(
+                CompoundSession::open_associated_prepared_evdev(
+                    CompoundIdentity {
+                        logical: [0; 16],
+                        creation: [0; 16]
+                    },
+                    components
+                )
+                .is_err()
+            );
+            assert!(opens.lock().unwrap().is_empty());
+        }
+        let opens = Arc::new(Mutex::new(vec![]));
+        let closed = Arc::new(Mutex::new(vec![]));
+        let components = (0_u16..2)
+            .map(|role| {
+                let factory: Arc<dyn NativeProviderFactory> = Arc::new(Factory {
+                    fail_open: role == 1,
+                    opens: Arc::clone(&opens),
+                    closed: Arc::clone(&closed),
+                });
+                let mut request = request(u64::from(role));
+                let NativeControllerRealization::Evdev(spec) = &mut request.realization else {
+                    panic!("evdev");
+                };
+                spec.physical_path = Some(format!("lab-{role}"));
+                ComponentOpen {
+                    id: ComponentId(role),
+                    factory,
+                    request,
+                }
+            })
+            .collect();
+        assert!(
+            CompoundSession::open_associated_prepared_evdev(
+                CompoundIdentity {
+                    logical: [0; 16],
+                    creation: [0; 16]
+                },
+                components
+            )
+            .is_err()
+        );
+        assert_eq!(*opens.lock().unwrap(), vec![0, 1]);
+        assert_eq!(*closed.lock().unwrap(), vec![0]);
     }
 }

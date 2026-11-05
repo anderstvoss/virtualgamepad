@@ -70,7 +70,7 @@ static bool SDL_GamepadHasSensor(SDL_Gamepad *g,int s) { return false; }
 static bool SDL_SetGamepadSensorEnabled(SDL_Gamepad *g,int s,bool enabled) { return false; }
 static SDL_PropertiesID SDL_GetGamepadProperties(SDL_Gamepad *g) { return 1; }
 static bool SDL_GetBooleanProperty(int props,const char *name,bool fallback) { return strcmp(name,"rumble")==0; }
-static int SDL_GetNumGamepadTouchpads(SDL_Gamepad *g) { return 1; }
+static int SDL_GetNumGamepadTouchpads(SDL_Gamepad *g) { return scenario("two-pads") ? 2 : 1; }
 static int SDL_GetNumJoystickButtons(SDL_Joystick *j) { return 26; }
 static int SDL_GetNumJoystickAxes(SDL_Joystick *j) { return 6; }
 static int SDL_GetNumJoystickHats(SDL_Joystick *j) { return 1; }
@@ -88,6 +88,12 @@ static const char *SDL_GetGamepadStringForButton(int button) { return button==20
 static const char *SDL_GetGamepadStringForAxis(int axis) { static const char *names[]={"leftx","lefty","rightx","righty","lefttrigger","righttrigger"}; return names[axis]; }
 static bool SDL_PollEvent(SDL_Event *event) {
  memset(event,0,sizeof(*event));
+ if (scenario("two-pads")) {
+  if(events>=6) return false;
+  event->type=events%3==0 ? SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN : events%3==1 ? SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION : SDL_EVENT_GAMEPAD_TOUCHPAD_UP;
+  event->gtouchpad.which=7; event->gtouchpad.touchpad=events/3; event->gtouchpad.finger=0;
+  ++events; return true;
+ }
  if (!scenario("events") || events>=4) return false;
  event->type=events==0 ? SDL_EVENT_GAMEPAD_BUTTON_DOWN : events==1 ? SDL_EVENT_GAMEPAD_BUTTON_UP : events==2 ? SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN : SDL_EVENT_GAMEPAD_TOUCHPAD_UP;
  event->gbutton.which=7; event->gbutton.button=20;

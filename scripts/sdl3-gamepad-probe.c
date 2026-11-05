@@ -36,8 +36,8 @@ int main(int argc, char **argv) {
     bool available_buttons[SDL_GAMEPAD_BUTTON_COUNT] = {0}, available_axes[SDL_GAMEPAD_AXIS_COUNT] = {0};
     bool rumble_cap = false, led_cap = false;
     int touchpads = -1;
-    uint32_t touch_down = 0, touch_up = 0;
-    bool touch_motion = false, touch_overflow = false;
+    uint32_t touch_down[2] = {0}, touch_up[2] = {0};
+    bool touch_motion[2] = {false}, touch_overflow = false;
     SDL_JoystickID selected = 0;
     SDL_JoystickID *ids = NULL;
     int count = 0, matches = 0, joystick_matches = 0, joystick_count = 0;
@@ -117,10 +117,10 @@ int main(int argc, char **argv) {
             }
             if ((event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN || event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_UP || event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION) && event.gtouchpad.which == selected) {
                 ++touch_events;
-                if (event.gtouchpad.touchpad == 0 && event.gtouchpad.finger >= 0 && event.gtouchpad.finger < 32) {
-                    if (event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN) touch_down |= 1u << event.gtouchpad.finger;
-                    if (event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_UP) touch_up |= 1u << event.gtouchpad.finger;
-                    if (event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION) touch_motion = true;
+                if (event.gtouchpad.touchpad >= 0 && event.gtouchpad.touchpad < 2 && event.gtouchpad.finger >= 0 && event.gtouchpad.finger < 32) {
+                    if (event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN) touch_down[event.gtouchpad.touchpad] |= 1u << event.gtouchpad.finger;
+                    if (event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_UP) touch_up[event.gtouchpad.touchpad] |= 1u << event.gtouchpad.finger;
+                    if (event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION) touch_motion[event.gtouchpad.touchpad] = true;
                 } else touch_overflow = true;
             }
         }
@@ -144,7 +144,7 @@ int main(int argc, char **argv) {
         // Poll the initial neutral stream before the harness applies a transition.
         // Sony HIDAPI drivers compare against a zero-filled previous packet;
         // applying Up (hat 0) before neutral (hat 8) has arrived loses that edge.
-        if (control_script && !mapping_ready && probe_control_ready(SDL_GetTicks() - started, neutral)) {
+        if ((control_script || strcmp(profile, "diagnostic") == 0) && !mapping_ready && probe_control_ready(SDL_GetTicks() - started, neutral)) {
             puts("{\"schema_version\":2,\"record_type\":\"mapping_ready\",\"neutral_settle_ms\":100}");
             fflush(stdout);
             mapping_ready = true;
@@ -248,8 +248,13 @@ int main(int argc, char **argv) {
         for (unsigned i = 0; i < 2; ++i) printf("%s{\"present\":%s,\"enabled\":%s,\"changed\":%s,\"valid\":%s}", i ? "," : "", sensors[i].present ? "true" : "false", sensors[i].enabled ? "true" : "false", sensors[i].distinct > 1 ? "true" : "false", sensors[i].have_sample && !sensors[i].invalid ? "true" : "false");
         printf("]");
     } else printf("null"); printf("},");
-    probe_measurement("touch", lifecycle.opened && !touch_overflow ? NULL : "touch unavailable or contacts exceed first-pad/32-finger observation bounds");
-    if (lifecycle.opened && !touch_overflow) printf("{\"down_mask\":%u,\"up_mask\":%u,\"motion\":%s}", touch_down, touch_up, touch_motion ? "true" : "false"); else printf("null"); printf("},");
+    probe_measurement("touch", lifecycle.opened && !touch_overflow ? NULL : "touch unavailable or contacts exceed two-pad/32-finger observation bounds");
+    if (lifecycle.opened && !touch_overflow) {
+        printf("{\"down_mask\":%u,\"up_mask\":%u,\"motion\":%s,\"pads\":[", touch_down[0], touch_up[0], touch_motion[0] ? "true" : "false");
+        for (int pad = 0; pad < touchpads && pad < 2; ++pad)
+            printf("%s{\"index\":%d,\"down_mask\":%u,\"up_mask\":%u,\"motion\":%s}", pad ? "," : "", pad, touch_down[pad], touch_up[pad], touch_motion[pad] ? "true" : "false");
+        printf("]}");
+    } else printf("null"); printf("},");
     probe_measurement("output_calls", lifecycle.opened && !control_script ? NULL : "output calls not attempted");
     if (lifecycle.opened && !control_script) printf("{\"rumble\":%s,\"led\":%s}", rumble ? "true" : "false", led ? "true" : "false"); else printf("null"); printf("},");
     probe_unknown("controller_reverse", "requires independently recorded controller-side observation"); printf(",");

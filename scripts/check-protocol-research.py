@@ -9,7 +9,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-GENERATOR_VERSION = 4
+GENERATOR_VERSION = 5
 SUBMODULE = 'protocol-research'
 
 
@@ -88,13 +88,54 @@ def check(root, write=False, verify_remote=False):
                                 ('wii-c5-write-invalid-address', 5),
                                 ('wii-c5-read-invalid-address', 22),
                                 ('wii-c5-functional-descriptor', 191),
-                                ('wii-c5-evdev-golden', None)]:
+                                ('wii-c5-evdev-golden', None),
+                                ('steam-c6-neutral-42', 54),
+                                ('steam-c6-neutral-45', 46),
+                                ('steam-c6-neutral-47', 46),
+                                ('steam-c6-buttons-all-42', 54),
+                                ('steam-c6-stick-trigger-max-42', 54),
+                                ('steam-c6-stick-trigger-min-42', 54),
+                                ('steam-c6-touch-corners-pressure-42', 54),
+                                ('steam-c6-imu-extremes-42', 54),
+                                ('steam-c6-full-edge-45', 46),
+                                ('steam-c6-timestamp-touch-47', 46),
+                                ('steam-c6-battery-status-43', 15),
+                                ('steam-c6-output-rumble-80', 10),
+                                ('steam-c6-output-pulse-81', 8),
+                                ('steam-c6-output-command-82', 4),
+                                ('steam-c6-output-lfo-83', 10),
+                                ('steam-c6-output-sweep-84', 9),
+                                ('steam-c6-output-script-85', 4),
+                                ('steam-c6-output-rumble-80-fields', 10),
+                                ('steam-c6-output-pulse-81-fields', 8),
+                                ('steam-c6-output-command-82-fields', 4),
+                                ('steam-c6-output-lfo-83-fields', 10),
+                                ('steam-c6-output-sweep-84-fields', 9),
+                                ('steam-c6-output-script-85-fields', 4),
+                                ('steam-c6-feature-serial-get', 64),
+                                ('steam-c6-feature-attrs-get', 64),
+                                ('steam-c6-feature-lizard-enable-map', 64),
+                                ('steam-c6-feature-lizard-enable-defaults', 64),
+                                ('steam-c6-feature-lizard-disable-clear', 64),
+                                ('steam-c6-feature-lizard-disable-kernel', 64),
+                                ('steam-c6-feature-lizard-disable-sdl', 64),
+                                ('steam-c6-feature-imu-on', 64),
+                                ('steam-c6-feature-imu-off', 64),
+                                ('steam-c6-reply-serial-empty', 64),
+                                ('steam-c6-reply-attributes-empty', 64),
+                                ('steam-c6-reply-attributes-short', 3),
+                                ('steam-d9-1302-attributes', 63),
+                                ('steam-d9-steam-settings', 3520),
+                                ('steam-s3-1302-report-descriptor', 372)]:
         record_path = 'records/fixture/' + name + '.json'
         record_bytes = (research / record_path).read_bytes()
         record = json.loads(record_bytes)
         path = (research / record['path']).resolve()
-        if not path.is_relative_to(research) or record['kind'] != 'synthetic':
-            raise ValueError('expected a research-local synthetic fixture')
+        physical = name in ('steam-s3-1302-report-descriptor',
+                            'steam-d9-1302-attributes', 'steam-d9-steam-settings')
+        expected_kind = 'physical' if physical else 'synthetic'
+        if not path.is_relative_to(research) or record['kind'] != expected_kind:
+            raise ValueError('expected a research-local ' + expected_kind + ' fixture')
         data = path.read_bytes()
         if hashlib.sha256(data).hexdigest() != record['sha256']:
             raise ValueError('fixture hash mismatch: ' + name)
@@ -107,6 +148,16 @@ def check(root, write=False, verify_remote=False):
                 raise ValueError('unexpected consumer shape: ' + name)
         elif len(bytes.fromhex(data.decode().strip())) != expected_size:
             raise ValueError('unexpected fixture size: ' + name)
+        if physical and name != 'steam-d9-steam-settings':
+            # steam-s3-1302-report-shapes / steam-s3-1302-usb-interface.
+            # Compile the exact decoded capture, without parsing profiles at runtime.
+            raw = bytes.fromhex(data.decode())
+            if name == 'steam-s3-1302-report-descriptor' and hashlib.sha256(raw).hexdigest() != (
+                    '315a037c849ef9510d222ae520bb18c1b72552d26eb116c91b0750901a5c51fd'):
+                raise ValueError('physical descriptor raw hash mismatch: ' + name)
+            outputs[name + '.rs'] = ('[\n' + ''.join(
+                '    ' + ', '.join(f'0x{byte:02x}' for byte in raw[index:index + 16]) + ',\n'
+                for index in range(0, len(raw), 16)) + ']\n').encode()
         inputs[record_path] = hashlib.sha256(record_bytes).hexdigest()
         inputs[record['path']] = record['sha256']
         outputs[name + extension] = data
