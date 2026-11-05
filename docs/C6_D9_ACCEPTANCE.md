@@ -578,3 +578,25 @@ The virtual controller is still running at this checkpoint; final removal and
 shutdown for this instance have not yet been recorded. Earlier owned-node cleanup
 results remain scoped to their own runs. No gameplay or complete motion acceptance
 is claimed, and individual discovery changes remain causally unisolated.
+
+
+### Gyro follow-up: valid pose (2026-11-05)
+
+The owner showed the live Gyro Calibration view with software calibration
+selected. Repeating raw +1024 on each gyro axis with continuous reports still
+showed zero. A further repeat advanced the caller's sensor timestamp throughout
+each hold; owned-node observations verified 24 distinct timestamps per active
+vector, but the owner again reported zero on all axes.
+
+With acceleration `(0, 0, 16384)` (approximately 1 g) and quaternion
+`(32767, 0, 0, 0)` supplied alongside the gyro samples, the owner observed:
+
+- raw X +1024: positive pitch, approximately 62.5 degrees/s;
+- raw Y +1024: positive roll, approximately 62.5 degrees/s;
+- raw Z +1024: negative yaw, approximately 62.5 degrees/s.
+
+This is a positive manual gyro observation with a nondegenerate pose, not a
+calibration or accuracy measurement. Acceleration and quaternion were introduced
+together; their separate necessity is unisolated. The successful trial also used
+continuous reports, so change-driven delivery with this pose is a separate check.
+No production clock, input cadence, motion default or exclusivity rule changed.
