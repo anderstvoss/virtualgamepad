@@ -151,9 +151,9 @@ impl Kind {
             .options(options.target, self.supports_audio())?;
         match self {
             Self::Steam => {
-                gr_curated_controllers::steam_controller_2026::create_steam_controller_2026(
-                    options.target,
-                    options.id,
+                create_steam_session(
+                    options,
+                    gr_curated_controllers::steam_controller_2026::create_steam_controller_2026_with_options,
                 )
                 .map(|inner| {
                     Controller::Steam(SteamDemoController {
@@ -495,6 +495,24 @@ impl ControllerView {
     }
 }
 
+fn create_steam_session<T, E>(
+    options: &ControllerOptions,
+    create: impl FnOnce(
+        virtualgamepad::RealizationId,
+        u64,
+        super::SteamController2026CreationOptions,
+    ) -> Result<T, E>,
+) -> Result<T, E> {
+    create(
+        options.target,
+        options.id,
+        super::SteamController2026CreationOptions {
+            steam_client_compat: options.steam_compat,
+            ..Default::default()
+        },
+    )
+}
+
 // Keep the application's actual creation token at the supporting-package boundary.
 fn create_wii_session<T, E: std::fmt::Display>(
     options: &ControllerOptions,
@@ -518,6 +536,48 @@ fn create_wii_session<T, E: std::fmt::Display>(
 }
 
 #[cfg(test)]
+mod steam_tests {
+    use super::*;
+
+    #[test]
+    fn creation_copies_compatibility_to_each_target_without_changing_defaults() {
+        for target in [
+            virtualgamepad::RealizationId::LINUX_UHID_USB,
+            virtualgamepad::RealizationId::LINUX_UINPUT,
+        ] {
+            let mut options = ControllerOptions {
+                target,
+                id: 37,
+                audio: super::super::audio_lab::CreationAudio::default(),
+                wii_revision: super::super::WiiRemoteRevision::Original,
+                wii_imports: super::super::wii_import::Imports::default(),
+                wii_compat: super::super::WiiRemoteCreationOptions::default(),
+                steam_compat: false,
+            };
+            let mut captured = Vec::new();
+            for enabled in [false, true, false] {
+                options.steam_compat = enabled;
+                captured.push(
+                    create_steam_session(&options, |observed, id, creation| {
+                        assert_eq!(observed, target);
+                        assert_eq!(id, 37);
+                        assert_eq!(creation.serial, None);
+                        Ok::<_, ()>(creation)
+                    })
+                    .unwrap(),
+                );
+            }
+            assert!(!captured[0].steam_client_compat);
+            assert!(captured[1].steam_client_compat);
+            assert!(!captured[2].steam_client_compat);
+            assert!(
+                !super::super::SteamController2026CreationOptions::default().steam_client_compat
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 mod wii_tests {
     use super::*;
     #[test]
@@ -534,6 +594,7 @@ mod wii_tests {
                 wii_revision: revision,
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteCreationOptions::default(),
+                steam_compat: false,
             };
             let state = create_wii_session(&options, |target, session, observed, image, compat| {
                 assert_eq!(target, options.target);
@@ -559,6 +620,7 @@ mod wii_tests {
                 wii_revision: super::super::WiiRemoteRevision::Original,
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteCreationOptions::default(),
+                steam_compat: false,
             };
             let received =
                 create_wii_session(&options, |target, session, revision, image, compat| {
@@ -603,6 +665,7 @@ mod compat_creation_tests {
                                 wii_revision: revision,
                                 wii_imports: super::super::wii_import::Imports::default(),
                                 wii_compat: compat,
+                                steam_compat: false,
                             };
                             assert_eq!(
                                 create_wii_session(

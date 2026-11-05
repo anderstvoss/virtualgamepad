@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.steam-controller-2026"
-research_revision = "fc6964ac8799f0b7a38ffb9526361450f0b1b87a"
+research_revision = "8a479b934bb8758988dc5252fb4c2306476dc3b0"
 realizations = ["linux.uinput", "linux.uhid.usb"]
 refused_operations = []
 persistent_resources = []
@@ -57,7 +57,7 @@ id = "serial"
 id = "steam-client"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/steam-controller-2026/steam-client", evidence = [], reason = "Owner observed not listed in Stable Steam 1792618285 after isolated reduced-uinput creation, with controller support enabled. Input test unavailable; no per-control Steam evidence. The ordinary event node was readable. A fresh-demo repeat was also not listed; previous and final owned nodes disappeared, and final normal removal/shutdown had no owner-reported errors. See docs/C6_D9_ACCEPTANCE.md. No HID feature channel exists for this realization." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/steam-client", evidence = [], reason = "Owner observed not listed in Stable Steam 1792618285 after creating merged C6 wired UHID, with controller support enabled. Input test unavailable; no per-control Steam evidence. A diagnostic-only repeat was also not listed; original close and repeated-creation removal completed without errors and owned nodes disappeared. Feature 1 commands ae/83/85/8e/87 and setting IDs 50/9 were logged; request origin/completion and the cause of non-listing are unproven. See docs/C6_D9_ACCEPTANCE.md. Step 16 stub negative remains separate." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/steam-controller-2026/steam-client", evidence = [], reason = "D9 Stable Steam 1792618285: opt-in full compatibility profile listed as Steam Controller and opened Begin Test with default synthetic identity. Face/D-pad/shoulders/stick clicks, triggers 0..32767..0, sticks, pad positions/pressure and system controls were observed under the owner-selected Gyro desktop profile. Rear GUI labels/grip presentation remain qualified. Valid-pose gyro +1024 showed +pitch/+roll/-yaw at about 62.5 degrees/s; X also worked with streaming off. Zero-pose gyro trials stayed zero; acceleration/quaternion necessity is not individually isolated. Virtual Ping matched physical 85 05 0c 00; SDL low/high rumble and zero stops matched the physical reference. Final close was idempotent with zero write failures and no owned nodes remaining. Earlier default/attribute-only non-listing and portal/profile confounds remain in docs/C6_D9_ACCEPTANCE.md; individual discovery changes are not causally isolated. No formal virtual research run or gameplay claim." }
 
 [[functions]]
 id = "kernel-evdev-decoding"

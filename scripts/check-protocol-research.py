@@ -9,7 +9,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-GENERATOR_VERSION = 4
+GENERATOR_VERSION = 5
 SUBMODULE = 'protocol-research'
 
 
@@ -124,12 +124,15 @@ def check(root, write=False, verify_remote=False):
                                 ('steam-c6-reply-serial-empty', 64),
                                 ('steam-c6-reply-attributes-empty', 64),
                                 ('steam-c6-reply-attributes-short', 3),
+                                ('steam-d9-1302-attributes', 63),
+                                ('steam-d9-steam-settings', 3520),
                                 ('steam-s3-1302-report-descriptor', 372)]:
         record_path = 'records/fixture/' + name + '.json'
         record_bytes = (research / record_path).read_bytes()
         record = json.loads(record_bytes)
         path = (research / record['path']).resolve()
-        physical = name == 'steam-s3-1302-report-descriptor'
+        physical = name in ('steam-s3-1302-report-descriptor',
+                            'steam-d9-1302-attributes', 'steam-d9-steam-settings')
         expected_kind = 'physical' if physical else 'synthetic'
         if not path.is_relative_to(research) or record['kind'] != expected_kind:
             raise ValueError('expected a research-local ' + expected_kind + ' fixture')
@@ -145,11 +148,11 @@ def check(root, write=False, verify_remote=False):
                 raise ValueError('unexpected consumer shape: ' + name)
         elif len(bytes.fromhex(data.decode().strip())) != expected_size:
             raise ValueError('unexpected fixture size: ' + name)
-        if physical:
+        if physical and name != 'steam-d9-steam-settings':
             # steam-s3-1302-report-shapes / steam-s3-1302-usb-interface.
             # Compile the exact decoded capture, without parsing profiles at runtime.
             raw = bytes.fromhex(data.decode())
-            if hashlib.sha256(raw).hexdigest() != (
+            if name == 'steam-s3-1302-report-descriptor' and hashlib.sha256(raw).hexdigest() != (
                     '315a037c849ef9510d222ae520bb18c1b72552d26eb116c91b0750901a5c51fd'):
                 raise ValueError('physical descriptor raw hash mismatch: ' + name)
             outputs[name + '.rs'] = ('[\n' + ''.join(

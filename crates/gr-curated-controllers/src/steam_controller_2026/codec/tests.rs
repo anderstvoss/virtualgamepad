@@ -1135,3 +1135,339 @@ fn serial_reply_supports_the_kernel_request_length() {
     };
     assert_eq!(&reply.wire()[..13], b"\x01\xae\x09\x01VGP-TEST\0");
 }
+
+fn detection_fixture(name: &str) -> Vec<u8> {
+    let text = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/protocol-research")
+            .join(name),
+    )
+    .unwrap();
+    let hex: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    hex.as_bytes()
+        .chunks_exact(2)
+        .map(|b| u8::from_str_radix(std::str::from_utf8(b).unwrap(), 16).unwrap())
+        .collect()
+}
+fn compat_setting_request(settings: &[(u8, u16)]) -> RequestKind {
+    let mut body = vec![0; 63];
+    body[0] = 0x87;
+    body[1] = u8::try_from(settings.len() * 3).unwrap();
+    for (slot, (key, value)) in body[2..].chunks_exact_mut(3).zip(settings) {
+        slot[0] = *key;
+        slot[1..].copy_from_slice(&value.to_le_bytes());
+    }
+    RequestKind::Set(Report::new(ReportType::Feature, Some(1), body).unwrap())
+}
+#[test]
+fn steam_client_profile_is_opt_in_replays_physical_attributes_and_keeps_synthetic_identity() {
+    let expected = detection_fixture("steam-d9-1302-attributes.hex");
+    for enabled in [false, true] {
+        let mut protocol = SteamHidProtocol::with_options("VGP-FAKE".into(), enabled);
+        assert_eq!(
+            protocol.request(&set("feature-attrs-get"), 0).0,
+            Reply::Set(Ok(()))
+        );
+        let (Reply::Get(Ok(response)), _) = protocol.request(&get(), 1) else {
+            panic!("attributes")
+        };
+        assert_eq!(
+            response.wire(),
+            if enabled {
+                expected.clone()
+            } else {
+                fixture("reply-attributes-empty")
+            }
+        );
+        assert_eq!(
+            protocol.request(&set("feature-serial-get"), 2).0,
+            Reply::Set(Ok(()))
+        );
+        let (Reply::Get(Ok(response)), _) = protocol.request(&get(), 3) else {
+            panic!("identity")
+        };
+        assert_eq!(&response.wire()[4..12], b"VGP-FAKE");
+        assert_eq!(response.wire().len(), 64);
+    }
+    assert!(
+        !crate::steam_controller_2026::SteamController2026CreationOptions::default()
+            .steam_client_compat
+    );
+}
+#[test]
+fn steam_client_profile_retains_all_recorded_settings_and_rejects_atomic_malformed_changes() {
+    let captured = detection_fixture("steam-d9-steam-settings.hex");
+    assert_eq!(captured.len(), 55 * 64);
+    let mut protocol = SteamHidProtocol::with_options("VGP-FAKE".into(), true);
+    for wire in captured.chunks_exact(64) {
+        let request = RequestKind::Set(Report::from_wire(ReportType::Feature, true, wire).unwrap());
+        assert_eq!(protocol.request(&request, 0).0, Reply::Set(Ok(())));
+    }
+    let expected = std::collections::BTreeMap::from([
+        (7, 7),
+        (8, 7),
+        (9, 0),
+        (24, 0),
+        (34, 100),
+        (35, 80),
+        (45, 100),
+        (46, 0),
+        (48, 0),
+        (49, 2),
+        (50, 900),
+        (52, 65535),
+        (53, 65535),
+        (82, 3),
+        (84, 0),
+        (85, 0),
+    ]);
+    assert_eq!(protocol.protocol.outputs.compat_settings, expected);
+    let before = protocol.protocol.outputs.clone();
+    assert_eq!(
+        protocol
+            .request(&compat_setting_request(&[(50, 123), (254, 1)]), 1)
+            .0,
+        Reply::Set(Err(ReplyError::Unsupported))
+    );
+    assert_eq!(protocol.protocol.outputs, before);
+    assert_eq!(
+        protocol
+            .request(&compat_setting_request(&[(50, 123), (9, 2)]), 2)
+            .0,
+        Reply::Set(Err(ReplyError::Invalid))
+    );
+    assert_eq!(protocol.protocol.outputs, before);
+    assert_eq!(
+        protocol.request(&get(), 3).0,
+        Reply::Get(Err(ReplyError::Unsupported))
+    );
+    assert_eq!(
+        protocol
+            .request(&compat_setting_request(&[(50, 1), (50, 2)]), 4)
+            .0,
+        Reply::Set(Ok(()))
+    );
+    assert_eq!(protocol.protocol.outputs.compat_settings.get(&50), Some(&2));
+    let mut strict = SteamHidProtocol::with_options("VGP-OTHER".into(), false);
+    assert_eq!(
+        strict.request(&compat_setting_request(&[(50, 900)]), 5).0,
+        Reply::Set(Err(ReplyError::Unsupported))
+    );
+    assert!(strict.protocol.outputs.compat_settings.is_empty());
+    assert_eq!(
+        protocol
+            .request(&set("feature-lizard-enable-defaults"), 6)
+            .0,
+        Reply::Set(Ok(()))
+    );
+    assert!(protocol.protocol.outputs.compat_settings.is_empty());
+}
+fn steam_client_review_requests() -> Vec<(RequestKind, Reply)> {
+    let mut requests = Vec::new();
+    for _ in 0..3 {
+        for prefix in [&[0xdc, 2, 1, 2][..], &[0xe2, 2, 1, 0x20], &[0xed, 24]] {
+            let mut body = vec![0; 63];
+            body[..prefix.len()].copy_from_slice(prefix);
+            requests.push((
+                RequestKind::Set(Report::new(ReportType::Feature, Some(1), body).unwrap()),
+                Reply::Set(Ok(())),
+            ));
+        }
+        let mut ed_reply = vec![0; 63];
+        ed_reply[..4].copy_from_slice(&[1, 0xed, 1, 0]);
+        requests.push((
+            get(),
+            Reply::Get(Ok(
+                Report::from_wire(ReportType::Feature, true, &ed_reply).unwrap()
+            )),
+        ));
+        let mut c1 = vec![0; 63];
+        c1[0] = 0xc1;
+        requests.push((
+            RequestKind::Set(Report::new(ReportType::Feature, Some(1), c1).unwrap()),
+            Reply::Set(Err(ReplyError::Unsupported)),
+        ));
+    }
+    requests
+}
+
+#[test]
+fn steam_client_retry_sequence_completes_each_poll_and_closes_independent_sessions_once() {
+    let fake = Fake::default();
+    let sibling = Fake::default();
+    let mut runtime = Runtime::new(
+        SteamHidProtocol::with_options("VGP-FAKE".into(), true),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    let mut other = Runtime::new(
+        SteamHidProtocol::with_options("VGP-SIBLING".into(), false),
+        sibling.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    runtime.service(0).unwrap();
+    other.service(0).unwrap();
+    let attributes = Report::from_wire(
+        ReportType::Feature,
+        true,
+        &detection_fixture("steam-d9-1302-attributes.hex"),
+    )
+    .unwrap();
+    let mut requests = Vec::new();
+    for _ in 0..3 {
+        requests.push((set("feature-attrs-get"), Reply::Set(Ok(()))));
+        requests.push((get(), Reply::Get(Ok(attributes.clone()))));
+    }
+    requests.push((compat_setting_request(&[(50, 900)]), Reply::Set(Ok(()))));
+    requests.extend(steam_client_review_requests());
+    for kind in [ReportType::Feature, ReportType::Input, ReportType::Output] {
+        requests.push((
+            RequestKind::Get { kind, id: Some(2) },
+            Reply::Get(Err(ReplyError::Unsupported)),
+        ));
+    }
+    requests.push((
+        RequestKind::Set(Report::new(ReportType::Feature, Some(2), vec![0; 63]).unwrap()),
+        Reply::Set(Err(ReplyError::Unsupported)),
+    ));
+    for (name, _) in OUTPUTS {
+        requests.push((
+            RequestKind::Set(report(ReportType::Output, name)),
+            Reply::Set(Ok(())),
+        ));
+    }
+    for (id, len) in [(0x86, 3), (0x87, 63), (0x88, 63), (0x89, 63)] {
+        requests.push((
+            RequestKind::Set(Report::new(ReportType::Output, Some(id), vec![0; len]).unwrap()),
+            Reply::Set(Err(ReplyError::Unsupported)),
+        ));
+    }
+    for (i, (request, expected)) in requests.into_iter().enumerate() {
+        let ordinal = u64::try_from(i).unwrap();
+        enqueue(&fake, ordinal, request);
+        runtime.service(ordinal + 1).unwrap();
+        assert_eq!(
+            fake.0.borrow().commands.last(),
+            Some(&Command::Reply {
+                token: RequestId {
+                    session: 1,
+                    ordinal
+                },
+                reply: expected
+            })
+        );
+        assert!(!runtime.wants_write());
+    }
+    fake.0
+        .borrow_mut()
+        .events
+        .push_back(HostEvent::Lifecycle(Lifecycle::Stop));
+    runtime.service(100).unwrap();
+    fake.0
+        .borrow_mut()
+        .events
+        .push_back(HostEvent::Lifecycle(Lifecycle::Start {
+            numbered_input: true,
+            numbered_output: true,
+            numbered_feature: true,
+        }));
+    runtime.service(101).unwrap();
+    runtime.close().unwrap();
+    runtime.close().unwrap();
+    assert_eq!(fake.0.borrow().closes, 1);
+    other
+        .update(|s| {
+            s.set_button(Button::A, true);
+            Ok(())
+        })
+        .unwrap();
+    for now in 102..110 {
+        other.service(now).unwrap();
+    }
+    assert_eq!(sibling.0.borrow().closes, 0);
+    other.close().unwrap();
+    other.close().unwrap();
+    assert_eq!(sibling.0.borrow().closes, 1);
+}
+
+#[test]
+fn steam_client_accepts_only_observed_dc_e2_sets_without_retaining_state() {
+    for (command, value) in [(0xdc, 2), (0xe2, 0x20)] {
+        for enabled in [false, true] {
+            let mut protocol = SteamHidProtocol::with_options("VGP-FAKE".into(), enabled);
+            let before = protocol.protocol.outputs.clone();
+            let mut body = vec![0; 63];
+            body[..4].copy_from_slice(&[command, 2, 1, value]);
+            let request =
+                RequestKind::Set(Report::new(ReportType::Feature, Some(1), body.clone()).unwrap());
+            assert_eq!(
+                protocol.request(&request, 0).0,
+                Reply::Set(if enabled {
+                    Ok(())
+                } else {
+                    Err(ReplyError::Unsupported)
+                })
+            );
+            assert_eq!(protocol.protocol.outputs, before);
+            assert_eq!(
+                protocol.request(&request, 1).0,
+                protocol.request(&request, 2).0
+            );
+            body[1] = 1;
+            let malformed =
+                RequestKind::Set(Report::new(ReportType::Feature, Some(1), body).unwrap());
+            assert_eq!(
+                protocol.request(&malformed, 3).0,
+                Reply::Set(Err(ReplyError::Unsupported))
+            );
+            assert_eq!(protocol.protocol.outputs, before);
+        }
+    }
+}
+
+#[test]
+fn steam_client_ed_replays_only_reviewed_zero_value_with_fresh_padding() {
+    for enabled in [false, true] {
+        let mut protocol = SteamHidProtocol::with_options("VGP-FAKE".into(), enabled);
+        let mut body = vec![0xa5; 63]; // fake opaque input must never leak back
+        body[..2].copy_from_slice(&[0xed, 24]);
+        let request = RequestKind::Set(Report::new(ReportType::Feature, Some(1), body).unwrap());
+        assert_eq!(
+            protocol.request(&request, 0).0,
+            Reply::Set(if enabled {
+                Ok(())
+            } else {
+                Err(ReplyError::Unsupported)
+            })
+        );
+        if enabled {
+            for now in 1..=3 {
+                let (Reply::Get(Ok(reply)), None) = protocol.request(&get(), now) else {
+                    panic!("reviewed ED reply")
+                };
+                let mut expected = vec![0; 63];
+                expected[..4].copy_from_slice(&[1, 0xed, 1, 0]);
+                assert_eq!(reply.wire(), expected);
+            }
+        }
+        for length in [0, 9, 11, 62, 255] {
+            let mut body = vec![0; 63];
+            body[..2].copy_from_slice(&[0xed, length]);
+            let request =
+                RequestKind::Set(Report::new(ReportType::Feature, Some(1), body).unwrap());
+            assert_eq!(
+                protocol.request(&request, 4).0,
+                Reply::Set(Err(ReplyError::Unsupported))
+            );
+        }
+        protocol.lifecycle(Lifecycle::Stop, 5);
+        assert_eq!(
+            protocol.request(&get(), 6).0,
+            Reply::Get(Err(ReplyError::Unsupported))
+        );
+    }
+}

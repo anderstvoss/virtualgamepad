@@ -77,7 +77,7 @@ class ResearchWorkflow(unittest.TestCase):
         MODULE.check(self.root, write=True)
         generated = self.root / 'tests/fixtures/protocol-research'
         manifest = json.loads((generated / 'manifest.json').read_text())
-        self.assertEqual(manifest['generator_version'], 4)
+        self.assertEqual(manifest['generator_version'], 5)
         self.assertEqual(len(list(generated.glob('wii-c5-*.hex'))), 15)
         self.assertEqual(len(bytes.fromhex((generated / 'wii-c5-neutral-37.hex').read_text())), 22)
         path = self.corpus / 'fixtures/wii-c5-neutral-37.hex'
@@ -91,6 +91,32 @@ class ResearchWorkflow(unittest.TestCase):
             'commit', '-m', 'wrong Wii shape with matching hash')
         self.pin(git(self.corpus, 'rev-parse', 'HEAD'))
         with self.assertRaisesRegex(ValueError, 'unexpected fixture size: wii-c5-neutral-37'):
+            MODULE.check(self.root, write=True)
+
+    def test_steam_client_profile_imports_fixed_physical_shapes_and_rejects_truncation(self):
+        MODULE.check(self.root, write=True)
+        generated = self.root / 'tests/fixtures/protocol-research'
+        attributes = bytes.fromhex((generated / 'steam-d9-1302-attributes.hex').read_text())
+        self.assertEqual(len(attributes), 63)
+        self.assertEqual(attributes[:3], bytes([1, 0x83, 30]))
+        compiled = ast.literal_eval((generated / 'steam-d9-1302-attributes.rs').read_text())
+        self.assertEqual(bytes(compiled), attributes)
+        settings = bytes.fromhex((generated / 'steam-d9-steam-settings.hex').read_text())
+        self.assertEqual(len(settings), 55 * 64)
+        self.assertEqual(settings[:6], bytes([1, 0x87, 3, 50, 0x84, 3]))
+        manifest = json.loads((generated / 'manifest.json').read_text())
+        self.assertIn('records/fixture/steam-d9-1302-attributes.json', manifest['inputs'])
+        path = self.corpus / 'fixtures/steam-d9-1302-attributes.hex'
+        path.write_text(attributes[:-1].hex() + '\n')
+        record_path = self.corpus / 'records/fixture/steam-d9-1302-attributes.json'
+        record = json.loads(record_path.read_text())
+        record['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        record_path.write_text(json.dumps(record))
+        git(self.corpus, 'add', '.')
+        git(self.corpus, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+            'commit', '-m', 'truncated profile with matching hash')
+        self.pin(git(self.corpus, 'rev-parse', 'HEAD'))
+        with self.assertRaisesRegex(ValueError, 'unexpected fixture size: steam-d9-1302-attributes'):
             MODULE.check(self.root, write=True)
 
     def test_steam_fixtures_are_pinned_and_wrong_size_is_rejected_with_valid_hash(self):

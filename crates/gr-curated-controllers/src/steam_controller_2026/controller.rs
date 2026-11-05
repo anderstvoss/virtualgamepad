@@ -28,6 +28,12 @@ pub fn create_steam_controller_2026(
 pub struct SteamController2026CreationOptions {
     /// Virtual unit serial. None assigns a synthetic per-instance value.
     pub serial: Option<String>,
+    /// Opt in to the firmware-scoped, recorded Steam client feature profile.
+    ///
+    /// Replays non-identifying model attributes and retains captured setting
+    /// writes on wired UHID. Defaults to false. Serial identity is unaffected.
+    /// Uinput has no HID feature channel, so this option has no effect there.
+    pub steam_client_compat: bool,
 }
 
 /// Create a controller with caller-selected virtual identity.
@@ -46,7 +52,7 @@ pub fn create_steam_controller_2026_with_options(
         });
     }
     let mut session = common::create(
-        SteamController2026Definition(serial),
+        SteamController2026Definition(serial, options.steam_client_compat),
         if target == RealizationTarget::LINUX_UINPUT {
             super::evdev::realization()
         } else {
