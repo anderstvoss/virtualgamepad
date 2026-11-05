@@ -1,6 +1,10 @@
 //! Typed family metadata; no application-facing root exports.
+#[cfg(test)]
 use crate::common::HidDriver;
-use gr_controller_contract::{ControllerSurface, InputTopology, OutputKind, RealizationManifest};
+use gr_controller_contract::{
+    ControllerSurface, InputTopology, OutputKind, RealizationControllerDefinition,
+    RealizationManifest,
+};
 pub use gr_controller_wire::registry::{FamilySpec, UsbProfileSpec, worker_id};
 use gr_realization_api::ControllerId;
 #[cfg(test)]
@@ -38,7 +42,8 @@ impl FamilyRealization {
         }
     }
 }
-pub(crate) trait ControllerFamily: HidDriver {
+// Metadata registration must not require a provider implementation before its gate.
+pub(crate) trait ControllerFamily: RealizationControllerDefinition {
     const SPEC: &'static FamilySpec;
     const OUTPUT_KINDS: &'static [OutputKind] = &[];
     const ID: ControllerId = Self::SPEC.id;
@@ -100,6 +105,7 @@ macro_rules! typed_registry {
     ($(($module:ident, $definition:ident, $spec:ident, [$($variant:ident)?]),)*) => {
         pub static FAMILIES: &[FamilyEntry] = &[
             $(family_entry::<crate::$module::$definition>(),)*
+            family_entry::<crate::steam_controller_2026::SteamController2026Definition>(),
             #[cfg(test)] family_entry::<test_family::Fifth>(),
         ];
     };

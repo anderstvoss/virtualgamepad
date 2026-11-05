@@ -194,14 +194,82 @@ fn creation_labels(
     restored: bool,
 ) -> Result<(String, String), ProviderError> {
     let suffix = next_instance_suffix()?;
-    Ok((
-        format!("{physical_path}/{suffix}"),
-        if restored {
-            unique_id.to_owned()
-        } else {
-            format!("{unique_id}-{suffix}")
-        },
-    ))
+    let input_lab_path = input_lab_physical_path(physical_path, input_lab_enabled());
+    let physical_path = input_lab_path.as_deref().unwrap_or(physical_path);
+    let unique_id = if restored {
+        unique_id.to_owned()
+    } else {
+        format!("{unique_id}-{suffix}")
+    };
+    Ok((physical_label(physical_path, &suffix)?, unique_id))
+}
+
+pub(crate) fn input_lab_enabled() -> bool {
+    std::env::var_os("VIRTUALGAMEPAD_INPUT_LAB").as_deref() == Some(std::ffi::OsStr::new("1"))
+}
+
+fn physical_label(base: &str, suffix: &str) -> Result<String, ProviderError> {
+    let label = format!("{base}/{suffix}");
+    if base.starts_with("virtualgamepad/input-lab/") && label.len() > 63 {
+        return Err(ProviderError::Open {
+            reason: "input-lab physical label exceeds 63 bytes".into(),
+        });
+    }
+    Ok(label)
+}
+
+fn input_lab_uinput_root(controller: &str, enabled: bool) -> Option<&'static str> {
+    if !enabled {
+        return None;
+    }
+    match controller {
+        "virtualgamepad.dualsense" => Some("virtualgamepad/input-lab/uinput/dualsense"),
+        "virtualgamepad.dualshock4" => Some("virtualgamepad/input-lab/uinput/dualshock4"),
+        _ => None,
+    }
+}
+
+pub(crate) fn input_lab_uinput_labels(
+    controller: &str,
+    enabled: bool,
+) -> Result<Option<[String; 2]>, ProviderError> {
+    let Some(base) = input_lab_uinput_root(controller, enabled) else {
+        return Ok(None);
+    };
+    Ok(Some([
+        physical_label(base, &next_instance_suffix()?)?,
+        physical_label(base, &next_instance_suffix()?)?,
+    ]))
+}
+
+fn input_lab_physical_path(physical_path: &str, enabled: bool) -> Option<String> {
+    if !enabled {
+        return None;
+    }
+    match physical_path {
+        "virtualgamepad/uhid/dualsense" => Some("virtualgamepad/input-lab/uhid/dualsense".into()),
+        "virtualgamepad/uhid/dualshock4" => Some("virtualgamepad/input-lab/uhid/dualshock4".into()),
+        _ => None,
+    }
+}
+
+fn steam_lab_root(
+    controller: &str,
+    target: RealizationTarget,
+    enabled: bool,
+) -> Option<&'static str> {
+    if !enabled || controller != "virtualgamepad.steam-controller-2026" {
+        return None;
+    }
+    match target {
+        RealizationTarget::LINUX_UHID_USB => {
+            Some("virtualgamepad/input-lab/uhid/steam-controller-2026")
+        }
+        RealizationTarget::LINUX_UINPUT => {
+            Some("virtualgamepad/input-lab/uinput/steam-controller-2026")
+        }
+        _ => None,
+    }
 }
 
 pub(crate) fn create_with_identity<D>(
@@ -237,6 +305,14 @@ where
             }
         };
         specification.target = options.target;
+        if let Some(base) = steam_lab_root(
+            driver.controller_id().as_str(),
+            options.target,
+            input_lab_enabled(),
+        ) {
+            specification.physical_path = base.into();
+        }
+
         (specification.physical_path, specification.unique_id) = creation_labels(
             &specification.physical_path,
             &specification.unique_id,
@@ -244,7 +320,13 @@ where
         )?;
     }
     if let NativeControllerRealization::Evdev(specification) = &mut realization {
-        specification.physical_path = Some(creation_labels("virtualgamepad/uinput", "", false)?.0);
+        let base = steam_lab_root(
+            driver.controller_id().as_str(),
+            options.target,
+            input_lab_enabled(),
+        )
+        .unwrap_or("virtualgamepad/uinput");
+        specification.physical_path = Some(creation_labels(base, "", false)?.0);
     }
     let request = ProviderOpenRequest {
         session: options.session,
@@ -375,6 +457,61 @@ mod tests {
             Some(unique.as_str())
         );
         assert_eq!(association.observed_host_path, None);
+    }
+
+    #[test]
+    fn uinput_lab_labels_are_opt_in_sony_only_distinct_and_bounded() {
+        for family in ["dualsense", "dualshock4"] {
+            let id = format!("virtualgamepad.{family}");
+            assert_eq!(input_lab_uinput_labels(&id, false).unwrap(), None);
+            let labels = input_lab_uinput_labels(&id, true).unwrap().unwrap();
+            assert_ne!(labels[0], labels[1]);
+            for label in labels {
+                assert!(label.starts_with(&format!(
+                    "virtualgamepad/input-lab/uinput/{family}/p{:x}-i",
+                    std::process::id()
+                )));
+                assert!(label.len() <= 63);
+            }
+        }
+        for id in [
+            "virtualgamepad.switch-pro",
+            "virtualgamepad.xbox360",
+            "virtualgamepad.wii-remote",
+            "virtualgamepad.dualsense-edge",
+        ] {
+            assert_eq!(input_lab_uinput_labels(id, true).unwrap(), None);
+        }
+        let base = "virtualgamepad/input-lab/uinput/dualshock4";
+        let suffix = "p7fffffff-iffffffffffffffff";
+        assert!(physical_label(base, suffix).is_err());
+        let exact = "x".repeat(63 - base.len() - 1);
+        assert_eq!(physical_label(base, &exact).unwrap().len(), 63);
+        assert!(physical_label(base, &(exact + "x")).is_err());
+    }
+
+    #[test]
+    fn input_lab_identity_is_explicit_and_limited_to_sony_uhid_families() {
+        assert_eq!(
+            input_lab_physical_path("virtualgamepad/uhid/dualsense", true).as_deref(),
+            Some("virtualgamepad/input-lab/uhid/dualsense")
+        );
+        assert_eq!(
+            input_lab_physical_path("virtualgamepad/uhid/dualshock4", true).as_deref(),
+            Some("virtualgamepad/input-lab/uhid/dualshock4")
+        );
+        for path in [
+            "virtualgamepad/uhid/dualsense",
+            "virtualgamepad/uhid/dualshock4",
+            "virtualgamepad/uhid/switch-pro",
+            "virtualgamepad/uinput",
+        ] {
+            assert_eq!(input_lab_physical_path(path, false), None);
+        }
+        assert_eq!(
+            input_lab_physical_path("virtualgamepad/uhid/switch-pro", true),
+            None
+        );
     }
 
     #[test]
@@ -521,5 +658,41 @@ mod tests {
         );
         drop(sink);
         assert_eq!(closes.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(test)]
+mod steam_lab_tests {
+    use super::*;
+    #[test]
+    fn steam_lab_labels_require_opt_in_and_keep_the_length_bound() {
+        for target in [
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_UINPUT,
+        ] {
+            assert!(
+                steam_lab_root("virtualgamepad.steam-controller-2026", target, false).is_none()
+            );
+            let root =
+                steam_lab_root("virtualgamepad.steam-controller-2026", target, true).unwrap();
+            assert!(physical_label(root, "p2a-i0").is_ok());
+            assert!(physical_label(root, "p7fffffff-iffffffffffffffff").is_err());
+        }
+        assert!(
+            steam_lab_root(
+                "virtualgamepad.dualsense",
+                RealizationTarget::LINUX_UHID_USB,
+                true
+            )
+            .is_none()
+        );
+        assert!(
+            steam_lab_root(
+                "virtualgamepad.steam-controller-2026",
+                RealizationTarget::LINUX_UHID_BLUETOOTH,
+                true
+            )
+            .is_none()
+        );
     }
 }
