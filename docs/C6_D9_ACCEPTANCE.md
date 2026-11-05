@@ -600,3 +600,9 @@ calibration or accuracy measurement. Acceleration and quaternion were introduced
 together; their separate necessity is unisolated. The successful trial also used
 continuous reports, so change-driven delivery with this pose is a separate check.
 No production clock, input cadence, motion default or exclusivity rule changed.
+
+The subsequent valid-pose X-only trial with continuous streaming **off** also
+showed positive pitch. This confirms visible gyro delivery through the existing
+change-driven path for that input; a production cadence change is not justified
+by these observations. Return-to-zero packets were sent; no separate visual
+release confirmation was requested for the Y/Z observations.
