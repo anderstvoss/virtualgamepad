@@ -606,3 +606,25 @@ showed positive pitch. This confirms visible gyro delivery through the existing
 change-driven path for that input; a production cadence change is not justified
 by these observations. Return-to-zero packets were sent; no separate visual
 release confirmation was requested for the Y/Z observations.
+
+
+### Reverse outputs and final cleanup (2026-11-05)
+
+One owner-triggered virtual Identify/Ping produced output `85 05 0c 00`, exactly
+matching the physical Ping reference. The API retained
+`Script { side: 5, script: 12, gain_db: 0 }`; raw selector 5 is preserved without
+inventing actuator semantics. No physical sound or vibration is claimed from a
+virtual device.
+
+After the owner closed Steam, the same pinned SDL helper completed both
+250-ms rumble API trials at 4096/65535 and both explicit zero stops. The virtual
+provider observed seven `0x80` writes for left speed 4096, seven for right speed
+4096, and two zero stops, matching the physical reference. The final retained
+rumble speeds were zero. Separate kind-1 output writes around Steam shutdown are
+not attributed to the helper's labelled trials. The helper exited successfully.
+
+The virtual instance then neutralized, committed, and closed twice. Diagnostics
+reported Closed, 33896 frames sent, 3803 reverse events, zero write failures and
+no last error. Its owned hidraw/input nodes were absent after shutdown. This
+closes the instance previously described as still running; manual GUI label
+qualifications and the unisolated discovery/pose requirements remain.
