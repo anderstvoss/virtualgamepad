@@ -262,3 +262,16 @@ See [the D9 report](C6_D9_ACCEPTANCE.md) for exact scope and remaining differenc
 In the demo, select Steam Controller 2026 and enable **Steam client compatibility**
 in Advanced options before creating the controller. The checkbox defaults to off
 and applies to newly created instances. It has no HID feature effect on uinput.
+
+
+## Haptic MIDI and PCM follow-up
+
+The supervised physical audio/MIDI study and matching upstream-client virtual
+checks are described in [Haptic MIDI and PCM](STEAM_HAPTICS_STREAMING.md).
+MIDI `0x83` writes accept the measured zero-padded transport form. A separate
+creation-time `haptic_streaming` option, default false, supports the captured
+8-kHz s16le internal PCM requests and bounded compat feedback. Other modes and
+output `0x89` remain unsupported; uinput has no corresponding stream channel.
+This follow-up supersedes the earlier blanket unsupported/No-evidence statements
+for the specifically captured `0x86`/`0x87`/`0x88` forms only. No USB Audio Class
+or MIDI interface is added, and native FIFO sizes remain unmeasured.

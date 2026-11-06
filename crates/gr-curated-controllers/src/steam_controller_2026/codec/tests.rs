@@ -635,7 +635,9 @@ fn all_output_lengths_and_report_classes_have_exact_success_or_error_without_mut
             wire.resize(length, 0);
             let r = Report::from_wire(ReportType::Output, true, &wire).unwrap();
             let mut protocol = SteamProtocol::default();
-            let expected = if length == original.len() {
+            // Physical Singer writes add a reviewed zero tail only to 0x83.
+            let padded_midi = original[0] == 0x83 && length == 64;
+            let expected = if length == original.len() || padded_midi {
                 Ok(())
             } else {
                 Err(ReplyError::Invalid)
@@ -1083,7 +1085,22 @@ fn wired_codec_emissions_and_acceptance_match_the_physical_descriptor() {
         for len in 0..=64 {
             let report = Report::new(ReportType::Output, Some(id), vec![0; len]).unwrap();
             if SteamController2026Haptic::decode(&report).is_ok() {
-                check(&report);
+                if id == 0x83 && len == 63 {
+                    // A host transport buffer may be padded; the physical
+                    // descriptor still declares nine bytes, not 63.
+                    assert!(report.payload()[9..].iter().all(|byte| *byte == 0));
+                    check(
+                        &Report::new(ReportType::Output, Some(id), report.payload()[..9].to_vec())
+                            .unwrap(),
+                    );
+                } else if id == 0x87 && len < 63 {
+                    // The PCM client sends short final transport writes (12
+                    // wire bytes observed); 63 remains the declared maximum.
+                    assert_eq!(declared.get(&(9, id)), Some(&63));
+                    assert!((3..63).contains(&len) && (len - 1) % 2 == 0);
+                } else {
+                    check(&report);
+                }
             }
             let mut payload = vec![0; len];
             if let Some(command) = payload.first_mut() {
@@ -1470,4 +1487,371 @@ fn steam_client_ed_replays_only_reviewed_zero_value_with_fresh_padding() {
             Reply::Get(Err(ReplyError::Unsupported))
         );
     }
+}
+
+#[test]
+fn midi_zero_padded_lfo_is_observed_and_acknowledged_without_losing_the_wire_body() {
+    // Physical MIDI pilot: the host uses 64-byte zero-padded output 0x83.
+    // Synthetic note values exercise the same framing, without private data.
+    let fake = Fake::default();
+    let mut runtime = Runtime::new(
+        SteamHidProtocol::default(),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    runtime.service(0).unwrap();
+    for (ordinal, (side, frequency, gain, duration)) in [
+        (4, 226_u16, -20_i8, 0x7fff_u16),
+        (4, 0, i8::MIN, 0x8000),
+        (3, 450, -20, 0x7fff),
+        (1, 0, i8::MIN, 0x8000),
+        (0, 226, -20, 0x7fff),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut body = vec![0; 63];
+        body[0] = side;
+        body[1] = gain.to_le_bytes()[0];
+        body[2..4].copy_from_slice(&frequency.to_le_bytes());
+        body[4..6].copy_from_slice(&duration.to_le_bytes());
+        let report = Report::new(ReportType::Output, Some(0x83), body.clone()).unwrap();
+        assert_eq!(
+            SteamController2026Haptic::decode(&report),
+            Ok(SteamController2026Haptic::Lfo {
+                side,
+                gain_db: gain,
+                frequency,
+                duration_ms: duration,
+                lfo_frequency: 0,
+                depth: 0,
+            })
+        );
+        let ordinal = u64::try_from(ordinal).unwrap();
+        enqueue(&fake, ordinal, RequestKind::Set(report.clone()));
+        assert_eq!(
+            runtime.service(ordinal * 2 + 1).unwrap(),
+            vec![RawReverseEvent::HidOutput {
+                report_id: Some(0x83),
+                bytes: body.clone(),
+            }]
+        );
+        assert_eq!(
+            fake.0.borrow().commands.last(),
+            Some(&Command::Reply {
+                token: RequestId {
+                    session: 1,
+                    ordinal
+                },
+                reply: Reply::Set(Ok(())),
+            })
+        );
+        fake.0
+            .borrow_mut()
+            .events
+            .push_back(HostEvent::Output(report));
+        assert_eq!(
+            runtime.service(ordinal * 2 + 2).unwrap(),
+            vec![RawReverseEvent::HidOutput {
+                report_id: Some(0x83),
+                bytes: body,
+            }]
+        );
+        assert!(!runtime.wants_write());
+    }
+    runtime.close().unwrap();
+    runtime.close().unwrap();
+    assert_eq!(fake.0.borrow().closes, 1);
+}
+
+#[test]
+fn midi_nonzero_extension_bytes_are_not_silently_discarded() {
+    for offset in 9..63 {
+        let mut body = vec![0; 63];
+        body[offset] = 1;
+        let report = Report::new(ReportType::Output, Some(0x83), body).unwrap();
+        let mut protocol = SteamProtocol::default();
+        assert_eq!(
+            protocol.request(&RequestKind::Set(report), 0),
+            (Reply::Set(Err(ReplyError::Invalid)), None)
+        );
+        assert_eq!(protocol.outputs, Outputs::default());
+    }
+}
+
+fn streamed_output(id: u8, bytes: &[u8]) -> RequestKind {
+    RequestKind::Set(Report::new(ReportType::Output, Some(id), bytes.to_vec()).unwrap())
+}
+
+fn runtime_stream_request(
+    runtime: &mut Runtime<SteamHidProtocol, Fake>,
+    fake: &Fake,
+    ordinal: u64,
+    request: RequestKind,
+    expected: Reply,
+) -> Vec<RawReverseEvent> {
+    let begin = fake.0.borrow().commands.len();
+    enqueue(fake, ordinal, request);
+    let observations = runtime.service(ordinal + 1).unwrap();
+    assert_eq!(
+        fake.0.borrow().commands.get(begin),
+        Some(&Command::Reply {
+            token: RequestId {
+                session: 1,
+                ordinal
+            },
+            reply: expected,
+        })
+    );
+    assert!(!runtime.wants_write());
+    observations
+}
+
+#[test]
+fn streaming_runtime_completes_config_data_rejection_and_stop_in_each_poll() {
+    let fake = Fake::default();
+    let mut runtime = Runtime::new(
+        SteamHidProtocol::with_streaming_options("VGP-FAKE".into(), false, true),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    runtime.service(0).unwrap();
+    let success = Reply::Set(Ok(()));
+    for (ordinal, bytes) in [[2, 2, 0], [2, 5, 0]].into_iter().enumerate() {
+        let ordinal = u64::try_from(ordinal).unwrap();
+        assert_eq!(
+            runtime_stream_request(
+                &mut runtime,
+                &fake,
+                ordinal,
+                streamed_output(0x86, &bytes),
+                success.clone()
+            ),
+            vec![RawReverseEvent::HidOutput {
+                report_id: Some(0x86),
+                bytes: bytes.to_vec()
+            }]
+        );
+    }
+    let mono = [vec![0], vec![0x55; 62]].concat();
+    assert_eq!(
+        runtime_stream_request(
+            &mut runtime,
+            &fake,
+            2,
+            streamed_output(0x87, &mono),
+            success.clone()
+        ),
+        vec![RawReverseEvent::HidOutput {
+            report_id: Some(0x87),
+            bytes: mono
+        }]
+    );
+    let mut stereo = vec![0x11; 63];
+    stereo[0] = 30;
+    assert_eq!(
+        runtime_stream_request(
+            &mut runtime,
+            &fake,
+            3,
+            streamed_output(0x88, &stereo),
+            success.clone()
+        ),
+        vec![RawReverseEvent::HidOutput {
+            report_id: Some(0x88),
+            bytes: stereo
+        }]
+    );
+    for ordinal in 4..=5 {
+        let target = if ordinal == 4 { 2 } else { 5 };
+        runtime_stream_request(
+            &mut runtime,
+            &fake,
+            ordinal,
+            streamed_output(0x86, &[1, target, 0]),
+            success.clone(),
+        );
+    }
+    let feedback = fake
+        .0
+        .borrow()
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            Command::Input(report) if report.id() == Some(0x44) => Some(report.wire()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for expected in [
+        [0x44, 1, 0x20, 0, 0, 0],
+        [0x44, 0, 0x20, 0, 0, 0],
+        [0x44, 4, 0x10, 0, 0, 0],
+        [0x44, 3, 0x10, 0, 0, 0],
+        [0x44, 1, 2, 0, 0, 0],
+        [0x44, 0, 2, 0, 0, 0],
+    ] {
+        assert!(feedback.iter().any(|wire| wire == &expected));
+    }
+    assert_eq!(runtime.deadline(), None);
+    runtime.close().unwrap();
+    runtime.close().unwrap();
+    assert_eq!(fake.0.borrow().closes, 1);
+}
+
+#[test]
+fn streaming_lifecycle_resets_pending_feedback_and_does_not_affect_a_sibling() {
+    let mut first = SteamHidProtocol::with_streaming_options("VGP-FIRST".into(), true, true);
+    let sibling = SteamHidProtocol::with_streaming_options("VGP-SECOND".into(), true, true);
+    let before = sibling.outputs.clone();
+    assert_eq!(
+        first.request(&streamed_output(0x86, &[2, 2, 0]), 0).0,
+        Reply::Set(Ok(()))
+    );
+    assert!(first.deadline().is_some());
+    first.lifecycle(Lifecycle::Stop, 1);
+    assert_eq!(first.deadline(), None);
+    assert_eq!(first.outputs.streaming.configured, [false; 4]);
+    assert_eq!(first.outputs.streaming.buffered_bytes, [0; 4]);
+    assert!(first.input(&State::default(), 1).unwrap().is_empty());
+    assert_eq!(
+        first.request(&streamed_output(0x86, &[2, 2, 0]), 2),
+        (Reply::Set(Err(ReplyError::Busy)), None)
+    );
+    first.lifecycle(
+        Lifecycle::Start {
+            numbered_input: true,
+            numbered_output: true,
+            numbered_feature: true,
+        },
+        3,
+    );
+    assert!(
+        first
+            .input(&State::default(), 3)
+            .unwrap()
+            .iter()
+            .all(|r| r.id() == Some(0x42))
+    );
+    assert_eq!(
+        first.request(&streamed_output(0x86, &[2, 2, 0]), 4).0,
+        Reply::Set(Ok(()))
+    );
+    assert_eq!(sibling.outputs, before);
+    assert_eq!(sibling.deadline(), None);
+    let mut native = SteamController2026Outputs::default();
+    assert_eq!(
+        crate::retained::OutputState::apply(
+            &mut native,
+            &Report::new(ReportType::Output, Some(0x86), vec![2, 2, 0]).unwrap()
+        ),
+        Err(ReplyError::Unsupported)
+    );
+    assert_eq!(native, SteamController2026Outputs::default());
+}
+
+#[test]
+fn streaming_invalid_requests_complete_without_pending_replies() {
+    let fake = Fake::default();
+    let mut runtime = Runtime::new(
+        SteamHidProtocol::with_streaming_options("VGP-FAKE".into(), false, true),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    runtime.service(0).unwrap();
+    for (ordinal, request, reply) in [
+        (
+            0,
+            streamed_output(0x86, &[2, 2, 1]),
+            Reply::Set(Err(ReplyError::Unsupported)),
+        ),
+        (
+            1,
+            streamed_output(0x87, &[0, 1, 2]),
+            Reply::Set(Err(ReplyError::Invalid)),
+        ),
+        (
+            2,
+            streamed_output(0x88, &[31; 63]),
+            Reply::Set(Err(ReplyError::Invalid)),
+        ),
+        (
+            3,
+            streamed_output(0x89, &[0; 63]),
+            Reply::Set(Err(ReplyError::Unsupported)),
+        ),
+        (
+            4,
+            RequestKind::Get {
+                kind: ReportType::Input,
+                id: Some(0x44),
+            },
+            Reply::Get(Err(ReplyError::Unsupported)),
+        ),
+    ] {
+        assert!(runtime_stream_request(&mut runtime, &fake, ordinal, request, reply).is_empty());
+    }
+
+    runtime.close().unwrap();
+    runtime.close().unwrap();
+    assert_eq!(fake.0.borrow().closes, 1);
+    let mut disabled = SteamHidProtocol::with_options("VGP-DISABLED".into(), true);
+    assert_eq!(
+        disabled.request(&streamed_output(0x86, &[2, 2, 0]), 0),
+        (Reply::Set(Err(ReplyError::Unsupported)), None)
+    );
+    assert!(!disabled.outputs.streaming.enabled);
+}
+
+#[test]
+fn active_stream_shutdown_cancels_deadlines_and_preserves_the_sibling() {
+    let fake = Fake::default();
+    let mut first = Runtime::new(
+        SteamHidProtocol::with_streaming_options("VGP-FIRST".into(), false, true),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    let other = Fake::default();
+    let mut sibling = Runtime::new(
+        SteamHidProtocol::with_streaming_options("VGP-OTHER".into(), false, true),
+        other.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    first.service(0).unwrap();
+    sibling.service(0).unwrap();
+    runtime_stream_request(
+        &mut first,
+        &fake,
+        0,
+        streamed_output(0x86, &[2, 2, 0]),
+        Reply::Set(Ok(())),
+    );
+    runtime_stream_request(
+        &mut first,
+        &fake,
+        1,
+        streamed_output(0x87, &[0; 63]),
+        Reply::Set(Ok(())),
+    );
+    assert!(first.deadline().is_some());
+    first.close().unwrap();
+    first.close().unwrap();
+    let sent = fake.0.borrow().commands.len();
+    assert_eq!(first.deadline(), None);
+    assert_eq!(first.service(100_000), Err(Error::Closed));
+    assert_eq!(fake.0.borrow().commands.len(), sent);
+    assert_eq!(fake.0.borrow().closes, 1);
+    assert_eq!(other.0.borrow().closes, 0);
+    assert!(sibling.service(100_000).unwrap().is_empty());
+    sibling.close().unwrap();
+    assert_eq!(other.0.borrow().closes, 1);
 }

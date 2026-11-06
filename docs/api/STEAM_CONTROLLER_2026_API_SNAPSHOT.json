@@ -25,7 +25,7 @@
     },
     "enum.SteamController2026Haptic.html": {
       "declarations": [
-        "pub enum SteamController2026Haptic { Rumble { kind: u8, intensity: u16, left_speed: u16, left_gain: u8, right_speed: u16, right_gain: u8, }, Pulse { side: u8, on_us: u16, off_us: u16, count: u16, }, Command { side: u8, command: u8, gain_db: i8, }, Lfo { side: u8, gain_db: i8, frequency: u16, duration_ms: u16, lfo_frequency: u16, depth: u8, }, Sweep { side: u8, gain_db: i8, duration_ms: u16, start: u16, end: u16, }, Script { side: u8, script: u8, gain_db: i8, }, }"
+        "pub enum SteamController2026Haptic { Stream(Box<SteamController2026StreamPacket>), Rumble { kind: u8, intensity: u16, left_speed: u16, left_gain: u8, right_speed: u16, right_gain: u8, }, Pulse { side: u8, on_us: u16, off_us: u16, count: u16, }, Command { side: u8, command: u8, gain_db: i8, }, Lfo { side: u8, gain_db: i8, frequency: u16, duration_ms: u16, lfo_frequency: u16, depth: u8, }, Sweep { side: u8, gain_db: i8, duration_ms: u16, start: u16, end: u16, }, Script { side: u8, script: u8, gain_db: i8, }, }"
       ],
       "traits": [
         "impl Clone for SteamController2026Haptic",
@@ -37,6 +37,23 @@
         "impl Sync for SteamController2026Haptic",
         "impl Unpin for SteamController2026Haptic",
         "impl UnwindSafe for SteamController2026Haptic"
+      ]
+    },
+    "enum.SteamController2026StreamPacket.html": {
+      "declarations": [
+        "pub enum SteamController2026StreamPacket { Configure { operation: u8, target: u8, mode: u8, }, Mono { target: u8, data: Vec<u8>, }, Stereo { left: Vec<u8>, right: Vec<u8>, }, }",
+        "pub fn from_output(report_id: u8, payload: &[u8]) -> Option<Self>"
+      ],
+      "traits": [
+        "impl Clone for SteamController2026StreamPacket",
+        "impl Debug for SteamController2026StreamPacket",
+        "impl Eq for SteamController2026StreamPacket",
+        "impl PartialEq for SteamController2026StreamPacket",
+        "impl RefUnwindSafe for SteamController2026StreamPacket",
+        "impl Send for SteamController2026StreamPacket",
+        "impl Sync for SteamController2026StreamPacket",
+        "impl Unpin for SteamController2026StreamPacket",
+        "impl UnwindSafe for SteamController2026StreamPacket"
       ]
     },
     "fn.create_steam_controller_2026.html": {
@@ -79,7 +96,7 @@
     },
     "struct.SteamController2026CreationOptions.html": {
       "declarations": [
-        "pub struct SteamController2026CreationOptions { pub serial: Option<String>, pub steam_client_compat: bool, }"
+        "pub struct SteamController2026CreationOptions { pub serial: Option<String>, pub steam_client_compat: bool, pub haptic_streaming: bool, }"
       ],
       "traits": [
         "impl Clone for SteamController2026CreationOptions",
@@ -94,7 +111,7 @@
     },
     "struct.SteamController2026Outputs.html": {
       "declarations": [
-        "pub struct SteamController2026Outputs { pub revision: u64, pub haptics: [Option<SteamController2026Haptic>; 6], }"
+        "pub struct SteamController2026Outputs { pub revision: u64, pub haptics: [Option<SteamController2026Haptic>; 6], pub streaming: SteamController2026StreamOutputs, }"
       ],
       "traits": [
         "impl Clone for SteamController2026Outputs",
@@ -128,6 +145,23 @@
         "impl Sync for SteamController2026State",
         "impl Unpin for SteamController2026State",
         "impl UnwindSafe for SteamController2026State"
+      ]
+    },
+    "struct.SteamController2026StreamOutputs.html": {
+      "declarations": [
+        "pub struct SteamController2026StreamOutputs { pub enabled: bool, pub configured: [bool; 4], pub buffered_bytes: [u16; 4], pub received_bytes: [u64; 4], pub overrun_bytes: [u64; 4], pub last_packet: Option<SteamController2026StreamPacket>, }"
+      ],
+      "traits": [
+        "impl Clone for SteamController2026StreamOutputs",
+        "impl Debug for SteamController2026StreamOutputs",
+        "impl Default for SteamController2026StreamOutputs",
+        "impl Eq for SteamController2026StreamOutputs",
+        "impl PartialEq for SteamController2026StreamOutputs",
+        "impl RefUnwindSafe for SteamController2026StreamOutputs",
+        "impl Send for SteamController2026StreamOutputs",
+        "impl Sync for SteamController2026StreamOutputs",
+        "impl Unpin for SteamController2026StreamOutputs",
+        "impl UnwindSafe for SteamController2026StreamOutputs"
       ]
     },
     "struct.SteamMotionSample.html": {

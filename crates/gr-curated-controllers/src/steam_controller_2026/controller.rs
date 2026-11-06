@@ -34,6 +34,11 @@ pub struct SteamController2026CreationOptions {
     /// writes on wired UHID. Defaults to false. Serial identity is unaffected.
     /// Uinput has no HID feature channel, so this option has no effect there.
     pub steam_client_compat: bool,
+    /// Enable captured haptic PCM requests and bounded compat FIFO feedback.
+    /// Defaults to false. Supports wired 8-kHz s16le internal streams only;
+    /// buffering sizes/timing are a compat policy, not measured retail limits.
+    /// Uinput has no HID feature/output stream channel; this has no effect there.
+    pub haptic_streaming: bool,
 }
 
 /// Create a controller with caller-selected virtual identity.
@@ -52,7 +57,11 @@ pub fn create_steam_controller_2026_with_options(
         });
     }
     let mut session = common::create(
-        SteamController2026Definition(serial, options.steam_client_compat),
+        SteamController2026Definition(
+            serial,
+            options.steam_client_compat,
+            options.haptic_streaming,
+        ),
         if target == RealizationTarget::LINUX_UINPUT {
             super::evdev::realization()
         } else {
