@@ -1177,10 +1177,23 @@ fn compat_setting_request(settings: &[(u8, u16)]) -> RequestKind {
     RequestKind::Set(Report::new(ReportType::Feature, Some(1), body).unwrap())
 }
 #[test]
-fn steam_client_profile_is_opt_in_replays_physical_attributes_and_keeps_synthetic_identity() {
+fn steam_client_profile_defaults_on_and_can_disable_attributes_without_changing_identity() {
+    use crate::steam_controller_2026::SteamController2026CreationOptions as Options;
     let expected = detection_fixture("steam-d9-1302-attributes.hex");
-    for enabled in [false, true] {
-        let mut protocol = SteamHidProtocol::with_options("VGP-FAKE".into(), enabled);
+    for options in [
+        Options::default(),
+        Options {
+            steam_client_compat: false,
+            ..Options::default()
+        },
+    ] {
+        let enabled = options.steam_client_compat;
+        assert!(!options.haptic_streaming);
+        let mut protocol = SteamHidProtocol::with_streaming_options(
+            "VGP-FAKE".into(),
+            enabled,
+            options.haptic_streaming,
+        );
         assert_eq!(
             protocol.request(&set("feature-attrs-get"), 0).0,
             Reply::Set(Ok(()))
@@ -1207,7 +1220,7 @@ fn steam_client_profile_is_opt_in_replays_physical_attributes_and_keeps_syntheti
         assert_eq!(response.wire().len(), 64);
     }
     assert!(
-        !crate::steam_controller_2026::SteamController2026CreationOptions::default()
+        crate::steam_controller_2026::SteamController2026CreationOptions::default()
             .steam_client_compat
     );
 }

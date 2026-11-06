@@ -251,6 +251,7 @@ struct Outputs {
     lizard: Option<bool>,
     watchdog: Option<u16>,
     imu: Option<u16>,
+    // Recorded accepted intent only: no feature reply reads this map.
     compat_settings: std::collections::BTreeMap<u8, u16>,
 }
 #[derive(Debug, Clone, Default)]

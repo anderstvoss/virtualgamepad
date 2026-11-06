@@ -24,14 +24,14 @@ pub fn create_steam_controller_2026(
 }
 
 /// Creation settings for a Steam Controller 2026.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SteamController2026CreationOptions {
     /// Virtual unit serial. None assigns a synthetic per-instance value.
     pub serial: Option<String>,
-    /// Opt in to the firmware-scoped, recorded Steam client feature profile.
+    /// Use the firmware-scoped, recorded Steam client feature profile.
     ///
     /// Replays non-identifying model attributes and retains captured setting
-    /// writes on wired UHID. Defaults to false. Serial identity is unaffected.
+    /// writes on wired UHID. Defaults to true. Serial identity is unaffected.
     /// Uinput has no HID feature channel, so this option has no effect there.
     pub steam_client_compat: bool,
     /// Enable captured haptic PCM requests and bounded compat FIFO feedback.
@@ -39,6 +39,16 @@ pub struct SteamController2026CreationOptions {
     /// buffering sizes/timing are a compat policy, not measured retail limits.
     /// Uinput has no HID feature/output stream channel; this has no effect there.
     pub haptic_streaming: bool,
+}
+
+impl Default for SteamController2026CreationOptions {
+    fn default() -> Self {
+        Self {
+            serial: None,
+            steam_client_compat: true,
+            haptic_streaming: false,
+        }
+    }
 }
 
 /// Create a controller with caller-selected virtual identity.
@@ -228,6 +238,14 @@ impl SteamController2026Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_options_enable_only_the_steam_feature_profile() {
+        let options = SteamController2026CreationOptions::default();
+        assert!(options.steam_client_compat);
+        assert!(!options.haptic_streaming);
+        assert!(options.serial.is_none());
+    }
 
     #[test]
     fn wired_uhid_identity_and_descriptor_match_the_physical_capture() {

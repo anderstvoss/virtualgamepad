@@ -658,3 +658,116 @@ A creation-time access race was reproduced and covered by a bounded retry test;
 no host permissions/policy were changed. Buffer capacity/thresholds are an
 explicit compat model, not a retail FIFO measurement. See
 [Haptic MIDI and PCM](STEAM_HAPTICS_STREAMING.md) for scope and reproduction.
+
+
+## Wired freeze follow-up: defaults and discovery isolation
+
+Per [owner decision #159](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6666070222),
+new wired UHID instances enable `steam_client_compat` by default. The demo
+creation checkbox remains available. Earlier "default" and "opt-in" observations
+above describe #305 before this change. Uinput remains unaffected, the serial
+stays synthetic, and `haptic_streaming` stays false. Accepted settings record
+intent only; no feature reply reads the private map.
+
+The supporting state keeps raw-zero motion defaults. Callers targeting Steam
+must supply a valid acceleration/quaternion sample with gyro. The demo supplies
+synthetic acceleration `(0, 0, 16384)` and identity quaternion `(32767, 0, 0, 0)`
+on creation and neutralization, with zero gyro/timestamp. This is a demo policy,
+not a captured orientation or factory calibration. The #305 observations above
+established the combined pose's acceptance; individual acceleration/quaternion
+necessity remains unisolated. Regressions cover the demo pose, unchanged API raw
+zero, default-on compatibility, explicit opt-out and streaming remaining off.
+
+### Fresh-instance comparisons (2026-11-05/06 Pacific)
+
+Each comparison uses a fresh owned wired UHID instance, synthetic identity and
+a normal Steam restart, with physical controllers and Dolphin/SDL probes absent.
+These are temporary private protocol variations, not new public options or
+changes to the production profile. PCM and indefinite periodic input streaming
+stay off. Discovery, opening and activation are separate checkpoints, following
+[research #104](https://github.com/anderstvoss/controller-protocol-research/pull/104).
+
+| Variation from full profile | Discovery log marker | Open / XInput-slot markers | Owner listing / Begin Test | KDE condition |
+| --- | --- | --- | --- | --- |
+| Full profile | Present | Present | Listed / opens | No prompt; prior grant unknown |
+| Legacy empty attribute reply, 64 bytes | Present | Present, repeated probes | Not listed / unavailable | No prompt; prior grant unknown |
+| Reject extra captured setting keys | Present | Present | Listed / opens | Not separately reported |
+| DC/E2 acknowledgements rejected | Present | Present | Entry briefly disappeared/reappeared, then Begin Test opened on remaining entry | Not separately reported |
+| ED typed exchange disabled | Present | Present | Entry disappeared/reappeared on entering details, then Begin Test opened | Not separately reported |
+| Legacy empty attributes, 63-byte length control | Present | Present, repeated probes; Steam held the exact owned hidraw node | Not listed / unavailable | No prompt |
+| Full profile after owner removed pointer/keyboard authorization | Present | Present | Entry replaced on entering details; Begin Test opened before any new prompt | Prompt not yet requested by neutral input |
+| Full profile, mapped continuous gesture, Deny | Present | Present | Listed; Begin Test remained open after Deny | Prompt appeared; owner selected Deny |
+| Full profile, same gesture, Allow | Present | Present | Listed; Begin Test remained open after Allow | Prompt appeared; owner selected Allow and observed pointer movement |
+
+Open/slot markers alone do not establish stable managed activation. The UI
+listing/test outcomes are separate owner observations. Some successful runs also
+logged a failed controller-info attempt before later opening activity. Raw logs,
+request traces, identities, paths and absolute clocks remain private.
+
+**Attribute requirement.** The empty default returns the legacy
+`01 83 02 00 00 ...` structure in 64 bytes, instead of the populated recorded
+63-byte reply. A second empty control removed only one trailing zero byte to
+match 63 bytes; it also failed to list while Steam held its exact owned hidraw
+node. Length alone therefore does not explain the difference. Recorded attribute
+content/structure is required relative to these tested legacy controls. This
+does not identify a necessary individual attribute/value, prove every recorded
+attribute is needed, or distinguish populated content from valid inner-list
+structure. The populated profile was restored for subsequent successful runs.
+
+**Extra settings and acknowledgements.** Rejecting the extra captured keys,
+including key 50, still allowed listing and Begin Test. Known keys 9, 48 and 71
+kept their existing handling; unknown-containing blocks still failed atomically.
+DC/E2 SETs were observed rejecting with `Unsupported`, yet Begin Test opened.
+The ED-disabled run received repeated ED requests: SETs failed and GETs returned
+the legacy malformed error frame rather than the typed one-byte zero reply.
+Steam still listed it and opened Begin Test. These successes are not evidence
+that failure/retry traffic or transient UI behavior is equivalent to the full
+profile. The transient replacement also occurred with the full profile, so it
+cannot be uniquely assigned to disabling DC/E2 or ED.
+
+**Actual permission pair.** Initial no-prompt runs were not labelled Deny or
+Allow. The owner removed Steam's pointer/keyboard authorization through normal
+UI, then selected the initial desktop layout with keyboard/mouse bindings.
+Three held pad coordinates reached Steam's tracker but produced no prompt;
+they were not a continuous sweep and do not qualify the permission comparison.
+After another normal restart and fresh full-profile instance, a private caller
+sent intermediate right-pad positions on a 10-ms schedule for five seconds:
+center → -20000 → +20000 → center, Y=0, pressure 1000, touch held, no click,
+then lift/neutral. The caller serviced reverse requests throughout. A deterministic
+private interpolation test checked continuity, intermediate values and bounds.
+
+With an ordinary desktop window focused, the Deny run submitted 478 samples in
+about five seconds; the prompt appeared, the owner chose Deny and Begin Test
+remained open. A separate restarted/fresh-instance Allow run used the same layout
+and trajectory (477 samples), produced the prompt, and the owner chose Allow;
+the pointer moved and Begin Test remained open with the controller listed.
+Both were already listed before the desktop-output permission decision. Thus
+new consent was not needed for initial listing here, and Deny did not tear down
+the observed test session. This does not establish behavior when a persistent
+denial predates creation, nor desktop-output delivery under Deny. The owner
+restored the earlier Gyro desktop layout before final virtual removal.
+
+Required/optional/unknown for this observed client path:
+
+- **Required relative to tested controls:** recorded attribute content/structure;
+  both legacy empty variants failed despite discovery/opening activity.
+- **Optional for eventual listing and Begin Test:** acceptance of extra captured
+  settings, successful DC/E2 acknowledgement, the typed ED reply, and a new KDE
+  Allow decision for desktop output. Known settings were not disabled; all
+  production compatibility components remain in place.
+- **Unknown/unverified:** individual attributes and other valid subsets/inner-list
+  structures, the cause and stability implications of transient entry replacement,
+  persistent-denial-before-creation behavior, per-game behavior, rear GUI labels
+  and grip presentation, and calibrated motion or acoustic fidelity.
+
+Every completed probe was neutralized and double-closed with zero provider write
+failures; its owned HID was confirmed removed. Normal Steam restarts after owner
+results intentionally closed Begin Test and reopened Steam's main window. These
+transitions were not synthetic Steam-button presses. No agent root or host-policy
+changes, descriptor edits or custom physical feature injection occurred.
+
+The wired `steam-client` cell remains `wip` with the requested exit gate:
+isolate discovery's cause or obtain explicit owner acceptance of listing as-is.
+This comparison isolates the attribute-reply requirement at component level;
+the narrower attribute predicate and broader client qualifications above remain
+unverified. No formal virtual research run or gameplay acceptance is promoted.
