@@ -14,7 +14,11 @@
 //! state.pads[0] = SteamTrackpadState {
 //!     position: [-100, 200], pressure: 123, touch: true, click: false,
 //! };
-//! state.motion = SteamMotionSample { gyroscope: [10, -20, 30], ..Default::default() };
+//! // Synthetic stationary pose for a Steam motion example, not calibration.
+//! state.motion = SteamMotionSample {
+//!     gyroscope: [10, -20, 30], accelerometer: [0, 0, 16384],
+//!     quaternion: [32767, 0, 0, 0], ..Default::default()
+//! };
 //! assert!(state.pressed(SteamController2026Button::Menu));
 //! state.neutralize();
 //! assert_eq!(state, SteamController2026State::default());
@@ -111,7 +115,12 @@ pub struct SteamTrackpadState {
     /// Digital pad click, independent of contact and pressure.
     pub click: bool,
 }
-/// Native IMU sample. Records: `steam-c6-input-42`, `steam-c6-input-scaling`.
+/// Native IMU sample. Raw-zero defaults do not provide a valid pose to Steam.
+/// Callers sending gyro for Steam must also supply a valid acceleration and
+/// quaternion sample; the demo uses a synthetic stationary pose. D9 #305 observed
+/// acceptance with acceleration [0, 0, 16384] and quaternion [32767, 0, 0, 0];
+/// their individual necessity and physical calibration were not isolated.
+/// Records: `steam-c6-input-42`, `steam-c6-input-scaling`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SteamMotionSample {
     /// Native 0x42/0x45 timestamp interpreted as microseconds by SDL.

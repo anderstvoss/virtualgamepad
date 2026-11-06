@@ -8,6 +8,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Steam Controller 2026 wired UHID enables its recorded Steam client profile by
+  default, retaining the creation toggle and synthetic identity. PCM streaming
+  remains opt-in. Document the valid-pose requirement for Steam gyro and give
+  the demo a synthetic stationary pose while preserving API raw-zero defaults.
+- Pin merged research #106 and cite its physical MIDI/PCM records. Keep wired
+  Steam acceptance at wip until discovery is isolated or accepted by the owner.
+
+
 - CI: harden-runner now uses `audit` instead of `block` on the macOS and
   Windows legs of the multi-OS jobs. Its pre-step ignores the step-level `if`,
   and on Windows block mode dropped OCSP/CRL and early DNS lookups (#260).

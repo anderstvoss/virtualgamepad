@@ -658,3 +658,28 @@ A creation-time access race was reproduced and covered by a bounded retry test;
 no host permissions/policy were changed. Buffer capacity/thresholds are an
 explicit compat model, not a retail FIFO measurement. See
 [Haptic MIDI and PCM](STEAM_HAPTICS_STREAMING.md) for scope and reproduction.
+
+
+## Wired freeze follow-up: defaults and discovery isolation
+
+Per [owner decision #159](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6666070222),
+new wired UHID instances enable `steam_client_compat` by default; the demo
+checkbox remains available at creation. Earlier "default" and "opt-in" runs
+above describe the historical #305 implementation, before this default change.
+The profile remains irrelevant to uinput, and `haptic_streaming` stays false.
+Accepted settings are recorded intent only; no reply reads the private map.
+
+The supporting state keeps raw-zero motion defaults. Callers targeting Steam
+must supply a valid acceleration/quaternion sample with gyro. The demo supplies
+synthetic acceleration `(0, 0, 16384)` and identity quaternion `(32767, 0, 0, 0)`
+on creation and neutralization, with zero gyro/timestamp. These values describe
+an explicit demo policy, not captured orientation or physical calibration. The
+#305 D9 observations above established the combined pose's acceptance, without
+isolating acceleration from quaternion necessity.
+
+The wired `steam-client` cell remains `wip`. Its exit gate is either isolation
+of the discovery cause or explicit owner acceptance of the listing as-is.
+Discovery, managed open and activation must be recorded separately, following
+[research #104](https://github.com/anderstvoss/controller-protocol-research/pull/104).
+A missing KDE prompt leaves its permission condition unknown; it does not count
+as a declined or accepted prompt trial. Raw logs remain private.

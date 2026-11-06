@@ -146,7 +146,7 @@ historical/raw-not-revalidated corroboration; the fresh fixture is separate.
 | Kernel and SDL open orders | `steam-c6-feature-kernel-lizard`, `steam-c6-feature-sdl-lizard`, `steam-c6-feature-imu`; neither requires the other's GETs | Both opening orders with kernel bound/unbound, with settings readback |
 | Retained lizard/mapping/IMU/watchdog intent | Same feature claims; unknown initial/default values remain unknown; restore-defaults discards assumed settings rather than fabricating values | Physical initial/default-settings readback and mode transition trace |
 | Haptics `0x80` through `0x85` | **faithful (fresh physical capture)** declared body lengths: `0x80=9`, `0x81=7`, `0x82=3`, `0x83=9`, `0x84=8`, `0x85=3`, per `steam-s3-1302-report-shapes`; wire length adds the ID byte. Historical corroboration: `sc2-july-wired-descriptor-report-shapes`, **physical (historical capture, raw not revalidated)**. Field meanings/retained intent remain **compat** (`steam-c6-output-80-81`, `steam-c6-output-82-85`), no input ACK | Fresh host-write bus capture correlated to observed physical actuators |
-| Unknown feature `0x87` setting IDs | Default **compat rejection** is atomic. The opt-in Steam client profile additionally retains the captured accepted keys, without asserting their effects; see the profile below and `steam-d9-steam-setting-acceptance`. | Settings readback, persistence and physical effects remain unproven |
+| Unknown feature `0x87` setting IDs | With the Steam client profile disabled, **compat rejection** is atomic. The default Steam client profile additionally retains the captured accepted keys, without asserting their effects; see the profile below and `steam-d9-steam-setting-acceptance`. | Settings readback, persistence and physical effects remain unproven |
 | Output `0x86` | **Unsupported** semantics; `steam-s3-1302-report-shapes` declares 3 body bytes, **faithful (fresh physical capture)** shape only | Planned **steam-s3-wired-output-streaming** capture: correlate host writes, `0x44` return traffic and actuator response |
 | Output `0x87` | **Unsupported** semantics; same fresh capture declares 63 body bytes, **faithful** shape only. This is an output ID, distinct from feature 1 command `0x87` | Planned **steam-s3-wired-output-streaming** capture: correlate host writes, buffer/flow control and actuator response |
 | Output `0x88` | **Unsupported** semantics; same fresh capture declares 63 body bytes, **faithful** shape only | Planned **steam-s3-wired-output-streaming** capture: correlate host writes, buffer/flow control and actuator response |
@@ -166,8 +166,8 @@ historical/raw-not-revalidated corroboration; the fresh fixture is separate.
   feature 1 exchange; an invalid command cannot leak an earlier serial reply.
   Unknown setting IDs keep the existing atomic rejection instead of claiming
   that successful storage alone fulfils undocumented Steam-client settings.
-  The later opt-in profile accepts only captured setting keys, retaining intent
-  without assigning unproven semantics; the default path keeps this rejection.
+  The recorded profile accepts only captured setting keys, retaining intent
+  without assigning unproven semantics; the profile-disabled path keeps this rejection.
 - The old short error echo violated the fresh feature body size. It now returns
   63 body bytes with an intentionally impossible message length, preserving the
   kernel `-EPROTO` fit without a short HID frame. This is compat error framing,
@@ -216,11 +216,11 @@ lengths, report classes, retained outputs, sequence wrap, stop/restart and two
 independent fake sessions with per-cycle request completion and idempotent close.
 Fixture regeneration also checks independent fixed lengths and hashes.
 
-## Opt-in recorded Steam client profile
+## Recorded Steam client profile (default enabled)
 
 `SteamController2026CreationOptions::steam_client_compat` is a per-instance bool,
-default **false**. Enable it through `create_steam_controller_2026_with_options`
-with `SteamController2026CreationOptions { steam_client_compat: true,
+default **true**, per [owner decision #159](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6666070222). Disable it through `create_steam_controller_2026_with_options`
+with `SteamController2026CreationOptions { steam_client_compat: false,
 ..Default::default() }`. The caller must continue servicing the controller.
 
 On wired UHID, the profile returns the exact recorded 63-byte attribute reply
@@ -253,14 +253,20 @@ pad position/pressure and touch observations are recorded in the D9 report,
 with GUI qualifications and a changed desktop-profile test condition. With acceleration `(0, 0, 16384)` and quaternion `(32767, 0, 0, 0)`,
 gyro +1024 showed +pitch/+roll/-yaw at approximately 62.5 degrees/s; X also
 worked with periodic streaming off. All-zero pose trials showed zero, so the
-separate acceleration/quaternion requirements remain unisolated. Virtual Ping
+separate acceleration/quaternion requirements remain unisolated.
+The supporting API keeps raw-zero motion defaults. Callers sending gyro to Steam
+must supply a valid acceleration/quaternion pose as well; setting only gyro on
+`Default::default()` is not a working Steam motion sample. The demo initializes
+and neutralizes to the synthetic stationary pose above, with zero gyro and
+timestamp. This is a caller/demo policy, not captured orientation or factory
+calibration. Arbitrary caller-supplied samples are encoded unchanged. Virtual Ping
 and both SDL rumble channels matched the physical reference. No calibrated
 motion or gameplay acceptance is claimed. The profile does not hard-code Steam's
 configurable Trackpad Lockout policy or add periodic input streaming.
 See [the D9 report](C6_D9_ACCEPTANCE.md) for exact scope and remaining differences.
 
-In the demo, select Steam Controller 2026 and enable **Steam client compatibility**
-in Advanced options before creating the controller. The checkbox defaults to off
+In the demo, select Steam Controller 2026 and use **Steam client compatibility**
+in Advanced options before creating the controller. The checkbox defaults to on
 and applies to newly created instances. It has no HID feature effect on uinput.
 
 

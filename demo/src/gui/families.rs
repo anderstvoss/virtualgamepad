@@ -70,6 +70,17 @@ pub(super) enum Controller {
     Steam(SteamDemoController),
 }
 
+// Synthetic stationary pose used by the demo, not a captured orientation or
+// factory calibration. D9 #305 accepted gyro with this combined accel/quaternion
+// pose; their individual necessity was not isolated. API raw-zero defaults stay.
+fn steam_demo_neutral() -> gr_curated_controllers::steam_controller_2026::SteamController2026State {
+    let mut state =
+        gr_curated_controllers::steam_controller_2026::SteamController2026State::default();
+    state.motion.accelerometer = [0, 0, 16384];
+    state.motion.quaternion = [i16::MAX, 0, 0, 0];
+    state
+}
+
 // Keep UI edit bookkeeping in the demo; the supporting API needs no dirty accessor.
 pub(super) struct SteamDemoController {
     inner: gr_curated_controllers::steam_controller_2026::SteamController2026Controller,
@@ -96,7 +107,7 @@ impl SteamDemoController {
         Ok(())
     }
     fn neutralize(&mut self) -> Result<(), virtualgamepad::ControlError> {
-        self.inner.neutralize()?;
+        self.inner.set_inputs(steam_demo_neutral())?;
         self.dirty = true;
         Ok(())
     }
@@ -151,19 +162,27 @@ impl Kind {
             .options(options.target, self.supports_audio())?;
         match self {
             Self::Steam => {
-                create_steam_session(
+                let mut inner = create_steam_session(
                     options,
                     gr_curated_controllers::steam_controller_2026::create_steam_controller_2026_with_options,
                 )
-                .map(|inner| {
-                    Controller::Steam(SteamDemoController {
-                        inner,
-                        dirty: false,
-                    })
-                })
                 .map_err(|e| virtualgamepad::ControllerError::Open {
                     reason: e.to_string(),
-                })
+                })?;
+                inner.set_inputs(steam_demo_neutral()).map_err(|e| {
+                    virtualgamepad::ControllerError::Open {
+                        reason: e.to_string(),
+                    }
+                })?;
+                inner
+                    .commit()
+                    .map_err(|e| virtualgamepad::ControllerError::Open {
+                        reason: e.to_string(),
+                    })?;
+                Ok(Controller::Steam(SteamDemoController {
+                    inner,
+                    dirty: false,
+                }))
             }
             Self::Xbox360 => create_xbox360(creation).map(Controller::Xbox),
             Self::DualSense => create_dualsense(creation).map(Controller::DualSense),
@@ -533,6 +552,23 @@ mod steam_tests {
     use super::*;
 
     #[test]
+    fn demo_neutral_has_a_synthetic_pose_without_changing_api_defaults() {
+        use gr_curated_controllers::steam_controller_2026::{
+            SteamController2026State, SteamMotionSample,
+        };
+        let api = SteamController2026State::default();
+        assert_eq!(api.motion, SteamMotionSample::default());
+        assert_eq!(api.motion.quaternion, [0; 4]);
+        let demo = steam_demo_neutral();
+        assert_eq!(demo.motion.accelerometer, [0, 0, 16384]);
+        assert_eq!(demo.motion.quaternion, [i16::MAX, 0, 0, 0]);
+        assert_eq!(demo.motion.gyroscope, [0; 3]);
+        let mut raw = demo;
+        raw.motion = SteamMotionSample::default();
+        assert_eq!(raw, api);
+    }
+
+    #[test]
     fn creation_copies_compatibility_to_each_target_without_changing_defaults() {
         for target in [
             virtualgamepad::RealizationId::LINUX_UHID_USB,
@@ -574,7 +610,7 @@ mod steam_tests {
             assert!(captured[3].steam_client_compat && captured[3].haptic_streaming);
             assert!(!captured[4].steam_client_compat && !captured[4].haptic_streaming);
             assert!(
-                !super::super::SteamController2026CreationOptions::default().steam_client_compat
+                super::super::SteamController2026CreationOptions::default().steam_client_compat
             );
         }
     }
