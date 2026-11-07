@@ -111,7 +111,7 @@
     },
     "struct.SteamController2026Outputs.html": {
       "declarations": [
-        "pub struct SteamController2026Outputs { pub revision: u64, pub haptics: [Option<SteamController2026Haptic>; 6], pub streaming: SteamController2026StreamOutputs, }"
+        "pub struct SteamController2026Outputs { pub revision: u64, pub haptics: [Option<SteamController2026Haptic>; 6], pub streaming: SteamController2026StreamOutputs, pub led_brightness: Option<u16>, pub led_override: Option<bool>, pub led_rgbw: Option<[u8; 4]>, }"
       ],
       "traits": [
         "impl Clone for SteamController2026Outputs",

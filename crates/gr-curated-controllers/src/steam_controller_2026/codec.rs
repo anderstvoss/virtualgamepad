@@ -251,8 +251,35 @@ struct Outputs {
     lizard: Option<bool>,
     watchdog: Option<u16>,
     imu: Option<u16>,
+    rgbw: Option<[u8; 4]>,
     // Recorded accepted intent only: no feature reply reads this map.
     compat_settings: std::collections::BTreeMap<u8, u16>,
+}
+// steam-d9-named-setting-framing / steam-d9-wired-entry-stability-consumer.
+// Exact protocol constants only; these never address the host filesystem.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NamedRead {
+    Transport,
+    AbsentRecord,
+}
+impl NamedRead {
+    fn parse(body: &[u8]) -> Option<Self> {
+        let length = usize::from(*body.get(1)?);
+        match body.get(2..2 + length)? {
+            b"user/wireless_transport\0" => Some(Self::Transport),
+            b"esb/bond\0" | b"esb/bond_2\0" => Some(Self::AbsentRecord),
+            _ => None,
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Query {
+    Serial,
+    Attributes,
+    Named(NamedRead),
+    LedColor,
+    LedOverride,
+    Unsupported(u8),
 }
 #[derive(Debug, Clone, Default)]
 struct SteamProtocol {
@@ -261,19 +288,19 @@ struct SteamProtocol {
     stream: Box<StreamState>,
     sequence: u8,
     outputs: Outputs,
-    query: Option<u8>,
+    query: Option<Query>,
     stopped: bool,
     invalid_framing: bool,
     refresh: Option<u64>,
 }
 impl SteamProtocol {
     fn feature(&mut self, report: &Report) -> Result<(), ReplyError> {
+        // Every SET invalidates the preceding query, even an invalid report ID.
+        self.query = None;
         // steam-c6-no-wired-feature2: do not serve receiver feature 2 on wired.
         if report.kind != ReportType::Feature || report.id() != Some(1) {
             return Err(ReplyError::Unsupported);
         }
-        // Any new SET supersedes the preceding exchange, including invalid SETs.
-        self.query = None;
         // steam-c6-feature-kernel-exchange: fixed 64-byte numbered host buffer.
         let b = report.payload();
         if b.len() != 63 {
@@ -282,17 +309,35 @@ impl SteamProtocol {
         let mut next = self.outputs.clone();
         match b[0] {
             // hid-steam v7.3-rc1, lines 667–685: current request and documented historical length.
-            0xae if matches!(b[1], 0x15 | 0x16) && b[2] == 1 => self.query = Some(0xae),
-            0x83 if b[1] == 0 => self.query = Some(0x83),
+            0xae if matches!(b[1], 0x15 | 0x16) && b[2] == 1 => self.query = Some(Query::Serial),
+            0x83 if b[1] == 0 => self.query = Some(Query::Attributes),
             // steam-d9-feature-response-framing: these exact two-byte SET
             // bodies completed successfully. No semantics or retained state
             // are inferred from that transport acknowledgement.
             0xdc if self.steam_client_compat && b[1..4] == [2, 1, 2] => {}
             0xe2 if self.steam_client_compat && b[1..4] == [2, 1, 0x20] => {}
-            // steam-d9-feature-response-framing: only the first ED exchange
-            // (SET length 24, GET length 1, value 0) has a reviewed body.
-            // Do not retain opaque request bytes or replay opaque reply tails.
-            0xed if self.steam_client_compat && b[1] == 24 => self.query = Some(0xed),
+            // Physical zero transport scalar; synthetic absent records, never
+            // physical pairing material or opaque reserved tails.
+            0xed if self.steam_client_compat && NamedRead::parse(b).is_some() => {
+                self.query = NamedRead::parse(b).map(Query::Named);
+            }
+            // steam-d9-wired-rgbw-override: raw intent is retained even when
+            // the override is disabled; visibility and intent are separate.
+            0xc5 if self.steam_client_compat => {
+                if b[1] != 4 {
+                    return Err(ReplyError::Invalid);
+                }
+                next.rgbw = Some(b[2..6].try_into().expect("four colour bytes"));
+            }
+            0xe9 if self.steam_client_compat => {
+                if b[1] != 0 {
+                    return Err(ReplyError::Invalid);
+                }
+                self.query = Some(Query::LedColor);
+            }
+            0x89 if self.steam_client_compat && b[1..3] == [1, 37] => {
+                self.query = Some(Query::LedOverride);
+            }
             // steam-c6-feature-kernel-lizard: mapping and settings are distinct.
             0x81 if b[1] == 0 => next.mappings = Some(false),
             0x85 if b[1] == 0 => next.mappings = Some(true),
@@ -314,6 +359,8 @@ impl SteamProtocol {
                     match setting[0] {
                         9 if value <= 1 => next.lizard = Some(value != 0),
                         9 => return Err(ReplyError::Invalid),
+                        37 if self.steam_client_compat && value <= 1 => {}
+                        37 if self.steam_client_compat => return Err(ReplyError::Invalid),
                         48 => next.imu = Some(value),
                         71 => next.watchdog = Some(value),
                         key if self.steam_client_compat
@@ -332,7 +379,7 @@ impl SteamProtocol {
                 // reject SET, and provide a deliberately malformed exchange reply
                 // if a host still GETs it. Kernel detects -EPROTO, not stale data.
                 // This fits the kernel error path; it is not device behaviour.
-                self.query = Some(b[0]);
+                self.query = Some(Query::Unsupported(b[0]));
                 return Err(ReplyError::Unsupported);
             }
         }
@@ -343,7 +390,7 @@ impl SteamProtocol {
         Ok(())
     }
     fn get_feature(&self) -> Result<Report, ReplyError> {
-        if self.steam_client_compat && self.query == Some(0x83) {
+        if self.steam_client_compat && self.query == Some(Query::Attributes) {
             return Ok(
                 Report::from_wire(ReportType::Feature, true, STEAM_CLIENT_ATTRIBUTES)
                     .expect("compiled physical model attribute reply"),
@@ -354,11 +401,24 @@ impl SteamProtocol {
         let mut wire = vec![0; 64];
         wire[0] = 1;
         match self.query {
-            Some(0xed) if self.steam_client_compat => {
-                wire[1..4].copy_from_slice(&[0xed, 1, 0]);
+            Some(Query::Named(named)) => {
+                wire[1] = 0xed;
+                wire[2] = u8::from(named == NamedRead::Transport);
                 wire.truncate(63);
             }
-            Some(0xae) => {
+            Some(Query::LedColor) => {
+                // steam-d9-led-colour-readback-quantization: physical E9
+                // replies were four zero bytes at the tested raw values 25/10.
+                // Higher-value readback is unverified; do not derive it from intent.
+                wire[1..3].copy_from_slice(&[0xe9, 4]);
+                wire.truncate(63);
+            }
+            Some(Query::LedOverride) => {
+                let enabled = self.outputs.compat_settings.get(&37).copied().unwrap_or(0);
+                wire[1..6].copy_from_slice(&[0x89, 3, 37, u8::from(enabled != 0), 0]);
+                wire.truncate(63);
+            }
+            Some(Query::Serial) => {
                 let serial = self.serial.as_bytes();
                 wire[1..4].copy_from_slice(&[
                     0xae,
@@ -367,8 +427,8 @@ impl SteamProtocol {
                 ]);
                 wire[4..4 + serial.len()].copy_from_slice(serial);
             }
-            Some(0x83) => wire[1..5].copy_from_slice(&[0x83, 2, 0, 0]),
-            Some(command) => {
+            Some(Query::Attributes) => wire[1..5].copy_from_slice(&[0x83, 2, 0, 0]),
+            Some(Query::Unsupported(command)) => {
                 // Preserve the kernel -EPROTO fit without violating the captured
                 // descriptor's 63-byte feature body. The impossible message
                 // length is intentionally malformed compat error framing, not
@@ -412,11 +472,11 @@ impl Protocol for SteamProtocol {
     fn neutral(&self) -> State {
         State::default()
     }
-    fn validate(&self, _: &State) -> Result<(), Error> {
+    fn validate(&self, state: &State) -> Result<(), Error> {
         if self.invalid_framing {
             Err(Error::Framing)
         } else {
-            Ok(())
+            super::definition::validate_trigger_values(state).map_err(|_| Error::InvalidState)
         }
     }
     fn input(&mut self, state: &State, now: u64) -> Result<Vec<Report>, Error> {
@@ -527,13 +587,28 @@ impl SteamHidProtocol {
             },
             ..Self::default()
         };
-        protocol.sync_stream();
+        protocol.sync_outputs();
         protocol
     }
 
-    fn sync_stream(&mut self) {
-        if self.outputs.streaming != self.protocol.stream.outputs {
+    fn sync_outputs(&mut self) {
+        let brightness = self.protocol.outputs.compat_settings.get(&45).copied();
+        let override_enabled = self
+            .protocol
+            .outputs
+            .compat_settings
+            .get(&37)
+            .map(|value| *value != 0);
+        let rgbw = self.protocol.outputs.rgbw;
+        if self.outputs.streaming != self.protocol.stream.outputs
+            || self.outputs.led_brightness != brightness
+            || self.outputs.led_override != override_enabled
+            || self.outputs.led_rgbw != rgbw
+        {
             self.outputs.streaming = self.protocol.stream.outputs.clone();
+            self.outputs.led_brightness = brightness;
+            self.outputs.led_override = override_enabled;
+            self.outputs.led_rgbw = rgbw;
             self.outputs.revision = self.outputs.revision.wrapping_add(1);
         }
     }
@@ -552,7 +627,7 @@ impl Protocol for SteamHidProtocol {
 
     fn input(&mut self, state: &Self::State, now: u64) -> Result<Vec<Report>, Error> {
         let reports = self.protocol.input(state, now);
-        self.sync_stream();
+        self.sync_outputs();
         reports
     }
 
@@ -569,7 +644,7 @@ impl Protocol for SteamHidProtocol {
             }
             RequestKind::Get { .. } => None,
         });
-        self.sync_stream();
+        self.sync_outputs();
         (reply, observed)
     }
 
@@ -582,13 +657,13 @@ impl Protocol for SteamHidProtocol {
                 observed
             })
         });
-        self.sync_stream();
+        self.sync_outputs();
         result
     }
 
     fn lifecycle(&mut self, event: Lifecycle, now: u64) -> Option<Self::Output> {
         self.protocol.lifecycle(event, now);
-        self.sync_stream();
+        self.sync_outputs();
         Some(RawReverseEvent::HidLifecycle(event))
     }
 
@@ -602,6 +677,26 @@ pub struct SteamController2026Outputs {
     pub revision: u64,
     pub haptics: [Option<SteamController2026Haptic>; 6],
     pub streaming: SteamController2026StreamOutputs,
+    /// Last accepted raw LED-brightness intent (setting 45), not RGB or readback.
+    ///
+    /// `steam-d9-wired-led-brightness` observes percent-like wired values. No
+    /// calibrated transfer function or persistence is asserted. `None` means
+    /// unobserved, or unknown after restore-default intent. Requires the Steam
+    /// compatibility profile; reduced uinput has no HID feature channel.
+    pub led_brightness: Option<u16>,
+    /// Last accepted setting-37 override intent; `None` is unknown.
+    ///
+    /// `steam-d9-wired-rgbw-override`: enabling this exposes the four RGBW
+    /// channels instead of normal status colour. Restore-default clears this
+    /// retained knowledge; reduced uinput has no corresponding feature channel.
+    pub led_override: Option<bool>,
+    /// Last accepted C5 bytes, ordered red/green/blue/white, independently of override.
+    ///
+    /// `steam-d9-wired-rgbw-override` observes raw per-channel values 25 and 0.
+    /// This is accepted raw intent, not calibrated intensity. E9 returned zeros
+    /// at the tested values; higher-value readback remains unverified
+    /// (`steam-d9-led-colour-readback-quantization`). No uinput equivalent exists.
+    pub led_rgbw: Option<[u8; 4]>,
 }
 impl SteamController2026Outputs {
     fn retain(&mut self, report_id: Option<u8>, haptic: SteamController2026Haptic) {
