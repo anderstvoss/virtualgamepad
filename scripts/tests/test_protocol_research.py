@@ -77,7 +77,7 @@ class ResearchWorkflow(unittest.TestCase):
         MODULE.check(self.root, write=True)
         generated = self.root / 'tests/fixtures/protocol-research'
         manifest = json.loads((generated / 'manifest.json').read_text())
-        self.assertEqual(manifest['generator_version'], 5)
+        self.assertEqual(manifest['generator_version'], 6)
         self.assertEqual(len(list(generated.glob('wii-c5-*.hex'))), 15)
         self.assertEqual(len(bytes.fromhex((generated / 'wii-c5-neutral-37.hex').read_text())), 22)
         path = self.corpus / 'fixtures/wii-c5-neutral-37.hex'

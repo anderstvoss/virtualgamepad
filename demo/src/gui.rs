@@ -316,6 +316,8 @@ fn draw_advanced_options(
                     if kind == Kind::Steam {
                         ui.checkbox(&mut steam_options.steam_client_compat, "Steam client compatibility");
                         ui.label("Replays captured wired attributes and accepted settings. HID targets only; uinput has no feature channel.");
+                        ui.checkbox(&mut steam_options.lizard_mode, "Desktop mouse and keyboard (lizard mode)");
+                        ui.label("Captured wired desktop mappings; HID targets only. Steam controls mouse and keyboard enable state separately.");
                         ui.checkbox(&mut steam_options.haptic_streaming, "Haptic PCM streaming");
                         ui.label("8-kHz internal PCM with bounded compat buffering; HID targets only.");
                     }

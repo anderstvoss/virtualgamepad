@@ -1,6 +1,6 @@
 {
-  "corpus_commit": "6bf1eb21f755cfd6e0cd409eb81f928cd90a7f30",
-  "generator_version": 5,
+  "corpus_commit": "4a887d4e186a6d411ea7d4560116e95fc40b41ca",
+  "generator_version": 6,
   "inputs": {
     "fixtures/ds-cross.hex": "cf780dad4726100617c5c663522e37d6927393eca727a52c3285b50597437eda",
     "fixtures/ds-neutral.hex": "40380fbd97b0adccad7b02aaf75c990ecc323d99d641a2033fa6471ead8cd6fb",
@@ -42,6 +42,7 @@
     "fixtures/steam-c6-timestamp-touch-47.hex": "0027934f97ae5bc2d360f430d634d2012a1957e782ec1bc3e04369c61281dffb",
     "fixtures/steam-c6-touch-corners-pressure-42.hex": "eb340cd2547d003ffb0b47c1b77dda4690f57e84d3009bf2560ef642a28081ae",
     "fixtures/steam-d9-1302-attributes.hex": "de9e1aee455ba1a335da3740f6aea1f3c5d066e987b89b982b0e44cf6d20c9d3",
+    "fixtures/steam-d9-lizard-desktop.hex": "58d526a6e8fb1279ca8128a48991543d18b69e798fb077ffddf9ca183a7f0f8d",
     "fixtures/steam-d9-steam-settings.hex": "c7fff8370461718464be414547590332139805972b2ceff94fa848b2154000a4",
     "fixtures/steam-s3-1302-report-descriptor.hex": "56848c99f7eb6fd9bf3a2f10a2bff90fdc91b1f9b546f0e9189cb238c4b1c563",
     "fixtures/wii-c5-evdev-golden.json": "d2e6c08c9f7f1f11255a66aff864179f198a39873c3fe6a95de581d69ada0281",
@@ -100,6 +101,7 @@
     "records/fixture/steam-c6-timestamp-touch-47.json": "14ffd362a4634170ca32a755901ee7767b899d150dd9ace1d372f3782710a7f3",
     "records/fixture/steam-c6-touch-corners-pressure-42.json": "c68d26726e4d6a799af41eac4fa44ad482cd1a853d6a07071c7c9558ae9770ad",
     "records/fixture/steam-d9-1302-attributes.json": "1cdad8aa4a45a491ed2a5351fabbe98fca419ad30beedae758d3be82f3adcff8",
+    "records/fixture/steam-d9-lizard-desktop.json": "599da5c556e2796f85a40edd72ce24843ad247f45faec96968fef44af742b579",
     "records/fixture/steam-d9-steam-settings.json": "b2a9438c4f5f5b4d7d7d7273f9bab3e726749da5356267a04c2015cc4bbad1a0",
     "records/fixture/steam-s3-1302-report-descriptor.json": "99b039cb5488e38d1897bd824d6353c4b42f0cb60c545461d1dcb818a0b5e8a4",
     "records/fixture/wii-c5-evdev-golden.json": "96e7a8e6745048c5208b441f91f96a8fc54de23c2b9b255804633ac6b63f2118",

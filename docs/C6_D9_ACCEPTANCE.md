@@ -851,6 +851,38 @@ logical RGBW control is independent evidence. Full-range calibration and
 reset/restart persistence remain unverified. See
 [Wired LED controls](STEAM_LED_CONTROLS.md) for the record IDs and API scope.
 
+## Wired desktop mode closeout
+
+The owner completed passive, individually guided physical desktop captures,
+including pads, sticks, all buttons, triggers, grip contact, a separate
+hands-off USB reconnect and normal SDL open/close. The initial pad run omitted
+reconnect and is retained as existing-state evidence. The separate reconnect
+captured kernel setup, not firmware power-on defaults. Slow pad movement was
+uneven; the first right-pad center window contains early movement.
+
+Setting 9 = 0 stopped right-pad mouse reports during the SDL hold, while A
+continued to emit Enter. Successful close-time 0x85/0x8e writes preceded resumed
+mouse reports. This is kernel restoration, not an autonomous watchdog. Trigger
+clicks track native digital bits; no analogue threshold is invented. See
+[desktop mode](STEAM_LIZARD_MODE.md) for the bounded relative-scaling policy.
+
+The opt-in creation option and fake-provider/protocol regressions passed the
+local workspace gates. With the real controller disconnected, the owner
+confirmed Steam listed the lizard-enabled virtual instance and Begin Test
+opened. A five-second right-pad sweep produced a visible trace and the tester
+stayed open. KDE asked Steam for input-control permission, so lack of pointer
+movement in that first window is not treated as proof of suppression.
+
+After the owner selected Deny, an ordinary read-only observer of the attributed
+owned virtual raw interface counted 479 native 0x42/54-byte reports and zero
+0x40 mouse or 0x41 keyboard reports over 12 seconds spanning a second sweep and
+neutral. No payload content was logged. This verifies no emulated desktop-report
+leak in that repeat while Steam held the device. The earlier prompt is consistent
+with Steam applying its desktop layout to native pad input; the prompt-time raw
+stream was not observed. The owned instance was closed normally and no Valve HID
+nodes remained. Research #110 is adopted at revision `4a887d4`; exact retail
+transfer/filtering and broader consumer behavior remain unverified.
+
 ## Disposable virtual firmware-update attempt
 
 The physical controller stayed disconnected. Before Steam launch and before the
