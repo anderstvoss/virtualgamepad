@@ -2560,3 +2560,46 @@ fn update_and_bootloader_requests_never_schedule_an_accepted_exchange() {
     runtime.close().unwrap();
     assert_eq!(fake.0.borrow().closes, 1);
 }
+
+#[test]
+fn lizard_batched_mode_changes_clear_mouse_history_but_invalid_batches_preserve_it() {
+    let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+    let mut s = State::default();
+    s.pads[1].touch = true;
+    assert!(desktop_reports(&mut p, &s, 0).is_empty());
+    s.pads[1].position = [128, 0];
+    assert_eq!(
+        desktop_reports(&mut p, &s, 1),
+        vec![vec![0x40, 0, 1, 0, 0, 0]]
+    );
+    // No input poll between either pair of host mode requests.
+    for (off, on) in [
+        (
+            compat_setting_request(&[(9, 0)]),
+            compat_setting_request(&[(9, 1)]),
+        ),
+        (
+            set("feature-lizard-disable-clear"),
+            set("feature-lizard-enable-map"),
+        ),
+    ] {
+        assert_eq!(p.request(&off, 2).0, Reply::Set(Ok(())));
+        assert_eq!(p.request(&on, 3).0, Reply::Set(Ok(())));
+        s.pads[1].position[0] = -s.pads[1].position[0] + 1000;
+        assert!(desktop_reports(&mut p, &s, 4).is_empty());
+        s.pads[1].position[0] += 128;
+        assert_eq!(
+            desktop_reports(&mut p, &s, 5),
+            vec![vec![0x40, 0, 1, 0, 0, 0]]
+        );
+    }
+    assert_eq!(
+        p.request(&compat_setting_request(&[(9, 0), (250, 1)]), 6).0,
+        Reply::Set(Err(ReplyError::Unsupported))
+    );
+    s.pads[1].position[0] += 128;
+    assert_eq!(
+        desktop_reports(&mut p, &s, 7),
+        vec![vec![0x40, 0, 1, 0, 0, 0]]
+    );
+}

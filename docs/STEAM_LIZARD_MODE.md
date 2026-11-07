@@ -10,10 +10,9 @@ uinput inability to represent pointer or keyboard events.
 
 The mapping comes from the owner-guided D9 physical sessions recorded by
 `steam-d9-lizard-control-mapping`, `steam-d9-lizard-sdl-transition` and
-`steam-d9-lizard-relative-scaling`. These records are proposed in
-[research #110](https://github.com/anderstvoss/controller-protocol-research/pull/110).
-This branch currently adopts its reviewed head; merged-main verification remains
-required before opening the implementation PR.
+`steam-d9-lizard-relative-scaling`. These records were merged in
+[research #110](https://github.com/anderstvoss/controller-protocol-research/pull/110)
+and are adopted at research revision `4a887d4`.
 
 | Control | Desktop input |
 | --- | --- |
@@ -37,7 +36,9 @@ mappings, 0x85 restores mapping intent, and 0x8e restores unknown/default settin
 intent. Setting 9 independently gates the mouse. In the normal SDL capture,
 setting 9 = 0 stopped mouse output but A still emitted Enter. This distinction
 supersedes treating that setting as a blanket mouse-and-keyboard disable.
-No setting-71 watchdog is invented. Raw-client open/close alone does not change
+Accepted mode changes clear the corresponding cached input history even when
+disable/enable requests arrive before another input cycle. Rejected setting
+batches preserve the history. No setting-71 watchdog is invented. Raw-client open/close alone does not change
 protocol mode; the host's feature writes do.
 
 ## Compatibility limits

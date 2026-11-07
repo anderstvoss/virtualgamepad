@@ -851,7 +851,7 @@ logical RGBW control is independent evidence. Full-range calibration and
 reset/restart persistence remain unverified. See
 [Wired LED controls](STEAM_LED_CONTROLS.md) for the record IDs and API scope.
 
-## Wired desktop mode closeout (in progress)
+## Wired desktop mode closeout
 
 The owner completed passive, individually guided physical desktop captures,
 including pads, sticks, all buttons, triggers, grip contact, a separate
@@ -880,7 +880,7 @@ neutral. No payload content was logged. This verifies no emulated desktop-report
 leak in that repeat while Steam held the device. The earlier prompt is consistent
 with Steam applying its desktop layout to native pad input; the prompt-time raw
 stream was not observed. The owned instance was closed normally and no Valve HID
-nodes remained. Formal adoption awaits merged research #110; exact retail
+nodes remained. Research #110 is adopted at revision `4a887d4`; exact retail
 transfer/filtering and broader consumer behavior remain unverified.
 
 ## Disposable virtual firmware-update attempt

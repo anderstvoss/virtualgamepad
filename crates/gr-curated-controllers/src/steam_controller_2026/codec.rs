@@ -390,6 +390,14 @@ impl SteamProtocol {
                 return Err(ReplyError::Unsupported);
             }
         }
+        // Clear cached input history at the accepted transition, even if host
+        // disable/enable requests are batched before the next input cycle.
+        // Rejected setting batches leave both intent and input history intact.
+        if next.mappings != self.outputs.mappings || matches!(b[0], 0x81 | 0x85) {
+            self.desktop.reset();
+        } else if next.lizard != self.outputs.lizard || b[0] == 0x8e {
+            self.desktop.clear_mouse();
+        }
         if next != self.outputs {
             next.revision = self.outputs.revision.wrapping_add(1);
             self.outputs = next;

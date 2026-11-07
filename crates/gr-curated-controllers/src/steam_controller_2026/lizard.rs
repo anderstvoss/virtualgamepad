@@ -26,7 +26,7 @@ impl Desktop {
             ..Self::default()
         };
     }
-    fn clear_mouse(&mut self) {
+    pub fn clear_mouse(&mut self) {
         self.positions = [None; 2];
         self.fractions = [[0; 2]; 2];
         self.buttons = 0;
