@@ -139,7 +139,8 @@ pub struct SteamController2026State {
     buttons: u32,
     /// Left/right sticks, each native signed X/Y.
     pub sticks: [[i16; 2]; 2],
-    /// Left/right analog triggers as signed raw consumer fields.
+    /// Left/right native triggers, accepted range 0..=32767.
+    /// Negative signed inputs are rejected for both wired UHID and uinput.
     pub triggers: [i16; 2],
     /// Left/right trackpads, with independent touch, click and pressure.
     pub pads: [SteamTrackpadState; 2],

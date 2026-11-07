@@ -771,3 +771,82 @@ isolate discovery's cause or obtain explicit owner acceptance of listing as-is.
 This comparison isolates the attribute-reply requirement at component level;
 the narrower attribute predicate and broader client qualifications above remain
 unverified. No formal virtual research run or gameplay acceptance is promoted.
+
+
+### Wired entry stability and cleanup follow-up (2026-11-06)
+
+Two clean physical controls (A2/A3), each with fresh Steam and wired attachment,
+kept stable entries through Controller list, details and Begin Test. A1 is
+excluded: its initial guide preceded attachment, and System Settings retained a
+raw descriptor after Steam exit. Only Steam held the raw descriptor in A2/A3.
+
+Two baseline virtual instances (B1/B2, full profile) replaced the entry while
+opening the Controller list, before details. Both later opened Begin Test.
+Steam released/reopened the same layered hidraw node; four native input children
+returned in the gap. The parent UHID stayed open. The node roles recorded by
+both discovery messages were hidraw; a reappearing evdev UI entry is not proven.
+Repeated AE/83 replies were byte-identical within each instance. Maximum
+provider dequeue-to-reply submission was 1420/965 microseconds; time queued
+before dequeue was not measured.
+
+The baseline rejected repeated ED named-record reads. A private candidate
+accepted exact `esb/bond` and `esb/bond_2` reads and returned synthetic absent
+records, without physical pairing material. B3/B4 had stable lists, no observed
+raw reopen or failed controller-info marker, and Begin Test opened in both.
+B3 details were visually unclear; B4 details were stable with no reported
+symptoms. Physical read framing and these virtual observations are recorded
+separately; the synthetic primary absent record is not a physical replay.
+
+Rear labels were compared individually: L4 top left, L5 bottom left, R4 top
+right, R5 bottom right, matching physical controls. The earlier broad GUI-label
+qualification is superseded. Left then right virtual grip grab/release showed
+both matching fan and reverse-line activity. Physical left timing remains
+qualified by switching to reverse view with L4; no independent analog grip-axis
+or calibrated force claim is made. Advanced Grip Sense emitted report 81,
+selector 3 after left release and 4 after right release, on/off 300 microseconds,
+count 1; grab-phase pulses also occurred. This is virtual reverse-output evidence.
+
+A normal demo window close after creating one Steam UHID controller exited the
+original process and removed its owned HID. The earlier idle-process symptom
+was not reproduced in this bounded run; no lifecycle fix is inferred.
+
+Both realizations now reject negative public trigger values before encoding.
+The earlier negative-trigger rows above describe the pre-fix probe. The #304
+kernel/ABS results were rechecked: UHID tuples match the golden values, while
+reduced uinput still has the explicit fuzz/resolution limitation. Those cells
+remain `wip`: neither the physical input record nor the UI stability study is a
+formal virtual kernel-decoding/ABS run record.
+
+
+### Wired LED follow-up (2026-11-06)
+
+Passive Steam brightness capture identifies feature command 87 setting 45.
+Repeated slider writes were nearby, rather than exactly synchronized to the
+reported UI values; the final captured 98 followed a 100 write. Retained raw
+intent therefore makes no exact UI, readback or persistence promise.
+
+The owner subsequently authorized direct colour tests with Steam closed.
+C5 accepts four raw RGBW bytes. With setting 37 disabled, basis values of 25
+had no visible effect. With setting 37 enabled and read back through 89, the
+same four tests visibly produced red, green, blue and white. Zero colour gave
+off between enabled trials; restoring the original override value 0 returned
+normal wired green. All selected transfers completed successfully.
+
+E9 returned four zero bytes during visibly active stimuli at raw values 25
+and 10. The cause and behavior at higher values remain unverified. The virtual
+getter returns the observed zeros as a conservative compatibility policy, with
+accepted RGBW intent retained separately. Six mixed stimuli produced qualitative hue changes;
+they do not establish calibrated optical power, sRGB values or spectral purity.
+
+Two fresh owned virtual candidates each completed 77 feature requests with
+77 submitted replies, zero unmatched requests/write failures, repeated exact
+GET replies, atomic rejection and double-close/node cleanup. The client saw
+EIO for invalid requests while instrumentation recorded the intended Invalid
+reply: Linux UHID collapses all nonzero feature reply errors to EIO. This is a
+provider limitation, not exact physical USB STALL emulation.
+
+The latest close-up reading is central LED1 flanked by D20 and D4. Physical
+package count, emitter functions and channel/die allocation remain unresolved;
+logical RGBW control is independent evidence. Full-range calibration and
+reset/restart persistence remain unverified. See
+[Wired LED controls](STEAM_LED_CONTROLS.md) for the record IDs and API scope.

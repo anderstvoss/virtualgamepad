@@ -7,10 +7,12 @@ The approved Steam supporting API has its own reviewed snapshot,
 [`api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json`](api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json),
 checked by `python3 scripts/check-alpha-api.py` alongside the root and Wii APIs.
 
-Research pin: `fc6964ac8799f0b7a38ffb9526361450f0b1b87a`, including the merged
-fresh physical descriptor research PR 82 (`aeac7a5`), July notes and PR 81
-research leads. The generated fixture
-manifest records the exact revision and both fixture/record file digests.
+Research pin: `6bf1eb21f755cfd6e0cd409eb81f928cd90a7f30`, including merged
+wired stability research PR #108, LED research PR #109 and prior physical
+input/haptic references.
+The generated fixture manifest records the exact revision and fixture/record
+digests. The LED acceptance cell adopts the bounded physical and separate
+consumer records from [research PR #109](https://github.com/anderstvoss/controller-protocol-research/pull/109).
 Every `steam-c6-*` fixture used here is synthetic consumer-source evidence. The
 `steam-s3-1302-report-descriptor` fixture is physical, imported without byte changes.
 Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
@@ -56,6 +58,7 @@ Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
 | Motion | Native motion through `0x42` | No companion motion node. The provider cannot declare the accelerometer property or timestamp event |
 | Touch | Native pad coordinates, click, pressure and touch flags | Pad click and contact-gated coordinates. The kernel gamepad mapping has no independent pressure, stick/grip touch or pad-contact key |
 | Host output | Retained vendor haptics, reports `0x80`–`0x85` | Conventional rumble via reverse events. There is no vendor haptic payload for the six retained slots |
+| LED controls | Retained raw brightness, override and RGBW intent through the default Steam profile; see [wired LED controls](STEAM_LED_CONTROLS.md) | No HID feature channel or colour/brightness output representation |
 | Unit serial | Compatibility PID/counter feature string. Physical format: No evidence | No HID feature channel or evdev unique-ID setter |
 
 The default unit serial is a synthetic `v<pid-hex>-<counter-hex>` label,
@@ -81,9 +84,9 @@ per-target restrictions remain visible. No additional public API is introduced.
 
 The [C6 D9 report](C6_D9_ACCEPTANCE.md) records the new N1/N4 measurements,
 separately qualified SDL rerun, post-C6 kernel decoding and ABS ioctl results,
-manual Steam procedure and Puck feasibility note. The manifest retains
-source-only evidence levels and explicit missing live cells; none is promoted
-to physical acceptance.
+manual Steam procedure and Puck feasibility note. Later physical-reference
+records now support the bounded per-function promotions listed in the wired
+stability follow-up below; missing live and calibration claims remain explicit.
 
 ## D9 wired acceptance
 
@@ -233,11 +236,14 @@ restore-settings invalidates known intent without inventing factory defaults.
 Malformed settings and unreviewed keys still fail atomically. Serial identity
 remains synthetic or validated caller-set; its reply behavior is unchanged.
 The profile also acknowledges the exact observed DC/E2 two-byte SET bodies
-without retaining state. For the observed ED SET declaring length 24, it returns
-the reviewed one-byte `00` value in a 63-byte report with fresh zero padding.
-Other ED forms remain unsupported, and opaque reply tails are never replayed; the three
-physical replies have different declared lengths. These choices cite
-`steam-d9-feature-response-framing` and assert no command semantics.
+without retaining state. ED accepts only the exact NUL-terminated protocol
+names `user/wireless_transport`, `esb/bond` and `esb/bond_2`. The transport reply
+is the recorded one-byte zero. Both record replies are synthetic absent records
+with declared length zero; a physical primary populated record is deliberately
+not replayed. Replies are 63 bytes with fresh zero padding. Unknown names and
+named writes remain unsupported. These choices cite
+`steam-d9-named-setting-framing` and `steam-d9-wired-entry-stability-consumer`;
+they neither access the host filesystem nor implement wireless pairing.
 C1 remains an explicit failure. Linux UHID converts all nonzero SET errors
 to EIO, so it cannot reproduce the physical USB EPIPE/STALL exactly; see the
 D9 report for the direct owned-node ioctl result and fake-provider regression.
@@ -281,3 +287,27 @@ output `0x89` remain unsupported; uinput has no corresponding stream channel.
 This follow-up supersedes the earlier blanket unsupported/No-evidence statements
 for the specifically captured `0x86`/`0x87`/`0x88` forms only. No USB Audio Class
 or MIDI interface is added, and native FIFO sizes remain unmeasured.
+
+
+## Wired stability and LED follow-up
+
+The fresh-instance study isolated a virtual difference: two physical controls
+were stable, while two baseline virtual runs replaced their entries on opening
+the Controller list. Exact named-record reads with synthetic absent replies
+removed the observed raw reopen/controller-info failure in two candidate runs.
+Both lists stayed stable and Begin Test opened; one details transition remained
+visually unclear. Stable serial/attribute replies and measured post-dequeue
+latency did not explain the baseline failure. This is a bounded compatibility
+workaround, not physical replay of populated record data.
+
+The supporting output API now exposes raw `led_brightness`, `led_override` and
+`led_rgbw` intent. The owner-supervised physical controls, lossy E9 reply model,
+provider limitations and two automated virtual runs are described in
+[Wired LED controls](STEAM_LED_CONTROLS.md). These findings supersede earlier
+blanket LED exclusions in the historical sections above.
+
+Acceptance now records physical packet correspondence for wired buttons,
+sticks, triggers, pads, motion and the specifically captured haptic forms.
+The Steam-client cell records consumer evidence for the named-read workaround;
+it does not claim gameplay, individual attribute requirements or universal
+stability. Kernel decoding/ABS cells remain qualified separately.
