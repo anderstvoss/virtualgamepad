@@ -882,3 +882,37 @@ with Steam applying its desktop layout to native pad input; the prompt-time raw
 stream was not observed. The owned instance was closed normally and no Valve HID
 nodes remained. Formal adoption awaits merged research #110; exact retail
 transfer/filtering and broader consumer behavior remain unverified.
+
+## Disposable virtual firmware-update attempt
+
+The physical controller stayed disconnected. Before Steam launch and before the
+owner's update action, USB/HID inventory and `lsusb` checks found no physical
+Valve device; a continuous guard allowed only the attributed owned UHID device.
+The normal profile produced no automatic update offer. A private test-only
+variant changed only build attribute 4 from 0x6ACFF323 to 0x60000000, verified by
+a deterministic fake-protocol test. This variant is not a public creation option.
+
+The owner found the global **Force update all connected Steam Controllers**
+Start button. After one click it showed Running, then returned to Start. The
+controller remained listed and Begin Test still opened, with no behavior change
+reported. Between the pre-action guard marker and the post-result marker, the
+metadata audit observed no 0x90 or 0x9f SET and no output-report writes. The exact
+owner click time is unmeasured. Repeated setting writes and rejected 0xae requests
+were present; this does not establish that the updater caused those retries.
+No accepted firmware image, reboot, bootloader transition or successful update
+is claimed. Steam's actual handling of a rejected update command is unverified.
+
+The audit emitted only command/report IDs, lengths, relative times, counts and
+codec reply status. Incoming SET/output packets were hashed through an anonymous
+pipe; the finalized digest describes that whole host-write stream, not a firmware
+image. No payload bytes were logged or captured, and no agent update command was
+sent. The private helper had core dumps disabled. A normal-profile replacement
+listed and opened Begin Test in the same Steam session; no restart was needed.
+Both owned instances were closed and no Valve HID device remained.
+
+A fake-transport regression found and fixed an independent fail-safe gap: update
+and bootloader SETs already returned Unsupported, but a following GET previously
+received the generic malformed compatibility exchange. Those commands now leave
+no query, so SET and following GET are both Unsupported. The test covers stale
+query invalidation, complete replies in each polling cycle, repeated service and
+idempotent close. No image acceptance or bootloader emulation is implemented.

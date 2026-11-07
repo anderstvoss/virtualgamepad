@@ -376,6 +376,10 @@ impl SteamProtocol {
                     }
                 }
             }
+            // Update and bootloader operations are unavailable. The query was
+            // cleared before parsing: a following GET must also be Unsupported,
+            // never a compatibility exchange or acceptance of update data.
+            0x90 | 0x9f => return Err(ReplyError::Unsupported),
             0xae | 0x83 | 0x81 | 0x85 | 0x8e => return Err(ReplyError::Invalid),
             _ => {
                 // steam-c6-feature-kernel-exchange / reply-attributes-short:

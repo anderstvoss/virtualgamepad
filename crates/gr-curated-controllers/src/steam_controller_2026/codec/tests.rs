@@ -2520,3 +2520,43 @@ fn lizard_keyboard_deduplicates_shared_keys_and_reports_six_slot_rollover() {
         vec![vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0]]
     );
 }
+
+#[test]
+fn update_and_bootloader_requests_never_schedule_an_accepted_exchange() {
+    // Synthetic zero-data requests against a fake transport only. This test
+    // never opens a HID device or sends an update command to any controller.
+    let fake = Fake::default();
+    let mut runtime = Runtime::new(
+        SteamHidProtocol::with_options("VGP-FAKE".into(), true),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    runtime.service(0).unwrap();
+    for (index, command) in [0x90, 0x9f].into_iter().enumerate() {
+        let ordinal = u64::try_from(index).unwrap() * 3 + 1;
+        enqueue(&fake, ordinal, set("feature-attrs-get"));
+        runtime.service(ordinal).unwrap();
+        let mut body = vec![0; 63];
+        body[0] = command;
+        enqueue(
+            &fake,
+            ordinal + 1,
+            RequestKind::Set(Report::new(ReportType::Feature, Some(1), body).unwrap()),
+        );
+        runtime.service(ordinal + 1).unwrap();
+        enqueue(&fake, ordinal + 2, get());
+        runtime.service(ordinal + 2).unwrap();
+        let commands = &fake.0.borrow().commands;
+        assert_eq!(commands.iter().filter(|c| matches!(c, Command::Reply { token, reply: Reply::Set(Err(ReplyError::Unsupported)) } if token.ordinal == ordinal + 1)).count(), 1);
+        assert_eq!(commands.iter().filter(|c| matches!(c, Command::Reply { token, reply: Reply::Get(Err(ReplyError::Unsupported)) } if token.ordinal == ordinal + 2)).count(), 1);
+        assert!(!runtime.wants_write());
+    }
+    for now in [10, 1000, 1_000_000] {
+        runtime.service(now).unwrap();
+    }
+    runtime.close().unwrap();
+    runtime.close().unwrap();
+    assert_eq!(fake.0.borrow().closes, 1);
+}
