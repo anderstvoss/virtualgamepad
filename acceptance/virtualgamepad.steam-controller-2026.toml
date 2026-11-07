@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.steam-controller-2026"
-research_revision = "6bf1eb21f755cfd6e0cd409eb81f928cd90a7f30"
+research_revision = "50374f8373e3a8819972a1b2082674408b65cb24"
 realizations = ["linux.uinput", "linux.uhid.usb"]
 refused_operations = []
 persistent_resources = []
@@ -96,3 +96,9 @@ id = "led-intent"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "steam_controller_2026::codec::tests::steam_client_rgbw_invalid_sets_are_atomic_and_strict_profile_refuses_them", evidence = [], reason = "The reduced evdev provider has no numbered HID feature channel or brightness/RGBW output representation. Retained LED fields remain unknown and raw feature application is refused; no feature is silently dropped." }
 "linux.uhid.usb" = { status = "physical-evidence", test_id = "steam_controller_2026::codec::tests::steam_client_rgbw_intent_is_independent_of_override_and_lossy_readback", evidence = ["steam-d9-wired-led-brightness", "steam-d9-wired-rgbw-override", "steam-d9-wired-rgbw-mixing-observation", "steam-d9-led-colour-readback-quantization", "steam-d9-virtual-led-consumer"], reason = "Merged #109 physical observations support bounded raw brightness (setting 45) and RGBW intent (setting 37 override) correspondence, qualitative basis/mixed colours, and the observed zero E9 replies at tested values 25 and 10. Separate virtual consumer runs verified exact replies, atomic errors and cleanup. This tier records protocol correspondence and retained intent, not virtual light emission or calibrated optical output. E9 cause and higher-value behavior, full ranges, persistence and emitter packaging remain unverified. UHID collapses nonzero feature errors to client EIO; reduced uinput has no corresponding HID channel." }
+
+[[functions]]
+id = "lizard-mode"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "steam_controller_2026::definition::tests::steam_creation_options_do_not_change_reduced_uinput_controls", evidence = [], reason = "This reduced realization declares only gamepad keys and absolute axes, with no relative mouse/desktop-key capabilities or HID host-mode channel. Enabling the option does not change evdev controls." }
+"linux.uhid.usb" = { status = "physical-evidence", test_id = "steam_controller_2026::codec::tests::lizard_single_keys_match_observed_complete_reports_and_release_once", evidence = ["steam-d9-lizard-control-mapping", "steam-d9-lizard-sdl-transition", "steam-d9-lizard-relative-scaling"], reason = "Physical control/report correspondence and normal SDL mouse suppression from research #110. Local owner test listed/opened tester; a guarded repeat counted 479 native packets and zero mouse/keyboard packets while Steam held the device. Fractional scaling, overflow splitting and 4-ms held-button refresh are bounded compatibility policies, not an exact retail filter. Default false remains a placeholder; broader consumer fidelity is unverified." }

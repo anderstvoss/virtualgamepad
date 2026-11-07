@@ -311,3 +311,6 @@ sticks, triggers, pads, motion and the specifically captured haptic forms.
 The Steam-client cell records consumer evidence for the named-read workaround;
 it does not claim gameplay, individual attribute requirements or universal
 stability. Kernel decoding/ABS cells remain qualified separately.
+
+Wired desktop mouse/keyboard compatibility is opt-in through `lizard_mode`; see
+[desktop mapping and limits](STEAM_LIZARD_MODE.md). Reduced uinput is unchanged.

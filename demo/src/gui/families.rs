@@ -584,15 +584,16 @@ mod steam_tests {
                 steam_options: super::super::SteamController2026CreationOptions::default(),
             };
             let mut captured = Vec::new();
-            for (enabled, streaming) in [
-                (false, false),
-                (true, false),
-                (false, true),
-                (true, true),
-                (false, false),
+            for (enabled, streaming, lizard) in [
+                (false, false, false),
+                (true, false, true),
+                (false, true, false),
+                (true, true, true),
+                (false, false, false),
             ] {
                 options.steam_options.steam_client_compat = enabled;
                 options.steam_options.haptic_streaming = streaming;
+                options.steam_options.lizard_mode = lizard;
                 captured.push(
                     create_steam_session(&options, |observed, id, creation| {
                         assert_eq!(observed, target);
@@ -603,6 +604,9 @@ mod steam_tests {
                     .unwrap(),
                 );
             }
+            assert!(!captured[0].lizard_mode);
+            assert!(captured[1].lizard_mode && captured[3].lizard_mode);
+            assert!(!captured[2].lizard_mode && !captured[4].lizard_mode);
             assert!(!captured[0].steam_client_compat);
             assert!(captured[1].steam_client_compat);
             assert!(!captured[2].steam_client_compat);

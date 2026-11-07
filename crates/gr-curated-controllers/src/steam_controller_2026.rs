@@ -31,6 +31,7 @@ mod definition;
 #[allow(dead_code)] // Exact compiled capture is used by the private 14c UHID path.
 mod descriptor;
 mod evdev;
+mod lizard;
 mod streaming;
 mod topology;
 pub use codec::{SteamController2026Haptic, SteamController2026Outputs};

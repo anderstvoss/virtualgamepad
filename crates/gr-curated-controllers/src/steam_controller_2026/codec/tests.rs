@@ -2183,3 +2183,340 @@ fn negative_trigger_validation_preserves_feature_query_and_input_sequence() {
     assert_eq!(reports[0].wire()[1], 0);
     assert_eq!(protocol.protocol.sequence, 1);
 }
+
+fn captured_desktop_reports() -> std::collections::BTreeSet<Vec<u8>> {
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/protocol-research/steam-d9-lizard-desktop.hex"
+    ))
+    .lines()
+    .map(|line| {
+        line.as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect()
+    })
+    .collect()
+}
+
+fn desktop_reports(protocol: &mut SteamHidProtocol, state: &State, now: u64) -> Vec<Vec<u8>> {
+    protocol
+        .input(state, now)
+        .unwrap()
+        .into_iter()
+        .filter(|r| matches!(r.id(), Some(0x40 | 0x41)))
+        .map(|r| r.wire())
+        .collect()
+}
+
+#[test]
+fn lizard_option_off_is_silent_and_native_input_is_preserved() {
+    let state = all_buttons();
+    let mut off = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, false);
+    assert!(desktop_reports(&mut off, &state, 0).is_empty());
+    assert_eq!(
+        off.input(&state, 1).unwrap()[0].wire()[2..6],
+        state.button_bits().to_le_bytes()
+    );
+    assert!(
+        !crate::steam_controller_2026::SteamController2026CreationOptions::default().lizard_mode
+    );
+}
+
+#[test]
+fn lizard_single_keys_match_observed_complete_reports_and_release_once() {
+    for (button, usage) in [
+        (Button::A, 0x28),
+        (Button::B, 0x29),
+        (Button::Menu, 0x29),
+        (Button::View, 0x2b),
+        (Button::Up, 0x52),
+        (Button::Down, 0x51),
+        (Button::Left, 0x50),
+        (Button::Right, 0x4f),
+    ] {
+        let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+        let mut s = State::default();
+        s.set_button(button, true);
+        let expected = vec![0x41, 0, 0, usage, 0, 0, 0, 0, 0];
+        assert!(captured_desktop_reports().contains(&expected));
+        assert_eq!(desktop_reports(&mut p, &s, 0), vec![expected]);
+        assert!(desktop_reports(&mut p, &s, 1).is_empty());
+        s.neutralize();
+        assert_eq!(
+            desktop_reports(&mut p, &s, 2),
+            vec![vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0]]
+        );
+        assert!(desktop_reports(&mut p, &s, 3).is_empty());
+    }
+    for button in [
+        Button::X,
+        Button::Y,
+        Button::Qam,
+        Button::Steam,
+        Button::L4,
+        Button::L5,
+        Button::R4,
+        Button::R5,
+        Button::LeftShoulder,
+        Button::RightShoulder,
+        Button::LeftStick,
+        Button::RightStick,
+    ] {
+        let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+        let mut s = State::default();
+        s.set_button(button, true);
+        assert!(desktop_reports(&mut p, &s, 0).is_empty());
+    }
+}
+
+#[test]
+fn lizard_mouse_uses_native_trigger_bits_repeats_and_releases() {
+    for mask in [0, 1, 2] {
+        assert!(captured_desktop_reports().contains(&vec![0x40, mask, 0, 0, 0, 0]));
+    }
+    for (button, mask) in [(Button::LeftTrigger, 2), (Button::RightTrigger, 1)] {
+        let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+        let mut s = State {
+            triggers: [32767; 2],
+            ..State::default()
+        };
+        assert!(
+            desktop_reports(&mut p, &s, 0).is_empty(),
+            "no guessed analogue threshold"
+        );
+        s.set_button(button, true);
+        assert_eq!(
+            desktop_reports(&mut p, &s, 1),
+            vec![vec![0x40, mask, 0, 0, 0, 0]]
+        );
+        assert_eq!(p.deadline(), Some(4001));
+        assert_eq!(
+            desktop_reports(&mut p, &s, 4001),
+            vec![vec![0x40, mask, 0, 0, 0, 0]]
+        );
+        s.set_button(button, false);
+        assert_eq!(
+            desktop_reports(&mut p, &s, 8001),
+            vec![vec![0x40, 0, 0, 0, 0, 0]]
+        );
+        assert_eq!(p.deadline(), None);
+    }
+}
+
+#[test]
+fn lizard_pad_scaling_fraction_overflow_and_contact_boundaries_are_bounded() {
+    let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+    let mut s = State::default();
+    s.pads[1].touch = true;
+    s.pads[1].position = [-32000, -32000];
+    assert!(
+        desktop_reports(&mut p, &s, 0).is_empty(),
+        "contact establishes baseline"
+    );
+    s.pads[1].position = [-31936, -31936];
+    assert!(desktop_reports(&mut p, &s, 1).is_empty());
+    s.pads[1].position = [-31872, -31872];
+    assert_eq!(
+        desktop_reports(&mut p, &s, 2),
+        vec![vec![0x40, 0, 1, 255, 0, 0]]
+    );
+    s.pads[1].position = [32000, 32000];
+    let reports = desktop_reports(&mut p, &s, 3);
+    assert!(reports.len() <= 4);
+    assert_eq!(
+        reports
+            .iter()
+            .map(|r| i32::from(i8::from_le_bytes([r[2]])))
+            .sum::<i32>(),
+        499
+    );
+    assert_eq!(
+        reports
+            .iter()
+            .map(|r| i32::from(i8::from_le_bytes([r[3]])))
+            .sum::<i32>(),
+        -499
+    );
+    s.pads[1].touch = false;
+    assert!(desktop_reports(&mut p, &s, 4).is_empty());
+    s.pads[1].position = [-32000, 32000];
+    s.pads[1].touch = true;
+    assert!(desktop_reports(&mut p, &s, 5).is_empty());
+    s.pads[0].touch = true;
+    p.input(&s, 6).unwrap();
+    s.pads[0].position = [1024, 1024];
+    assert_eq!(
+        desktop_reports(&mut p, &s, 7),
+        vec![vec![0x40, 0, 0, 0, 255, 1]]
+    );
+    s.pads[0].click = true;
+    assert!(desktop_reports(&mut p, &s, 8).is_empty());
+    s.pads[1].click = true;
+    assert_eq!(
+        desktop_reports(&mut p, &s, 9),
+        vec![vec![0x40, 1, 0, 0, 0, 0]]
+    );
+}
+
+#[test]
+fn lizard_setting9_gates_mouse_and_mapping_clear_gates_keyboard_independently() {
+    let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+    let mut s = State::default();
+    s.pads[1].touch = true;
+    p.input(&s, 0).unwrap();
+    assert_eq!(
+        p.request(&compat_setting_request(&[(9, 0)]), 1).0,
+        Reply::Set(Ok(()))
+    );
+    s.pads[1].position = [2048, 2048];
+    s.set_button(Button::A, true);
+    assert_eq!(
+        desktop_reports(&mut p, &s, 2),
+        vec![vec![0x41, 0, 0, 0x28, 0, 0, 0, 0, 0]]
+    );
+    assert_eq!(
+        p.request(&set("feature-lizard-disable-clear"), 3).0,
+        Reply::Set(Ok(()))
+    );
+    assert!(desktop_reports(&mut p, &s, 4).is_empty());
+    assert_eq!(
+        p.request(&set("feature-lizard-enable-map"), 5).0,
+        Reply::Set(Ok(()))
+    );
+    assert_eq!(
+        desktop_reports(&mut p, &s, 6),
+        vec![vec![0x41, 0, 0, 0x28, 0, 0, 0, 0, 0]]
+    );
+    assert_eq!(
+        p.request(&set("feature-lizard-enable-defaults"), 7).0,
+        Reply::Set(Ok(()))
+    );
+    assert_eq!(
+        p.request(&compat_setting_request(&[(71, 1)]), 8).0,
+        Reply::Set(Ok(()))
+    );
+    s.neutralize();
+    p.input(&s, 9).unwrap();
+    assert!(
+        desktop_reports(&mut p, &s, 10_000_000).is_empty(),
+        "no invented watchdog output"
+    );
+}
+
+#[test]
+fn lizard_fake_polling_acks_every_mode_write_and_cleanup_preserves_sibling() {
+    let a = Fake::default();
+    let b = Fake::default();
+    let mut first = Runtime::new(
+        SteamHidProtocol::with_desktop_options("VGP-A".into(), true, false, true),
+        a.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    let mut sibling = Runtime::new(
+        SteamHidProtocol::with_desktop_options("VGP-B".into(), true, false, true),
+        b.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    first.service(0).unwrap();
+    sibling.service(0).unwrap();
+    for (i, request) in [
+        compat_setting_request(&[(9, 0)]),
+        set("feature-lizard-disable-clear"),
+        set("feature-lizard-enable-map"),
+        set("feature-lizard-enable-defaults"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let i = u64::try_from(i).unwrap() + 1;
+        enqueue(&a, i, request);
+        first.service(i).unwrap();
+        assert_eq!(a.0.borrow().commands.iter().filter(|c|matches!(c,Command::Reply{token,reply:Reply::Set(Ok(()))}if token.ordinal==i)).count(),1);
+        assert!(!first.wants_write());
+    }
+    first
+        .update(|s| {
+            s.set_button(Button::A, true);
+            Ok(())
+        })
+        .unwrap();
+    first.service(20).unwrap();
+    first.close().unwrap();
+    first.close().unwrap();
+    sibling
+        .update(|s| {
+            s.set_button(Button::View, true);
+            Ok(())
+        })
+        .unwrap();
+    sibling.service(21).unwrap();
+    assert!(
+        b.0.borrow()
+            .commands
+            .iter()
+            .any(|c| matches!(c,Command::Input(r)if r.wire()==vec![0x41,0,0,0x2b,0,0,0,0,0]))
+    );
+    assert_eq!(a.0.borrow().closes, 1);
+    sibling.close().unwrap();
+    let mut p = SteamHidProtocol::with_desktop_options("VGP-C".into(), true, false, true);
+    let mut s = State::default();
+    s.set_button(Button::RightTrigger, true);
+    p.input(&s, 0).unwrap();
+    p.lifecycle(Lifecycle::Stop, 1);
+    p.lifecycle(Lifecycle::Stop, 2);
+    assert!(p.input(&s, 3).unwrap().is_empty());
+    assert_eq!(p.deadline(), None);
+    p.lifecycle(
+        Lifecycle::Start {
+            numbered_input: true,
+            numbered_output: true,
+            numbered_feature: true,
+        },
+        4,
+    );
+    assert!(desktop_reports(&mut p, &State::default(), 5).is_empty());
+}
+
+#[test]
+fn lizard_keyboard_deduplicates_shared_keys_and_reports_six_slot_rollover() {
+    let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+    let mut s = State::default();
+    s.set_button(Button::B, true);
+    s.set_button(Button::Menu, true);
+    assert_eq!(
+        desktop_reports(&mut p, &s, 0),
+        vec![vec![0x41, 0, 0, 0x29, 0, 0, 0, 0, 0]]
+    );
+    s.set_button(Button::B, false);
+    assert!(desktop_reports(&mut p, &s, 1).is_empty());
+    for button in [
+        Button::A,
+        Button::View,
+        Button::Up,
+        Button::Down,
+        Button::Left,
+        Button::Right,
+    ] {
+        s.set_button(button, true);
+    }
+    assert_eq!(
+        desktop_reports(&mut p, &s, 2),
+        vec![vec![0x41, 0, 0, 1, 1, 1, 1, 1, 1]]
+    );
+    s.set_button(Button::A, false);
+    let keys = desktop_reports(&mut p, &s, 3);
+    assert_eq!(
+        keys,
+        vec![vec![0x41, 0, 0, 0x29, 0x2b, 0x4f, 0x50, 0x51, 0x52]]
+    );
+    s.neutralize();
+    assert_eq!(
+        desktop_reports(&mut p, &s, 4),
+        vec![vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0]]
+    );
+}

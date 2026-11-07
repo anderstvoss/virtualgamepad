@@ -17,8 +17,13 @@ pub(crate) struct SteamController2026Definition(
     pub(crate) String,
     pub(crate) bool,
     pub(crate) bool,
+    pub(crate) bool,
 );
 const REDUCED: &[TargetRestriction] = &[
+    TargetRestriction {
+        feature: "lizard desktop mouse/keyboard",
+        reason: "this reduced realization declares only gamepad keys and absolute axes; it has no relative mouse/desktop-key capabilities or HID host-mode channel",
+    },
     TargetRestriction {
         feature: "motion sensors",
         reason: "the uinput provider cannot declare INPUT_PROP_ACCELEROMETER or MSC_TIMESTAMP",
@@ -203,7 +208,7 @@ impl crate::common::HidDriver for SteamController2026Definition {
     }
 
     fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
-        Self::Hid::with_streaming_options(self.0.clone(), self.1, self.2)
+        Self::Hid::with_desktop_options(self.0.clone(), self.1, self.2, self.3)
     }
 }
 impl ControllerFamily for SteamController2026Definition {
@@ -226,7 +231,7 @@ impl ControllerFamily for SteamController2026Definition {
         TARGETS
     }
     fn manifest() -> RealizationManifest {
-        Self(String::new(), false, false).realization_manifest()
+        Self(String::new(), false, false, false).realization_manifest()
     }
 }
 
@@ -235,7 +240,7 @@ mod tests {
     use super::*;
     #[test]
     fn negative_triggers_are_rejected_for_both_realizations_without_mutation() {
-        let definition = SteamController2026Definition("VGP-FAKE".into(), true, false);
+        let definition = SteamController2026Definition("VGP-FAKE".into(), true, false, false);
         for target in [
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_UINPUT,
@@ -274,9 +279,9 @@ mod tests {
     }
 
     #[test]
-    fn steam_client_feature_option_does_not_change_reduced_uinput_controls() {
-        let strict = SteamController2026Definition("VGP-FAKE".into(), false, false);
-        let compat = SteamController2026Definition("VGP-FAKE".into(), true, true);
+    fn steam_creation_options_do_not_change_reduced_uinput_controls() {
+        let strict = SteamController2026Definition("VGP-FAKE".into(), false, false, false);
+        let compat = SteamController2026Definition("VGP-FAKE".into(), true, true, true);
         let selection = RealizationSelection {
             controller: strict.controller_id(),
             target: RealizationTarget::LINUX_UINPUT,
@@ -290,6 +295,10 @@ mod tests {
             strict.encode(selection, &state),
             compat.encode(selection, &state)
         );
+        assert!(UINPUT.restrictions().iter().any(|restriction| {
+            restriction.feature == "lizard desktop mouse/keyboard"
+                && restriction.reason.contains("relative mouse")
+        }));
         assert!(UINPUT.restrictions().iter().any(|restriction| {
             restriction.feature == "HID feature exchange, touch metadata and vendor haptics"
         }));
@@ -311,7 +320,7 @@ mod tests {
 
     #[test]
     fn compiled_family_advertises_supported_targets_without_host_profiles() {
-        let id = SteamController2026Definition(String::new(), false, false).controller_id();
+        let id = SteamController2026Definition(String::new(), false, false, false).controller_id();
         let family = crate::registry::FAMILIES
             .iter()
             .find(|f| f.id == id)

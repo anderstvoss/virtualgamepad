@@ -1,5 +1,6 @@
-//! Compat only: steam-c6-input-42/45/47, steam-c6-feature-kernel-exchange,
-//! steam-c6-output-80-81 and steam-c6-output-82-85. No device ACKs or timers.
+//! Wired native/feature/haptic compatibility plus opt-in desktop reports.
+//! Desktop mappings and bounded refresh policy: steam-d9-lizard-control-mapping,
+//! steam-d9-lizard-sdl-transition and steam-d9-lizard-relative-scaling.
 use super::streaming::{
     SteamController2026StreamOutputs, SteamController2026StreamPacket, StreamState,
 };
@@ -284,6 +285,7 @@ enum Query {
 }
 #[derive(Debug, Clone, Default)]
 struct SteamProtocol {
+    desktop: super::lizard::Desktop,
     serial: String,
     steam_client_compat: bool,
     stream: Box<StreamState>,
@@ -490,6 +492,14 @@ impl Protocol for SteamProtocol {
         let report = wired_input(state, self.sequence, Format::Primary42)?;
         self.sequence = self.sequence.wrapping_add(1);
         let mut reports = vec![report];
+        reports.extend(self.desktop.input(
+            state,
+            self.outputs.mappings.unwrap_or(true),
+            self.outputs.lizard.unwrap_or(true),
+        ));
+        if self.desktop.repeating() {
+            self.refresh = Some(now.saturating_add(4_000));
+        }
         reports.extend(self.stream.poll(now).map_err(|_| Error::QueueFull)?);
         Ok(reports)
     }
@@ -540,12 +550,14 @@ impl Protocol for SteamProtocol {
                 numbered_output,
                 numbered_feature,
             } => {
+                self.desktop.reset();
                 self.stream.reset(now);
                 self.invalid_framing = !(numbered_input && numbered_output && numbered_feature);
                 self.stopped = false;
                 self.refresh = Some(now);
             }
             Lifecycle::Stop => {
+                self.desktop.reset();
                 self.stream.reset(now);
                 self.stopped = true;
                 self.refresh = None;
@@ -579,8 +591,23 @@ impl SteamHidProtocol {
         steam_client_compat: bool,
         haptic_streaming: bool,
     ) -> Self {
+        Self::with_desktop_options(
+            serial,
+            steam_client_compat,
+            haptic_streaming,
+            super::SteamController2026CreationOptions::default().lizard_mode,
+        )
+    }
+
+    pub(crate) fn with_desktop_options(
+        serial: String,
+        steam_client_compat: bool,
+        haptic_streaming: bool,
+        lizard_mode: bool,
+    ) -> Self {
         let mut protocol = Self {
             protocol: SteamProtocol {
+                desktop: super::lizard::Desktop::new(lizard_mode),
                 serial,
                 steam_client_compat,
                 stream: Box::new(StreamState::new(haptic_streaming)),

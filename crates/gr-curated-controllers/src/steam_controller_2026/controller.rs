@@ -39,6 +39,11 @@ pub struct SteamController2026CreationOptions {
     /// buffering sizes/timing are a compat policy, not measured retail limits.
     /// Uinput has no HID feature/output stream channel; this has no effect there.
     pub haptic_streaming: bool,
+    /// Emit captured wired desktop mouse/keyboard mappings when enabled by host
+    /// intent. Defaults to false. Setting 9 gates mouse separately from keyboard
+    /// mappings. Initial unknown host state is treated as enabled for this opt-in.
+    /// Uinput has no composite HID mouse/keyboard channel; no effect there.
+    pub lizard_mode: bool,
 }
 
 impl Default for SteamController2026CreationOptions {
@@ -47,6 +52,7 @@ impl Default for SteamController2026CreationOptions {
             serial: None,
             steam_client_compat: true,
             haptic_streaming: false,
+            lizard_mode: false,
         }
     }
 }
@@ -71,6 +77,7 @@ pub fn create_steam_controller_2026_with_options(
             serial,
             options.steam_client_compat,
             options.haptic_streaming,
+            options.lizard_mode,
         ),
         if target == RealizationTarget::LINUX_UINPUT {
             super::evdev::realization()
