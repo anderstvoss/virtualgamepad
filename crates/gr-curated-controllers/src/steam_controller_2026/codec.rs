@@ -252,7 +252,8 @@ struct Outputs {
     watchdog: Option<u16>,
     imu: Option<u16>,
     rgbw: Option<[u8; 4]>,
-    // Recorded accepted intent only: no feature reply reads this map.
+    // Last accepted setting intent; feature 0x89 reads key 37 only.
+    // Other entries do not imply general readback or persistent settings.
     compat_settings: std::collections::BTreeMap<u8, u16>,
 }
 // steam-d9-named-setting-framing / steam-d9-wired-entry-stability-consumer.

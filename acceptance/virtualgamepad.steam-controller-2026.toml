@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.steam-controller-2026"
-research_revision = "6bdeefc68c2a627ecee6bbfef98a493e55ba58c9"
+research_revision = "6bf1eb21f755cfd6e0cd409eb81f928cd90a7f30"
 realizations = ["linux.uinput", "linux.uhid.usb"]
 refused_operations = []
 persistent_resources = []
@@ -95,4 +95,4 @@ id = "haptic-midi-pcm"
 id = "led-intent"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "steam_controller_2026::codec::tests::steam_client_rgbw_invalid_sets_are_atomic_and_strict_profile_refuses_them", evidence = [], reason = "The reduced evdev provider has no numbered HID feature channel or brightness/RGBW output representation. Retained LED fields remain unknown and raw feature application is refused; no feature is silently dropped." }
-"linux.uhid.usb" = { status = "wip", test_id = "steam_controller_2026::codec::tests::steam_client_rgbw_intent_is_independent_of_override_and_lossy_readback", evidence = [], reason = "Experimental raw brightness/override/RGBW intent and exact getter/error/lifecycle checks pass, including two owned 77-request/reply runs. Sanitized physical and consumer records are under review in research PR #109 and are not adopted by this merged-only pin yet. The dependent implementation PR must remain draft until those records merge and the pin/cell are refreshed. E9 returned zeros at tested values 25/10; higher-value readback is unverified, and physical emitter packaging/calibration/persistence remain unresolved. UHID collapses nonzero feature errors to client EIO." }
+"linux.uhid.usb" = { status = "physical-evidence", test_id = "steam_controller_2026::codec::tests::steam_client_rgbw_intent_is_independent_of_override_and_lossy_readback", evidence = ["steam-d9-wired-led-brightness", "steam-d9-wired-rgbw-override", "steam-d9-wired-rgbw-mixing-observation", "steam-d9-led-colour-readback-quantization", "steam-d9-virtual-led-consumer"], reason = "Merged #109 physical observations support bounded raw brightness (setting 45) and RGBW intent (setting 37 override) correspondence, qualitative basis/mixed colours, and the observed zero E9 replies at tested values 25 and 10. Separate virtual consumer runs verified exact replies, atomic errors and cleanup. This tier records protocol correspondence and retained intent, not virtual light emission or calibrated optical output. E9 cause and higher-value behavior, full ranges, persistence and emitter packaging remain unverified. UHID collapses nonzero feature errors to client EIO; reduced uinput has no corresponding HID channel." }

@@ -1,10 +1,10 @@
 # Wired Steam Controller 2026 LED controls
 
-Draft dependency: [research PR #109](https://github.com/anderstvoss/controller-protocol-research/pull/109)
-contains the sanitized LED records below. They must merge and be adopted by the
-research pin/acceptance cell before this implementation is ready to merge.
+The merged [research PR #109](https://github.com/anderstvoss/controller-protocol-research/pull/109)
+is adopted at `6bf1eb21f755cfd6e0cd409eb81f928cd90a7f30` by the research
+pin and LED acceptance cell.
 
-The candidate default Steam compatibility profile retains host LED intent on wired UHID.
+The default Steam compatibility profile retains host LED intent on wired UHID.
 The supporting `SteamController2026Outputs` fields are:
 
 | Field | Meaning |
@@ -50,6 +50,11 @@ packages emit light, their die construction and allocation to these channels
 remain unclear. Four logical controls do not resolve physical packaging.
 No spectral, full-range, calibrated brightness, reset/restart persistence or
 wireless claim is made. No physical named-store commit or firmware action was used.
+
+The LED acceptance cell is `physical-evidence` for this bounded protocol and
+retained-intent correspondence. The separate virtual consumer record supports
+roundtrip and cleanup observations; it is not physical light emission. Calibration,
+complete ranges, persistence and emitter construction are not promoted.
 
 ## Regression and consumer checks
 

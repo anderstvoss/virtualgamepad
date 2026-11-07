@@ -7,12 +7,12 @@ The approved Steam supporting API has its own reviewed snapshot,
 [`api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json`](api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json),
 checked by `python3 scripts/check-alpha-api.py` alongside the root and Wii APIs.
 
-Research pin: `6bdeefc68c2a627ecee6bbfef98a493e55ba58c9`, including merged
-wired stability research PR #108 and prior physical input/haptic references.
+Research pin: `6bf1eb21f755cfd6e0cd409eb81f928cd90a7f30`, including merged
+wired stability research PR #108, LED research PR #109 and prior physical
+input/haptic references.
 The generated fixture manifest records the exact revision and fixture/record
-digests. LED evidence [research PR #109](https://github.com/anderstvoss/controller-protocol-research/pull/109)
-is a pending dependency: this implementation stays draft until its records are
-merged and adopted by the pin and LED acceptance cell.
+digests. The LED acceptance cell adopts the bounded physical and separate
+consumer records from [research PR #109](https://github.com/anderstvoss/controller-protocol-research/pull/109).
 Every `steam-c6-*` fixture used here is synthetic consumer-source evidence. The
 `steam-s3-1302-report-descriptor` fixture is physical, imported without byte changes.
 Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
