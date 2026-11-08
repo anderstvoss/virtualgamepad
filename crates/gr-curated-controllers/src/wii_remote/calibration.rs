@@ -48,6 +48,24 @@ impl WiiExtensionCalibration {
         })
     }
 
+    /// Complete validated `MotionPlus` block, in the form accepted by `import`.
+    #[must_use]
+    pub fn motion_plus(&self) -> Option<[u8; 32]> {
+        self.motion_plus
+    }
+
+    /// Complete validated Nunchuk block, in the form accepted by `import`.
+    #[must_use]
+    pub fn nunchuk(&self) -> Option<[u8; 16]> {
+        self.nunchuk
+    }
+
+    /// Complete validated Classic block, in the form accepted by `import`.
+    #[must_use]
+    pub fn classic(&self) -> Option<[u8; 16]> {
+        self.classic
+    }
+
     pub(super) fn is_empty(&self) -> bool {
         self.motion_plus.is_none() && self.nunchuk.is_none() && self.classic.is_none()
     }

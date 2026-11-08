@@ -819,3 +819,114 @@ fn compat_creation_options_are_per_controller_and_replies_cleanup_once() {
     assert_eq!(one.0.lock().unwrap().closed, 1);
     assert_eq!(two.0.lock().unwrap().closed, 1);
 }
+
+#[test]
+fn complete_terminal_resource_round_trip_preserves_optional_blocks_and_failed_export_retry() {
+    let (mp, n, classic) = calibration::synthetic_blocks();
+    for flags in 0..8 {
+        let calibration = WiiExtensionCalibration::import(
+            (flags & 1 != 0).then_some(mp),
+            (flags & 2 != 0).then_some(n),
+            (flags & 4 != 0).then_some(classic),
+        )
+        .unwrap();
+        let original = WiiEepromImage::import((0..=255).collect())
+            .unwrap()
+            .with_extension_calibration(calibration);
+        let (mut c, fake) = create(original.clone());
+        assert!(
+            c.resolve_resource(WiiResourceDisposition::KeepSnapshot)
+                .is_err()
+        );
+        let mut request = write(0, 37, &[0xe7, 0x3d]);
+        request[0] = 0; // EEPROM, not peripheral registers.
+        output(&fake, 0x16, &request);
+        for _ in 0..3 {
+            c.service(&mut |_| {}).unwrap();
+        }
+        assert!(c.resource_dirty());
+        c.close();
+        c.close();
+        let kept = c
+            .resolve_resource(WiiResourceDisposition::KeepSnapshot)
+            .unwrap()
+            .unwrap()
+            .clone();
+        let mut expected = original.bytes().to_vec();
+        expected[37..39].copy_from_slice(&[0xe7, 0x3d]);
+        assert_eq!(kept.bytes(), expected);
+        let mut attempts = 0;
+        let mut export = |snapshot: &WiiEepromImage| {
+            assert_eq!(snapshot, &kept);
+            attempts += 1;
+            if attempts == 1 {
+                Err("synthetic caller failure")
+            } else {
+                Ok(())
+            }
+        };
+        assert!(
+            export(
+                c.resolve_resource(WiiResourceDisposition::KeepSnapshot)
+                    .unwrap()
+                    .unwrap()
+            )
+            .is_err()
+        );
+        let retry = c
+            .resolve_resource(WiiResourceDisposition::Discard)
+            .unwrap()
+            .unwrap();
+        assert_eq!(retry, &kept);
+        assert!(export(retry).is_ok());
+        let blocks = retry.extension_calibration();
+        let restored = WiiEepromImage::import(retry.bytes().to_vec())
+            .unwrap()
+            .with_extension_calibration(
+                WiiExtensionCalibration::import(
+                    blocks.motion_plus(),
+                    blocks.nunchuk(),
+                    blocks.classic(),
+                )
+                .unwrap(),
+            );
+        assert_eq!(restored, kept);
+        assert_eq!(
+            restored.extension_calibration(),
+            original.extension_calibration()
+        );
+        let (mut reopened, other) = create(restored.clone());
+        reopened.close();
+        assert_eq!(
+            reopened
+                .resolve_resource(WiiResourceDisposition::KeepSnapshot)
+                .unwrap(),
+            Some(&restored)
+        );
+        assert_eq!(other.0.lock().unwrap().closed, 1);
+        drop(c);
+        assert_eq!(fake.0.lock().unwrap().closed, 1);
+    }
+}
+
+#[test]
+fn dropping_an_unresolved_wii_closes_once_and_recreation_uses_only_explicit_import() {
+    let (mut c, fake) = create(WiiEepromImage::import(vec![0x42; 64]).unwrap());
+    let mut request = write(0, 4, &[0x71]);
+    request[0] = 0;
+    output(&fake, 0x16, &request);
+    c.service(&mut |_| {}).unwrap();
+    assert!(c.resource_dirty());
+    drop(c);
+    assert_eq!(fake.0.lock().unwrap().closed, 1);
+    let (mut fresh, _) = create(WiiEepromImage::default());
+    fresh.close();
+    assert!(
+        fresh
+            .resolve_resource(WiiResourceDisposition::KeepSnapshot)
+            .unwrap()
+            .unwrap()
+            .bytes()
+            .is_empty()
+    );
+}

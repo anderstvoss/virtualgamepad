@@ -536,7 +536,9 @@ fn create_wii_session<T, E: std::fmt::Display>(
         gr_curated_controllers::wii_remote::WiiRemoteCreationOptions,
     ) -> Result<T, E>,
 ) -> Result<T, String> {
-    let image = options.wii_imports.load(options.target)?;
+    let image = options
+        .wii_imports
+        .load(options.target, options.wii_revision)?;
     create(
         options.target,
         options.id,
@@ -689,6 +691,58 @@ mod wii_tests {
         }
     }
     #[test]
+    fn complete_envelope_validation_precedes_every_fake_provider_open() {
+        use super::super::{App, wii_eeprom, wii_import};
+        use std::{io::Write, os::unix::fs::OpenOptionsExt};
+        let path =
+            std::env::temp_dir().join(format!("vgp-envelope-{}.wii-eeprom", std::process::id()));
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .unwrap();
+        let mut options = App::default().creation_options();
+        options.target = virtualgamepad::RealizationId::LINUX_UHID_BLUETOOTH;
+        options.wii_imports = wii_import::Imports::envelope(path.clone());
+        let image =
+            gr_curated_controllers::wii_remote::WiiEepromImage::import(vec![0x37; 257]).unwrap();
+        let bytes = wii_eeprom::encode(&image, options.wii_revision).unwrap();
+        file.write_all(&bytes).unwrap();
+        drop(file);
+        let observed =
+            create_wii_session(&options, |_, _, _, imported, _| Ok::<_, String>(imported)).unwrap();
+        assert_eq!(observed, image);
+        options.wii_revision = super::super::WiiRemoteRevision::Tr;
+        assert!(
+            create_wii_session(&options, |_, _, _, _, _| -> Result<(), String> {
+                panic!("model mismatch opened a provider")
+            })
+            .is_err()
+        );
+        options.wii_revision = super::super::WiiRemoteRevision::Original;
+        for length in [0, 8, bytes.len() - 1] {
+            std::fs::write(&path, &bytes[..length]).unwrap();
+            assert!(
+                create_wii_session(&options, |_, _, _, _, _| -> Result<(), String> {
+                    panic!("truncated import opened a provider")
+                })
+                .is_err()
+            );
+        }
+        let mut bad = bytes;
+        bad[17] ^= 1;
+        std::fs::write(&path, &bad).unwrap();
+        assert!(
+            create_wii_session(&options, |_, _, _, _, _| -> Result<(), String> {
+                panic!("corrupt import opened a provider")
+            })
+            .is_err()
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn each_wii_creation_receives_its_application_session_id_and_selected_target() {
         for id in [1, 7, u64::MAX] {
             let options = ControllerOptions {
@@ -759,5 +813,25 @@ mod compat_creation_tests {
                 }
             }
         }
+    }
+}
+
+impl super::wii_eeprom::SaveSession for Controller {
+    fn close_for_save(&mut self) {
+        self.close();
+    }
+    fn keep_snapshot(
+        &mut self,
+    ) -> Result<gr_curated_controllers::wii_remote::WiiEepromImage, String> {
+        let Self::WiiRemote(controller) = self else {
+            return Err("EEPROM saving is only available for Wii HID instances".into());
+        };
+        controller
+            .resolve_resource(
+                gr_curated_controllers::wii_remote::WiiResourceDisposition::KeepSnapshot,
+            )
+            .map_err(|e| e.to_string())?
+            .cloned()
+            .ok_or_else(|| "EEPROM was already discarded".into())
     }
 }

@@ -3,6 +3,7 @@ mod audio_topology;
 mod editor;
 mod families;
 mod native_editor;
+mod wii_eeprom;
 mod wii_import;
 #[cfg(test)]
 mod wii_tests;
@@ -1031,6 +1032,7 @@ struct NamedController {
     indicators: ReverseIndicators,
     output_log: Vec<String>,
     service_worker: Option<ServiceWorker<Controller>>,
+    closed_controller: Option<Controller>,
     // Keep the status block allocated when the worker is briefly holding its display lock.
     service_metrics: ServiceMetrics,
     audio_view: Option<audio_lab::View>,
@@ -1177,6 +1179,12 @@ impl<C> ServiceWorker<C> {
     fn stop(self) -> Option<C> {
         let _ = self.stop.send(());
         self.handle.join().ok()
+    }
+}
+
+fn retain_terminal<C>(worker: &mut Option<ServiceWorker<C>>, terminal: &mut Option<C>) {
+    if let Some(worker) = worker.take() {
+        *terminal = worker.stop();
     }
 }
 
@@ -1692,6 +1700,7 @@ impl App {
                     indicators: ReverseIndicators::default(),
                     output_log: Vec::new(),
                     service_worker,
+                    closed_controller: None,
                     service_metrics: ServiceMetrics::default(),
                     audio_view: None,
                     input_ui: InputUiState::default(),
@@ -1761,7 +1770,42 @@ impl App {
             success: false,
         });
         self.lifecycle_status = Some(status_after_runtime_failure(&name, error));
-        self.remove_controller(index);
+        if self.controllers[index].kind == Kind::WiiRemote {
+            let named = &mut self.controllers[index];
+            retain_terminal(&mut named.service_worker, &mut named.closed_controller);
+        } else {
+            self.remove_controller(index);
+        }
+    }
+
+    fn save_eeprom(&mut self, id: u64, path: &std::path::Path) -> Result<(), String> {
+        wii_eeprom::validate_destination(path)?;
+        let named = self
+            .controllers
+            .iter_mut()
+            .find(|n| n.options.id == id)
+            .ok_or("Controller was removed; no snapshot remains")?;
+        if named.kind != Kind::WiiRemote || !wii_import::available(named.options.target) {
+            return Err("EEPROM requires a Wii UHID Bluetooth instance".into());
+        }
+        retain_terminal(&mut named.service_worker, &mut named.closed_controller);
+        let controller = named
+            .closed_controller
+            .as_mut()
+            .ok_or("Worker did not return a controller; cleanup requires verification")?;
+        let image = wii_eeprom::terminal_snapshot(controller)?;
+        let error = controller.retained_error();
+        self.last_cleanup = Some(controller.snapshot().lab_details());
+        self.diagnostic_log
+            .push(close_log(&named.name, error.as_deref()));
+        let bytes = wii_eeprom::encode(&image, named.options.wii_revision)?;
+        wii_eeprom::write(path, &bytes)?;
+        self.diagnostic_log.push(DiagnosticLogEntry {
+            message: "EEPROM saved; controller is closed. Load EEPROM to create a fresh instance."
+                .into(),
+            success: true,
+        });
+        Ok(())
     }
 }
 impl Drop for App {
@@ -1781,6 +1825,7 @@ impl eframe::App for App {
         let mut dump_state = false;
         let mut failed_controller = None;
         let mut recreate_controller = None;
+        let mut save_eeprom = None;
         let mut backend_healthy = true;
         for (index, named) in self.controllers.iter_mut().enumerate() {
             if let Some(worker) = &named.service_worker {
@@ -2233,6 +2278,10 @@ impl eframe::App for App {
                                     {
                                         let named = &mut self.controllers[index];
                                         ui.heading(&named.name);
+                                        if named.kind == Kind::WiiRemote && wii_import::available(named.options.target) {
+                                            if named.closed_controller.is_some() { ui.label("Closed; EEPROM snapshot available until removal."); }
+                                            if ui.button("Save EEPROM…").clicked() { save_eeprom = Some(named.options.id); }
+                                        }
                                         let audio_view = named.audio_view.clone();
                                         let mut audio_routing =
                                             audio_view.as_ref().map(|view| view.routing.clone());
@@ -2294,7 +2343,7 @@ impl eframe::App for App {
                                         });
                                         section_frame.show(ui, |ui| {
                                             ui.set_min_width(section_content_width);
-                                            let inputs_ready = named.edits.ready();
+                                            let inputs_ready = named.service_worker.is_some() && named.edits.ready();
                                             let mut release_all = false;
                                             ui.horizontal(|ui| {
                                                 ui.heading("Input");
@@ -2395,6 +2444,21 @@ impl eframe::App for App {
                     });
                 });
         });
+        if let Some(id) = save_eeprom {
+            let selection = rfd::FileDialog::new()
+                .set_title("Save EEPROM (closes this controller)")
+                .add_filter("Wii EEPROM", &["wii-eeprom"])
+                .set_file_name("snapshot.wii-eeprom")
+                .save_file();
+            if let Err(error) =
+                wii_eeprom::save_selection(selection, |path| self.save_eeprom(id, path))
+            {
+                self.diagnostic_log.push(DiagnosticLogEntry {
+                    message: error,
+                    success: false,
+                });
+            }
+        }
         if dump_state {
             self.write_state_dump();
         }
@@ -3699,6 +3763,38 @@ mod tests {
                 lifecycle_action(count, false, None, None, Some(count)),
                 None
             );
+        }
+    }
+
+    #[test]
+    fn terminal_retention_closes_once_survives_repeated_save_attempts_and_keeps_siblings_running() {
+        for failed in [false, true] {
+            let sibling = spawn_service_worker(FakeService::default());
+            let mut worker = Some(spawn_service_worker(FakeService {
+                fail: failed,
+                ..FakeService::default()
+            }));
+            if failed {
+                worker
+                    .as_ref()
+                    .unwrap()
+                    .failure
+                    .recv_timeout(Duration::from_secs(1))
+                    .unwrap();
+            }
+            let mut terminal = None;
+            retain_terminal(&mut worker, &mut terminal);
+            assert!(worker.is_none());
+            assert_eq!(terminal.as_ref().unwrap().closed, 1);
+            let serviced = terminal.as_ref().unwrap().serviced;
+            for _ in 0..3 {
+                retain_terminal(&mut worker, &mut terminal);
+                assert_eq!(terminal.as_ref().unwrap().closed, 1);
+                assert_eq!(terminal.as_ref().unwrap().serviced, serviced);
+            }
+            assert_eq!(sibling.failure.try_recv(), Err(mpsc::TryRecvError::Empty));
+            assert_eq!(sibling.stop().unwrap().closed, 1);
+            drop(terminal);
         }
     }
 

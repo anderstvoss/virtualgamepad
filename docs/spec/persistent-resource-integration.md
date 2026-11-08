@@ -68,11 +68,30 @@ uncertain_ack_and_failed_close_preserve_snapshot_and_export_retry,
 explicit_close_failure_and_implicit_drop_do_not_call_exporter and
 rejected_input_batch_does_not_mutate_dirty_protocol.
 
-## Optional file helper
+## Wii caller round trip and demo storage
 
-Skipped: no production caller currently needs a library file helper. This seam
-returns typed data and never writes a file. The failed-export test injects a
-caller failure; it is not an atomic-filesystem or fsync/crash-durability test.
-When a caller needs persistence, implement and test same-filesystem temporary
-replacement, permissions, rollback and explicitly scoped durability then. No Wii
-address map or physical acceptance is claimed by these synthetic tests.
+The Wii package now exposes the complete immutable resource: `bytes()` plus
+`extension_calibration()`, whose `motion_plus()`, `nunchuk()` and `classic()`
+accessors return optional validated blocks accepted by the existing `import`
+constructor. Rebuild with `WiiExtensionCalibration::import`,
+`WiiEepromImage::import` and `with_extension_calibration`, then use the existing
+creation-with-image/options constructor. Preserve the exact extent, unknown
+bytes and optional-block presence. Model revision belongs in the caller envelope;
+volatile protocol state and transport identity do not. Default recreation still
+uses the empty/unmodelled image, not an inferred retail factory profile.
+
+The library adds no filesystem helper, path policy, serde dependency or shared
+persistence abstraction. The demo is the concrete caller: explicit Save closes
+the service worker/controller, resolves KeepSnapshot and retains the closed
+handle for retries; explicit Load validates a versioned envelope before provider
+open. Discard never deletes saved files. Drop, consumer open/close and host
+STOP/START never save. First disposition still wins and cleanup errors remain
+independent of export failures. Uinput still rejects nonempty resources.
+
+The demo's mode-0600 same-directory temporary file, file sync and atomic rename
+are covered by write/sync/replace/cleanup failure injection; the previous file
+survives failed exports. A failed cleanup may retain a private temporary file and
+is reported. Parent directories are not created or synced; no crash-durability
+claim is made. See `docs/WII_REMOTE.md` for the exact demo envelope and private
+physical-read procedure. Deterministic fixtures are synthetic, never real dumps.
+Neither synthetic lifecycle tests nor file tests claim physical Wii acceptance.
