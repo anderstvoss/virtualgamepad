@@ -2379,7 +2379,10 @@ fn lizard_setting9_gates_mouse_and_mapping_clear_gates_keyboard_independently() 
         p.request(&set("feature-lizard-disable-clear"), 3).0,
         Reply::Set(Ok(()))
     );
-    assert!(desktop_reports(&mut p, &s, 4).is_empty());
+    assert_eq!(
+        desktop_reports(&mut p, &s, 4),
+        vec![vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0]]
+    );
     assert_eq!(
         p.request(&set("feature-lizard-enable-map"), 5).0,
         Reply::Set(Ok(()))
@@ -2602,4 +2605,211 @@ fn lizard_batched_mode_changes_clear_mouse_history_but_invalid_batches_preserve_
         desktop_reports(&mut p, &s, 7),
         vec![vec![0x40, 0, 1, 0, 0, 0]]
     );
+}
+
+#[test]
+fn lizard_mapping_transitions_release_held_mouse_and_keys_exactly_once() {
+    for request in [
+        set("feature-lizard-disable-clear"),
+        set("feature-lizard-enable-map"),
+    ] {
+        let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+        let mut s = State::default();
+        s.set_button(Button::A, true);
+        s.set_button(Button::RightTrigger, true);
+        assert_eq!(desktop_reports(&mut p, &s, 0).len(), 2);
+        assert_eq!(p.request(&request, 1).0, Reply::Set(Ok(())));
+        assert_eq!(p.deadline(), Some(0));
+        // A second accepted reset before polling must preserve/coalesce releases.
+        assert_eq!(p.request(&request, 2).0, Reply::Set(Ok(())));
+        assert_eq!(
+            desktop_reports(&mut p, &s, 3),
+            vec![
+                vec![0x40, 0, 0, 0, 0, 0],
+                vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0],
+            ]
+        );
+        assert_eq!(p.deadline(), None);
+        s.neutralize();
+        for now in [4, 4_000, 1_000_000] {
+            assert!(desktop_reports(&mut p, &s, now).is_empty());
+        }
+    }
+}
+
+#[test]
+fn lizard_mouse_only_transitions_release_buttons_and_preserve_held_keyboard() {
+    for request in [
+        compat_setting_request(&[(9, 0)]),
+        set("feature-lizard-enable-defaults"),
+    ] {
+        let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+        let mut s = State::default();
+        s.set_button(Button::A, true);
+        s.set_button(Button::LeftTrigger, true);
+        assert_eq!(desktop_reports(&mut p, &s, 0).len(), 2);
+        assert_eq!(p.request(&request, 1).0, Reply::Set(Ok(())));
+        assert_eq!(p.deadline(), Some(0));
+        assert_eq!(
+            desktop_reports(&mut p, &s, 2),
+            vec![vec![0x40, 0, 0, 0, 0, 0]]
+        );
+        s.set_button(Button::LeftTrigger, false);
+        assert!(desktop_reports(&mut p, &s, 3).is_empty());
+        s.set_button(Button::A, false);
+        assert_eq!(
+            desktop_reports(&mut p, &s, 4),
+            vec![vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0]]
+        );
+        assert!(desktop_reports(&mut p, &s, 5).is_empty());
+    }
+}
+
+#[test]
+fn lizard_empty_or_rejected_mode_changes_queue_no_release() {
+    for request in [
+        set("feature-lizard-disable-clear"),
+        set("feature-lizard-enable-map"),
+        set("feature-lizard-enable-defaults"),
+        compat_setting_request(&[(9, 0)]),
+    ] {
+        let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+        assert!(desktop_reports(&mut p, &State::default(), 0).is_empty());
+        assert_eq!(p.request(&request, 1).0, Reply::Set(Ok(())));
+        assert_eq!(p.deadline(), None);
+        assert!(desktop_reports(&mut p, &State::default(), 2).is_empty());
+    }
+    let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+    let mut s = State::default();
+    s.set_button(Button::A, true);
+    s.set_button(Button::RightTrigger, true);
+    p.input(&s, 0).unwrap();
+    let before = p.protocol.outputs.clone();
+    assert_eq!(
+        p.request(&compat_setting_request(&[(9, 0), (250, 1)]), 1).0,
+        Reply::Set(Err(ReplyError::Unsupported))
+    );
+    assert_eq!(p.protocol.outputs, before);
+    assert!(!p.protocol.desktop.has_releases());
+    // The existing held-button refresh is not a release or a key re-press.
+    assert_eq!(
+        desktop_reports(&mut p, &s, 2),
+        vec![vec![0x40, 1, 0, 0, 0, 0]]
+    );
+    assert_eq!(
+        p.request(&compat_setting_request(&[(9, 2)]), 3).0,
+        Reply::Set(Err(ReplyError::Invalid))
+    );
+    assert!(!p.protocol.desktop.has_releases());
+}
+
+#[test]
+fn lizard_runtime_services_release_without_application_input_and_preserves_sibling() {
+    let fake = Fake::default();
+    let sibling_fake = Fake::default();
+    let mut runtime = Runtime::new(
+        SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    let mut sibling = Runtime::new(
+        SteamHidProtocol::with_desktop_options("VGP-SIBLING".into(), true, false, true),
+        sibling_fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    runtime.service(0).unwrap();
+    sibling.service(0).unwrap();
+    for r in [&mut runtime, &mut sibling] {
+        r.update(|s| {
+            s.set_button(Button::A, true);
+            s.set_button(Button::RightTrigger, true);
+            Ok(())
+        })
+        .unwrap();
+        r.service(1).unwrap();
+    }
+    let rejected_start = fake.0.borrow().commands.len();
+    enqueue(&fake, 1, compat_setting_request(&[(9, 0), (250, 1)]));
+    runtime.service(2).unwrap();
+    let rejected = fake.0.borrow().commands[rejected_start..].to_vec();
+    assert_eq!(rejected.len(), 1);
+    assert!(matches!(
+        &rejected[0],
+        Command::Reply {
+            reply: Reply::Set(Err(ReplyError::Unsupported)),
+            ..
+        }
+    ));
+    let start = fake.0.borrow().commands.len();
+    enqueue(&fake, 2, set("feature-lizard-disable-clear"));
+    runtime.service(3).unwrap();
+    let commands = fake.0.borrow().commands[start..].to_vec();
+    assert!(matches!(
+        &commands[0],
+        Command::Reply {
+            reply: Reply::Set(Ok(())),
+            ..
+        }
+    ));
+    let released: Vec<_> = commands
+        .iter()
+        .filter_map(|c| match c {
+            Command::Input(r) if matches!(r.id(), Some(0x40 | 0x41)) => Some(r.wire()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        released,
+        vec![
+            vec![0x40, 0, 0, 0, 0, 0],
+            vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0]
+        ]
+    );
+    let count = fake.0.borrow().commands.len();
+    for now in [4, 4_001, 20_000] {
+        runtime.service(now).unwrap();
+    }
+    assert_eq!(fake.0.borrow().commands.len(), count);
+    let sibling_start = sibling_fake.0.borrow().commands.len();
+    sibling.service(4_001).unwrap();
+    assert!(
+        sibling_fake.0.borrow().commands[sibling_start..]
+            .iter()
+            .any(|c| matches!(c, Command::Input(r) if r.wire() == vec![0x40, 1, 0, 0, 0, 0]))
+    );
+    runtime.close().unwrap();
+    runtime.close().unwrap();
+    sibling.close().unwrap();
+    assert_eq!(fake.0.borrow().closes, 1);
+    assert_eq!(sibling_fake.0.borrow().closes, 1);
+}
+
+#[test]
+fn lizard_stop_discards_pending_releases_without_replaying_them_after_start() {
+    let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+    let mut s = State::default();
+    s.set_button(Button::A, true);
+    s.set_button(Button::RightTrigger, true);
+    p.input(&s, 0).unwrap();
+    p.request(&set("feature-lizard-disable-clear"), 1);
+    assert!(p.protocol.desktop.has_releases());
+    p.lifecycle(Lifecycle::Stop, 2);
+    p.lifecycle(Lifecycle::Stop, 3);
+    assert!(!p.protocol.desktop.has_releases());
+    assert_eq!(p.deadline(), None);
+    assert!(p.input(&s, 4).unwrap().is_empty());
+    p.lifecycle(
+        Lifecycle::Start {
+            numbered_input: true,
+            numbered_output: true,
+            numbered_feature: true,
+        },
+        5,
+    );
+    p.request(&set("feature-lizard-enable-map"), 6);
+    assert!(desktop_reports(&mut p, &State::default(), 7).is_empty());
 }
