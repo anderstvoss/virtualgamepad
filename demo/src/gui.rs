@@ -1770,7 +1770,9 @@ impl App {
             success: false,
         });
         self.lifecycle_status = Some(status_after_runtime_failure(&name, error));
-        if self.controllers[index].kind == Kind::WiiRemote {
+        if self.controllers[index].kind == Kind::WiiRemote
+            && wii_import::available(self.controllers[index].options.target)
+        {
             let named = &mut self.controllers[index];
             retain_terminal(&mut named.service_worker, &mut named.closed_controller);
         } else {
@@ -3763,6 +3765,75 @@ mod tests {
                 lifecycle_action(count, false, None, None, Some(count)),
                 None
             );
+        }
+    }
+
+    #[test]
+    fn failed_wii_entries_are_retained_only_where_eeprom_save_is_available() {
+        for (target, retain) in [
+            (RealizationId::LINUX_UINPUT, false),
+            (RealizationId::LINUX_UHID_BLUETOOTH, true),
+        ] {
+            for index in [0, 7, 64, 129] {
+                let mut app = App::default();
+                app.controllers = (0..130)
+                    .map(|position| {
+                        let kind = if position == index {
+                            Kind::WiiRemote
+                        } else {
+                            Kind::Xbox360
+                        };
+                        let mut options = app.creation_options();
+                        options.id = u64::try_from(position).unwrap();
+                        options.target = target;
+                        let name = format!("Synthetic controller {position}");
+                        NamedController {
+                            kind,
+                            options,
+                            name: name.clone(),
+                            name_draft: name,
+                            name_error: None,
+                            view: editor::neutral_view(kind),
+                            edits: EditProgress::default(),
+                            indicators: ReverseIndicators::default(),
+                            output_log: Vec::new(),
+                            service_worker: None,
+                            closed_controller: None,
+                            service_metrics: ServiceMetrics::default(),
+                            audio_view: None,
+                            input_ui: InputUiState::default(),
+                        }
+                    })
+                    .collect();
+                app.selected_controller = Some(index);
+                app.close_failed_controller(index, "synthetic provider failure".into());
+                let expected: Vec<_> = (0..130_u64)
+                    .filter(|id| retain || *id != u64::try_from(index).unwrap())
+                    .collect();
+                assert_eq!(
+                    app.controllers
+                        .iter()
+                        .map(|c| c.options.id)
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+                assert_eq!(
+                    app.selected_controller,
+                    Some(if retain { index } else { index.min(128) })
+                );
+                assert!(
+                    matches!(&app.lifecycle_status, Some(ControllerLifecycleStatus::ClosedAfterFailure { error, .. }) if error == "synthetic provider failure")
+                );
+                if retain {
+                    // Repeated terminal handling keeps the save entry; explicit
+                    // removal still uses the ordinary selection/cleanup path.
+                    app.close_failed_controller(index, "synthetic provider failure".into());
+                    assert_eq!(app.controllers.len(), 130);
+                    app.remove_controller(index);
+                    assert_eq!(app.controllers.len(), 129);
+                    assert_eq!(app.selected_controller, Some(index.min(128)));
+                }
+            }
         }
     }
 
