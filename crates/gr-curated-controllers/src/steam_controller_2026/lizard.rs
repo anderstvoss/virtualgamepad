@@ -12,6 +12,8 @@ pub(super) struct Desktop {
     fractions: [[i32; 2]; 2],
     buttons: u8,
     keys: [u8; 6],
+    release_mouse: bool,
+    release_keys: bool,
 }
 impl Desktop {
     pub fn new(enabled: bool) -> Self {
@@ -20,25 +22,54 @@ impl Desktop {
             ..Self::default()
         }
     }
+    // Safe virtual policy: physical releases on host mode changes are unmeasured.
+    // Coalesce repeated transitions before polling into at most one release/type.
     pub fn reset(&mut self) {
+        self.release_keys |= self.keys != [0; 6];
+        self.keys = [0; 6];
+        self.clear_mouse();
+    }
+    pub fn clear_mouse(&mut self) {
+        self.release_mouse |= self.buttons != 0;
+        self.positions = [None; 2];
+        self.fractions = [[0; 2]; 2];
+        self.buttons = 0;
+    }
+    // UHID Stop removes the input devices; Linux input_disconnect_device releases
+    // their held keys. Never replay a queued report into a subsequent Start.
+    pub fn session_reset(&mut self) {
         *self = Self {
             enabled: self.enabled,
             ..Self::default()
         };
     }
-    pub fn clear_mouse(&mut self) {
-        self.positions = [None; 2];
-        self.fractions = [[0; 2]; 2];
-        self.buttons = 0;
+    pub fn has_releases(&self) -> bool {
+        self.release_mouse || self.release_keys
+    }
+    fn take_releases(&mut self) -> Vec<Report> {
+        let mut reports = Vec::new();
+        for (pending, wire) in [
+            (&mut self.release_mouse, &[0x40, 0, 0, 0, 0, 0][..]),
+            (&mut self.release_keys, &[0x41, 0, 0, 0, 0, 0, 0, 0, 0][..]),
+        ] {
+            if std::mem::take(pending) {
+                reports
+                    .push(Report::from_wire(ReportType::Input, true, wire).expect("release shape"));
+            }
+        }
+        reports
     }
     pub fn input(&mut self, state: &State, mappings: bool, mouse: bool) -> Vec<Report> {
         if !self.enabled || !mappings {
             self.reset();
-            return vec![];
+            return self.take_releases();
         }
-        let mut reports = Vec::new();
+        let releasing_mouse = self.release_mouse;
+        let releasing_keys = self.release_keys;
+        let mut reports = self.take_releases();
+        // Do not immediately re-press a released interface in its cleanup cycle.
         // Setting 9 alone disabled mouse but retained A->Enter in the SDL run.
-        if mouse {
+        if mouse && !releasing_mouse {
             let buttons = u8::from(state.pads[1].click || state.pressed(Button::RightTrigger))
                 | (u8::from(state.pressed(Button::LeftTrigger)) << 1);
             let mut counts = [0_i32; 4];
@@ -85,8 +116,12 @@ impl Desktop {
                 emit = counts != [0; 4];
             }
             self.buttons = buttons;
-        } else {
+        } else if !mouse {
             self.clear_mouse();
+            reports.extend(self.take_releases());
+        }
+        if releasing_keys {
+            return reports;
         }
         let mut usages: Vec<u8> = [
             (Button::A, 0x28),
