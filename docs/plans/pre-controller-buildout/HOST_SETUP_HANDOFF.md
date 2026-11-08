@@ -184,20 +184,45 @@ For a future setup, after approved group/rule/module installation:
   provisioned for captures yet. Steam Controller Bluetooth (`28de:1303`) work
   is deferred; when it starts it needs BlueZ, a paired physical controller and
   `btmon` from `bluez-utils`, and it gets its own #258 row.
-- **Reading a physical Wii Remote's EEPROM (private, read-only).** After the
-  Remote pairs through BlueZ, `hid-wiimote` binds it and its hidraw node stays
-  root-owned. No persistent rule is added. For one session the owner grants
-  access to that one node only, after checking that it belongs to the physical
-  Remote (bus `0005`, vendor `057e`, product `0306` or `0330`, not a
-  `virtualgamepad` phys):
+- **Reading a physical Wii Remote's EEPROM (private, read-only).** The
+  helper `scripts/read-private-wii-eeprom.py` (#314) has two modes. Raw mode
+  needs two root steps, both run by the owner and lost on reconnect. Rebinding
+  is allowed for test and dev; release use is gated on #258. No persistent rule
+  or module policy is added.
 
-  ```bash
-  udevadm info --query=property --name=/dev/hidrawN | grep -E '^(HID_ID|HID_NAME|HID_PHYS)='
-  sudo setfacl -m "u:$USER:rw" /dev/hidrawN   # gone when the node is removed
-  ```
+  1. **Rebind the paired Remote to `hid-generic`.** The helper refuses to read
+     while `hid-wiimote` is bound, because the driver's own EEPROM calibration
+     reads would race it. `hid-generic` won't take a device that another loaded
+     HID driver claims, so a plain unbind and bind isn't enough. With
+     `hid-wiimote` built as a module (`modinfo -F filename hid-wiimote` prints a
+     `.ko` path), unload it for the session. That affects every Wii Remote on
+     the host, virtual ones included, so don't run Wii tests meanwhile:
 
-  Dumped content is private (see the Wii EEPROM handoff); never commit it or
-  post values or hashes from it. This grant is a #258 row.
+     ```bash
+     DEV=$(basename "$(readlink -f /sys/class/hidraw/hidrawN/device)")
+     echo -n "$DEV" | sudo tee /sys/bus/hid/drivers/wiimote/unbind
+     sudo modprobe -r hid-wiimote
+     echo -n "$DEV" | sudo tee /sys/bus/hid/drivers/hid-generic/bind
+     basename "$(readlink -f /sys/bus/hid/devices/$DEV/driver)"   # expect hid-generic
+     ```
+
+     If `hid-wiimote` is built in, use the helper's `--from-stdin` mode
+     instead. Don't set the global `hid.ignore_special_drivers` parameter.
+  2. **Grant the new hidraw node to the user for this session.** Rebinding
+     recreates the node, so look it up again and confirm it belongs to the
+     physical Remote (bus `0005`, vendor `057e`, product `0306` or `0330`, not a
+     `virtualgamepad` phys):
+
+     ```bash
+     ls /sys/bus/hid/devices/$DEV/hidraw/
+     udevadm info --query=property --name=/dev/hidrawM | grep -E '^(HID_ID|HID_NAME|HID_PHYS)='
+     sudo setfacl -m "u:$USER:rw" /dev/hidrawM   # gone when the node is removed
+     ```
+
+  Afterwards, run `sudo modprobe hid-wiimote` and reconnect the Remote so
+  `hid-wiimote` binds it again. Dumped content is private (see the Wii EEPROM
+  handoff); never commit it or post values or hashes from it. The rebind and
+  the grant are #258 rows.
 
 ## Coordinator next actions and workspace disposition
 
