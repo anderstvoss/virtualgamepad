@@ -1,8 +1,9 @@
 # Wired Steam desktop mode
 
 `SteamController2026CreationOptions::lizard_mode` enables the captured desktop
-mouse/keyboard mapping on `linux.uhid.usb`. Its default is currently `false`, a
-placeholder pending the owner's final default decision. The demo's Advanced
+mouse/keyboard mapping on `linux.uhid.usb`. Its default is `false` by the owner's decision;
+[#311](https://github.com/anderstvoss/virtualgamepad/issues/311) tracks possible
+refinement later. The demo's Advanced
 options use the same creation-options default. Reduced uinput is unchanged: it
 declares gamepad keys/absolute axes, with no desktop keys, relative mouse axes
 or HID host-mode channel. This is a limit of this realization, not a general
@@ -38,8 +39,24 @@ setting 9 = 0 stopped mouse output but A still emitted Enter. This distinction
 supersedes treating that setting as a blanket mouse-and-keyboard disable.
 Accepted mode changes clear the corresponding cached input history even when
 disable/enable requests arrive before another input cycle. Rejected setting
-batches preserve the history. No setting-71 watchdog is invented. Raw-client open/close alone does not change
+batches preserve the history. If keys or mouse buttons were held, accepted
+mapping resets queue one all-zero keyboard and/or button-release mouse report;
+mouse-only clears release only held mouse buttons. Repeated resets before
+polling coalesce these releases. A pending release forces input service even
+without an application state change and bypasses the newly disabled desktop
+gate once. The cleanup cycle does not immediately reassert the affected held
+state. Nothing is emitted when nothing was held. This neutralization is
+safe virtual policy: physical release behavior on these transitions is unmeasured.
+No setting-71 watchdog is invented. Raw-client open/close alone does not change
 protocol mode; the host's feature writes do.
+
+On UHID Stop/device removal, Linux already releases held EV_KEY states (including
+mouse buttons): `hid_hw_stop()` disconnects HID inputs before the low-level Stop,
+and `input_disconnect_device()` sends key-up events before unregister completes.
+See [HID shutdown](https://github.com/torvalds/linux/blob/c03c1a14507dfaf8b856c2608f9ac216021fc222/drivers/hid/hid-core.c#L2459)
+and [input disconnect](https://github.com/torvalds/linux/blob/c03c1a14507dfaf8b856c2608f9ac216021fc222/drivers/input/input.c#L757).
+The codec clears cached and pending desktop history at Stop/Start, so a release
+from a removed device is never replayed into a restarted session.
 
 ## Compatibility limits
 

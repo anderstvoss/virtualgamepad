@@ -916,3 +916,17 @@ received the generic malformed compatibility exchange. Those commands now leave
 no query, so SET and following GET are both Unsupported. The test covers stale
 query invalidation, complete replies in each polling cycle, repeated service and
 idempotent close. No image acceptance or bootloader emulation is implemented.
+
+## Normal-profile 0xae follow-up
+
+A fresh guarded normal-profile virtual controller was created with the real
+Valve hardware disconnected. Steam opened normally; the owner confirmed listing,
+details and Begin Test without unexpected behavior. No firmware controls were
+used. Metadata recorded three accepted 0xae SETs, three successful corresponding
+GETs, and twelve 0xae SETs rejected as Invalid. The first accepted SET/GET pair
+preceded Steam opening; the rejections occurred during ordinary Steam use.
+Thus the rejected requests observed during #309 are not unique to an update
+attempt. Request contents/selectors and serials were not logged, so their cause
+and the correct response remain unverified. The 0xae implementation is unchanged;
+any reply change requires a merged research record. The owned virtual instance
+was removed after the check.

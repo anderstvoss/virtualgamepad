@@ -518,7 +518,11 @@ impl Protocol for SteamProtocol {
     fn deadline(&self) -> Option<u64> {
         // steam-c6-sdl-rumble-resend-40ms is HOST pacing, not a device timer.
         // No evidence for a device rumble timeout or native report cadence.
-        self.refresh.into_iter().chain(self.stream.deadline()).min()
+        self.refresh
+            .into_iter()
+            .chain(self.stream.deadline())
+            .chain(self.desktop.has_releases().then_some(0))
+            .min()
     }
     fn request(
         &mut self,
@@ -562,14 +566,14 @@ impl Protocol for SteamProtocol {
                 numbered_output,
                 numbered_feature,
             } => {
-                self.desktop.reset();
+                self.desktop.session_reset();
                 self.stream.reset(now);
                 self.invalid_framing = !(numbered_input && numbered_output && numbered_feature);
                 self.stopped = false;
                 self.refresh = Some(now);
             }
             Lifecycle::Stop => {
-                self.desktop.reset();
+                self.desktop.session_reset();
                 self.stream.reset(now);
                 self.stopped = true;
                 self.refresh = None;
