@@ -552,6 +552,41 @@ mod steam_tests {
     use super::*;
 
     #[test]
+    fn steam_recreation_preserves_all_advanced_options_and_uses_a_fresh_id() {
+        use super::super::{App, recreation_options};
+        let mut app = App::default();
+        assert!(app.steam_options.steam_client_compat);
+        assert!(!app.steam_options.haptic_streaming && !app.steam_options.lizard_mode);
+        for target in super::super::creation_targets(Kind::Steam) {
+            for bits in 0..8 {
+                app.target = target;
+                app.next_controller_id = 7;
+                app.steam_options.serial = Some("VGP-FAKE".into());
+                app.steam_options.steam_client_compat = bits & 1 != 0;
+                app.steam_options.haptic_streaming = bits & 2 != 0;
+                app.steam_options.lizard_mode = bits & 4 != 0;
+                let saved = app.creation_options();
+                let mut sidebar = App::default().creation_options();
+                sidebar.id = 42;
+                sidebar.target = virtualgamepad::RealizationId::LINUX_UHID_BLUETOOTH;
+                let options = recreation_options(Kind::Steam, &saved, sidebar);
+                assert_eq!(options.target, target);
+                assert_eq!(options.id, 42);
+                let result = create_steam_session(&options, |observed, id, creation| {
+                    assert_eq!(observed, target);
+                    assert_eq!(id, 42);
+                    Ok::<_, ()>(creation)
+                })
+                .unwrap();
+                assert_eq!(result.serial, saved.steam_options.serial);
+                assert_eq!(result.steam_client_compat, bits & 1 != 0);
+                assert_eq!(result.haptic_streaming, bits & 2 != 0);
+                assert_eq!(result.lizard_mode, bits & 4 != 0);
+            }
+        }
+    }
+
+    #[test]
     fn demo_neutral_has_a_synthetic_pose_without_changing_api_defaults() {
         use gr_curated_controllers::steam_controller_2026::{
             SteamController2026State, SteamMotionSample,
