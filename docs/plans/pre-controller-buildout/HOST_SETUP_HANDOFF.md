@@ -1,7 +1,9 @@
 # Coordinator handoff: Steam development host
 
-Status checked 2026-11-02. This document records this host's setup and observed
-virtual-consumer results; it does not promote physical fidelity or gameplay.
+Status checked 2026-11-02; host changes since then are in
+[Host updates after 2026-11-02](#host-updates-after-2026-11-02) (updated 2026-11-08).
+This document records this host's setup and observed virtual-consumer results;
+it does not promote physical fidelity or gameplay.
 
 ## Conclusions and published evidence
 
@@ -74,8 +76,8 @@ are prepared before open, retaining exact physical association metadata.
 | --- | --- | --- | --- |
 | `udev/70-virtualgamepad-uhid.rules` | `/etc/udev/rules.d/70-virtualgamepad-uhid.rules` | root:root / 0644 | `/dev/uhid`: group `virtualgamepad-uhid`, mode 0660 |
 | `udev/70-virtualgamepad-uinput.rules` | `/etc/udev/rules.d/70-virtualgamepad-uinput.rules` | root:root / 0644 | `/dev/uinput`: group `virtualgamepad-uinput`, mode 0660 |
-| `udev/71-virtualgamepad-input-lab.rules` | `/etc/udev/rules.d/71-virtualgamepad-input-lab.rules` | root:root / 0644 | Optional Sony UHID/uinput touch-test isolation and scoped consumer access |
-| `udev/virtualgamepad-input-lab-seat.py` | `/usr/lib/udev/virtualgamepad-input-lab-seat.py` | root:root / 0755 | Validate Sony lab identity and derive inactive per-process seat |
+| `udev/71-virtualgamepad-input-lab.rules` | `/etc/udev/rules.d/71-virtualgamepad-input-lab.rules` | root:root / 0644 | Optional Sony UHID/uinput touch-test isolation, Steam lab event access (#299) and scoped consumer access |
+| `udev/virtualgamepad-input-lab-seat.py` | `/usr/lib/udev/virtualgamepad-input-lab-seat.py` | root:root / 0755 | Validate Sony or Steam lab identity and derive inactive per-process seat |
 | `modules-load.d/virtualgamepad-uhid.conf`, plus host's uinput boot entry | `/etc/modules-load.d/virtualgamepad-uhid.conf` | root:root / 0644 | Installed file loads both `uhid` and `uinput`; repository template loads only `uhid` |
 | `steam-devices` package | `/usr/lib/udev/rules.d/60-steam-input.rules` | Package managed | Valve/Sony consumer access; left unchanged |
 
@@ -96,22 +98,26 @@ KERNEL=="uhid", SUBSYSTEM=="misc", GROUP="virtualgamepad-uhid", MODE="0660"
 KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="virtualgamepad-uinput", MODE="0660"
 ```
 
-The complete optional lab rules are:
+The complete optional lab rules, as on `main` after #299, are:
 
 ```udev
 SUBSYSTEM=="hid", ENV{HID_PHYS}=="virtualgamepad/input-lab/uhid/*/p*-i*", PROGRAM=="/usr/lib/udev/virtualgamepad-input-lab-seat.py %E{HID_PHYS}", ENV{VG_INPUT_LAB_SEAT}="%c"
+SUBSYSTEM=="hid", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{HID_PHYS}=="virtualgamepad/input-lab/uhid/steam-controller-2026/p*-i*", ENV{VG_INPUT_LAB_STEAM}="1"
 SUBSYSTEM=="input", KERNEL=="input*", ATTR{phys}=="virtualgamepad/input-lab/uinput/*/p*-i*", PROGRAM=="/usr/lib/udev/virtualgamepad-input-lab-seat.py %s{phys}", ENV{VG_INPUT_LAB_SEAT}="%c"
 SUBSYSTEM=="input", KERNEL=="input*", IMPORT{parent}="VG_INPUT_LAB_SEAT"
+SUBSYSTEM=="input", KERNEL=="input*", IMPORT{parent}="VG_INPUT_LAB_STEAM"
 SUBSYSTEM=="input", KERNEL=="input*", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}"
 SUBSYSTEM=="input", KERNEL=="event*", IMPORT{parent}="VG_INPUT_LAB_SEAT"
+SUBSYSTEM=="input", KERNEL=="event*", IMPORT{parent}="VG_INPUT_LAB_STEAM"
 SUBSYSTEM=="input", KERNEL=="event*", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{ID_SEAT}="%E{VG_INPUT_LAB_SEAT}", ENV{LIBINPUT_IGNORE_DEVICE}="1"
 SUBSYSTEM=="input", KERNEL=="event*", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ATTRS{phys}=="virtualgamepad/input-lab/uinput/*/p*-i*", GROUP="virtualgamepad-uinput", MODE="0660"
 SUBSYSTEM=="hidraw", IMPORT{parent}="VG_INPUT_LAB_SEAT"
 SUBSYSTEM=="hidraw", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", TAG+="uaccess"
+SUBSYSTEM=="input", KERNEL=="event*", ENV{VG_INPUT_LAB_SEAT}=="seat-vg-alpha-p?*", ENV{VG_INPUT_LAB_STEAM}=="1", GROUP="virtualgamepad-uhid", MODE="0660"
 ```
 
-The helper accepts only `dualsense` and `dualshock4` families in that test
-namespace for `uhid` or `uinput`, and outputs `seat-vg-alpha-p<hex-process-id>`. It bounds the entire
+The helper accepts only the `dualsense`, `dualshock4` and `steam-controller-2026`
+families in that test namespace for `uhid` or `uinput`, and outputs `seat-vg-alpha-p<hex-process-id>`. It bounds the entire
 ASCII label to 63 bytes, validates a positive numeric PID through `0x7fffffff`,
 and rejects malformed/noncanonical IDs. The hidraw rule imports the
 helper-validated seat property; the namespace glob alone grants no access.
@@ -158,6 +164,40 @@ For a future setup, after approved group/rule/module installation:
    contacts on these checks. Keep Steam closed for this isolated SDL test.
 6. Remove the controller and verify owned nodes disappear. Node numbers can
    be reused; never reuse an ACL command without verifying the new identity.
+
+## Host updates after 2026-11-02
+
+- **Steam lab event access (#299) installed, 2026-11-04.** The installed lab
+  rules and helper were compared byte for byte with `main` and `udevadm verify`
+  passed. A Steam UHID lab node came up with the process seat, group
+  `virtualgamepad-uhid` and mode 0660, and opened as the ordinary user. The
+  kernel evdev and ABS results that used it are in #304.
+- **Close Dolphin before live tests.** A running Dolphin opens a new Steam
+  hidraw node within about 50 ms of creation. hid-steam then removes the
+  "Steam Controller" gamepad and motion evdev nodes, so only the generic
+  keyboard/mouse node is left. Other hidraw consumers can do the same.
+- **Original checkout.** It is still on base
+  `8f60dcce577ab02bd8ed8b3426349729d417393c` with the preserved uncommitted
+  host-work changes. Run new work in a fresh worktree off current `origin/main`. Leave the old checkout alone until
+  the owner has reviewed what it holds.
+- **Bluetooth.** The host has a built-in Bluetooth adapter. Nothing is
+  provisioned for captures yet. Steam Controller Bluetooth (`28de:1303`) work
+  is deferred; when it starts it needs BlueZ, a paired physical controller and
+  `btmon` from `bluez-utils`, and it gets its own #258 row.
+- **Reading a physical Wii Remote's EEPROM (private, read-only).** After the
+  Remote pairs through BlueZ, `hid-wiimote` binds it and its hidraw node stays
+  root-owned. No persistent rule is added. For one session the owner grants
+  access to that one node only, after checking that it belongs to the physical
+  Remote (bus `0005`, vendor `057e`, product `0306` or `0330`, not a
+  `virtualgamepad` phys):
+
+  ```bash
+  udevadm info --query=property --name=/dev/hidrawN | grep -E '^(HID_ID|HID_NAME|HID_PHYS)='
+  sudo setfacl -m "u:$USER:rw" /dev/hidrawN   # gone when the node is removed
+  ```
+
+  Dumped content is private (see the Wii EEPROM handoff); never commit it or
+  post values or hashes from it. This grant is a #258 row.
 
 ## Coordinator next actions and workspace disposition
 
