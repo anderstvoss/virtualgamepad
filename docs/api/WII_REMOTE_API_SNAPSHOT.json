@@ -134,6 +134,7 @@
         "pub struct WiiEepromImage { /* private fields */ }",
         "pub fn import(bytes: Vec<u8>) -> Result<Self, ControlError>",
         "pub fn with_extension_calibration( self, calibration: WiiExtensionCalibration, ) -> Self",
+        "pub fn extension_calibration(&self) -> &WiiExtensionCalibration",
         "pub fn bytes(&self) -> &[u8] \u24d8"
       ],
       "traits": [
@@ -152,7 +153,10 @@
     "struct.WiiExtensionCalibration.html": {
       "declarations": [
         "pub struct WiiExtensionCalibration { /* private fields */ }",
-        "pub fn import( motion_plus: Option<[u8; 32]>, nunchuk: Option<[u8; 16]>, classic: Option<[u8; 16]>, ) -> Result<Self, ControlError>"
+        "pub fn import( motion_plus: Option<[u8; 32]>, nunchuk: Option<[u8; 16]>, classic: Option<[u8; 16]>, ) -> Result<Self, ControlError>",
+        "pub fn motion_plus(&self) -> Option<[u8; 32]>",
+        "pub fn nunchuk(&self) -> Option<[u8; 16]>",
+        "pub fn classic(&self) -> Option<[u8; 16]>"
       ],
       "traits": [
         "impl Clone for WiiExtensionCalibration",

@@ -910,3 +910,110 @@ Nunchuk cells. All W9h test/dev binding (#258), compat and synthetic-calibration
 preconditions remain; no Original inheritance, new shim necessity, whole-control,
 physical, game, radio or release qualification. No kernel rerun or runtime change.
 Both consumers and devices closed with verified HID/raw removal.
+
+## Explicit EEPROM Save and Load
+
+`WiiEepromImage` contains the exact caller-selected EEPROM extent and bytes,
+plus optional validated accessory blocks. A complete round trip uses
+`bytes()` and `extension_calibration()`, then the latter's `motion_plus()`,
+`nunchuk()` and `classic()` accessors. Reconstruct with
+`WiiExtensionCalibration::import`, `WiiEepromImage::import`, and
+`with_extension_calibration`. Missing blocks remain missing; unknown EEPROM
+bytes are preserved. These accessors return immutable values, not mutable
+fields or a Debug serialization contract. No filesystem dependency or file
+policy exists in the library.
+
+Close terminally before calling `resolve_resource(KeepSnapshot | Discard)`.
+Active sessions reject disposition, and the first terminal choice wins.
+A failed caller export leaves the kept image available for retry. Cleanup
+errors remain independent. Discard never changes a file. Drop, consumer
+open/close and host STOP/START do not save or select a disposition. Uinput
+rejects nonempty image/calibration imports: it has no addressed-memory channel.
+
+In the demo, select a Wii UHID Bluetooth instance and **Save EEPROM…**, then
+choose a filename in the system Save dialog.
+This stops the service worker, closes the controller, keeps its terminal image
+and writes the file. The closed instance stays listed so failed saves can be
+retried, including after cancelling and reopening the dialog. Removing it or
+quitting releases the in-memory snapshot without writing. Provider failures
+also retain a closed Wii handle for an explicit later save. Cleanup diagnostics
+are shown independently of file success. No live-snapshot API is used.
+
+In Wii creation's advanced options, **Load EEPROM…** selects a complete saved
+envelope; separate **Raw EEPROM bytes** and accessory-calibration imports remain available
+as an alternative. A saved envelope is rejected on the raw-byte path to prevent
+nesting it inside another image or bypassing model/version validation. Selecting an envelope clears raw imports and vice versa.
+The system Open dialog also selects the separate raw/calibration imports.
+Cancelling either system dialog preserves choices and does not close a controller
+or write a file. Select the matching model revision before creating a fresh
+instance. Validation happens before any provider is opened. Early integrated
+Plus creation remains rejected by its existing identity-evidence gate; storing
+that revision in an envelope does not lift the gate or authorize relabeling it. The envelope restores resources, not live
+inputs, attachments, compatibility options, report modes or transport state.
+Uinput disables these HID imports with an explicit limitation.
+
+### Demo envelope version 1
+
+All integers below are little-endian except for the accessory blocks, whose
+bytes retain their original validated layout. The format is demo-owned.
+
+| Field | Encoding |
+| --- | --- |
+| Magic | Eight bytes: ASCII `VGPWEEP` followed by NUL |
+| Schema | u16, value 1 |
+| Family | u8, value 1 (Wii Remote) |
+| Model revision | u8: 0 Original, 1 Early integrated Plus, 2 Tr |
+| EEPROM extent | u32, 0 through 65536 |
+| Optional-block flags | u8: bit 0 MotionPlus, bit 1 Nunchuk, bit 2 Classic; other bits rejected |
+| EEPROM | Exactly extent bytes |
+| Calibration | Present blocks only, in flag order: 32, 16, 16 bytes |
+| Checksum | u32 IEEE CRC32 of every preceding byte |
+
+Wrong version, family/model mismatch, invalid extent/presence/length, trailing
+bytes, truncation, CRC mismatch and invalid accessory calibration are rejected.
+CRC32 detects accidental corruption; it is not authentication. There is no
+inferred retail extent or normalization of unknown data.
+
+The writer uses a mode-0600 exclusive temporary file in the selected existing
+directory, syncs its data, and atomically renames it over the chosen file. Failures
+before replacement preserve the previous file. Failed temporary cleanup is
+reported and may leave a private temporary file; retry still uses the same
+snapshot. The parent directory is not synced, so power-loss/crash durability
+is not claimed. The demo creates no directories and rejects save destinations inside Git
+checkouts, including symlinked directories. Paths are chosen by the user,
+never derived from a device request or serial; no elevated permission is needed.
+This is optional per-user storage, separate from device-access permissions (#258).
+
+### Private physical EEPROM reads
+
+Real EEPROM content, calibration values and content hashes must never enter a
+Git checkout, fixture, log, issue, PR or research record. Keep private files
+outside all checkouts, in the reader's per-user private storage directory;
+directories are 0700 and files 0600. The `.wii-eeprom` extension is ignored.
+`python3 scripts/check-private-wii-eeprom.py` and its script tests reject index
+blobs containing an envelope's magic, or any tracked dump-extension filename.
+Never copy real images elsewhere without the owner's explicit approval.
+
+`scripts/read-private-wii-eeprom.py` is an explicitly invoked, unprivileged
+physical reader. The owner first confirms the Bluetooth Nintendo HID identity,
+then handles any temporary driver handoff and per-node ACL. Raw hidraw mode requires
+`hid-generic` ownership to avoid competing kernel calibration reads. It sends
+only EEPROM memory-read output report 0x17, one request at a time, for the
+merged documentary range 0x0000..0x16ff. It never sends 0x16, register requests,
+status, LED, initialization or report-mode commands. Any error stops the read;
+no alternate addresses are probed or partial dump saved. It stores a complete
+demo envelope under a caller label, without replacing an existing dump. Optional
+accessory blocks are absent because physical register reads are not authorized.
+Alternatively, the owner can pipe an exactly bounded read from the kernel's
+read-only debugfs `eeprom` interface into `--from-stdin`. That kernel interface
+serializes EEPROM 0x17 requests under its own command lock, avoiding calibration
+read races without unbinding the driver. Only the owner runs any privileged
+source read; the ordinary-user envelope writer never elevates. No raw bytes are
+printed or stored in a checkout. Availability is kernel/configuration dependent.
+No physical size, calibration or consumer acceptance is claimed by fake tests.
+
+Owner-assisted acceptance remains separate: create a Wii UHID Bluetooth instance,
+use a host-modified or explicitly imported image, save, load into a fresh instance,
+and confirm local byte equality and complete node cleanup. For private real
+images, also compare kernel and SDL/Dolphin calibration behavior locally. Publish
+only pass/fail, number of Remotes and each extent; no content-derived values.
