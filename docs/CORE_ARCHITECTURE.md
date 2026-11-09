@@ -31,7 +31,7 @@ report numbering, descriptors and strings remain controller metadata. Broker
 and worker audio dispatch is generated from the same family list. The broker
 accepts only its compiled IDs/tags; descriptor injection and arbitrary worker
 executables are not interfaces. See [ADR-0018](adr/ADR-0018-compiled-broker-allowlist.md)
-(Proposed) for the boundary and rejected transport-only alternative.
+for the boundary and rejected transport-only alternative.
 
 No ordinary-root API item, broker wire format or existing descriptor byte is
 changed by this registry. Tiers are intended mechanisms, not validation results.

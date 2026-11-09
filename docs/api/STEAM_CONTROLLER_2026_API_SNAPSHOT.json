@@ -25,7 +25,7 @@
     },
     "enum.SteamController2026Haptic.html": {
       "declarations": [
-        "pub enum SteamController2026Haptic { Stream(Box<SteamController2026StreamPacket>), Rumble { kind: u8, intensity: u16, left_speed: u16, left_gain: u8, right_speed: u16, right_gain: u8, }, Pulse { side: u8, on_us: u16, off_us: u16, count: u16, }, Command { side: u8, command: u8, gain_db: i8, }, Lfo { side: u8, gain_db: i8, frequency: u16, duration_ms: u16, lfo_frequency: u16, depth: u8, }, Sweep { side: u8, gain_db: i8, duration_ms: u16, start: u16, end: u16, }, Script { side: u8, script: u8, gain_db: i8, }, }"
+        "#[non_exhaustive]pub enum SteamController2026Haptic { Stream(Box<SteamController2026StreamPacket>), Rumble { kind: u8, intensity: u16, left_speed: u16, left_gain: u8, right_speed: u16, right_gain: u8, }, Pulse { side: u8, on_us: u16, off_us: u16, count: u16, }, Command { side: u8, command: u8, gain_db: i8, }, Lfo { side: u8, gain_db: i8, frequency: u16, duration_ms: u16, lfo_frequency: u16, depth: u8, }, Sweep { side: u8, gain_db: i8, duration_ms: u16, start: u16, end: u16, }, Script { side: u8, script: u8, gain_db: i8, }, }"
       ],
       "traits": [
         "impl Clone for SteamController2026Haptic",
@@ -77,6 +77,10 @@
         "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
         "pub fn host_outputs(&self) -> Result<SteamController2026Outputs, ControlError>",
         "pub fn readiness(&self) -> Option<Readiness>",
+        "pub fn next_service_in(&self) -> Option<Duration>",
+        "pub fn wants_write(&self) -> bool",
+        "pub fn is_dirty(&self) -> bool",
+        "pub fn dropped_output_events(&self) -> u64",
         "pub fn state(&self) -> &SteamController2026State",
         "pub fn set_inputs( &mut self, state: SteamController2026State, ) -> Result<(), ControlError>",
         "pub fn set_button( &mut self, button: SteamController2026Button, pressed: bool, ) -> Result<(), ControlError>",
@@ -111,7 +115,7 @@
     },
     "struct.SteamController2026Outputs.html": {
       "declarations": [
-        "pub struct SteamController2026Outputs { pub revision: u64, pub haptics: [Option<SteamController2026Haptic>; 6], pub streaming: SteamController2026StreamOutputs, pub led_brightness: Option<u16>, pub led_override: Option<bool>, pub led_rgbw: Option<[u8; 4]>, }"
+        "#[non_exhaustive]pub struct SteamController2026Outputs { pub revision: u64, pub haptics: [Option<SteamController2026Haptic>; 6], pub streaming: SteamController2026StreamOutputs, pub led_brightness: Option<u16>, pub led_override: Option<bool>, pub led_rgbw: Option<[u8; 4]>, }"
       ],
       "traits": [
         "impl Clone for SteamController2026Outputs",
@@ -149,7 +153,7 @@
     },
     "struct.SteamController2026StreamOutputs.html": {
       "declarations": [
-        "pub struct SteamController2026StreamOutputs { pub enabled: bool, pub configured: [bool; 4], pub buffered_bytes: [u16; 4], pub received_bytes: [u64; 4], pub overrun_bytes: [u64; 4], pub last_packet: Option<SteamController2026StreamPacket>, }"
+        "#[non_exhaustive]pub struct SteamController2026StreamOutputs { pub enabled: bool, pub configured: [bool; 4], pub buffered_bytes: [u16; 4], pub received_bytes: [u64; 4], pub overrun_bytes: [u64; 4], pub last_packet: Option<SteamController2026StreamPacket>, }"
       ],
       "traits": [
         "impl Clone for SteamController2026StreamOutputs",
