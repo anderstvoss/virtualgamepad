@@ -1,12 +1,12 @@
 # ADR-0021: Logical controller and host presentation epochs
 
-Status: Proposed; waits on D3. No implementation or ordinary-root API addition is approved here.
+Status: Deferred. The owner closed D3 and dropped step 13a.
 
 ## Context
 
 A controller's semantic state, identity and declared persistent resources can
-outlive one host presentation. Steam lizard/native policy (#159, #165) and
-8BitDo presentation modes (#172) need this distinction. Closing a transport and
+outlive one host presentation. Steam lizard/native policy (#159, #165) and 8BitDo presentation modes (#172)
+were considered as possible consumers. Closing a transport and
 recreating the whole logical controller loses resources or confuses terminal
 shutdown with a mode transition. A realization ID describes a transport target,
 not lizard/native desktop policy.
@@ -56,25 +56,24 @@ semantic state; it is explicit controller policy, not a new RealizationId.
 - A mandatory epoch layer or resource field on all fixed controllers adds cost
   without a measured need; use opt-in ownership for families that require it.
 
-## Consequences and first consumer
+## Consequences if reopened
 
-Steam wired native/lizard transitions are the first consumer, followed by Puck
-receiver presentation policy and 8BitDo mode changes. Deterministic step 13a tests
-must cover successful swap, failed prepare leaving the old presentation intact,
+Deterministic tests must cover successful swap, failed prepare leaving the old presentation intact,
 failure after publication, close during replacement, identity/resource continuity,
 queue/counter reset, overflow and idempotent cleanup. No physical acceptance is
 implied by those fixtures.
 
-## API snapshot growth when a family ships
+## Deferral and reopen criteria
 
-Potential additions are a retained presentation epoch and association metadata
-plus family-specific typed mode actions. Exact signatures and public exposure
-require D2 separately. This ADR changes neither the 110-item ordinary-root snapshot
-nor broker/IPC formats. No public API is added before a consumer and approval.
+The [owner decision closing D3](https://github.com/anderstvoss/virtualgamepad/issues/322#issuecomment-6747067225)
+found no current consumer for presentation epochs.
 
-## Open decision and implementation
+- Steam wired stays on the same device while `hid-steam` switches lizard and
+  gamepad modes, as observed in [#304](https://github.com/anderstvoss/virtualgamepad/pull/304).
+- The 8BitDo work (#172) is deferred pending evidence of meaningful differences.
+- Puck LizardOnly remains unproven pending descriptor and topology research.
+- Joy-Con report modes are in-protocol, and a Joy-Con pair fits the
+  [receiver aggregate contract](ADR-0022-receiver-aggregates.md).
 
-D3 decides whether to accept this logical-controller/presentation split. While it
-is open, merge only this Proposed contract and skip step 13a. Implementation:
-[brief08a](../plans/pre-controller-buildout/08-epochs-and-receivers.md), step 13a;
-controller-owned resources follow [ADR-0013](ADR-0013-persistent-resources.md).
+Reopen only if Puck topology research demonstrates a need for presentation
+replacement, or faithful Steam bootloader-first attachment requires it.
