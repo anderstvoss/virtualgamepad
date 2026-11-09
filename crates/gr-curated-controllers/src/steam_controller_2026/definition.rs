@@ -1,6 +1,7 @@
 //! Wired Steam realization definitions.
 use crate::registry::{
-    ControllerFamily, FamilyRealization, FamilySpec, PermissionClass, RealizationTier,
+    ControllerFamily, CreationOptionKind, CreationToggle, FamilyOperation, FamilyRealization,
+    FamilySpec, PermissionClass, RealizationTier,
 };
 use gr_controller_contract::{
     ControlError, ControllerSurface, DigitalControlUpdate, InputTopology, MotorRole, OutputKind,
@@ -13,12 +14,34 @@ use gr_realization_api::{
     RealizationTarget,
 };
 
-pub(crate) struct SteamController2026Definition(
-    pub(crate) String,
-    pub(crate) bool,
-    pub(crate) bool,
-    pub(crate) bool,
-);
+pub(crate) struct SteamController2026Definition {
+    serial: String,
+    steam_client_compat: bool,
+    haptic_streaming: bool,
+    lizard_mode: bool,
+    #[cfg(test)]
+    pub(super) provider: Option<std::sync::Arc<dyn gr_realization_api::NativeProviderFactory>>,
+}
+
+impl SteamController2026Definition {
+    pub(super) fn new(serial: String, options: &super::SteamController2026Options) -> Self {
+        Self {
+            serial,
+            steam_client_compat: options.steam_client_compat(),
+            haptic_streaming: options.haptic_streaming(),
+            lizard_mode: options.lizard_mode(),
+            #[cfg(test)]
+            provider: None,
+        }
+    }
+}
+
+impl Default for SteamController2026Definition {
+    fn default() -> Self {
+        Self::new(String::new(), &super::SteamController2026Options::default())
+    }
+}
+
 const REDUCED: &[TargetRestriction] = &[
     TargetRestriction {
         feature: "lizard desktop mouse/keyboard",
@@ -207,14 +230,88 @@ impl crate::common::HidDriver for SteamController2026Definition {
         state.neutralize();
     }
 
+    #[cfg(test)]
+    fn open_hid(
+        &self,
+        request: gr_realization_api::ProviderOpenRequest,
+    ) -> Result<gr_provider_linux_uhid::HidTransport, gr_realization_api::ProviderError> {
+        let session = request.session;
+        Ok(gr_provider_linux_uhid::HidTransport::from_session(
+            self.provider
+                .as_ref()
+                .expect("fake Steam provider")
+                .open(request)?,
+            session,
+            [true, true, true],
+        ))
+    }
+
     fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
-        Self::Hid::with_desktop_options(self.0.clone(), self.1, self.2, self.3)
+        Self::Hid::with_desktop_options(
+            self.serial.clone(),
+            self.steam_client_compat,
+            self.haptic_streaming,
+            self.lizard_mode,
+        )
     }
 }
+const WIRED_UHID: &[RealizationTarget] = &[RealizationTarget::LINUX_UHID_USB];
+const EVDEV: &[RealizationTarget] = &[RealizationTarget::LINUX_UINPUT];
+
 impl ControllerFamily for SteamController2026Definition {
     const OUTPUT_KINDS: &'static [OutputKind] = &[OutputKind::Rumble {
         motors: &[MotorRole::Left, MotorRole::Right],
     }];
+    const SUBSYSTEMS: &'static [FamilyOperation] = &[
+        FamilyOperation {
+            name: "haptic_streaming",
+            targets: WIRED_UHID,
+            detail: "Opt-in internal haptic PCM with a bounded compatibility FIFO.",
+        },
+        FamilyOperation {
+            name: "lizard_mode",
+            targets: WIRED_UHID,
+            detail: "Opt-in desktop mouse and keyboard reports driven by host intent.",
+        },
+    ];
+    const REFUSED_OPERATIONS: &'static [FamilyOperation] = &[
+        FamilyOperation {
+            name: "haptic_streaming",
+            targets: EVDEV,
+            detail: "FF_RUMBLE has no PCM or stream-feedback channel.",
+        },
+        FamilyOperation {
+            name: "lizard_mode",
+            targets: EVDEV,
+            detail: "The reduced node exposes gamepad controls and has no HID host-mode channel.",
+        },
+    ];
+    const CREATION_TOGGLES: &'static [CreationToggle] = &[
+        CreationToggle {
+            name: "steam_client_compat",
+            label: "Steam client compatibility",
+            default: true,
+            kind: CreationOptionKind::Compat,
+            targets: WIRED_UHID,
+            fidelity: "Replays captured wired attributes and retains accepted settings.",
+        },
+        CreationToggle {
+            name: "lizard_mode",
+            label: "Desktop mouse and keyboard (lizard mode)",
+            default: false,
+            kind: CreationOptionKind::Feature,
+            targets: WIRED_UHID,
+            fidelity: "Emits captured wired mappings with separate mouse and keyboard enable states.",
+        },
+        CreationToggle {
+            name: "haptic_streaming",
+            label: "Haptic PCM streaming",
+            default: false,
+            kind: CreationOptionKind::Feature,
+            targets: WIRED_UHID,
+            fidelity: "Supports captured 8-kHz internal PCM with bounded compatibility buffering.",
+        },
+    ];
     const SPEC: &'static FamilySpec = &gr_controller_wire::registry::STEAM_CONTROLLER_2026;
     fn topology() -> &'static InputTopology {
         &super::topology::TOPOLOGY
@@ -231,7 +328,7 @@ impl ControllerFamily for SteamController2026Definition {
         TARGETS
     }
     fn manifest() -> RealizationManifest {
-        Self(String::new(), false, false, false).realization_manifest()
+        Self::default().realization_manifest()
     }
 }
 
@@ -240,7 +337,10 @@ mod tests {
     use super::*;
     #[test]
     fn negative_triggers_are_rejected_for_both_realizations_without_mutation() {
-        let definition = SteamController2026Definition("VGP-FAKE".into(), true, false, false);
+        let definition = SteamController2026Definition::new(
+            "VGP-FAKE".into(),
+            &super::super::SteamController2026Options::default(),
+        );
         for target in [
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_UINPUT,
@@ -280,8 +380,16 @@ mod tests {
 
     #[test]
     fn steam_creation_options_do_not_change_reduced_uinput_controls() {
-        let strict = SteamController2026Definition("VGP-FAKE".into(), false, false, false);
-        let compat = SteamController2026Definition("VGP-FAKE".into(), true, true, true);
+        let strict = SteamController2026Definition::new(
+            "VGP-FAKE".into(),
+            &super::super::SteamController2026Options::default().with_steam_client_compat(false),
+        );
+        let compat = SteamController2026Definition::new(
+            "VGP-FAKE".into(),
+            &super::super::SteamController2026Options::default()
+                .with_haptic_streaming(true)
+                .with_lizard_mode(true),
+        );
         let selection = RealizationSelection {
             controller: strict.controller_id(),
             target: RealizationTarget::LINUX_UINPUT,
@@ -320,12 +428,12 @@ mod tests {
 
     #[test]
     fn compiled_family_advertises_supported_targets_without_host_profiles() {
-        let id = SteamController2026Definition(String::new(), false, false, false).controller_id();
+        let id = SteamController2026Definition::default().controller_id();
         let family = crate::registry::FAMILIES
             .iter()
             .find(|f| f.id == id)
             .unwrap();
-        assert!(gr_controller_wire::registry::find(id).is_none());
+        assert_eq!(gr_controller_wire::registry::find(id).unwrap().id, id);
         assert_eq!((family.manifest)().entries().len(), 2);
         assert!(family.broker_tag.is_none() && family.spec.dummy_hcd_tag.is_none());
         assert!((family.usb_profile)().is_none());

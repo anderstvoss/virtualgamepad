@@ -54,7 +54,7 @@ pub enum WiiResourceDisposition {
 }
 #[derive(Clone)]
 pub(super) struct Memory {
-    pub(super) options: super::WiiRemoteCreationOptions,
+    pub(super) options: super::Compat,
     pub(super) image: WiiEepromImage,
     pub(super) dirty: bool,
     pub(super) initialized: [bool; 2],
@@ -86,7 +86,7 @@ impl Read {
 impl Default for Memory {
     fn default() -> Self {
         Self {
-            options: super::WiiRemoteCreationOptions::default(),
+            options: super::Compat::default(),
             image: WiiEepromImage::default(),
             dirty: false,
             initialized: [false; 2],

@@ -6,9 +6,7 @@ use gr_controller_contract::{
     RealizationManifest,
 };
 pub use gr_controller_wire::registry::{FamilySpec, UsbProfileSpec, worker_id};
-use gr_realization_api::ControllerId;
-#[cfg(test)]
-use gr_realization_api::RealizationTarget;
+use gr_realization_api::{ControllerId, RealizationTarget};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RealizationTier {
@@ -42,10 +40,43 @@ impl FamilyRealization {
         }
     }
 }
+/// Whether an option is a consumer compatibility shim or an opt-in feature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CreationOptionKind {
+    Compat,
+    Feature,
+}
+
+/// A family-specific creation toggle. Names are stable within a family.
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct CreationToggle {
+    pub name: &'static str,
+    pub label: &'static str,
+    pub default: bool,
+    pub kind: CreationOptionKind,
+    pub targets: &'static [RealizationTarget],
+    pub fidelity: &'static str,
+}
+
+/// A family capability or limitation scoped to specific realizations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct FamilyOperation {
+    pub name: &'static str,
+    pub targets: &'static [RealizationTarget],
+    pub detail: &'static str,
+}
+
 // Metadata registration must not require a provider implementation before its gate.
 pub(crate) trait ControllerFamily: RealizationControllerDefinition {
     const SPEC: &'static FamilySpec;
     const OUTPUT_KINDS: &'static [OutputKind] = &[];
+    const SUBSYSTEMS: &'static [FamilyOperation] = &[];
+    const PERSISTENT_RESOURCES: &'static [FamilyOperation] = &[];
+    const REFUSED_OPERATIONS: &'static [FamilyOperation] = &[];
+    const CREATION_TOGGLES: &'static [CreationToggle] = &[];
     const ID: ControllerId = Self::SPEC.id;
     const BROKER_TAG: Option<u8> = Self::SPEC.broker_tag;
     fn usb_profile() -> Option<UsbProfileSpec> {
@@ -75,12 +106,10 @@ pub struct FamilyEntry {
     pub(crate) max_topology: fn() -> &'static InputTopology,
     #[allow(dead_code)]
     pub output_kinds: &'static [OutputKind],
-    #[allow(dead_code)]
-    pub(crate) subsystems: &'static [&'static str],
-    #[allow(dead_code)]
-    pub(crate) persistent_resources: &'static [&'static str],
-    #[allow(dead_code)]
-    pub(crate) refused_operations: &'static [&'static str],
+    pub subsystems: &'static [FamilyOperation],
+    pub persistent_resources: &'static [FamilyOperation],
+    pub refused_operations: &'static [FamilyOperation],
+    pub creation_toggles: &'static [CreationToggle],
     #[allow(dead_code)]
     pub(crate) kind: FamilyKind,
 }
@@ -95,9 +124,10 @@ pub(crate) const fn family_entry<F: ControllerFamily>() -> FamilyEntry {
         manifest: F::manifest,
         max_topology: F::topology,
         output_kinds: F::OUTPUT_KINDS,
-        subsystems: &[],
-        persistent_resources: &[],
-        refused_operations: &[],
+        subsystems: F::SUBSYSTEMS,
+        persistent_resources: F::PERSISTENT_RESOURCES,
+        refused_operations: F::REFUSED_OPERATIONS,
+        creation_toggles: F::CREATION_TOGGLES,
         kind: FamilyKind::Controller,
     }
 }
@@ -105,7 +135,6 @@ macro_rules! typed_registry {
     ($(($module:ident, $definition:ident, $spec:ident, [$($variant:ident)?]),)*) => {
         pub static FAMILIES: &[FamilyEntry] = &[
             $(family_entry::<crate::$module::$definition>(),)*
-            family_entry::<crate::steam_controller_2026::SteamController2026Definition>(),
             #[cfg(test)] family_entry::<test_family::Fifth>(),
         ];
     };
@@ -119,12 +148,102 @@ mod tests {
     #[test]
     fn compiled_metadata_agrees_with_controller_definitions() {
         use gr_controller_contract::RealizationControllerDefinition;
+        macro_rules! definition {
+            (SteamController2026Definition, $module:ident) => {
+                crate::$module::SteamController2026Definition::default()
+            };
+            ($name:ident, $module:ident) => {
+                crate::$module::$name
+            };
+        }
         macro_rules! check_definitions {
             ($(($module:ident, $definition:ident, $spec:ident, [$($variant:ident)?]),)*) => {
-                $(assert_eq!(crate::$module::$definition.controller_id(), gr_controller_wire::registry::$spec.id);)*
+                $(assert_eq!(definition!($definition, $module).controller_id(), gr_controller_wire::registry::$spec.id);)*
             };
         }
         gr_controller_wire::compiled_families!(check_definitions);
+    }
+
+    #[test]
+    fn wii_and_steam_registry_describe_existing_capabilities_and_option_defaults() {
+        use crate::{
+            steam_controller_2026::SteamController2026Options, wii_remote::WiiRemoteOptions,
+        };
+        use gr_controller_wire::registry::ids;
+        let find = |id| FAMILIES.iter().find(|family| family.id == id).unwrap();
+        let wii = find(ids::WII_REMOTE);
+        let wii_defaults = WiiRemoteOptions::default();
+        let steam = find(ids::STEAM_CONTROLLER_2026);
+        let steam_defaults = SteamController2026Options::default();
+        for (entry, defaults) in [
+            (
+                wii,
+                &[
+                    (
+                        "motionplus_passthrough_id_mirror",
+                        wii_defaults.motionplus_passthrough_id_mirror(),
+                    ),
+                    (
+                        "motionplus_passthrough_calibration_copy",
+                        wii_defaults.motionplus_passthrough_calibration_copy(),
+                    ),
+                    (
+                        "motionplus_activation_reattach_status",
+                        wii_defaults.motionplus_activation_reattach_status(),
+                    ),
+                    (
+                        "motionplus_inactive_id_external_style",
+                        wii_defaults.motionplus_inactive_id_external_style(),
+                    ),
+                ][..],
+            ),
+            (
+                steam,
+                &[
+                    ("steam_client_compat", steam_defaults.steam_client_compat()),
+                    ("lizard_mode", steam_defaults.lizard_mode()),
+                    ("haptic_streaming", steam_defaults.haptic_streaming()),
+                ][..],
+            ),
+        ] {
+            assert_eq!(
+                entry
+                    .creation_toggles
+                    .iter()
+                    .map(|option| (option.name, option.default))
+                    .collect::<Vec<_>>(),
+                defaults
+            );
+        }
+        assert_eq!(wii.persistent_resources.len(), 1);
+        assert_eq!(wii.persistent_resources[0].name, "eeprom");
+        assert_eq!(
+            wii.persistent_resources[0].targets,
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH]
+        );
+        assert!(
+            wii.refused_operations
+                .iter()
+                .any(|operation| operation.name == "speaker_control"
+                    && operation.targets == [RealizationTarget::LINUX_UINPUT])
+        );
+        assert!(steam.persistent_resources.is_empty());
+        for name in ["haptic_streaming", "lizard_mode"] {
+            assert!(
+                steam
+                    .subsystems
+                    .iter()
+                    .any(|operation| operation.name == name
+                        && operation.targets == [RealizationTarget::LINUX_UHID_USB])
+            );
+            assert!(
+                steam
+                    .refused_operations
+                    .iter()
+                    .any(|operation| operation.name == name
+                        && operation.targets == [RealizationTarget::LINUX_UINPUT])
+            );
+        }
     }
 
     #[test]
@@ -140,13 +259,34 @@ mod tests {
             }
             (family.topology)().validate().unwrap();
             assert_eq!((family.max_topology)(), (family.topology)());
-            assert!(
-                family.subsystems.is_empty()
-                    && family.persistent_resources.is_empty()
-                    && family.refused_operations.is_empty()
-            );
-            assert!(matches!(family.kind, FamilyKind::Controller));
             let manifest = (family.manifest)();
+            let is_declared = |target: &RealizationTarget| {
+                manifest
+                    .entries()
+                    .iter()
+                    .any(|entry| entry.target == *target)
+            };
+            for operations in [
+                family.subsystems,
+                family.persistent_resources,
+                family.refused_operations,
+            ] {
+                let mut names = std::collections::HashSet::new();
+                for operation in operations {
+                    assert!(names.insert(operation.name));
+                    assert!(!operation.detail.is_empty());
+                    assert!(
+                        !operation.targets.is_empty() && operation.targets.iter().all(is_declared)
+                    );
+                }
+            }
+            let mut names = std::collections::HashSet::new();
+            for toggle in family.creation_toggles {
+                assert!(names.insert(toggle.name));
+                assert_eq!(toggle.default, toggle.kind == CreationOptionKind::Compat);
+                assert!(!toggle.label.is_empty() && !toggle.fidelity.is_empty());
+                assert!(!toggle.targets.is_empty() && toggle.targets.iter().all(is_declared));
+            }
             let surfaces = (family.realizations)();
             assert_eq!(manifest.entries().len(), surfaces.len());
             for entry in manifest.entries() {
@@ -207,6 +347,7 @@ mod receiver_metadata_tests {
             subsystems: &[],
             persistent_resources: &[],
             refused_operations: &[],
+            creation_toggles: &[],
             kind: FamilyKind::Receiver {
                 hosted_families: &[test_family::Fifth::ID],
             },

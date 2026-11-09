@@ -9,13 +9,26 @@ It is not physical-reference or whole-controller acceptance.
 
 ## Native ownership and use
 
-Use the supporting `create_wii_remote(target, session_id)` constructor for an
-Original Remote, or `create_wii_remote_with_image` for an explicit revision and
-validated `WiiEepromImage`. Original and TR identities are distinct. Early
-integrated Plus and undeclared targets reject; there is no realization fallback.
+Call `create_wii_remote(CreationOptions { target, session }, WiiRemoteOptions::default())`
+for an Original Remote. Use `with_revision` to select the model and
+`with_eeprom_image` to supply a validated image. Original and TR have distinct
+device IDs. Early integrated Plus and undeclared targets reject.
 The ordinary `virtualgamepad::RealizationId` is the same underlying target type.
 Applications using the supporting package must pin it with the rest of this
 workspace; it is outside the ordinary-root compatibility snapshot.
+
+Creation generates a locally administered unicast Bluetooth address unless the
+caller supplies a validated `WiiRemoteIdentity` with `with_identity`. Save
+`identity().bytes()` for later restoration with `WiiRemoteIdentity::from_bytes`.
+Each creation gets a fresh physical path. On Bluetooth-bus UHID,
+`association().requested_unique_id` reports the synthetic label sent to the host.
+Use `identity()` for the typed address. The research covers
+`hid-wiimote` device recognition (`wii-original-remote-consumer-revision`),
+SDL initialization (`wii-w4-sdl-3-2-10-no-reattach`), and Dolphin's path probe
+(`wii-gap-consumer-dolphin-hidapi-usability-probe`). It does not establish how
+those consumers interpret a Bluetooth address in uniq. Uinput exposes the typed
+identity on the handle and a physical correlation path on the node. Its provider
+has no unique-ID setter, so its association has no requested uniq.
 
 The handle exposes native buttons, ten-bit accelerometer inputs, four optional
 IR points, Nunchuk/Classic inputs, and fourteen-bit MotionPlus inputs. `attach`
@@ -52,10 +65,10 @@ chooses no file path and claims no filesystem durability. Uinput has no addresse
 memory channel and rejects a nonempty import.
 
 The supporting API also accepts immutable caller-imported extension calibration.
-Use `WiiExtensionCalibration::import` with optional 32-byte MotionPlus and
-16-byte Nunchuk/Classic blocks, then
-`WiiEepromImage::with_extension_calibration` before creating the handle through
-`create_wii_remote_with_image`. Import validates the MotionPlus CRC32 and the
+Start with `WiiExtensionCalibration::default()` and call `with_motion_plus`,
+`with_nunchuk` or `with_classic` for each block, then pass the result to
+`WiiEepromImage::with_extension_calibration` before creation. Each builder
+validates its block. Validation checks the MotionPlus CRC32 and the
 two additive checksum bytes on Nunchuk/Classic. It does not repair bytes, infer
 factory values, or certify physical calibration. The snapshot retains these
 blocks alongside EEPROM; `bytes()` still returns only EEPROM bytes. No imports
@@ -630,7 +643,7 @@ navigate it, and selecting a file retains its path for creation. Clear removes a
 choice. No image, factory value or preset is supplied by the demo.
 
 Creation reads and validates each selected file before opening the provider,
-using `WiiEepromImage::import` and `WiiExtensionCalibration::import`. Size,
+using `WiiEepromImage::import` and the `WiiExtensionCalibration` builders. Size,
 checksum, CRC and file-read errors use the existing creation-error display.
 The EEPROM API bounds the address window; it does not invent an EEPROM
 checksum contract. Block layouts are cited by
@@ -660,14 +673,11 @@ independent physical readback. The project still aims at a full faithful model.
 | Active F6 child-ID mirror, fixed F7 | Compat: `wii-gap-dolphin-attach-passthrough-four-byte-id-f6`, `wii-w9-f7-fixed-preparing-compat` | F7 is always 0x02 when served, never 0x00 or a readiness value. No challenge; 0x50 stays error 7 |
 | Active A40040 child calibration copy | Compat: `wii-gap-dolphin-attach-active-passthrough-calibration-copy-40` | Exact imported 16 bytes only, never repaired or supplied by default |
 
-`WiiRemoteCreationOptions` has two independent bool fields:
-`motionplus_passthrough_id_mirror` and
-`motionplus_passthrough_calibration_copy`. Both default on by owner decision.
-`create_wii_remote_with_options` takes the same caller resources and revision
-as the existing image constructor plus this policy; existing constructors use
-the default. The values are copied at creation and have no live setter. Demo
-Advanced options exposes both with a compat label; uinput disables them because
-it has no addressed HID register channel.
+`WiiRemoteOptions::with_motionplus_passthrough_id_mirror` and
+`with_motionplus_passthrough_calibration_copy` set independent creation-time
+switches. Both default on by owner decision. The demo displays the switches from
+the registry and disables them on uinput, which has no addressed HID register
+channel.
 
 Each shim applies only in active mode 05 with Nunchuk or mode 07 with Classic.
 Turning either off restores the prior error 7 independently. MP-only mode 04,
@@ -779,7 +789,7 @@ window. Physical captures remain deferred under #52.
 
 ### Activation re-attach status compatibility (W9g)
 
-`WiiRemoteCreationOptions::motionplus_activation_reattach_status` defaults to
+The `motionplus_activation_reattach_status` option defaults to
 true for Original and Wii Remote Plus. Activation from inactive
 while the extension bit is already set queues an unplugged status then the
 current status. Active mode switches keep the single status with the option on
@@ -938,7 +948,7 @@ echo 1 | sudo tee /proc/sys/vm/compact_memory
 plus optional validated accessory blocks. A complete round trip uses
 `bytes()` and `extension_calibration()`, then the latter's `motion_plus()`,
 `nunchuk()` and `classic()` accessors. Reconstruct with
-`WiiExtensionCalibration::import`, `WiiEepromImage::import`, and
+the matching `WiiExtensionCalibration` builders, `WiiEepromImage::import`, and
 `with_extension_calibration`. Missing blocks remain missing; unknown EEPROM
 bytes are preserved. These accessors return immutable values, not mutable
 fields or a Debug serialization contract. No filesystem dependency or file

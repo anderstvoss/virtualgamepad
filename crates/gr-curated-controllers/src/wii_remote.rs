@@ -26,25 +26,142 @@ impl WiiRemoteRevision {
     }
 }
 
-/// Creation-time compatibility policy; both bounded shims are initially enabled.
-///
-/// These reads are consumer compatibility behavior, not physical fidelity.
-/// None of these options implements `MotionPlus` challenge data or readiness progression.
+/// Creation settings for one Wii Remote.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct WiiRemoteOptions {
+    revision: WiiRemoteRevision,
+    eeprom_image: WiiEepromImage,
+    identity: Option<WiiRemoteIdentity>,
+    compat: Compat,
+}
+
+impl WiiRemoteOptions {
+    #[must_use]
+    pub fn with_revision(mut self, revision: WiiRemoteRevision) -> Self {
+        self.revision = revision;
+        self
+    }
+
+    #[must_use]
+    pub fn with_eeprom_image(mut self, image: WiiEepromImage) -> Self {
+        self.eeprom_image = image;
+        self
+    }
+
+    #[must_use]
+    pub fn with_identity(mut self, identity: WiiRemoteIdentity) -> Self {
+        self.identity = Some(identity);
+        self
+    }
+
+    #[must_use]
+    pub const fn revision(&self) -> WiiRemoteRevision {
+        self.revision
+    }
+
+    #[must_use]
+    pub const fn eeprom_image(&self) -> &WiiEepromImage {
+        &self.eeprom_image
+    }
+
+    #[must_use]
+    pub const fn identity(&self) -> Option<WiiRemoteIdentity> {
+        self.identity
+    }
+
+    /// Mirror downstream identity at F6/F8/F9 with fixed compat F7 = 0x02.
+    #[must_use]
+    pub fn with_motionplus_passthrough_id_mirror(mut self, enabled: bool) -> Self {
+        self.compat.motionplus_passthrough_id_mirror = enabled;
+        self
+    }
+
+    #[must_use]
+    pub const fn motionplus_passthrough_id_mirror(&self) -> bool {
+        self.compat.motionplus_passthrough_id_mirror
+    }
+
+    /// Expose exact caller-imported downstream calibration at active offset 0x40.
+    #[must_use]
+    pub fn with_motionplus_passthrough_calibration_copy(mut self, enabled: bool) -> Self {
+        self.compat.motionplus_passthrough_calibration_copy = enabled;
+        self
+    }
+
+    #[must_use]
+    pub const fn motionplus_passthrough_calibration_copy(&self) -> bool {
+        self.compat.motionplus_passthrough_calibration_copy
+    }
+
+    /// Opt in to the external-style inactive identity on TR for Cemu activation.
+    /// Defaults to false. Original always retains its external identity.
+    #[must_use]
+    pub fn with_motionplus_inactive_id_external_style(mut self, enabled: bool) -> Self {
+        self.compat.motionplus_inactive_id_external_style = enabled;
+        self
+    }
+
+    #[must_use]
+    pub const fn motionplus_inactive_id_external_style(&self) -> bool {
+        self.compat.motionplus_inactive_id_external_style
+    }
+
+    /// Send a re-attach status edge on activation when a child is present.
+    /// Defaults to true. Physical activation fidelity remains unmeasured.
+    #[must_use]
+    pub fn with_motionplus_activation_reattach_status(mut self, enabled: bool) -> Self {
+        self.compat.motionplus_activation_reattach_status = enabled;
+        self
+    }
+
+    #[must_use]
+    pub const fn motionplus_activation_reattach_status(&self) -> bool {
+        self.compat.motionplus_activation_reattach_status
+    }
+}
+
+/// Bluetooth address in display order, with the flag bits in the first byte.
+/// The virtual identity policy requires a locally administered unicast address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WiiRemoteIdentity([u8; 6]);
+
+impl WiiRemoteIdentity {
+    pub fn from_bytes(address: [u8; 6]) -> Result<Self, gr_realization_api::ProviderError> {
+        if address[0] & 0x03 != 0x02 {
+            return Err(gr_realization_api::ProviderError::Open {
+                reason: "Wii Bluetooth identity must be a locally administered unicast address"
+                    .into(),
+            });
+        }
+        Ok(Self(address))
+    }
+
+    pub fn generate() -> Result<Self, gr_realization_api::ProviderError> {
+        crate::common::creation_identity().map(Self)
+    }
+
+    #[must_use]
+    pub const fn bytes(self) -> [u8; 6] {
+        self.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(clippy::struct_excessive_bools)] // Independent owner-approved creation switches.
-pub struct WiiRemoteCreationOptions {
+struct Compat {
     /// Mirror downstream identity at F6/F8/F9 with fixed compat F7 = 0x02.
-    pub motionplus_passthrough_id_mirror: bool,
+    motionplus_passthrough_id_mirror: bool,
     /// Expose exact caller-imported downstream calibration at active offset 0x40.
-    pub motionplus_passthrough_calibration_copy: bool,
+    motionplus_passthrough_calibration_copy: bool,
     /// Plus-only compat: use external-style inactive MP identity for Cemu activation.
     /// Default false; Original always retains its external identity.
-    pub motionplus_inactive_id_external_style: bool,
+    motionplus_inactive_id_external_style: bool,
     /// Compat: re-attach status edge on activation from inactive with a child present.
     /// Default true; physical activation fidelity remains unmeasured.
-    pub motionplus_activation_reattach_status: bool,
+    motionplus_activation_reattach_status: bool,
 }
-impl Default for WiiRemoteCreationOptions {
+impl Default for Compat {
     fn default() -> Self {
         Self {
             motionplus_passthrough_id_mirror: true,
@@ -382,10 +499,7 @@ mod definition;
 pub use definition::{BLUETOOTH, TOPOLOGY, UINPUT, WiiRemoteDefinition};
 
 mod controller;
-pub use controller::{
-    WiiRemoteController, create_wii_remote, create_wii_remote_with_image,
-    create_wii_remote_with_options,
-};
+pub use controller::{WiiRemoteController, create_wii_remote};
 
 mod codec;
 

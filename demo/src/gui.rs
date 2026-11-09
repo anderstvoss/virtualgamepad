@@ -17,8 +17,8 @@ use editor::{
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use input_clusters::{InputEvent, InputUiState, InputValue, card};
 
-use gr_curated_controllers::steam_controller_2026::SteamController2026CreationOptions;
-use gr_curated_controllers::wii_remote::{WiiRemoteCreationOptions, WiiRemoteRevision};
+use gr_curated_controllers::steam_controller_2026::SteamController2026Options;
+use gr_curated_controllers::wii_remote::{WiiRemoteOptions, WiiRemoteRevision};
 use std::{
     cmp::Ordering,
     collections::VecDeque,
@@ -51,8 +51,8 @@ struct ControllerOptions {
     audio: audio_lab::CreationAudio,
     wii_revision: WiiRemoteRevision,
     wii_imports: wii_import::Imports,
-    wii_compat: WiiRemoteCreationOptions,
-    steam_options: SteamController2026CreationOptions,
+    wii_compat: WiiRemoteOptions,
+    steam_options: SteamController2026Options,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
@@ -271,11 +271,11 @@ fn draw_advanced_options(
     target: RealizationId,
     kind: Kind,
     audio_creation: &mut audio_lab::CreationAudio,
-    steam_options: &mut SteamController2026CreationOptions,
+    steam_options: &mut SteamController2026Options,
     (wii_revision, wii_imports, wii_compat): (
         &mut WiiRemoteRevision,
         &mut wii_import::Imports,
-        &mut WiiRemoteCreationOptions,
+        &mut WiiRemoteOptions,
     ),
 ) -> AdvancedOptionsLayout {
     let max_height = advanced_options_max_height(
@@ -316,12 +316,7 @@ fn draw_advanced_options(
                         wii_import::draw_compat(ui, target, *wii_revision, wii_compat);
                     }
                     if kind == Kind::Steam {
-                        ui.checkbox(&mut steam_options.steam_client_compat, "Steam client compatibility");
-                        ui.label("Replays captured wired attributes and accepted settings. HID targets only; uinput has no feature channel.");
-                        ui.checkbox(&mut steam_options.lizard_mode, "Desktop mouse and keyboard (lizard mode)");
-                        ui.label("Captured wired desktop mappings; HID targets only. Steam controls mouse and keyboard enable state separately.");
-                        ui.checkbox(&mut steam_options.haptic_streaming, "Haptic PCM streaming");
-                        ui.label("8-kHz internal PCM with bounded compat buffering; HID targets only.");
+                        families::draw_steam_toggles(ui, target, steam_options);
                     }
                     ui.strong("Audio configuration");
                     audio_lab::draw_creation(ui, audio_creation, target, kind.supports_audio());
@@ -1455,8 +1450,8 @@ pub struct App {
     audio_creation: audio_lab::CreationAudio,
     wii_revision: WiiRemoteRevision,
     wii_imports: wii_import::Imports,
-    wii_compat: WiiRemoteCreationOptions,
-    steam_options: SteamController2026CreationOptions,
+    wii_compat: WiiRemoteOptions,
+    steam_options: SteamController2026Options,
     name_draft: String,
     create_count: u32,
     advanced_options_open: bool,
@@ -1480,8 +1475,8 @@ impl Default for App {
             audio_creation: audio_lab::CreationAudio::default(),
             wii_revision: WiiRemoteRevision::Original,
             wii_imports: wii_import::Imports::default(),
-            wii_compat: WiiRemoteCreationOptions::default(),
-            steam_options: SteamController2026CreationOptions::default(),
+            wii_compat: WiiRemoteOptions::default(),
+            steam_options: SteamController2026Options::default(),
             name_draft: String::new(),
             create_count: 1,
             advanced_options_open: false,
@@ -1662,7 +1657,7 @@ impl App {
             audio: self.audio_creation,
             wii_revision: self.wii_revision,
             wii_imports: self.wii_imports.clone(),
-            wii_compat: self.wii_compat,
+            wii_compat: self.wii_compat.clone(),
             steam_options: self.steam_options.clone(),
         }
     }
@@ -4578,11 +4573,11 @@ mod tests {
                                                 audio_lab::default_creation_target(),
                                                 Kind::DualSense,
                                                 &mut audio_creation,
-                                                &mut SteamController2026CreationOptions::default(),
+                                                &mut SteamController2026Options::default(),
                                                 (
                                                     &mut WiiRemoteRevision::Original,
                                                     &mut wii_import::Imports::default(),
-                                                    &mut WiiRemoteCreationOptions::default(),
+                                                    &mut WiiRemoteOptions::default(),
                                                 ),
                                             ));
                                             ui.add_sized(

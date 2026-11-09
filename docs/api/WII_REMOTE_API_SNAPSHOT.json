@@ -72,19 +72,7 @@
     },
     "fn.create_wii_remote.html": {
       "declarations": [
-        "pub fn create_wii_remote( target: RealizationTarget, session: u64, ) -> Result<WiiRemoteController, ProviderError>"
-      ],
-      "traits": []
-    },
-    "fn.create_wii_remote_with_image.html": {
-      "declarations": [
-        "pub fn create_wii_remote_with_image( target: RealizationTarget, session: u64, revision: WiiRemoteRevision, image: WiiEepromImage, ) -> Result<WiiRemoteController, ProviderError>"
-      ],
-      "traits": []
-    },
-    "fn.create_wii_remote_with_options.html": {
-      "declarations": [
-        "pub fn create_wii_remote_with_options( target: RealizationTarget, session: u64, revision: WiiRemoteRevision, image: WiiEepromImage, options: WiiRemoteCreationOptions, ) -> Result<WiiRemoteController, ProviderError>"
+        "pub fn create_wii_remote( options: CreationOptions, family: WiiRemoteOptions, ) -> Result<WiiRemoteController, ProviderError>"
       ],
       "traits": []
     },
@@ -153,7 +141,9 @@
     "struct.WiiExtensionCalibration.html": {
       "declarations": [
         "pub struct WiiExtensionCalibration { /* private fields */ }",
-        "pub fn import( motion_plus: Option<[u8; 32]>, nunchuk: Option<[u8; 16]>, classic: Option<[u8; 16]>, ) -> Result<Self, ControlError>",
+        "pub fn with_motion_plus( self, block: Option<[u8; 32]>, ) -> Result<Self, ControlError>",
+        "pub fn with_nunchuk(self, block: Option<[u8; 16]>) -> Result<Self, ControlError>",
+        "pub fn with_classic(self, block: Option<[u8; 16]>) -> Result<Self, ControlError>",
         "pub fn motion_plus(&self) -> Option<[u8; 32]>",
         "pub fn nunchuk(&self) -> Option<[u8; 16]>",
         "pub fn classic(&self) -> Option<[u8; 16]>"
@@ -227,6 +217,7 @@
     "struct.WiiRemoteController.html": {
       "declarations": [
         "pub struct WiiRemoteController { /* private fields */ }",
+        "pub const fn identity(&self) -> WiiRemoteIdentity",
         "pub fn current_topology(&self) -> &'static InputTopology",
         "pub fn topology_generation(&self) -> u64",
         "pub fn attach( &mut self, extension: WiiExtension, motion_plus: bool, ) -> Result<(), ControlError>",
@@ -265,24 +256,6 @@
         "impl Unpin for WiiRemoteController"
       ]
     },
-    "struct.WiiRemoteCreationOptions.html": {
-      "declarations": [
-        "pub struct WiiRemoteCreationOptions { pub motionplus_passthrough_id_mirror: bool, pub motionplus_passthrough_calibration_copy: bool, pub motionplus_inactive_id_external_style: bool, pub motionplus_activation_reattach_status: bool, }"
-      ],
-      "traits": [
-        "impl Clone for WiiRemoteCreationOptions",
-        "impl Copy for WiiRemoteCreationOptions",
-        "impl Debug for WiiRemoteCreationOptions",
-        "impl Default for WiiRemoteCreationOptions",
-        "impl Eq for WiiRemoteCreationOptions",
-        "impl PartialEq for WiiRemoteCreationOptions",
-        "impl RefUnwindSafe for WiiRemoteCreationOptions",
-        "impl Send for WiiRemoteCreationOptions",
-        "impl Sync for WiiRemoteCreationOptions",
-        "impl Unpin for WiiRemoteCreationOptions",
-        "impl UnwindSafe for WiiRemoteCreationOptions"
-      ]
-    },
     "struct.WiiRemoteDefinition.html": {
       "declarations": [
         "pub struct WiiRemoteDefinition;"
@@ -296,6 +269,57 @@
         "impl TargetAwareControllerDriver for WiiRemoteDefinition",
         "impl Unpin for WiiRemoteDefinition",
         "impl UnwindSafe for WiiRemoteDefinition"
+      ]
+    },
+    "struct.WiiRemoteIdentity.html": {
+      "declarations": [
+        "pub struct WiiRemoteIdentity(/* private fields */);",
+        "pub fn from_bytes(address: [u8; 6]) -> Result<Self, ProviderError>",
+        "pub fn generate() -> Result<Self, ProviderError>",
+        "pub const fn bytes(self) -> [u8; 6]"
+      ],
+      "traits": [
+        "impl Clone for WiiRemoteIdentity",
+        "impl Copy for WiiRemoteIdentity",
+        "impl Debug for WiiRemoteIdentity",
+        "impl Eq for WiiRemoteIdentity",
+        "impl PartialEq for WiiRemoteIdentity",
+        "impl RefUnwindSafe for WiiRemoteIdentity",
+        "impl Send for WiiRemoteIdentity",
+        "impl Sync for WiiRemoteIdentity",
+        "impl Unpin for WiiRemoteIdentity",
+        "impl UnwindSafe for WiiRemoteIdentity"
+      ]
+    },
+    "struct.WiiRemoteOptions.html": {
+      "declarations": [
+        "#[non_exhaustive]pub struct WiiRemoteOptions { /* private fields */ }",
+        "pub fn with_revision(self, revision: WiiRemoteRevision) -> Self",
+        "pub fn with_eeprom_image(self, image: WiiEepromImage) -> Self",
+        "pub fn with_identity(self, identity: WiiRemoteIdentity) -> Self",
+        "pub const fn revision(&self) -> WiiRemoteRevision",
+        "pub const fn eeprom_image(&self) -> &WiiEepromImage",
+        "pub const fn identity(&self) -> Option<WiiRemoteIdentity>",
+        "pub fn with_motionplus_passthrough_id_mirror(self, enabled: bool) -> Self",
+        "pub const fn motionplus_passthrough_id_mirror(&self) -> bool",
+        "pub fn with_motionplus_passthrough_calibration_copy(self, enabled: bool) -> Self",
+        "pub const fn motionplus_passthrough_calibration_copy(&self) -> bool",
+        "pub fn with_motionplus_inactive_id_external_style(self, enabled: bool) -> Self",
+        "pub const fn motionplus_inactive_id_external_style(&self) -> bool",
+        "pub fn with_motionplus_activation_reattach_status(self, enabled: bool) -> Self",
+        "pub const fn motionplus_activation_reattach_status(&self) -> bool"
+      ],
+      "traits": [
+        "impl Clone for WiiRemoteOptions",
+        "impl Debug for WiiRemoteOptions",
+        "impl Default for WiiRemoteOptions",
+        "impl Eq for WiiRemoteOptions",
+        "impl PartialEq for WiiRemoteOptions",
+        "impl RefUnwindSafe for WiiRemoteOptions",
+        "impl Send for WiiRemoteOptions",
+        "impl Sync for WiiRemoteOptions",
+        "impl Unpin for WiiRemoteOptions",
+        "impl UnwindSafe for WiiRemoteOptions"
       ]
     },
     "struct.WiiRemoteOutputs.html": {

@@ -17,7 +17,7 @@ Every `steam-c6-*` fixture used here is synthetic consumer-source evidence. The
 `steam-s3-1302-report-descriptor` fixture is physical, imported without byte changes.
 Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
 
-## Open gates
+## Supporting API history
 
 - **14a complete:** family/state metadata and the exact wired `28de:1302`
   descriptor are adopted. The generator verifies the 372-byte raw SHA-256
@@ -34,9 +34,8 @@ Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
   declarations, fields, variants, methods and traits;
   changes fail until explicitly reviewed and refreshed with `--write` using
   fresh documentation builds. `--doc-root` infers the Steam supporting docs next
-  to the root docs; `--steam-doc-root` can select them explicitly. Controller,
-  surface and output types and a controller constructor remain for their authorized step.
-  There are no root exports, creation-options type or broker changes. This
+  to the root docs; `--steam-doc-root` can select them explicitly. At that step
+  the supporting module exposed native state only. The
   [owner decision on the follow-up](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6502745647)
   keeps exactly these public items: `SteamController2026State`,
   `SteamController2026Button`, `SteamTrackpadState`, `SteamMotionSample` and
@@ -47,7 +46,9 @@ Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
   snapshots remain byte-identical. For a Steam-only `--write` refresh, verify
   that the root and Wii snapshot diffs are empty before committing.
 - **14c API:** the [owner decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6616502032)
-  approves the controller, constructor, options constructor and retained haptic types.
+  approved the controller, creation options and retained haptic types. The
+  [current decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6646272685)
+  allows this supporting API to evolve with its own reviewed snapshot.
 
 ## Realization differences
 
@@ -59,7 +60,15 @@ Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
 | Touch | Native pad coordinates, click, pressure and touch flags | Pad click and contact-gated coordinates. The kernel gamepad mapping has no independent pressure, stick/grip touch or pad-contact key |
 | Host output | Retained vendor haptics, reports `0x80`–`0x85` | Conventional rumble via reverse events. There is no vendor haptic payload for the six retained slots |
 | LED controls | Retained raw brightness, override and RGBW intent through the default Steam profile; see [wired LED controls](STEAM_LED_CONTROLS.md) | No HID feature channel or colour/brightness output representation |
-| Unit serial | Compatibility PID/counter feature string. Physical format: No evidence | No HID feature channel or evdev unique-ID setter |
+| Unit serial | Synthetic or caller-selected serial in the HID feature response and UHID uniq. Physical format: No evidence | Typed identity is available on the handle. Uinput has no HID feature channel or unique-ID setter |
+
+Create either realization with
+`create_steam_controller_2026(CreationOptions { target, session }, SteamController2026Options::default())`.
+To restore a unit, build `SteamController2026Identity::from_serial(serial)?`
+and supply it through `SteamController2026Options::with_identity`. The handle
+returns the resolved value through `identity()`. Wired UHID uses that serial
+verbatim for `association().requested_unique_id` and creates a fresh physical
+path for every session.
 
 The default unit serial is a synthetic `v<pid-hex>-<counter-hex>` label,
 allocated once per instance. The separated PID makes concurrent processes distinct;
@@ -221,10 +230,11 @@ Fixture regeneration also checks independent fixed lengths and hashes.
 
 ## Recorded Steam client profile (default enabled)
 
-`SteamController2026CreationOptions::steam_client_compat` is a per-instance bool,
-default **true**, per [owner decision #159](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6666070222). Disable it through `create_steam_controller_2026_with_options`
-with `SteamController2026CreationOptions { steam_client_compat: false,
-..Default::default() }`. The caller must continue servicing the controller.
+The per-instance `steam_client_compat` option defaults to **true** per
+[owner decision #159](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6666070222).
+Use `SteamController2026Options::default().with_steam_client_compat(false)`
+to disable the profile at creation. The caller must continue servicing the
+controller.
 
 On wired UHID, the profile returns the exact recorded 63-byte attribute reply
 from `steam-d9-1302-model-attributes`, scoped to HWID 0x48 and firmware build

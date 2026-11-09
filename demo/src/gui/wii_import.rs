@@ -25,36 +25,40 @@ pub(super) fn draw_compat(
     ui: &mut egui::Ui,
     target: RealizationId,
     revision: super::WiiRemoteRevision,
-    options: &mut super::WiiRemoteCreationOptions,
+    options: &mut super::WiiRemoteOptions,
 ) {
+    use super::{Kind, families::draw_toggle};
+
     ui.strong("MotionPlus compatibility");
     if !available(target) {
         ui.small("uinput has no addressed register channel for compatibility shims.");
     }
-    ui.add_enabled_ui(available(target), |ui| {
-        ui.checkbox(
-            &mut options.motionplus_passthrough_id_mirror,
-            "Passthrough ID mirror (compat)",
-        );
-        ui.small("Active child ID at F6; F7 stays 0x02, without challenge readiness.");
-        ui.checkbox(
-            &mut options.motionplus_passthrough_calibration_copy,
-            "Child calibration copy (compat)",
-        );
-        ui.small("Exact imported child block at 0x40 during active passthrough.");
-        ui.checkbox(
-            &mut options.motionplus_activation_reattach_status,
-            "Activation re-attach status (compat)",
-        );
-        ui.small("Send a status edge so consumers reselect reporting after MotionPlus activation.");
-        if revision == super::WiiRemoteRevision::Tr {
-            ui.checkbox(
-                &mut options.motionplus_inactive_id_external_style,
-                "External-style inactive MotionPlus ID (compat)",
-            );
-            ui.small("Use A6200005 instead of built-in A4200005 for Cemu activation.");
+    for toggle in Kind::WiiRemote.entry().creation_toggles {
+        let (enabled, update): (_, fn(super::WiiRemoteOptions, bool) -> _) = match toggle.name {
+            "motionplus_passthrough_id_mirror" => (
+                options.motionplus_passthrough_id_mirror(),
+                super::WiiRemoteOptions::with_motionplus_passthrough_id_mirror,
+            ),
+            "motionplus_passthrough_calibration_copy" => (
+                options.motionplus_passthrough_calibration_copy(),
+                super::WiiRemoteOptions::with_motionplus_passthrough_calibration_copy,
+            ),
+            "motionplus_activation_reattach_status" => (
+                options.motionplus_activation_reattach_status(),
+                super::WiiRemoteOptions::with_motionplus_activation_reattach_status,
+            ),
+            "motionplus_inactive_id_external_style" if revision == super::WiiRemoteRevision::Tr => {
+                (
+                    options.motionplus_inactive_id_external_style(),
+                    super::WiiRemoteOptions::with_motionplus_inactive_id_external_style,
+                )
+            }
+            _ => continue,
+        };
+        if let Some(value) = draw_toggle(ui, toggle, toggle.targets.contains(&target), enabled) {
+            *options = update(std::mem::take(options), value);
         }
-    });
+    }
 }
 
 impl Imports {
@@ -111,7 +115,10 @@ impl Imports {
         let mp = block::<32>(bytes[1].take(), LABELS[1])?;
         let n = block::<16>(bytes[2].take(), LABELS[2])?;
         let c = block::<16>(bytes[3].take(), LABELS[3])?;
-        let calibration = WiiExtensionCalibration::import(mp, n, c)
+        let calibration = WiiExtensionCalibration::default()
+            .with_motion_plus(mp)
+            .and_then(|calibration| calibration.with_nunchuk(n))
+            .and_then(|calibration| calibration.with_classic(c))
             .map_err(|e| format!("Extension calibration: {e}"))?;
         Ok(image.with_extension_calibration(calibration))
     }
@@ -278,7 +285,11 @@ mod tests {
             })
             .unwrap();
         let expected = WiiEepromImage::default().with_extension_calibration(
-            WiiExtensionCalibration::import(Some(mp), Some(n), Some(c)).unwrap(),
+            WiiExtensionCalibration::default()
+                .with_motion_plus(Some(mp))
+                .and_then(|calibration| calibration.with_nunchuk(Some(n)))
+                .and_then(|calibration| calibration.with_classic(Some(c)))
+                .unwrap(),
         );
         assert_eq!(image, expected);
         assert_eq!(imports.clone().paths, imports.paths);

@@ -72,8 +72,8 @@ rejected_input_batch_does_not_mutate_dirty_protocol.
 
 The Wii package now exposes the complete immutable resource: `bytes()` plus
 `extension_calibration()`, whose `motion_plus()`, `nunchuk()` and `classic()`
-accessors return optional validated blocks accepted by the existing `import`
-constructor. Rebuild with `WiiExtensionCalibration::import`,
+accessors return optional validated blocks. Rebuild with the matching
+`WiiExtensionCalibration` builders,
 `WiiEepromImage::import` and `with_extension_calibration`, then use the existing
 creation-with-image/options constructor. Preserve the exact extent, unknown
 bytes and optional-block presence. Model revision belongs in the caller envelope;

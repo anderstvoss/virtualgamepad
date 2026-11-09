@@ -8,6 +8,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Switch Pro UHID uses its per-instance address as the requested uniq in place
+  of the old generic label. The curated API can restore that address while
+  creating a fresh physical path.
 - Steam Controller 2026 wired UHID enables its recorded Steam client profile by
   default, retaining the creation toggle and synthetic identity. PCM streaming
   remains opt-in. Document the valid-pose requirement for Steam gyro and give

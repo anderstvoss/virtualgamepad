@@ -109,11 +109,13 @@ impl NativeProviderSession for Session {
 }
 fn create(factory: &Factory) -> WiiRemoteController {
     controller::create(
-        RealizationTarget::LINUX_UINPUT,
-        7,
-        WiiRemoteRevision::Original,
-        WiiEepromImage::default(),
+        crate::CreationOptions {
+            target: RealizationTarget::LINUX_UINPUT,
+            session: RealizationSessionId(7),
+        },
+        WiiRemoteOptions::default().with_eeprom_image(WiiEepromImage::default()),
         Some(Arc::new(factory.clone())),
+        || WiiRemoteIdentity::from_bytes(crate::common::test_address(1)),
     )
     .unwrap()
 }
@@ -194,11 +196,13 @@ fn failed_creation_rolls_back_prepared_nodes_and_fatal_service_closes_only_its_c
     failed.0.lock().unwrap().fail_name = Some("Nintendo Wii Remote IR".into());
     assert!(
         controller::create(
-            RealizationTarget::LINUX_UINPUT,
-            7,
-            WiiRemoteRevision::Original,
-            WiiEepromImage::default(),
-            Some(Arc::new(failed.clone()))
+            crate::CreationOptions {
+                target: RealizationTarget::LINUX_UINPUT,
+                session: RealizationSessionId(7)
+            },
+            WiiRemoteOptions::default().with_eeprom_image(WiiEepromImage::default()),
+            Some(Arc::new(failed.clone())),
+            || WiiRemoteIdentity::from_bytes(crate::common::test_address(1)),
         )
         .is_err()
     );
@@ -382,25 +386,34 @@ fn fatal_core_commit_closes_companions_but_retryable_commit_preserves_them() {
 fn native_eeprom_channels_refuse_without_opening_or_exporting_resources() {
     let factory = Factory::default();
     let (_, nunchuk, _) = calibration::synthetic_blocks();
-    let calibration = WiiExtensionCalibration::import(None, Some(nunchuk), None).unwrap();
+    let calibration = WiiExtensionCalibration::default()
+        .with_nunchuk(Some(nunchuk))
+        .unwrap();
     assert!(matches!(
         controller::create(
-            RealizationTarget::LINUX_UINPUT,
-            7,
-            WiiRemoteRevision::Original,
-            WiiEepromImage::default().with_extension_calibration(calibration),
-            Some(Arc::new(factory.clone()))
+            crate::CreationOptions {
+                target: RealizationTarget::LINUX_UINPUT,
+                session: RealizationSessionId(7)
+            },
+            WiiRemoteOptions::default().with_eeprom_image(
+                WiiEepromImage::default().with_extension_calibration(calibration)
+            ),
+            Some(Arc::new(factory.clone())),
+            || panic!("uinput rejects imports before resolving identity"),
         ),
         Err(ProviderError::Unsupported { .. })
     ));
     assert!(factory.0.lock().unwrap().requests.is_empty());
     assert!(matches!(
         controller::create(
-            RealizationTarget::LINUX_UINPUT,
-            7,
-            WiiRemoteRevision::Original,
-            WiiEepromImage::import(vec![0x42]).unwrap(),
-            Some(Arc::new(factory.clone()))
+            crate::CreationOptions {
+                target: RealizationTarget::LINUX_UINPUT,
+                session: RealizationSessionId(7)
+            },
+            WiiRemoteOptions::default()
+                .with_eeprom_image(WiiEepromImage::import(vec![0x42]).unwrap()),
+            Some(Arc::new(factory.clone())),
+            || panic!("uinput rejects imports before resolving identity"),
         ),
         Err(ProviderError::Unsupported { .. })
     ));
@@ -422,4 +435,22 @@ fn native_eeprom_channels_refuse_without_opening_or_exporting_resources() {
             .is_err()
     );
     assert!(!c.resource_dirty());
+}
+
+#[test]
+fn uinput_keeps_the_library_address_without_requesting_a_host_uniq() {
+    let factory = Factory::default();
+    let controller = create(&factory);
+    assert_eq!(controller.identity().bytes()[0] & 3, 2);
+    assert_eq!(controller.association().requested_unique_id, None);
+    assert!(
+        controller
+            .surface()
+            .restrictions()
+            .iter()
+            .any(|restriction| {
+                restriction.feature == "host-visible Bluetooth identity"
+                    && restriction.reason.contains("no unique-ID setter")
+            })
+    );
 }

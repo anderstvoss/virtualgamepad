@@ -1,8 +1,7 @@
 //! Owner-approved compat edge, not evidence of physical activation status.
 use super::*;
 use crate::wii_remote::{
-    WiiClassicState, WiiEepromImage, WiiExtension, WiiNunchukState, WiiRemoteCreationOptions,
-    WiiRemoteRevision,
+    Compat, WiiClassicState, WiiEepromImage, WiiExtension, WiiNunchukState, WiiRemoteRevision,
 };
 
 fn tick(p: &mut WiiProtocol) -> Vec<Report> {
@@ -27,7 +26,7 @@ fn write(p: &mut WiiProtocol, slave: u8, offset: u8, value: u8) -> Vec<Report> {
 fn protocol(revision: WiiRemoteRevision, extension: WiiExtension, enabled: bool) -> WiiProtocol {
     let mut p = WiiProtocol::with_creation_options(
         WiiEepromImage::default(),
-        WiiRemoteCreationOptions {
+        Compat {
             motionplus_activation_reattach_status: enabled,
             ..Default::default()
         },
@@ -68,7 +67,7 @@ fn paused_then_alternating(p: &mut WiiProtocol) {
 
 #[test]
 fn activation_edge_matrix_preserves_pause_resend_and_alternation() {
-    assert!(WiiRemoteCreationOptions::default().motionplus_activation_reattach_status);
+    assert!(Compat::default().motionplus_activation_reattach_status);
     for revision in [WiiRemoteRevision::Original, WiiRemoteRevision::Tr] {
         for enabled in [false, true] {
             for (extension, mode) in [

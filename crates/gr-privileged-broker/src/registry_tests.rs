@@ -23,7 +23,14 @@ fn generated_audio_table_preserves_exact_wire_tags() {
     for tag in [0, 4, 255] {
         assert!(Profile::from_tag(tag).is_err());
     }
-    for name in ["switch-pro", "test.unknown", "", "DualSense"] {
+    for name in [
+        "switch-pro",
+        "wii-remote",
+        "steam-controller-2026",
+        "test.unknown",
+        "",
+        "DualSense",
+    ] {
         assert!(gr_controller_wire::registry::worker_id(name).is_none());
     }
 }
@@ -49,6 +56,13 @@ fn gadget_registry_keeps_legacy_tags_lengths_and_rejects_unknown_ids() {
         crate::controller_tag(ControllerId::new("test.unknown")),
         None
     );
+    for id in [ids::WII_REMOTE, ids::STEAM_CONTROLLER_2026] {
+        assert_eq!(crate::controller_tag(id), None);
+        assert_eq!(
+            crate::compiled_report_length(RealizationTarget::LINUX_DUMMY_HCD_USB_HID, id),
+            None
+        );
+    }
     assert_eq!(crate::controller_from_tag(0), None);
     assert_eq!(crate::controller_from_tag(5), None);
     assert_eq!(

@@ -1,17 +1,21 @@
 //! Plus-only identity policy; source constants are not physical readback.
 use super::*;
 use crate::wii_remote::{
-    WiiClassicState, WiiEepromImage, WiiExtension, WiiExtensionCalibration, WiiNunchukState,
-    WiiRemoteCreationOptions, WiiRemoteRevision,
+    Compat, WiiClassicState, WiiEepromImage, WiiExtension, WiiExtensionCalibration,
+    WiiNunchukState, WiiRemoteRevision,
 };
 
 fn protocol(revision: WiiRemoteRevision, external: bool) -> WiiProtocol {
     let (mp, n, c) = super::super::calibration::synthetic_blocks();
     let mut p = WiiProtocol::with_creation_options(
         WiiEepromImage::default().with_extension_calibration(
-            WiiExtensionCalibration::import(Some(mp), Some(n), Some(c)).unwrap(),
+            WiiExtensionCalibration::default()
+                .with_motion_plus(Some(mp))
+                .and_then(|calibration| calibration.with_nunchuk(Some(n)))
+                .and_then(|calibration| calibration.with_classic(Some(c)))
+                .unwrap(),
         ),
-        WiiRemoteCreationOptions {
+        Compat {
             motionplus_inactive_id_external_style: external,
             motionplus_activation_reattach_status: false,
             ..Default::default()
@@ -62,7 +66,7 @@ fn map(p: &mut WiiProtocol, mode: u8) {
 
 #[test]
 fn plus_inactive_id_defaults_builtin_and_toggle_never_changes_original() {
-    assert!(!WiiRemoteCreationOptions::default().motionplus_inactive_id_external_style);
+    assert!(!Compat::default().motionplus_inactive_id_external_style);
     for revision in [WiiRemoteRevision::Original, WiiRemoteRevision::Tr] {
         for external in [false, true] {
             let mut p = protocol(revision, external);

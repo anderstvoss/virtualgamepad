@@ -191,6 +191,8 @@ mod tests {
         for family in gr_controller_wire::registry::FAMILIES {
             if let Some(usb) = &family.usb_profile {
                 assert!(std::ptr::eq(spec(family.id).unwrap(), usb));
+            } else {
+                assert!(spec(family.id).is_err());
             }
         }
     }

@@ -1,9 +1,9 @@
 //! Opt-in real upstream clients against an owned virtual HID device, never hardware.
 #![cfg(target_os = "linux")]
 use gr_curated_controllers::steam_controller_2026::{
-    SteamController2026Controller as Controller, SteamController2026CreationOptions as Options,
+    SteamController2026Controller as Controller, SteamController2026Options as Options,
     SteamController2026State as State, SteamController2026StreamPacket as Packet,
-    create_steam_controller_2026_with_options,
+    create_steam_controller_2026,
 };
 use gr_realization_api::{RawReverseEvent, RealizationTarget};
 use std::{
@@ -305,14 +305,12 @@ impl Live {
             raw_nodes().is_empty(),
             "another Steam HID device already exists"
         );
-        let mut controller = create_steam_controller_2026_with_options(
-            RealizationTarget::LINUX_UHID_USB,
-            606,
-            Options {
-                steam_client_compat: true,
-                haptic_streaming: streaming,
-                ..Default::default()
+        let mut controller = create_steam_controller_2026(
+            gr_curated_controllers::CreationOptions {
+                target: RealizationTarget::LINUX_UHID_USB,
+                session: gr_curated_controllers::RealizationSessionId(606),
             },
+            Options::default().with_haptic_streaming(streaming),
         )
         .unwrap();
         let phys = controller

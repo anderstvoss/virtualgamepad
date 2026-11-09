@@ -1,4 +1,4 @@
-//! Steam Controller 2026 native supporting state (S3 steps 14a/14b).
+//! Steam Controller 2026 supporting API for wired UHID and reduced uinput.
 //!
 //! The wired HID descriptor comes from physical capture. Feature replies and
 //! field semantics are compatibility interpretations.
@@ -28,7 +28,7 @@
 mod codec;
 mod controller;
 mod definition;
-#[allow(dead_code)] // Exact compiled capture is used by the private 14c UHID path.
+#[allow(dead_code)] // Exact compiled capture is used by wired UHID.
 mod descriptor;
 mod evdev;
 mod lizard;
@@ -36,8 +36,8 @@ mod streaming;
 mod topology;
 pub use codec::{SteamController2026Haptic, SteamController2026Outputs};
 pub use controller::{
-    SteamController2026Controller, SteamController2026CreationOptions,
-    create_steam_controller_2026, create_steam_controller_2026_with_options,
+    SteamController2026Controller, SteamController2026Identity, SteamController2026Options,
+    create_steam_controller_2026,
 };
 pub(crate) use definition::SteamController2026Definition;
 pub use streaming::{SteamController2026StreamOutputs, SteamController2026StreamPacket};
