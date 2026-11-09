@@ -2,11 +2,11 @@
 
 Step 9 provides an opt-in, typed terminal-snapshot wrapper in curated common
 code. It adds no fields to ordinary ControllerSession and changes no gr-hid
-runtime, provider or broker interface. The synthetic fifth family is the concrete
-owner used to prove the seam; it is not a Wii package or device evidence.
+runtime, provider or broker interface. The synthetic fifth family originally proved the seam. The production Wii
+consumer is described below.
 
-A future Wii factory must construct/validate its own reference or imported typed
-resource before calling common creation or opening any provider/worker. Exact
+The Wii factory constructs and validates its typed resource before opening the
+selected provider. Exact
 length, revision, protected bytes, calibration and model validation belong to that
 factory. Its protocol owns the working value and deep-isolates it in Clone.
 Unknown valid bytes survive. Host request decoding, access policy, calibrated
@@ -35,8 +35,8 @@ Step 8 owns topology/configuration edits in common/session.rs. Step 9 adds the
 resource wrapper in its own module and only reads that session's existing
 protocol/closed/diagnostics surfaces. A topology edit must retain resource bytes
 and accepted command ownership; the joint queued-input/attachment/resource test
-proves this boundary. A real Wii package supplies actual calibration and address
-maps from research records, not the synthetic fixture's values or report IDs.
+proves this boundary. The Wii package supplies its own research-backed addressing and calibration
+layout.
 
 ## Regression evidence
 
@@ -74,8 +74,7 @@ The Wii package now exposes the complete immutable resource: `bytes()` plus
 `extension_calibration()`, whose `motion_plus()`, `nunchuk()` and `classic()`
 accessors return optional validated blocks. Rebuild with the matching
 `WiiExtensionCalibration` builders,
-`WiiEepromImage::import` and `with_extension_calibration`, then use the existing
-creation-with-image/options constructor. Preserve the exact extent, unknown
+`WiiEepromImage::import` and `with_extension_calibration`, then pass the image to `WiiRemoteOptions::with_eeprom_image`. Preserve the exact extent, unknown
 bytes and optional-block presence. Model revision belongs in the caller envelope;
 volatile protocol state and transport identity do not. Default recreation still
 uses the empty/unmodelled image, not an inferred retail factory profile.
@@ -95,3 +94,22 @@ is reported. Parent directories are not created or synced; no crash-durability
 claim is made. See `docs/WII_REMOTE.md` for the exact demo envelope and private
 physical-read procedure. Deterministic fixtures are synthetic, never real dumps.
 Neither synthetic lifecycle tests nor file tests claim physical Wii acceptance.
+
+### Ordinary-root lifecycle
+
+Use `virtualgamepad::create_wii_remote(CreationOptions::new(RealizationId::LINUX_UHID_BLUETOOTH), options)`.
+Set the validated image on `WiiRemoteOptions::default().with_eeprom_image(image)`
+before construction. Service the handle through host requests and inspect
+`resource_dirty()` when deciding whether to offer a save. After `close()`,
+inspect cleanup diagnostics and call `resolve_resource(WiiResourceDisposition::KeepSnapshot)`
+to get the retained image for application-owned storage. Clone the typed image if
+storage or retries must outlive the handle. The application still chooses the
+file path and owns the atomic export.
+
+The demo's existing Save/Load workflow is the production file consumer. Its
+bounded Original virtual run verified kernel and Dolphin calibration readback,
+an acknowledged write in the first save, an identical envelope after reload and
+owned-node cleanup. The imported hardware image stayed private. The ordinary
+root delegates to the same curated resource path. Neither a generic library file
+store nor a non-Wii production resource consumer has shipped.
+[Original acceptance summary](https://github.com/anderstvoss/virtualgamepad/issues/162#issuecomment-6735616471)
