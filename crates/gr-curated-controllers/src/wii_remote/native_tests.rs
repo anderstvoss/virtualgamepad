@@ -115,6 +115,7 @@ fn create(factory: &Factory) -> WiiRemoteController {
         },
         WiiRemoteOptions::default().with_eeprom_image(WiiEepromImage::default()),
         Some(Arc::new(factory.clone())),
+        || WiiRemoteIdentity::from_bytes(crate::common::test_address(1)),
     )
     .unwrap()
 }
@@ -200,7 +201,8 @@ fn failed_creation_rolls_back_prepared_nodes_and_fatal_service_closes_only_its_c
                 session: RealizationSessionId(7)
             },
             WiiRemoteOptions::default().with_eeprom_image(WiiEepromImage::default()),
-            Some(Arc::new(failed.clone()))
+            Some(Arc::new(failed.clone())),
+            || WiiRemoteIdentity::from_bytes(crate::common::test_address(1)),
         )
         .is_err()
     );
@@ -396,7 +398,8 @@ fn native_eeprom_channels_refuse_without_opening_or_exporting_resources() {
             WiiRemoteOptions::default().with_eeprom_image(
                 WiiEepromImage::default().with_extension_calibration(calibration)
             ),
-            Some(Arc::new(factory.clone()))
+            Some(Arc::new(factory.clone())),
+            || panic!("uinput rejects imports before resolving identity"),
         ),
         Err(ProviderError::Unsupported { .. })
     ));
@@ -409,7 +412,8 @@ fn native_eeprom_channels_refuse_without_opening_or_exporting_resources() {
             },
             WiiRemoteOptions::default()
                 .with_eeprom_image(WiiEepromImage::import(vec![0x42]).unwrap()),
-            Some(Arc::new(factory.clone()))
+            Some(Arc::new(factory.clone())),
+            || panic!("uinput rejects imports before resolving identity"),
         ),
         Err(ProviderError::Unsupported { .. })
     ));

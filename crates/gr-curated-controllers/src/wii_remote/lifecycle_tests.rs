@@ -1,6 +1,9 @@
 use super::*;
 use gr_realization_api::*;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU32, Ordering},
+};
 #[derive(Default)]
 struct Record {
     opened: Vec<ProviderOpenRequest>,
@@ -88,12 +91,38 @@ fn create_with_options(image: WiiEepromImage, options: Compat) -> (WiiRemoteCont
             ..WiiRemoteOptions::default().with_eeprom_image(image)
         },
         Some(Arc::new(fake.clone())),
+        || {
+            static NEXT: AtomicU32 = AtomicU32::new(0);
+            WiiRemoteIdentity::from_bytes(crate::common::test_address(
+                NEXT.fetch_add(1, Ordering::Relaxed),
+            ))
+        },
     )
     .unwrap();
     (controller, fake)
 }
+#[cfg(not(target_os = "linux"))]
 #[test]
-fn wii_address_is_restorable_association_metadata_with_a_fresh_host_label() {
+fn public_creation_rejects_an_unsupported_platform_before_identity_generation() {
+    for target in [
+        RealizationTarget::LINUX_UINPUT,
+        RealizationTarget::LINUX_UHID_BLUETOOTH,
+    ] {
+        let options = crate::CreationOptions {
+            target,
+            session: RealizationSessionId(7),
+        };
+        assert!(matches!(
+            create_wii_remote(options, WiiRemoteOptions::default()),
+            Err(ProviderError::Preflight(ProviderPreflightError::UnsupportedPlatform {
+                target: rejected
+            })) if rejected == target
+        ));
+    }
+}
+
+#[test]
+fn wii_restores_the_typed_address_and_reports_the_actual_provider_labels() {
     let (mut first, first_io) = create(WiiEepromImage::default());
     let (mut second, second_io) = create(WiiEepromImage::default());
     let identity = first.identity();
@@ -111,6 +140,7 @@ fn wii_address_is_restorable_association_metadata_with_a_fresh_host_label() {
                 options,
                 WiiRemoteOptions::default().with_identity(invalid),
                 Some(Arc::new(fake.clone())),
+                || panic!("an explicit address must skip generation"),
             )
         });
     assert!(bad.is_err());
@@ -121,21 +151,14 @@ fn wii_address_is_restorable_association_metadata_with_a_fresh_host_label() {
         options,
         WiiRemoteOptions::default().with_identity(restored_identity),
         Some(Arc::new(fake.clone())),
+        || panic!("an explicit address must skip generation"),
     )
     .unwrap();
     let association = restored.association();
     assert_eq!(restored.identity(), first.identity());
-    assert_eq!(
-        association.requested_unique_id,
-        first.association().requested_unique_id
-    );
     assert_ne!(
         association.requested_unique_id,
-        second.association().requested_unique_id
-    );
-    assert_eq!(
-        association.requested_unique_id.as_deref(),
-        Some(crate::common::address_label(identity.bytes()).as_str())
+        first.association().requested_unique_id
     );
     assert_ne!(
         association.requested_physical_path,
@@ -143,7 +166,7 @@ fn wii_address_is_restorable_association_metadata_with_a_fresh_host_label() {
     );
     assert!(restored.surface().restrictions().iter().any(|restriction| {
         restriction.feature == "host-visible Bluetooth identity"
-            && restriction.reason.contains("association metadata")
+            && restriction.reason.contains("available on the handle")
     }));
     let record = fake.0.lock().unwrap();
     let NativeControllerRealization::Uhid(spec) = &record.opened[0].realization else {
@@ -151,9 +174,13 @@ fn wii_address_is_restorable_association_metadata_with_a_fresh_host_label() {
     };
     assert_eq!(spec.bus_type, 5);
     assert!(spec.unique_id.starts_with("virtualgamepad-"));
-    assert_ne!(
-        Some(&spec.unique_id),
-        association.requested_unique_id.as_ref()
+    assert_eq!(
+        association.requested_unique_id.as_deref(),
+        Some(spec.unique_id.as_str())
+    );
+    assert_eq!(
+        association.requested_physical_path.as_deref(),
+        Some(spec.physical_path.as_str())
     );
     drop(record);
 

@@ -728,8 +728,8 @@ fn switch_usb_reply(command: u8, identity: SwitchProIdentity) -> ProviderFrame {
     bytes[0] = command;
     if command == 1 {
         bytes[2] = 3; // Pro Controller
-        // swpro-l0-device-usb-cmd-sequence and swpro-l0-consumer-sdl-open-order
-        // (SDL 535d80b, BReadDeviceInfo): USB status carries the address reversed.
+        // audio-sdl-switch-pro (SDL 535d80b, BReadDeviceInfo, lines 633–652).
+        // swpro-l0-consumer-sdl-usb-status-address-order records the reversal.
         let mut address = identity.bytes();
         address.reverse();
         bytes[3..9].copy_from_slice(&address);
@@ -1193,7 +1193,7 @@ impl From<RawReverseEvent> for SwitchProOutputEvent {
     }
 }
 pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, ProviderError> {
-    create_switch_pro_with_identity(o, SwitchProIdentity::generate()?)
+    create_switch_pro_configured(o, None, SwitchProIdentity::generate)
 }
 
 /// Restore an address while opening a fresh realization session.
@@ -1201,20 +1201,31 @@ pub fn create_switch_pro_with_identity(
     o: CreationOptions,
     identity: SwitchProIdentity,
 ) -> Result<SwitchProController, ProviderError> {
-    let realization = match o.target {
-        RealizationTarget::LINUX_UINPUT => evdev_realization(),
-        RealizationTarget::LINUX_UHID_USB => hid(identity),
-        RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
+    create_switch_pro_configured(o, Some(identity), SwitchProIdentity::generate)
+}
+
+fn create_switch_pro_configured(
+    o: CreationOptions,
+    identity: Option<SwitchProIdentity>,
+    generate_identity: impl FnOnce() -> Result<SwitchProIdentity, ProviderError>,
+) -> Result<SwitchProController, ProviderError> {
+    let build_realization: fn(SwitchProIdentity) -> NativeControllerRealization = match o.target {
+        RealizationTarget::LINUX_UINPUT => |_| evdev_realization(),
+        RealizationTarget::LINUX_UHID_USB => hid,
+        RealizationTarget::LINUX_DUMMY_HCD_USB_HID => |_| {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
                 controller: gr_controller_wire::registry::ids::SWITCH_PRO,
             })
-        }
+        },
         _ => {
             return Err(ProviderError::Unsupported {
                 reason: "unknown deployment target".into(),
             });
         }
     };
+    common::require_linux_platform(o.target)?;
+    let identity = identity.map_or_else(generate_identity, Ok)?;
+    let realization = build_realization(identity);
     let is_dummy_hcd = o.target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID;
     let mut controller = if o.target == RealizationTarget::LINUX_UHID_USB {
         common::create_with_identity(SwitchProDefinition, realization, o, Some(identity.bytes()))?
@@ -1237,7 +1248,7 @@ pub fn create_switch_pro_with_identity(
 pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<SwitchProController, ProviderError> {
-    let identity = SwitchProIdentity::generate()?;
+    let identity = SwitchProIdentity::from_bytes(common::test_address(1))?;
     common::injected(SwitchProDefinition, session)
         .map(|session| SwitchProController(session, identity))
 }
@@ -1276,6 +1287,45 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixture_identity() -> SwitchProIdentity {
+        SwitchProIdentity::from_bytes(common::test_address(1)).unwrap()
+    }
+
+    #[test]
+    fn undeclared_target_is_rejected_before_resolving_identity() {
+        let options = CreationOptions {
+            target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+            session: RealizationSessionId(7),
+        };
+        assert!(matches!(
+            create_switch_pro_configured(options, None, || panic!(
+                "invalid target requested entropy"
+            )),
+            Err(ProviderError::Unsupported { .. })
+        ));
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn unsupported_platform_is_rejected_before_resolving_identity() {
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            let options = CreationOptions {
+                target,
+                session: RealizationSessionId(7),
+            };
+            assert!(matches!(
+                create_switch_pro(options),
+                Err(ProviderError::Preflight(gr_realization_api::ProviderPreflightError::UnsupportedPlatform {
+                    target: rejected
+                })) if rejected == target
+            ));
+        }
+    }
 
     #[test]
     fn switch_topology_tracks_target_motion_support() {
@@ -1451,7 +1501,7 @@ mod tests {
     fn dummy_hcd_replies_retain_the_usb_report_id() {
         let reply = dummy_hcd_reply(
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
-            switch_usb_reply(2, SwitchProIdentity::generate().unwrap()),
+            switch_usb_reply(2, fixture_identity()),
         )
         .expect("DummyHcd reply");
         assert!(
@@ -1586,7 +1636,7 @@ mod tests {
 
     #[test]
     fn hid_identity_matches_openpuck_usb_personality() {
-        let identity = SwitchProIdentity::generate().unwrap();
+        let identity = fixture_identity();
         let realization = hid(identity);
         let association = crate::ControllerAssociation::requested(&realization);
         assert_eq!(
@@ -1611,12 +1661,8 @@ mod tests {
         let state = SwitchProState::default();
         let mut arguments = address.to_le_bytes().to_vec();
         arguments.push(u8::try_from(expected.len()).unwrap());
-        let (reply, enabled) = switch_subcommand_reply(
-            &state,
-            0x10,
-            &arguments,
-            SwitchProIdentity::generate().unwrap(),
-        );
+        let (reply, enabled) =
+            switch_subcommand_reply(&state, 0x10, &arguments, fixture_identity());
         assert!(!enabled);
         let mut bytes = vec![0; 63];
         bytes[..12].copy_from_slice(&switch_input_prefix(&state));
@@ -1683,7 +1729,7 @@ mod tests {
     fn device_info_does_not_advertise_erased_spi_colors() {
         assert_spi_reply(0x6050, &[0xff; 11]);
         let state = SwitchProState::default();
-        let identity = SwitchProIdentity::generate().unwrap();
+        let identity = fixture_identity();
         let (reply, enabled) = switch_subcommand_reply(&state, 0x02, &[], identity);
         assert!(!enabled);
         let mut bytes = vec![0; 63];
@@ -1703,31 +1749,21 @@ mod tests {
     #[test]
     fn steam_style_subcommands_receive_full_replies_and_enable_motion() {
         let state = SwitchProState::default();
-        let (device_info, enabled) =
-            switch_subcommand_reply(&state, 0x02, &[], SwitchProIdentity::generate().unwrap());
+        let (device_info, enabled) = switch_subcommand_reply(&state, 0x02, &[], fixture_identity());
         assert!(!enabled);
         assert!(
             matches!(device_info, ProviderFrame::HidInput { report_id: Some(0x21), bytes } if bytes.len() == 63 && bytes[12] == 0x82 && bytes[13] == 0x02)
         );
-        let (mode, enabled) = switch_subcommand_reply(
-            &state,
-            0x03,
-            &[0x30],
-            SwitchProIdentity::generate().unwrap(),
-        );
+        let (mode, enabled) = switch_subcommand_reply(&state, 0x03, &[0x30], fixture_identity());
         assert!(enabled);
         assert!(
             matches!(mode, ProviderFrame::HidInput { report_id: Some(0x21), bytes } if bytes[12] == 0x80 && bytes[13] == 0x03)
         );
         assert!(
-            matches!(switch_usb_reply(2, SwitchProIdentity::generate().unwrap()), ProviderFrame::HidInput { report_id: Some(0x81), bytes } if bytes.len() == 63 && bytes[0] == 2)
+            matches!(switch_usb_reply(2, fixture_identity()), ProviderFrame::HidInput { report_id: Some(0x81), bytes } if bytes.len() == 63 && bytes[0] == 2)
         );
-        let (calibration, enabled) = switch_subcommand_reply(
-            &state,
-            0x10,
-            &[0x20, 0x60, 0, 0, 6],
-            SwitchProIdentity::generate().unwrap(),
-        );
+        let (calibration, enabled) =
+            switch_subcommand_reply(&state, 0x10, &[0x20, 0x60, 0, 0, 6], fixture_identity());
         assert!(!enabled);
         assert!(
             matches!(calibration, ProviderFrame::HidInput { report_id: Some(0x21), bytes } if bytes[12] == 0x90 && bytes[14..25] == [0x20, 0x60, 0, 0, 6, 0, 0, 0, 0, 0, 0])

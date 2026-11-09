@@ -16,13 +16,14 @@ pub fn create_wii_remote(
     options: CreationOptions,
     family: WiiRemoteOptions,
 ) -> Result<WiiRemoteController, ProviderError> {
-    create(options, family, None)
+    create(options, family, None, WiiRemoteIdentity::generate)
 }
 
 pub(super) fn create(
     options: CreationOptions,
     family: WiiRemoteOptions,
     provider: Option<std::sync::Arc<dyn gr_realization_api::NativeProviderFactory>>,
+    generate_identity: impl FnOnce() -> Result<WiiRemoteIdentity, ProviderError>,
 ) -> Result<WiiRemoteController, ProviderError> {
     use super::{
         definition::Configured,
@@ -52,7 +53,10 @@ pub(super) fn create(
             reason: "uinput has no EEPROM or extension calibration address channel".into(),
         });
     }
-    let identity = identity.map_or_else(WiiRemoteIdentity::generate, Ok)?;
+    if provider.is_none() {
+        common::require_linux_platform(target)?;
+    }
+    let identity = identity.map_or_else(generate_identity, Ok)?;
     let state = WiiRemoteState::new(revision);
     let driver = Configured {
         image,
@@ -66,14 +70,7 @@ pub(super) fn create(
     } else {
         realizations::hid(revision)
     };
-    let mut session = common::create(driver, specification, options)?;
-    if target == RealizationTarget::LINUX_UHID_BLUETOOTH {
-        // Existing Wii consumer records do not establish the meaning of uniq.
-        // Keep the address as association metadata and preserve the host label.
-        let mut association = session.association().clone();
-        association.requested_unique_id = Some(common::address_label(identity.bytes()));
-        session = session.with_association(association);
-    }
+    let session = common::create(driver, specification, options)?;
     let native = if target == RealizationTarget::LINUX_UINPUT {
         Some(super::native::Nodes::new(
             provider,
@@ -221,8 +218,6 @@ impl WiiRemoteController {
             &BLUETOOTH
         }
     }
-    /// On Bluetooth-bus UHID the requested uniq is the library identity.
-    /// The host still receives a synthetic transport label.
     #[must_use]
     pub fn association(&self) -> &crate::ControllerAssociation {
         self.native

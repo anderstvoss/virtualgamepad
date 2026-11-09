@@ -188,6 +188,22 @@ where
     create_with_identity(driver, realization, options, None)
 }
 
+pub(crate) fn require_linux_platform(target: RealizationTarget) -> Result<(), ProviderError> {
+    if cfg!(target_os = "linux") {
+        Ok(())
+    } else {
+        Err(ProviderError::Preflight(
+            gr_realization_api::ProviderPreflightError::UnsupportedPlatform { target },
+        ))
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn test_address(tag: u32) -> [u8; 6] {
+    let [first, second, third, fourth] = tag.to_be_bytes();
+    [2, first, second, third, fourth, 0]
+}
+
 pub(crate) fn address_label([first, second, third, fourth, fifth, sixth]: [u8; 6]) -> String {
     format!("{first:02x}:{second:02x}:{third:02x}:{fourth:02x}:{fifth:02x}:{sixth:02x}")
 }

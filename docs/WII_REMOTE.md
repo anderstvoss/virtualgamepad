@@ -20,9 +20,9 @@ workspace; it is outside the ordinary-root compatibility snapshot.
 Creation generates a locally administered unicast Bluetooth address unless the
 caller supplies a validated `WiiRemoteIdentity` with `with_identity`. Save
 `identity().bytes()` for later restoration with `WiiRemoteIdentity::from_bytes`.
-Each creation still gets a fresh physical path. On Bluetooth-bus UHID, the
-address appears in `association().requested_unique_id` as library metadata.
-The host-facing UHID uniq keeps its synthetic label. The research covers
+Each creation gets a fresh physical path. On Bluetooth-bus UHID,
+`association().requested_unique_id` reports the synthetic label sent to the host.
+Use `identity()` for the typed address. The research covers
 `hid-wiimote` device recognition (`wii-original-remote-consumer-revision`),
 SDL initialization (`wii-w4-sdl-3-2-10-no-reattach`), and Dolphin's path probe
 (`wii-gap-consumer-dolphin-hidapi-usability-probe`). It does not establish how

@@ -78,7 +78,7 @@ pub static TOPOLOGY: InputTopology = InputTopologySpec {
 static RESTRICTIONS: &[TargetRestriction] = &[
     TargetRestriction {
         feature: "host-visible Bluetooth identity",
-        reason: "the typed address is association metadata; the pinned consumer evidence does not establish address semantics for UHID uniq",
+        reason: "the typed address is available on the handle; the pinned consumer evidence does not establish address semantics for UHID uniq",
     },
     TargetRestriction {
         feature: "source-only compatibility model",

@@ -380,8 +380,8 @@ fn switch_handshake_runs_without_callbacks_or_semantic_commits() {
 #[test]
 fn switch_restored_identity_is_shared_by_both_host_probe_replies() {
     use crate::switch_pro::SwitchProIdentity;
-    let identity = SwitchProIdentity::generate().unwrap();
-    let distinct = SwitchProIdentity::generate().unwrap();
+    let identity = SwitchProIdentity::from_bytes(super::test_address(1)).unwrap();
+    let distinct = SwitchProIdentity::from_bytes(super::test_address(2)).unwrap();
     assert_ne!(identity, distinct);
     assert_eq!(
         SwitchProIdentity::from_bytes(identity.bytes()).unwrap(),
