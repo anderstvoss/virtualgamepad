@@ -39,6 +39,13 @@
 //! use virtualgamepad::RealizationId;
 //! let ambiguous = RealizationId::Uhid;
 //! ```
+//! ```compile_fail,E0432
+//! use virtualgamepad::{create_dualsense_with_identity, create_dualshock4_with_identity};
+//! ```
+//! ```compile_fail,E0061
+//! use virtualgamepad::{create_dualsense, CreationOptions, RealizationId};
+//! create_dualsense(CreationOptions::new(RealizationId::LINUX_UHID_USB));
+//! ```
 //! ```compile_fail
 //! use virtualgamepad::DualSenseController;
 //! fn invalid(c: &mut DualSenseController) { c.poll_output(&mut |_| {}); }

@@ -8,7 +8,7 @@ use std::{
 };
 
 /// Exact realization selection. Reusing options still creates fresh sessions.
-/// Persistent Sony identity is supplied separately.
+/// Persistent identities are supplied in the family options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CreationOptions {
     target: RealizationId,
@@ -516,19 +516,19 @@ mod tests {
                 Err(ControllerError::Unsupported { .. })
             ));
             assert!(matches!(
-                crate::create_dualsense(options),
+                crate::create_dualsense(options, crate::DualSenseOptions::default()),
                 Err(ControllerError::Unsupported { .. })
             ));
             assert!(matches!(
-                crate::create_dualshock4(options),
+                crate::create_dualshock4(options, crate::DualShock4Options::default()),
                 Err(ControllerError::Unsupported { .. })
             ));
             assert!(matches!(
-                crate::create_xbox360(options),
+                crate::create_xbox360(options, crate::Xbox360Options::default()),
                 Err(ControllerError::Unsupported { .. })
             ));
             assert!(matches!(
-                crate::create_switch_pro(options),
+                crate::create_switch_pro(options, crate::SwitchProOptions::default()),
                 Err(ControllerError::Unsupported { .. })
             ));
         }

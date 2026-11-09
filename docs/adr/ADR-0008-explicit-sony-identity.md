@@ -2,6 +2,10 @@
 
 Status: accepted API and deterministic contract; live consumer association pending.
 
+The original constructor names below are historical. C7 carries forward this
+identity contract through `DualSenseOptions::with_identity` and
+`DualShock4Options::with_identity`. See the [alpha migration notes](../ALPHA_API_MIGRATION.md).
+
 ## Problem
 
 Fresh identity generation prevents accidental collision between virtual creations,

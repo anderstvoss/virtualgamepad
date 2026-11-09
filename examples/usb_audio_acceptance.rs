@@ -5,8 +5,9 @@
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 use virtualgamepad::{
-    AudioExposure, AudioOptions, AudioRead, ControllerAudio, CreationOptions, RealizationId,
-    create_dualsense, create_dualshock4, create_xbox360,
+    AudioExposure, AudioOptions, AudioRead, ControllerAudio, CreationOptions, DualSenseOptions,
+    DualShock4Options, RealizationId, Xbox360Options, create_dualsense, create_dualshock4,
+    create_xbox360,
 };
 
 #[derive(Debug)]
@@ -428,7 +429,7 @@ fn run(
         .with_audio(AudioOptions::new(AudioExposure::Emulated));
     match family {
         "dualsense" => {
-            let mut controller = create_dualsense(options)?;
+            let mut controller = create_dualsense(options, DualSenseOptions::default())?;
             let result = exercise(
                 controller.audio().ok_or("missing audio")?,
                 family,
@@ -445,7 +446,7 @@ fn run(
             result?;
         }
         "dualshock4" => {
-            let mut controller = create_dualshock4(options)?;
+            let mut controller = create_dualshock4(options, DualShock4Options::default())?;
             let result = exercise(
                 controller.audio().ok_or("missing audio")?,
                 family,
@@ -462,7 +463,7 @@ fn run(
             result?;
         }
         "xbox360" => {
-            let mut controller = create_xbox360(options)?;
+            let mut controller = create_xbox360(options, Xbox360Options::default())?;
             let result = exercise(
                 controller.audio().ok_or("missing audio")?,
                 family,

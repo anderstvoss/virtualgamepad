@@ -5,20 +5,20 @@ use std::{
     time::{Duration, Instant},
 };
 use virtualgamepad::{
-    CreationOptions, RealizationId, create_dualsense, create_dualshock4, create_switch_pro,
-    create_xbox360,
+    CreationOptions, DualSenseOptions, DualShock4Options, RealizationId, SwitchProOptions,
+    Xbox360Options, create_dualsense, create_dualshock4, create_switch_pro, create_xbox360,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
     let options = CreationOptions::new(RealizationId::LINUX_UHID_USB);
-    let mut sony = create_dualsense(options)?;
-    let mut ds4 = create_dualshock4(options)?;
-    let mut switch = create_switch_pro(options)?;
-    let mut xbox = create_xbox360(options)?;
+    let mut sony = create_dualsense(options, DualSenseOptions::default())?;
+    let mut ds4 = create_dualshock4(options, DualShock4Options::default())?;
+    let mut switch = create_switch_pro(options, SwitchProOptions::default())?;
+    let mut xbox = create_xbox360(options, Xbox360Options::default())?;
     // The application can retain Sony identity independently of session lifetime.
     let _identity_for_application_storage = sony
         .identity()
-        .map(virtualgamepad::DualSenseIdentity::to_bytes);
+        .map(virtualgamepad::DualSenseIdentity::bytes);
     let until = Instant::now() + Duration::from_secs(2);
     while Instant::now() < until {
         sony.service(&mut |_| {})?;

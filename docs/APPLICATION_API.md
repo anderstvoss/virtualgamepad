@@ -5,10 +5,13 @@ virtual controllers, not physical discovery, normalization, routing, player slot
 host provisioning, application threads, or filesystem persistence.
 
 ```rust,no_run
-use virtualgamepad::{create_dualsense, CreationOptions, RealizationId, DualSenseControl};
+use virtualgamepad::{create_dualsense, CreationOptions, RealizationId, DualSenseControl, DualSenseOptions};
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
-let mut controller = create_dualsense(CreationOptions::new(RealizationId::LINUX_UHID_USB))?;
-let identity = controller.identity().map(|identity| identity.to_bytes());
+let mut controller = create_dualsense(
+    CreationOptions::new(RealizationId::LINUX_UHID_USB),
+    DualSenseOptions::default(),
+)?;
+let identity = controller.identity().map(|identity| identity.bytes());
 controller.set_native(DualSenseControl::Cross, true)?;
 controller.commit()?;
 controller.service(&mut |output| { /* consume native output promptly */ })?;
@@ -32,12 +35,22 @@ Use `CreationOptions::new(RealizationId::LINUX_UINPUT)` or
 no automatic fallback. `LINUX_UHID_BLUETOOTH` is an exact research target identifier,
 not a supported current controller personality or actual Bluetooth transport.
 
-Options are reusable and contain no application/session identifier. Each creation
-gets fresh internal request/session ownership. `association().creation()` is a
-process-local observation, never persistent identity. Sony identities are typed,
-can be read from USB/UHID handles, and can be restored through the explicit
-`create_*_with_identity` constructors. No files are read/written for persistence.
-Concurrent controllers should use distinct persistent identities.
+Use common `CreationOptions` for realization and audio and the matching
+family options for controller-specific settings. Family options implement
+`Default` and can be reused. Each creation gets fresh internal request and
+session ownership. `association().creation()` is a process-local observation.
+
+For Sony USB/UHID and USB/IP, or Switch Pro USB/UHID, save the handle's
+typed `identity().bytes()` (unwrap the Sony option when present). Restore it
+with the matching `Identity::from_bytes(bytes)?` and pass it to
+`FamilyOptions::default().with_identity(identity)`. The root re-exports the
+curated identity types, so generation and restoration return the same errors
+at both layers. Sony uses pairing-feature byte order, and Switch Pro uses
+display order. Both require locally administered unicast flags. Switch Pro
+also retains the address on uinput, where the kernel provider has no unique-ID
+setter. Wired Xbox 360 uses options with no persistent identity. Use distinct
+identities for simultaneously connected controllers. Storage belongs to the
+application.
 
 For opt-in acceptance tests only, `VIRTUALGAMEPAD_INPUT_LAB=1` relabels
 DualSense/DS4 UHID or uinput `phys` into the corresponding
@@ -157,9 +170,8 @@ Future controller packages can declare these kinds without hiding them in custom
 modules. New kind and retained-state types are non-exhaustive; consumers must
 allow future variants/fields. `InputTopologyError` is also non-exhaustive;
 downstream matches must include a wildcard arm to handle future validation errors.
-The reviewed D2 snapshot grows from 110 to 122
-items with four handle methods, two descriptor accessors and a typed-input
-validation error; no old signature is removed.
+The reviewed D2 update added retained outputs, descriptor accessors and a
+typed-input validation error.
 
 Topology descriptors are read-only semantic metadata, not external controller
 construction or GUI sizing policy. Inspect their accessor slices and native ranges;
@@ -209,9 +221,8 @@ custom implementations must return their observation or `None` after state
 handling. Supporting `ControllerAssociation` constructors also need the new
 `companions` field. These SPI changes leave ordinary root signatures unchanged.
 
-Retained accepted host outputs are a supporting curated-controller interface, not
-a new ordinary-root method. Optional observation callbacks remain bounded and
-lossy. The internal retained view survives event eviction and terminal close,
-and revisions count semantic accepted changes rather than delivery or physical
-playback. USB-worker snapshots are explicitly unavailable because the lossy
-worker channel has no recovery query (tracked separately in #203).
+The supporting curated and ordinary-root handles expose retained host outputs.
+Optional observation callbacks remain bounded and lossy. The internal retained
+view survives event eviction and terminal close. USB-worker snapshots are
+explicitly unavailable because the lossy worker channel has no recovery query
+(tracked separately in #203).

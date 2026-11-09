@@ -38,8 +38,11 @@ Xbox Series remain separate planned work.
 ## Usage
 
 ```rust
-use virtualgamepad::{create_dualsense, CreationOptions, DualSenseControl, RealizationId};
-let mut pad = create_dualsense(CreationOptions::new(RealizationId::LINUX_UHID_USB))?;
+use virtualgamepad::{create_dualsense, CreationOptions, DualSenseControl, DualSenseOptions, RealizationId};
+let mut pad = create_dualsense(
+    CreationOptions::new(RealizationId::LINUX_UHID_USB),
+    DualSenseOptions::default(),
+)?;
 pad.set_native(DualSenseControl::Cross, true)?;
 pad.commit()?;
 pad.service(&mut |_output| {})?; // keep servicing, even while input is idle

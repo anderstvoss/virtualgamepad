@@ -14,9 +14,17 @@ use crate::{
 };
 // The family adapter owns only static dispatch; protocol semantics stay curated.
 trait Family {
-    type Identity;
+    type Options;
     type Output;
     const HAS_AUDIO: bool;
+    fn create(
+        options: gr_curated_controllers::CreationOptions,
+        family: Self::Options,
+    ) -> Result<Self, gr_realization_api::ProviderError>
+    where
+        Self: Sized;
+    fn association(&self) -> &gr_curated_controllers::ControllerAssociation;
+    fn common_surface(&self) -> &'static crate::ControllerSurface;
     fn close(&mut self);
     fn provider_diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics;
     fn dropped_output_events(&self) -> u64;
@@ -29,9 +37,27 @@ struct Controller<F: Family> {
     inner: F,
     association: ControllerAssociation,
     audio: Option<crate::ControllerAudio>,
-    identity: F::Identity,
 }
 impl<F: Family> Controller<F> {
+    fn open(
+        id: ControllerId,
+        options: gr_curated_controllers::CreationOptions,
+        family: F::Options,
+        mut audio: Option<crate::ControllerAudio>,
+    ) -> Result<Self, ControllerError> {
+        let inner =
+            crate::creation::finish(F::create(options, family).map_err(controller_error), || {
+                crate::creation::close_audio(&mut audio)
+            })?;
+        let association =
+            ControllerAssociation::single(id, options, inner.association(), inner.common_surface())
+                .with_audio(audio.as_ref());
+        Ok(Self {
+            inner,
+            association,
+            audio,
+        })
+    }
     fn close(&mut self) {
         if let Some(audio) = &mut self.audio {
             audio.close();
@@ -104,16 +130,34 @@ trait Deadline {
     fn next_service_in(&self) -> Option<std::time::Duration>;
 }
 macro_rules! family {
-    ($handle:ident, $identity:ty, $output:ident, $convert:ident, $audio:expr) => {
-        impl Family for gr_curated_controllers::$handle {
-            type Identity = $identity;
+    (
+        $module:ident, $handle:ident, $create:ident, $options:ident $(, $identity:ident)?;
+        $output:ident, $convert:ident, audio = $audio:expr;
+        $diagnostics:ident $(, $common:ident)?
+    ) => {
+        pub use gr_curated_controllers::$module::{$options $(, $identity)?};
+
+        impl Family for gr_curated_controllers::$module::$handle {
+            type Options = $options;
             type Output = $output;
             const HAS_AUDIO: bool = $audio;
+            fn create(
+                options: gr_curated_controllers::CreationOptions,
+                family: Self::Options,
+            ) -> Result<Self, gr_realization_api::ProviderError> {
+                gr_curated_controllers::$module::$create(options, family)
+            }
+            fn association(&self) -> &gr_curated_controllers::ControllerAssociation {
+                self.association()
+            }
+            fn common_surface(&self) -> &'static crate::ControllerSurface {
+                self.surface()$(.$common())?
+            }
             fn close(&mut self) {
                 self.close();
             }
             fn provider_diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
-                self.provider_diagnostics()
+                self.$diagnostics()
             }
             fn dropped_output_events(&self) -> u64 {
                 self.dropped_output_events()
@@ -133,7 +177,7 @@ macro_rules! family {
                 (result, ownership_error)
             }
         }
-        impl Deadline for gr_curated_controllers::$handle {
+        impl Deadline for gr_curated_controllers::$module::$handle {
             fn next_service_in(&self) -> Option<std::time::Duration> {
                 self.next_service_in()
             }
@@ -141,27 +185,25 @@ macro_rules! family {
     };
 }
 family!(
-    DualSenseController,
-    Option<DualSenseIdentity>,
-    DualSenseOutputEvent,
-    dualsense,
-    true
+    dualsense, DualSenseController, create_dualsense, DualSenseOptions, DualSenseIdentity;
+    DualSenseOutputEvent, dualsense, audio = true;
+    provider_diagnostics, common
 );
 family!(
-    DualShock4Controller,
-    Option<DualShock4Identity>,
-    DualShock4OutputEvent,
-    dualshock4,
-    true
+    dualshock4, DualShock4Controller, create_dualshock4, DualShock4Options, DualShock4Identity;
+    DualShock4OutputEvent, dualshock4, audio = true;
+    provider_diagnostics, common
 );
 family!(
-    SwitchProController,
-    (),
-    SwitchProOutputEvent,
-    switch_pro,
-    false
+    switch_pro, SwitchProController, create_switch_pro, SwitchProOptions, SwitchProIdentity;
+    SwitchProOutputEvent, switch_pro, audio = false;
+    provider_diagnostics, common
 );
-family!(Xbox360Controller, (), Xbox360OutputEvent, xbox360, true);
+family!(
+    xbox360, Xbox360Controller, create_xbox360, Xbox360Options;
+    Xbox360OutputEvent, xbox360, audio = true;
+    provider_diagnostics, common
+);
 macro_rules! shared {
     (wants_write) => {
         /// Watch descriptor writability only when this is true.
@@ -299,8 +341,10 @@ macro_rules! audio_access {
 /// One active `DualSense` virtual controller; service even while input is unchanged.
 pub struct DualSenseController {
     controller: Controller<gr_curated_controllers::DualSenseController>,
+    identity: Option<DualSenseIdentity>,
 }
 impl DualSenseController {
+    #[cfg(any(test, all(target_os = "linux", feature = "audio-usbip")))]
     pub(crate) fn from_parts(
         association: ControllerAssociation,
         inner: gr_curated_controllers::DualSenseController,
@@ -312,8 +356,8 @@ impl DualSenseController {
                 inner,
                 association,
                 audio,
-                identity,
             },
+            identity,
         }
     }
     audio_access!();
@@ -350,123 +394,50 @@ impl DualSenseController {
     /// Persist these controller-owned bytes to restore identity on a new session.
     #[must_use]
     pub const fn identity(&self) -> Option<DualSenseIdentity> {
-        self.controller.identity
+        self.identity
     }
 }
-/// Controller-owned persistent identity, independent of runtime session tokens.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DualSenseIdentity([u8; 6]);
-impl DualSenseIdentity {
-    /// Generate from OS entropy without opening a controller.
-    /// # Errors
-    /// Returns an error when OS entropy is unavailable.
-    pub fn generate() -> Result<Self, ControllerError> {
-        gr_curated_controllers::DualSenseIdentity::generate()
-            .map(|identity| Self(identity.bytes()))
-            .map_err(controller_error)
-    }
-    /// Restore locally administered unicast bytes; invalid flags return None.
-    #[must_use]
-    pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self> {
-        if bytes[0] & 3 == 2 {
-            Some(Self(bytes))
-        } else {
-            None
-        }
-    }
-    #[must_use]
-    pub const fn to_bytes(self) -> [u8; 6] {
-        self.0
-    }
-}
-/// Create with explicit controller identity and fresh transport/session state.
-/// # Errors
-/// Rejects unsupported realizations or host prerequisites before usable creation.
-pub fn create_dualsense_with_identity(
-    options: CreationOptions,
-    identity: DualSenseIdentity,
-) -> Result<DualSenseController, ControllerError> {
-    #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
-    if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
-        return create_dualsense_usb(options, identity);
-    }
-    let audio_options = options.audio();
-    let options = options.internal()?;
-    let mut audio = crate::audio::open(
-        audio_options,
-        crate::audio::Family::DualSense,
-        options.session.0,
-    )?;
-    let inner = crate::creation::finish(
-        gr_curated_controllers::create_dualsense(
-            options,
-            gr_curated_controllers::DualSenseOptions::default().with_identity(
-                gr_curated_controllers::DualSenseIdentity::from_bytes(identity.0)
-                    .map_err(controller_error)?,
-            ),
-        )
-        .map_err(controller_error),
-        || crate::creation::close_audio(&mut audio),
-    )?;
-    let association = ControllerAssociation::single(
-        ControllerId::new("virtualgamepad.dualsense"),
-        options,
-        inner.association(),
-        inner.surface().common(),
-    )
-    .with_audio(audio.as_ref());
-    Ok(DualSenseController::from_parts(
-        association,
-        inner,
-        Some(identity),
-        audio,
-    ))
-}
-/// Create an explicitly selected `DualSense` realization. No fallback or host setup.
+/// Create an explicitly selected `DualSense` realization.
 /// # Errors
 /// Returns unsupported-selection, host-prerequisite, or creation errors.
-pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController, ControllerError> {
-    if matches!(
-        options.realization(),
-        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_USBIP_USB_AUDIO
-    ) {
-        options.validate()?;
-        return create_dualsense_with_identity(options, DualSenseIdentity::generate()?);
+pub fn create_dualsense(
+    options: CreationOptions,
+    mut family: DualSenseOptions,
+) -> Result<DualSenseController, ControllerError> {
+    let identity = sony_identity(options, family.identity(), DualSenseIdentity::generate)?;
+    if let Some(identity) = identity {
+        #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+        if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
+            return create_dualsense_usb(options, identity);
+        }
+        family = family.with_identity(identity);
     }
     let audio_options = options.audio();
     let options = options.internal()?;
-    let mut audio = crate::audio::open(
+    let audio = crate::audio::open(
         audio_options,
         crate::audio::Family::DualSense,
         options.session.0,
     )?;
-    let inner = crate::creation::finish(
-        gr_curated_controllers::create_dualsense(
-            options,
-            gr_curated_controllers::DualSenseOptions::default(),
-        )
-        .map_err(controller_error),
-        || crate::creation::close_audio(&mut audio),
-    )?;
-    let association = ControllerAssociation::single(
+    let controller = Controller::open(
         ControllerId::new("virtualgamepad.dualsense"),
         options,
-        inner.association(),
-        inner.surface().common(),
-    )
-    .with_audio(audio.as_ref());
-    Ok(DualSenseController::from_parts(
-        association,
-        inner,
-        None,
+        family,
         audio,
-    ))
+    )?;
+    Ok(DualSenseController {
+        controller,
+        identity,
+    })
 }
+
 /// One active `DualShock4` virtual controller; service even while input is unchanged.
 pub struct DualShock4Controller {
     controller: Controller<gr_curated_controllers::DualShock4Controller>,
+    identity: Option<DualShock4Identity>,
 }
 impl DualShock4Controller {
+    #[cfg(any(test, all(target_os = "linux", feature = "audio-usbip")))]
     pub(crate) fn from_parts(
         association: ControllerAssociation,
         inner: gr_curated_controllers::DualShock4Controller,
@@ -478,8 +449,8 @@ impl DualShock4Controller {
                 inner,
                 association,
                 audio,
-                identity,
             },
+            identity,
         }
     }
     audio_access!();
@@ -507,125 +478,49 @@ impl DualShock4Controller {
     /// Persist these controller-owned bytes to restore identity on a new session.
     #[must_use]
     pub const fn identity(&self) -> Option<DualShock4Identity> {
-        self.controller.identity
+        self.identity
     }
 }
-/// Controller-owned persistent identity, independent of runtime session tokens.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DualShock4Identity([u8; 6]);
-impl DualShock4Identity {
-    /// Generate from OS entropy without opening a controller.
-    /// # Errors
-    /// Returns an error when OS entropy is unavailable.
-    pub fn generate() -> Result<Self, ControllerError> {
-        gr_curated_controllers::DualShock4Identity::generate()
-            .map(|identity| Self(identity.bytes()))
-            .map_err(controller_error)
-    }
-    /// Restore locally administered unicast bytes; invalid flags return None.
-    #[must_use]
-    pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self> {
-        if bytes[0] & 3 == 2 {
-            Some(Self(bytes))
-        } else {
-            None
-        }
-    }
-    #[must_use]
-    pub const fn to_bytes(self) -> [u8; 6] {
-        self.0
-    }
-}
-/// Create with explicit controller identity and fresh transport/session state.
-/// # Errors
-/// Rejects unsupported realizations or host prerequisites before usable creation.
-pub fn create_dualshock4_with_identity(
-    options: CreationOptions,
-    identity: DualShock4Identity,
-) -> Result<DualShock4Controller, ControllerError> {
-    #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
-    if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
-        return create_dualshock4_usb(options, identity);
-    }
-    let audio_options = options.audio();
-    let options = options.internal()?;
-    let mut audio = crate::audio::open(
-        audio_options,
-        crate::audio::Family::DualShock4,
-        options.session.0,
-    )?;
-    let inner = crate::creation::finish(
-        gr_curated_controllers::create_dualshock4(
-            options,
-            gr_curated_controllers::DualShock4Options::default().with_identity(
-                gr_curated_controllers::DualShock4Identity::from_bytes(identity.0)
-                    .map_err(controller_error)?,
-            ),
-        )
-        .map_err(controller_error),
-        || crate::creation::close_audio(&mut audio),
-    )?;
-    let association = ControllerAssociation::single(
-        ControllerId::new("virtualgamepad.dualshock4"),
-        options,
-        inner.association(),
-        inner.surface().common(),
-    )
-    .with_audio(audio.as_ref());
-    Ok(DualShock4Controller::from_parts(
-        association,
-        inner,
-        Some(identity),
-        audio,
-    ))
-}
-/// Create an explicitly selected `DualShock4` realization. No fallback or host setup.
+/// Create an explicitly selected `DualShock4` realization.
 /// # Errors
 /// Returns unsupported-selection, host-prerequisite, or creation errors.
 pub fn create_dualshock4(
     options: CreationOptions,
+    mut family: DualShock4Options,
 ) -> Result<DualShock4Controller, ControllerError> {
-    if matches!(
-        options.realization(),
-        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_USBIP_USB_AUDIO
-    ) {
-        options.validate()?;
-        return create_dualshock4_with_identity(options, DualShock4Identity::generate()?);
+    let identity = sony_identity(options, family.identity(), DualShock4Identity::generate)?;
+    if let Some(identity) = identity {
+        #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+        if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
+            return create_dualshock4_usb(options, identity);
+        }
+        family = family.with_identity(identity);
     }
     let audio_options = options.audio();
     let options = options.internal()?;
-    let mut audio = crate::audio::open(
+    let audio = crate::audio::open(
         audio_options,
         crate::audio::Family::DualShock4,
         options.session.0,
     )?;
-    let inner = crate::creation::finish(
-        gr_curated_controllers::create_dualshock4(
-            options,
-            gr_curated_controllers::DualShock4Options::default(),
-        )
-        .map_err(controller_error),
-        || crate::creation::close_audio(&mut audio),
-    )?;
-    let association = ControllerAssociation::single(
+    let controller = Controller::open(
         ControllerId::new("virtualgamepad.dualshock4"),
         options,
-        inner.association(),
-        inner.surface().common(),
-    )
-    .with_audio(audio.as_ref());
-    Ok(DualShock4Controller::from_parts(
-        association,
-        inner,
-        None,
+        family,
         audio,
-    ))
+    )?;
+    Ok(DualShock4Controller {
+        controller,
+        identity,
+    })
 }
+
 /// One active `SwitchPro` virtual controller; service even while input is unchanged.
 pub struct SwitchProController {
     controller: Controller<gr_curated_controllers::SwitchProController>,
 }
 impl SwitchProController {
+    #[cfg(test)]
     pub(crate) fn from_parts(
         association: ControllerAssociation,
         inner: gr_curated_controllers::SwitchProController,
@@ -635,9 +530,13 @@ impl SwitchProController {
                 inner,
                 association,
                 audio: None,
-                identity: (),
             },
         }
+    }
+    /// Address in display order. Only USB/UHID presents this address to the host.
+    #[must_use]
+    pub const fn identity(&self) -> SwitchProIdentity {
+        self.controller.inner.identity()
     }
     /// Whether the host selected streaming input reports.
     #[must_use]
@@ -672,31 +571,29 @@ impl SwitchProController {
 /// Create an explicitly selected `SwitchPro` realization. No fallback or host setup.
 /// # Errors
 /// Returns unsupported-selection, host-prerequisite, or creation errors.
-pub fn create_switch_pro(options: CreationOptions) -> Result<SwitchProController, ControllerError> {
+pub fn create_switch_pro(
+    options: CreationOptions,
+    family: SwitchProOptions,
+) -> Result<SwitchProController, ControllerError> {
     if options.audio().exposure() != crate::AudioExposure::Disabled {
         return Err(ControllerError::Unsupported {
             reason: "Switch Pro has no declared audio profile".into(),
         });
     }
-    let options = options.internal()?;
-    let inner = gr_curated_controllers::create_switch_pro(
-        options,
-        gr_curated_controllers::SwitchProOptions::default(),
-    )
-    .map_err(controller_error)?;
-    let association = ControllerAssociation::single(
+    let controller = Controller::open(
         ControllerId::new("virtualgamepad.switch-pro"),
-        options,
-        inner.association(),
-        inner.surface().common(),
-    );
-    Ok(SwitchProController::from_parts(association, inner))
+        options.internal()?,
+        family,
+        None,
+    )?;
+    Ok(SwitchProController { controller })
 }
 /// One active Xbox360 virtual controller; service even while input is unchanged.
 pub struct Xbox360Controller {
     controller: Controller<gr_curated_controllers::Xbox360Controller>,
 }
 impl Xbox360Controller {
+    #[cfg(any(test, all(target_os = "linux", feature = "audio-usbip")))]
     pub(crate) fn from_parts(
         association: ControllerAssociation,
         inner: gr_curated_controllers::Xbox360Controller,
@@ -707,7 +604,6 @@ impl Xbox360Controller {
                 inner,
                 association,
                 audio,
-                identity: (),
             },
         }
     }
@@ -737,34 +633,51 @@ impl Xbox360Controller {
 /// Create an explicitly selected Xbox360 realization. No fallback or host setup.
 /// # Errors
 /// Returns unsupported-selection, host-prerequisite, or creation errors.
-pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, ControllerError> {
+pub fn create_xbox360(
+    options: CreationOptions,
+    family: Xbox360Options,
+) -> Result<Xbox360Controller, ControllerError> {
     #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
     if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
         return create_xbox360_usb(options);
     }
     let audio_options = options.audio();
     let options = options.internal()?;
-    let mut audio = crate::audio::open(
+    let audio = crate::audio::open(
         audio_options,
         crate::audio::Family::Xbox360,
         options.session.0,
     )?;
-    let inner = crate::creation::finish(
-        gr_curated_controllers::create_xbox360(
-            options,
-            gr_curated_controllers::Xbox360Options::default(),
-        )
-        .map_err(controller_error),
-        || crate::creation::close_audio(&mut audio),
-    )?;
-    let association = ControllerAssociation::single(
+    let controller = Controller::open(
         ControllerId::new("virtualgamepad.xbox360"),
         options,
-        inner.association(),
-        inner.surface().common(),
-    )
-    .with_audio(audio.as_ref());
-    Ok(Xbox360Controller::from_parts(association, inner, audio))
+        family,
+        audio,
+    )?;
+    Ok(Xbox360Controller { controller })
+}
+
+fn sony_identity<T>(
+    options: CreationOptions,
+    restored: Option<T>,
+    generate: impl FnOnce() -> Result<T, gr_realization_api::ProviderError>,
+) -> Result<Option<T>, ControllerError> {
+    let target = options.realization();
+    if matches!(
+        target,
+        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_USBIP_USB_AUDIO
+    ) {
+        options.validate()?;
+        if !cfg!(target_os = "linux") {
+            return Err(ControllerError::UnsupportedPlatform { target });
+        }
+        restored.map_or_else(
+            || generate().map(Some).map_err(controller_error),
+            |id| Ok(Some(id)),
+        )
+    } else {
+        Ok(restored)
+    }
 }
 
 #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
@@ -775,7 +688,7 @@ fn create_dualsense_usb(
     let audio_options = options.audio();
     let options = options.internal()?;
     let (bridge, mut audio) =
-        crate::usb_audio::dualsense(identity.to_bytes(), audio_options, options.session.0)?;
+        crate::usb_audio::dualsense(identity.bytes(), audio_options, options.session.0)?;
     let mut inner = gr_curated_controllers::create_dualsense_usb_worker(bridge);
     if let Err(error) = inner.commit() {
         audio.close();
@@ -816,7 +729,7 @@ fn create_dualshock4_usb(
     let audio_options = options.audio();
     let options = options.internal()?;
     let (bridge, mut audio) =
-        crate::usb_audio::dualshock4(identity.to_bytes(), audio_options, options.session.0)?;
+        crate::usb_audio::dualshock4(identity.bytes(), audio_options, options.session.0)?;
     let mut inner = gr_curated_controllers::create_dualshock4_usb_worker(bridge);
     if let Err(error) = inner.commit() {
         audio.close();
@@ -853,7 +766,9 @@ fn create_dualshock4_usb(
 fn create_xbox360_usb(options: CreationOptions) -> Result<Xbox360Controller, ControllerError> {
     let audio_options = options.audio();
     let options = options.internal()?;
-    let identity = DualSenseIdentity::generate()?.to_bytes();
+    let identity = DualSenseIdentity::generate()
+        .map_err(controller_error)?
+        .bytes();
     let (bridge, mut audio) =
         crate::usb_audio::xbox360(identity, audio_options, options.session.0)?;
     let mut inner = gr_curated_controllers::create_xbox360_usb_worker(bridge);
