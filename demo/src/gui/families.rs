@@ -70,6 +70,17 @@ pub(super) enum Controller {
     Steam(SteamDemoController),
 }
 
+// Synthetic stationary pose used by the demo, not a captured orientation or
+// factory calibration. D9 #305 accepted gyro with this combined accel/quaternion
+// pose; their individual necessity was not isolated. API raw-zero defaults stay.
+fn steam_demo_neutral() -> gr_curated_controllers::steam_controller_2026::SteamController2026State {
+    let mut state =
+        gr_curated_controllers::steam_controller_2026::SteamController2026State::default();
+    state.motion.accelerometer = [0, 0, 16384];
+    state.motion.quaternion = [i16::MAX, 0, 0, 0];
+    state
+}
+
 // Keep UI edit bookkeeping in the demo; the supporting API needs no dirty accessor.
 pub(super) struct SteamDemoController {
     inner: gr_curated_controllers::steam_controller_2026::SteamController2026Controller,
@@ -96,7 +107,7 @@ impl SteamDemoController {
         Ok(())
     }
     fn neutralize(&mut self) -> Result<(), virtualgamepad::ControlError> {
-        self.inner.neutralize()?;
+        self.inner.set_inputs(steam_demo_neutral())?;
         self.dirty = true;
         Ok(())
     }
@@ -151,19 +162,27 @@ impl Kind {
             .options(options.target, self.supports_audio())?;
         match self {
             Self::Steam => {
-                create_steam_session(
+                let mut inner = create_steam_session(
                     options,
                     gr_curated_controllers::steam_controller_2026::create_steam_controller_2026_with_options,
                 )
-                .map(|inner| {
-                    Controller::Steam(SteamDemoController {
-                        inner,
-                        dirty: false,
-                    })
-                })
                 .map_err(|e| virtualgamepad::ControllerError::Open {
                     reason: e.to_string(),
-                })
+                })?;
+                inner.set_inputs(steam_demo_neutral()).map_err(|e| {
+                    virtualgamepad::ControllerError::Open {
+                        reason: e.to_string(),
+                    }
+                })?;
+                inner
+                    .commit()
+                    .map_err(|e| virtualgamepad::ControllerError::Open {
+                        reason: e.to_string(),
+                    })?;
+                Ok(Controller::Steam(SteamDemoController {
+                    inner,
+                    dirty: false,
+                }))
             }
             Self::Xbox360 => create_xbox360(creation).map(Controller::Xbox),
             Self::DualSense => create_dualsense(creation).map(Controller::DualSense),
@@ -503,14 +522,7 @@ fn create_steam_session<T, E>(
         super::SteamController2026CreationOptions,
     ) -> Result<T, E>,
 ) -> Result<T, E> {
-    create(
-        options.target,
-        options.id,
-        super::SteamController2026CreationOptions {
-            steam_client_compat: options.steam_compat,
-            ..Default::default()
-        },
-    )
+    create(options.target, options.id, options.steam_options.clone())
 }
 
 // Keep the application's actual creation token at the supporting-package boundary.
@@ -524,7 +536,9 @@ fn create_wii_session<T, E: std::fmt::Display>(
         gr_curated_controllers::wii_remote::WiiRemoteCreationOptions,
     ) -> Result<T, E>,
 ) -> Result<T, String> {
-    let image = options.wii_imports.load(options.target)?;
+    let image = options
+        .wii_imports
+        .load(options.target, options.wii_revision)?;
     create(
         options.target,
         options.id,
@@ -540,6 +554,58 @@ mod steam_tests {
     use super::*;
 
     #[test]
+    fn steam_recreation_preserves_all_advanced_options_and_uses_a_fresh_id() {
+        use super::super::{App, recreation_options};
+        let mut app = App::default();
+        assert!(app.steam_options.steam_client_compat);
+        assert!(!app.steam_options.haptic_streaming && !app.steam_options.lizard_mode);
+        for target in super::super::creation_targets(Kind::Steam) {
+            for bits in 0..8 {
+                app.target = target;
+                app.next_controller_id = 7;
+                app.steam_options.serial = Some("VGP-FAKE".into());
+                app.steam_options.steam_client_compat = bits & 1 != 0;
+                app.steam_options.haptic_streaming = bits & 2 != 0;
+                app.steam_options.lizard_mode = bits & 4 != 0;
+                let saved = app.creation_options();
+                let mut sidebar = App::default().creation_options();
+                sidebar.id = 42;
+                sidebar.target = virtualgamepad::RealizationId::LINUX_UHID_BLUETOOTH;
+                let options = recreation_options(Kind::Steam, &saved, sidebar);
+                assert_eq!(options.target, target);
+                assert_eq!(options.id, 42);
+                let result = create_steam_session(&options, |observed, id, creation| {
+                    assert_eq!(observed, target);
+                    assert_eq!(id, 42);
+                    Ok::<_, ()>(creation)
+                })
+                .unwrap();
+                assert_eq!(result.serial, saved.steam_options.serial);
+                assert_eq!(result.steam_client_compat, bits & 1 != 0);
+                assert_eq!(result.haptic_streaming, bits & 2 != 0);
+                assert_eq!(result.lizard_mode, bits & 4 != 0);
+            }
+        }
+    }
+
+    #[test]
+    fn demo_neutral_has_a_synthetic_pose_without_changing_api_defaults() {
+        use gr_curated_controllers::steam_controller_2026::{
+            SteamController2026State, SteamMotionSample,
+        };
+        let api = SteamController2026State::default();
+        assert_eq!(api.motion, SteamMotionSample::default());
+        assert_eq!(api.motion.quaternion, [0; 4]);
+        let demo = steam_demo_neutral();
+        assert_eq!(demo.motion.accelerometer, [0, 0, 16384]);
+        assert_eq!(demo.motion.quaternion, [i16::MAX, 0, 0, 0]);
+        assert_eq!(demo.motion.gyroscope, [0; 3]);
+        let mut raw = demo;
+        raw.motion = SteamMotionSample::default();
+        assert_eq!(raw, api);
+    }
+
+    #[test]
     fn creation_copies_compatibility_to_each_target_without_changing_defaults() {
         for target in [
             virtualgamepad::RealizationId::LINUX_UHID_USB,
@@ -552,11 +618,19 @@ mod steam_tests {
                 wii_revision: super::super::WiiRemoteRevision::Original,
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteCreationOptions::default(),
-                steam_compat: false,
+                steam_options: super::super::SteamController2026CreationOptions::default(),
             };
             let mut captured = Vec::new();
-            for enabled in [false, true, false] {
-                options.steam_compat = enabled;
+            for (enabled, streaming, lizard) in [
+                (false, false, false),
+                (true, false, true),
+                (false, true, false),
+                (true, true, true),
+                (false, false, false),
+            ] {
+                options.steam_options.steam_client_compat = enabled;
+                options.steam_options.haptic_streaming = streaming;
+                options.steam_options.lizard_mode = lizard;
                 captured.push(
                     create_steam_session(&options, |observed, id, creation| {
                         assert_eq!(observed, target);
@@ -567,11 +641,17 @@ mod steam_tests {
                     .unwrap(),
                 );
             }
+            assert!(!captured[0].lizard_mode);
+            assert!(captured[1].lizard_mode && captured[3].lizard_mode);
+            assert!(!captured[2].lizard_mode && !captured[4].lizard_mode);
             assert!(!captured[0].steam_client_compat);
             assert!(captured[1].steam_client_compat);
             assert!(!captured[2].steam_client_compat);
+            assert!(captured[2].haptic_streaming);
+            assert!(captured[3].steam_client_compat && captured[3].haptic_streaming);
+            assert!(!captured[4].steam_client_compat && !captured[4].haptic_streaming);
             assert!(
-                !super::super::SteamController2026CreationOptions::default().steam_client_compat
+                super::super::SteamController2026CreationOptions::default().steam_client_compat
             );
         }
     }
@@ -594,7 +674,7 @@ mod wii_tests {
                 wii_revision: revision,
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteCreationOptions::default(),
-                steam_compat: false,
+                steam_options: super::super::SteamController2026CreationOptions::default(),
             };
             let state = create_wii_session(&options, |target, session, observed, image, compat| {
                 assert_eq!(target, options.target);
@@ -611,6 +691,58 @@ mod wii_tests {
         }
     }
     #[test]
+    fn complete_envelope_validation_precedes_every_fake_provider_open() {
+        use super::super::{App, wii_eeprom, wii_import};
+        use std::{io::Write, os::unix::fs::OpenOptionsExt};
+        let path =
+            std::env::temp_dir().join(format!("vgp-envelope-{}.wii-eeprom", std::process::id()));
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .unwrap();
+        let mut options = App::default().creation_options();
+        options.target = virtualgamepad::RealizationId::LINUX_UHID_BLUETOOTH;
+        options.wii_imports = wii_import::Imports::envelope(path.clone());
+        let image =
+            gr_curated_controllers::wii_remote::WiiEepromImage::import(vec![0x37; 257]).unwrap();
+        let bytes = wii_eeprom::encode(&image, options.wii_revision).unwrap();
+        file.write_all(&bytes).unwrap();
+        drop(file);
+        let observed =
+            create_wii_session(&options, |_, _, _, imported, _| Ok::<_, String>(imported)).unwrap();
+        assert_eq!(observed, image);
+        options.wii_revision = super::super::WiiRemoteRevision::Tr;
+        assert!(
+            create_wii_session(&options, |_, _, _, _, _| -> Result<(), String> {
+                panic!("model mismatch opened a provider")
+            })
+            .is_err()
+        );
+        options.wii_revision = super::super::WiiRemoteRevision::Original;
+        for length in [0, 8, bytes.len() - 1] {
+            std::fs::write(&path, &bytes[..length]).unwrap();
+            assert!(
+                create_wii_session(&options, |_, _, _, _, _| -> Result<(), String> {
+                    panic!("truncated import opened a provider")
+                })
+                .is_err()
+            );
+        }
+        let mut bad = bytes;
+        bad[17] ^= 1;
+        std::fs::write(&path, &bad).unwrap();
+        assert!(
+            create_wii_session(&options, |_, _, _, _, _| -> Result<(), String> {
+                panic!("corrupt import opened a provider")
+            })
+            .is_err()
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn each_wii_creation_receives_its_application_session_id_and_selected_target() {
         for id in [1, 7, u64::MAX] {
             let options = ControllerOptions {
@@ -620,7 +752,7 @@ mod wii_tests {
                 wii_revision: super::super::WiiRemoteRevision::Original,
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteCreationOptions::default(),
-                steam_compat: false,
+                steam_options: super::super::SteamController2026CreationOptions::default(),
             };
             let received =
                 create_wii_session(&options, |target, session, revision, image, compat| {
@@ -665,7 +797,8 @@ mod compat_creation_tests {
                                 wii_revision: revision,
                                 wii_imports: super::super::wii_import::Imports::default(),
                                 wii_compat: compat,
-                                steam_compat: false,
+                                steam_options:
+                                    super::super::SteamController2026CreationOptions::default(),
                             };
                             assert_eq!(
                                 create_wii_session(
@@ -680,5 +813,25 @@ mod compat_creation_tests {
                 }
             }
         }
+    }
+}
+
+impl super::wii_eeprom::SaveSession for Controller {
+    fn close_for_save(&mut self) {
+        self.close();
+    }
+    fn keep_snapshot(
+        &mut self,
+    ) -> Result<gr_curated_controllers::wii_remote::WiiEepromImage, String> {
+        let Self::WiiRemote(controller) = self else {
+            return Err("EEPROM saving is only available for Wii HID instances".into());
+        };
+        controller
+            .resolve_resource(
+                gr_curated_controllers::wii_remote::WiiResourceDisposition::KeepSnapshot,
+            )
+            .map_err(|e| e.to_string())?
+            .cloned()
+            .ok_or_else(|| "EEPROM was already discarded".into())
     }
 }

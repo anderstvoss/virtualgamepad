@@ -635,7 +635,9 @@ fn all_output_lengths_and_report_classes_have_exact_success_or_error_without_mut
             wire.resize(length, 0);
             let r = Report::from_wire(ReportType::Output, true, &wire).unwrap();
             let mut protocol = SteamProtocol::default();
-            let expected = if length == original.len() {
+            // Physical Singer writes add a reviewed zero tail only to 0x83.
+            let padded_midi = original[0] == 0x83 && length == 64;
+            let expected = if length == original.len() || padded_midi {
                 Ok(())
             } else {
                 Err(ReplyError::Invalid)
@@ -1083,7 +1085,22 @@ fn wired_codec_emissions_and_acceptance_match_the_physical_descriptor() {
         for len in 0..=64 {
             let report = Report::new(ReportType::Output, Some(id), vec![0; len]).unwrap();
             if SteamController2026Haptic::decode(&report).is_ok() {
-                check(&report);
+                if id == 0x83 && len == 63 {
+                    // A host transport buffer may be padded; the physical
+                    // descriptor still declares nine bytes, not 63.
+                    assert!(report.payload()[9..].iter().all(|byte| *byte == 0));
+                    check(
+                        &Report::new(ReportType::Output, Some(id), report.payload()[..9].to_vec())
+                            .unwrap(),
+                    );
+                } else if id == 0x87 && len < 63 {
+                    // The PCM client sends short final transport writes (12
+                    // wire bytes observed); 63 remains the declared maximum.
+                    assert_eq!(declared.get(&(9, id)), Some(&63));
+                    assert!((3..63).contains(&len) && (len - 1) % 2 == 0);
+                } else {
+                    check(&report);
+                }
             }
             let mut payload = vec![0; len];
             if let Some(command) = payload.first_mut() {
@@ -1160,10 +1177,23 @@ fn compat_setting_request(settings: &[(u8, u16)]) -> RequestKind {
     RequestKind::Set(Report::new(ReportType::Feature, Some(1), body).unwrap())
 }
 #[test]
-fn steam_client_profile_is_opt_in_replays_physical_attributes_and_keeps_synthetic_identity() {
+fn steam_client_profile_defaults_on_and_can_disable_attributes_without_changing_identity() {
+    use crate::steam_controller_2026::SteamController2026CreationOptions as Options;
     let expected = detection_fixture("steam-d9-1302-attributes.hex");
-    for enabled in [false, true] {
-        let mut protocol = SteamHidProtocol::with_options("VGP-FAKE".into(), enabled);
+    for options in [
+        Options::default(),
+        Options {
+            steam_client_compat: false,
+            ..Options::default()
+        },
+    ] {
+        let enabled = options.steam_client_compat;
+        assert!(!options.haptic_streaming);
+        let mut protocol = SteamHidProtocol::with_streaming_options(
+            "VGP-FAKE".into(),
+            enabled,
+            options.haptic_streaming,
+        );
         assert_eq!(
             protocol.request(&set("feature-attrs-get"), 0).0,
             Reply::Set(Ok(()))
@@ -1190,7 +1220,7 @@ fn steam_client_profile_is_opt_in_replays_physical_attributes_and_keeps_syntheti
         assert_eq!(response.wire().len(), 64);
     }
     assert!(
-        !crate::steam_controller_2026::SteamController2026CreationOptions::default()
+        crate::steam_controller_2026::SteamController2026CreationOptions::default()
             .steam_client_compat
     );
 }
@@ -1265,7 +1295,11 @@ fn steam_client_profile_retains_all_recorded_settings_and_rejects_atomic_malform
 fn steam_client_review_requests() -> Vec<(RequestKind, Reply)> {
     let mut requests = Vec::new();
     for _ in 0..3 {
-        for prefix in [&[0xdc, 2, 1, 2][..], &[0xe2, 2, 1, 0x20], &[0xed, 24]] {
+        for prefix in [
+            &[0xdc, 2, 1, 2][..],
+            &[0xe2, 2, 1, 0x20],
+            &b"\xed\x18user/wireless_transport\0"[..],
+        ] {
             let mut body = vec![0; 63];
             body[..prefix.len()].copy_from_slice(prefix);
             requests.push((
@@ -1281,6 +1315,25 @@ fn steam_client_review_requests() -> Vec<(RequestKind, Reply)> {
                 Report::from_wire(ReportType::Feature, true, &ed_reply).unwrap()
             )),
         ));
+        for path in [b"esb/bond\0".as_slice(), b"esb/bond_2\0".as_slice()] {
+            requests.push((named_read_request(path), Reply::Set(Ok(()))));
+            let mut absent = vec![0; 63];
+            absent[..3].copy_from_slice(&[1, 0xed, 0]);
+            requests.push((
+                get(),
+                Reply::Get(Ok(
+                    Report::from_wire(ReportType::Feature, true, &absent).unwrap()
+                )),
+            ));
+        }
+        requests.push((compat_setting_request(&[(37, 1)]), Reply::Set(Ok(()))));
+        for rgbw in [[25, 0, 0, 0], [0, 25, 0, 0], [0, 0, 25, 0], [0, 0, 0, 25]] {
+            requests.push((led_request(0xc5, &rgbw), Reply::Set(Ok(()))));
+            requests.push((led_request(0xe9, &[]), Reply::Set(Ok(()))));
+            requests.push((get(), led_reply(0xe9, &[0; 4])));
+        }
+        requests.push((led_request(0x89, &[37]), Reply::Set(Ok(()))));
+        requests.push((get(), led_reply(0x89, &[37, 1, 0])));
         let mut c1 = vec![0; 63];
         c1[0] = 0xc1;
         requests.push((
@@ -1346,6 +1399,7 @@ fn steam_client_retry_sequence_completes_each_poll_and_closes_independent_sessio
             Reply::Set(Err(ReplyError::Unsupported)),
         ));
     }
+    let after_requests = u64::try_from(requests.len()).unwrap() + 1;
     for (i, (request, expected)) in requests.into_iter().enumerate() {
         let ordinal = u64::try_from(i).unwrap();
         enqueue(&fake, ordinal, request);
@@ -1366,7 +1420,7 @@ fn steam_client_retry_sequence_completes_each_poll_and_closes_independent_sessio
         .borrow_mut()
         .events
         .push_back(HostEvent::Lifecycle(Lifecycle::Stop));
-    runtime.service(100).unwrap();
+    runtime.service(after_requests).unwrap();
     fake.0
         .borrow_mut()
         .events
@@ -1375,7 +1429,7 @@ fn steam_client_retry_sequence_completes_each_poll_and_closes_independent_sessio
             numbered_output: true,
             numbered_feature: true,
         }));
-    runtime.service(101).unwrap();
+    runtime.service(after_requests + 1).unwrap();
     runtime.close().unwrap();
     runtime.close().unwrap();
     assert_eq!(fake.0.borrow().closes, 1);
@@ -1385,7 +1439,7 @@ fn steam_client_retry_sequence_completes_each_poll_and_closes_independent_sessio
             Ok(())
         })
         .unwrap();
-    for now in 102..110 {
+    for now in after_requests + 2..after_requests + 10 {
         other.service(now).unwrap();
     }
     assert_eq!(sibling.0.borrow().closes, 0);
@@ -1435,6 +1489,7 @@ fn steam_client_ed_replays_only_reviewed_zero_value_with_fresh_padding() {
         let mut protocol = SteamHidProtocol::with_options("VGP-FAKE".into(), enabled);
         let mut body = vec![0xa5; 63]; // fake opaque input must never leak back
         body[..2].copy_from_slice(&[0xed, 24]);
+        body[2..26].copy_from_slice(b"user/wireless_transport\0");
         let request = RequestKind::Set(Report::new(ReportType::Feature, Some(1), body).unwrap());
         assert_eq!(
             protocol.request(&request, 0).0,
@@ -1470,4 +1525,1291 @@ fn steam_client_ed_replays_only_reviewed_zero_value_with_fresh_padding() {
             Reply::Get(Err(ReplyError::Unsupported))
         );
     }
+}
+
+#[test]
+fn midi_zero_padded_lfo_is_observed_and_acknowledged_without_losing_the_wire_body() {
+    // Physical MIDI pilot: the host uses 64-byte zero-padded output 0x83.
+    // Synthetic note values exercise the same framing, without private data.
+    let fake = Fake::default();
+    let mut runtime = Runtime::new(
+        SteamHidProtocol::default(),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    runtime.service(0).unwrap();
+    for (ordinal, (side, frequency, gain, duration)) in [
+        (4, 226_u16, -20_i8, 0x7fff_u16),
+        (4, 0, i8::MIN, 0x8000),
+        (3, 450, -20, 0x7fff),
+        (1, 0, i8::MIN, 0x8000),
+        (0, 226, -20, 0x7fff),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut body = vec![0; 63];
+        body[0] = side;
+        body[1] = gain.to_le_bytes()[0];
+        body[2..4].copy_from_slice(&frequency.to_le_bytes());
+        body[4..6].copy_from_slice(&duration.to_le_bytes());
+        let report = Report::new(ReportType::Output, Some(0x83), body.clone()).unwrap();
+        assert_eq!(
+            SteamController2026Haptic::decode(&report),
+            Ok(SteamController2026Haptic::Lfo {
+                side,
+                gain_db: gain,
+                frequency,
+                duration_ms: duration,
+                lfo_frequency: 0,
+                depth: 0,
+            })
+        );
+        let ordinal = u64::try_from(ordinal).unwrap();
+        enqueue(&fake, ordinal, RequestKind::Set(report.clone()));
+        assert_eq!(
+            runtime.service(ordinal * 2 + 1).unwrap(),
+            vec![RawReverseEvent::HidOutput {
+                report_id: Some(0x83),
+                bytes: body.clone(),
+            }]
+        );
+        assert_eq!(
+            fake.0.borrow().commands.last(),
+            Some(&Command::Reply {
+                token: RequestId {
+                    session: 1,
+                    ordinal
+                },
+                reply: Reply::Set(Ok(())),
+            })
+        );
+        fake.0
+            .borrow_mut()
+            .events
+            .push_back(HostEvent::Output(report));
+        assert_eq!(
+            runtime.service(ordinal * 2 + 2).unwrap(),
+            vec![RawReverseEvent::HidOutput {
+                report_id: Some(0x83),
+                bytes: body,
+            }]
+        );
+        assert!(!runtime.wants_write());
+    }
+    runtime.close().unwrap();
+    runtime.close().unwrap();
+    assert_eq!(fake.0.borrow().closes, 1);
+}
+
+#[test]
+fn midi_nonzero_extension_bytes_are_not_silently_discarded() {
+    for offset in 9..63 {
+        let mut body = vec![0; 63];
+        body[offset] = 1;
+        let report = Report::new(ReportType::Output, Some(0x83), body).unwrap();
+        let mut protocol = SteamProtocol::default();
+        assert_eq!(
+            protocol.request(&RequestKind::Set(report), 0),
+            (Reply::Set(Err(ReplyError::Invalid)), None)
+        );
+        assert_eq!(protocol.outputs, Outputs::default());
+    }
+}
+
+fn streamed_output(id: u8, bytes: &[u8]) -> RequestKind {
+    RequestKind::Set(Report::new(ReportType::Output, Some(id), bytes.to_vec()).unwrap())
+}
+
+fn runtime_stream_request(
+    runtime: &mut Runtime<SteamHidProtocol, Fake>,
+    fake: &Fake,
+    ordinal: u64,
+    request: RequestKind,
+    expected: Reply,
+) -> Vec<RawReverseEvent> {
+    let begin = fake.0.borrow().commands.len();
+    enqueue(fake, ordinal, request);
+    let observations = runtime.service(ordinal + 1).unwrap();
+    assert_eq!(
+        fake.0.borrow().commands.get(begin),
+        Some(&Command::Reply {
+            token: RequestId {
+                session: 1,
+                ordinal
+            },
+            reply: expected,
+        })
+    );
+    assert!(!runtime.wants_write());
+    observations
+}
+
+#[test]
+fn streaming_runtime_completes_config_data_rejection_and_stop_in_each_poll() {
+    let fake = Fake::default();
+    let mut runtime = Runtime::new(
+        SteamHidProtocol::with_streaming_options("VGP-FAKE".into(), false, true),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    runtime.service(0).unwrap();
+    let success = Reply::Set(Ok(()));
+    for (ordinal, bytes) in [[2, 2, 0], [2, 5, 0]].into_iter().enumerate() {
+        let ordinal = u64::try_from(ordinal).unwrap();
+        assert_eq!(
+            runtime_stream_request(
+                &mut runtime,
+                &fake,
+                ordinal,
+                streamed_output(0x86, &bytes),
+                success.clone()
+            ),
+            vec![RawReverseEvent::HidOutput {
+                report_id: Some(0x86),
+                bytes: bytes.to_vec()
+            }]
+        );
+    }
+    let mono = [vec![0], vec![0x55; 62]].concat();
+    assert_eq!(
+        runtime_stream_request(
+            &mut runtime,
+            &fake,
+            2,
+            streamed_output(0x87, &mono),
+            success.clone()
+        ),
+        vec![RawReverseEvent::HidOutput {
+            report_id: Some(0x87),
+            bytes: mono
+        }]
+    );
+    let mut stereo = vec![0x11; 63];
+    stereo[0] = 30;
+    assert_eq!(
+        runtime_stream_request(
+            &mut runtime,
+            &fake,
+            3,
+            streamed_output(0x88, &stereo),
+            success.clone()
+        ),
+        vec![RawReverseEvent::HidOutput {
+            report_id: Some(0x88),
+            bytes: stereo
+        }]
+    );
+    for ordinal in 4..=5 {
+        let target = if ordinal == 4 { 2 } else { 5 };
+        runtime_stream_request(
+            &mut runtime,
+            &fake,
+            ordinal,
+            streamed_output(0x86, &[1, target, 0]),
+            success.clone(),
+        );
+    }
+    let feedback = fake
+        .0
+        .borrow()
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            Command::Input(report) if report.id() == Some(0x44) => Some(report.wire()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for expected in [
+        [0x44, 1, 0x20, 0, 0, 0],
+        [0x44, 0, 0x20, 0, 0, 0],
+        [0x44, 4, 0x10, 0, 0, 0],
+        [0x44, 3, 0x10, 0, 0, 0],
+        [0x44, 1, 2, 0, 0, 0],
+        [0x44, 0, 2, 0, 0, 0],
+    ] {
+        assert!(feedback.iter().any(|wire| wire == &expected));
+    }
+    assert_eq!(runtime.deadline(), None);
+    runtime.close().unwrap();
+    runtime.close().unwrap();
+    assert_eq!(fake.0.borrow().closes, 1);
+}
+
+#[test]
+fn streaming_lifecycle_resets_pending_feedback_and_does_not_affect_a_sibling() {
+    let mut first = SteamHidProtocol::with_streaming_options("VGP-FIRST".into(), true, true);
+    let sibling = SteamHidProtocol::with_streaming_options("VGP-SECOND".into(), true, true);
+    let before = sibling.outputs.clone();
+    assert_eq!(
+        first.request(&streamed_output(0x86, &[2, 2, 0]), 0).0,
+        Reply::Set(Ok(()))
+    );
+    assert!(first.deadline().is_some());
+    first.lifecycle(Lifecycle::Stop, 1);
+    assert_eq!(first.deadline(), None);
+    assert_eq!(first.outputs.streaming.configured, [false; 4]);
+    assert_eq!(first.outputs.streaming.buffered_bytes, [0; 4]);
+    assert!(first.input(&State::default(), 1).unwrap().is_empty());
+    assert_eq!(
+        first.request(&streamed_output(0x86, &[2, 2, 0]), 2),
+        (Reply::Set(Err(ReplyError::Busy)), None)
+    );
+    first.lifecycle(
+        Lifecycle::Start {
+            numbered_input: true,
+            numbered_output: true,
+            numbered_feature: true,
+        },
+        3,
+    );
+    assert!(
+        first
+            .input(&State::default(), 3)
+            .unwrap()
+            .iter()
+            .all(|r| r.id() == Some(0x42))
+    );
+    assert_eq!(
+        first.request(&streamed_output(0x86, &[2, 2, 0]), 4).0,
+        Reply::Set(Ok(()))
+    );
+    assert_eq!(sibling.outputs, before);
+    assert_eq!(sibling.deadline(), None);
+    let mut native = SteamController2026Outputs::default();
+    assert_eq!(
+        crate::retained::OutputState::apply(
+            &mut native,
+            &Report::new(ReportType::Output, Some(0x86), vec![2, 2, 0]).unwrap()
+        ),
+        Err(ReplyError::Unsupported)
+    );
+    assert_eq!(native, SteamController2026Outputs::default());
+}
+
+#[test]
+fn streaming_invalid_requests_complete_without_pending_replies() {
+    let fake = Fake::default();
+    let mut runtime = Runtime::new(
+        SteamHidProtocol::with_streaming_options("VGP-FAKE".into(), false, true),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    runtime.service(0).unwrap();
+    for (ordinal, request, reply) in [
+        (
+            0,
+            streamed_output(0x86, &[2, 2, 1]),
+            Reply::Set(Err(ReplyError::Unsupported)),
+        ),
+        (
+            1,
+            streamed_output(0x87, &[0, 1, 2]),
+            Reply::Set(Err(ReplyError::Invalid)),
+        ),
+        (
+            2,
+            streamed_output(0x88, &[31; 63]),
+            Reply::Set(Err(ReplyError::Invalid)),
+        ),
+        (
+            3,
+            streamed_output(0x89, &[0; 63]),
+            Reply::Set(Err(ReplyError::Unsupported)),
+        ),
+        (
+            4,
+            RequestKind::Get {
+                kind: ReportType::Input,
+                id: Some(0x44),
+            },
+            Reply::Get(Err(ReplyError::Unsupported)),
+        ),
+    ] {
+        assert!(runtime_stream_request(&mut runtime, &fake, ordinal, request, reply).is_empty());
+    }
+
+    runtime.close().unwrap();
+    runtime.close().unwrap();
+    assert_eq!(fake.0.borrow().closes, 1);
+    let mut disabled = SteamHidProtocol::with_options("VGP-DISABLED".into(), true);
+    assert_eq!(
+        disabled.request(&streamed_output(0x86, &[2, 2, 0]), 0),
+        (Reply::Set(Err(ReplyError::Unsupported)), None)
+    );
+    assert!(!disabled.outputs.streaming.enabled);
+}
+
+#[test]
+fn active_stream_shutdown_cancels_deadlines_and_preserves_the_sibling() {
+    let fake = Fake::default();
+    let mut first = Runtime::new(
+        SteamHidProtocol::with_streaming_options("VGP-FIRST".into(), false, true),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    let other = Fake::default();
+    let mut sibling = Runtime::new(
+        SteamHidProtocol::with_streaming_options("VGP-OTHER".into(), false, true),
+        other.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    first.service(0).unwrap();
+    sibling.service(0).unwrap();
+    runtime_stream_request(
+        &mut first,
+        &fake,
+        0,
+        streamed_output(0x86, &[2, 2, 0]),
+        Reply::Set(Ok(())),
+    );
+    runtime_stream_request(
+        &mut first,
+        &fake,
+        1,
+        streamed_output(0x87, &[0; 63]),
+        Reply::Set(Ok(())),
+    );
+    assert!(first.deadline().is_some());
+    first.close().unwrap();
+    first.close().unwrap();
+    let sent = fake.0.borrow().commands.len();
+    assert_eq!(first.deadline(), None);
+    assert_eq!(first.service(100_000), Err(Error::Closed));
+    assert_eq!(fake.0.borrow().commands.len(), sent);
+    assert_eq!(fake.0.borrow().closes, 1);
+    assert_eq!(other.0.borrow().closes, 0);
+    assert!(sibling.service(100_000).unwrap().is_empty());
+    sibling.close().unwrap();
+    assert_eq!(other.0.borrow().closes, 1);
+}
+
+fn named_read_request(path: &[u8]) -> RequestKind {
+    let mut body = vec![0xa5; 63]; // never echo synthetic opaque padding
+    body[0] = 0xed;
+    body[1] = u8::try_from(path.len()).unwrap();
+    body[2..2 + path.len()].copy_from_slice(path);
+    RequestKind::Set(Report::new(ReportType::Feature, Some(1), body).unwrap())
+}
+
+#[test]
+fn steam_client_named_reads_are_bounded_repeatable_and_do_not_replay_record_material() {
+    let mut protocol = SteamHidProtocol::with_options("VGP-FAKE".into(), true);
+    let mut sibling = SteamHidProtocol::with_options("VGP-SIBLING".into(), true);
+    for (path, length) in [
+        (b"user/wireless_transport\0".as_slice(), 1),
+        (b"esb/bond\0".as_slice(), 0),
+        (b"esb/bond_2\0".as_slice(), 0),
+    ] {
+        assert_eq!(
+            protocol.request(&named_read_request(path), 0).0,
+            Reply::Set(Ok(()))
+        );
+        for lifecycle in [Lifecycle::Open, Lifecycle::Close, Lifecycle::Open] {
+            protocol.lifecycle(lifecycle, 1);
+            for now in 2..5 {
+                let (Reply::Get(Ok(reply)), None) = protocol.request(&get(), now) else {
+                    panic!("named read reply");
+                };
+                let mut expected = vec![0; 63];
+                expected[..3].copy_from_slice(&[1, 0xed, length]);
+                assert_eq!(reply.wire(), expected);
+            }
+        }
+        assert_eq!(
+            sibling.request(&get(), 0).0,
+            Reply::Get(Err(ReplyError::Unsupported))
+        );
+    }
+    // Unknown paths, suffixes and missing terminators cannot select a known read.
+    for path in [
+        b"esb/other\0".as_slice(),
+        b"esb/bond",
+        b"esb/bond\0x",
+        b"../esb/bond\0",
+    ] {
+        assert_eq!(
+            protocol.request(&named_read_request(path), 5).0,
+            Reply::Set(Err(ReplyError::Unsupported))
+        );
+        let (Reply::Get(Ok(reply)), None) = protocol.request(&get(), 6) else {
+            panic!("compat error framing")
+        };
+        assert_eq!(reply.wire()[2], u8::MAX); // never a stale successful reply
+    }
+    for command in [0xee, 0xef] {
+        let mut body = vec![0; 63];
+        body[0] = command;
+        let request = RequestKind::Set(Report::new(ReportType::Feature, Some(1), body).unwrap());
+        assert_eq!(
+            protocol.request(&request, 7).0,
+            Reply::Set(Err(ReplyError::Unsupported))
+        );
+    }
+    protocol.request(&named_read_request(b"esb/bond\0"), 8);
+    let bad_id = RequestKind::Set(Report::new(ReportType::Feature, Some(2), vec![0; 63]).unwrap());
+    assert_eq!(
+        protocol.request(&bad_id, 9).0,
+        Reply::Set(Err(ReplyError::Unsupported))
+    );
+    assert_eq!(
+        protocol.request(&get(), 10).0,
+        Reply::Get(Err(ReplyError::Unsupported))
+    );
+    protocol.request(&named_read_request(b"esb/bond\0"), 11);
+    protocol.lifecycle(Lifecycle::Stop, 12);
+    assert_eq!(
+        protocol.request(&get(), 13).0,
+        Reply::Get(Err(ReplyError::Unsupported))
+    );
+    let mut strict = SteamHidProtocol::with_options("VGP-STRICT".into(), false);
+    for path in [
+        b"user/wireless_transport\0".as_slice(),
+        b"esb/bond\0",
+        b"esb/bond_2\0",
+    ] {
+        assert_eq!(
+            strict.request(&named_read_request(path), 0).0,
+            Reply::Set(Err(ReplyError::Unsupported))
+        );
+    }
+}
+
+#[test]
+fn steam_client_brightness_retains_atomic_raw_intent_and_reset_is_unknown() {
+    use crate::retained::RetainedProtocol;
+    let mut protocol = SteamHidProtocol::with_options("VGP-FAKE".into(), true);
+    let sibling = SteamHidProtocol::with_options("VGP-SIBLING".into(), true);
+    assert_eq!(protocol.retained().led_brightness, None);
+    for value in [24, 25, 75, 100, 98] {
+        assert_eq!(
+            protocol
+                .request(&compat_setting_request(&[(45, value)]), 0)
+                .0,
+            Reply::Set(Ok(()))
+        );
+        assert_eq!(protocol.retained().led_brightness, Some(value));
+        let revision = protocol.retained().revision;
+        protocol.request(&compat_setting_request(&[(45, value)]), 1);
+        assert_eq!(protocol.retained().revision, revision);
+    }
+    let previous = protocol.retained().clone();
+    assert_eq!(
+        protocol
+            .request(&compat_setting_request(&[(45, 24), (255, 1)]), 2)
+            .0,
+        Reply::Set(Err(ReplyError::Unsupported))
+    );
+    assert_eq!(protocol.retained(), &previous);
+    for event in [Lifecycle::Close, Lifecycle::Open] {
+        protocol.lifecycle(event, 3);
+        assert_eq!(protocol.retained().led_brightness, Some(98));
+    }
+    assert_eq!(sibling.retained().led_brightness, None);
+    protocol.request(&set("feature-lizard-enable-defaults"), 4);
+    assert_eq!(protocol.retained().led_brightness, None);
+    assert!(protocol.retained().revision > previous.revision);
+    let mut strict = SteamHidProtocol::with_options("VGP-STRICT".into(), false);
+    assert_eq!(
+        strict.request(&compat_setting_request(&[(45, 75)]), 0).0,
+        Reply::Set(Err(ReplyError::Unsupported))
+    );
+    assert_eq!(strict.retained().led_brightness, None);
+    assert_eq!(SteamController2026Outputs::default().led_brightness, None);
+}
+
+fn led_request(command: u8, payload: &[u8]) -> RequestKind {
+    let mut body = vec![0xa5; 63];
+    body[0] = command;
+    body[1] = u8::try_from(payload.len()).unwrap();
+    body[2..2 + payload.len()].copy_from_slice(payload);
+    RequestKind::Set(Report::new(ReportType::Feature, Some(1), body).unwrap())
+}
+
+fn led_reply(command: u8, payload: &[u8]) -> Reply {
+    let mut wire = vec![0; 63];
+    wire[..3].copy_from_slice(&[1, command, u8::try_from(payload.len()).unwrap()]);
+    wire[3..3 + payload.len()].copy_from_slice(payload);
+    Reply::Get(Ok(
+        Report::from_wire(ReportType::Feature, true, &wire).unwrap()
+    ))
+}
+
+#[test]
+fn steam_client_rgbw_intent_is_independent_of_override_and_lossy_readback() {
+    use crate::retained::RetainedProtocol;
+    let mut protocol = SteamHidProtocol::with_options("VGP-FAKE".into(), true);
+    let sibling = SteamHidProtocol::with_options("VGP-SIBLING".into(), true);
+    assert_eq!(protocol.retained().led_rgbw, None);
+    assert_eq!(protocol.retained().led_override, None);
+    protocol.request(&led_request(0x89, &[37]), 0);
+    assert_eq!(protocol.request(&get(), 1).0, led_reply(0x89, &[37, 0, 0]));
+    assert_eq!(protocol.retained().led_override, None); // reply default is compat policy
+    for override_value in [0, 1] {
+        assert_eq!(
+            protocol
+                .request(&compat_setting_request(&[(37, override_value)]), 2)
+                .0,
+            Reply::Set(Ok(()))
+        );
+        assert_eq!(protocol.retained().led_override, Some(override_value != 0));
+        for rgbw in [[25, 0, 0, 0], [0, 25, 0, 0], [0, 0, 25, 0], [0, 0, 0, 25]] {
+            assert_eq!(
+                protocol.request(&led_request(0xc5, &rgbw), 3),
+                (Reply::Set(Ok(())), None)
+            );
+            assert_eq!(protocol.retained().led_rgbw, Some(rgbw));
+            let before = protocol.retained().clone();
+            protocol.request(&led_request(0xc5, &rgbw), 4);
+            assert_eq!(protocol.retained(), &before);
+            protocol.request(&led_request(0xe9, &[]), 5);
+            for now in 6..9 {
+                assert_eq!(protocol.request(&get(), now).0, led_reply(0xe9, &[0; 4]));
+            }
+            assert_eq!(protocol.retained(), &before); // never substitute E9 for intent
+        }
+    }
+    assert_eq!(sibling.retained().led_rgbw, None);
+    assert_eq!(sibling.retained().led_override, None);
+    for event in [Lifecycle::Close, Lifecycle::Open] {
+        protocol.lifecycle(event, 10);
+        assert_eq!(protocol.retained().led_override, Some(true));
+        assert_eq!(protocol.retained().led_rgbw, Some([0, 0, 0, 25]));
+    }
+    protocol.request(&set("feature-lizard-enable-defaults"), 11);
+    assert_eq!(protocol.retained().led_override, None); // unknown defaults
+    assert_eq!(protocol.retained().led_rgbw, Some([0, 0, 0, 25])); // raw C5 intent is separate
+}
+
+#[test]
+fn steam_client_rgbw_invalid_sets_are_atomic_and_strict_profile_refuses_them() {
+    use crate::retained::RetainedProtocol;
+    let mut protocol = SteamHidProtocol::with_options("VGP-FAKE".into(), true);
+    protocol.request(&led_request(0xc5, &[25, 0, 0, 0]), 0);
+    let before = protocol.retained().clone();
+    for request in [
+        led_request(0xc5, &[0; 3]),
+        led_request(0xc5, &[0; 5]),
+        led_request(0xe9, &[0]),
+        compat_setting_request(&[(45, 75), (37, 2)]),
+    ] {
+        assert_eq!(
+            protocol.request(&request, 1).0,
+            Reply::Set(Err(ReplyError::Invalid))
+        );
+        assert_eq!(protocol.retained(), &before);
+        assert_eq!(
+            protocol.request(&get(), 2).0,
+            Reply::Get(Err(ReplyError::Unsupported))
+        );
+    }
+    let mut strict = SteamHidProtocol::with_options("VGP-STRICT".into(), false);
+    for request in [
+        led_request(0xc5, &[25, 0, 0, 0]),
+        led_request(0xe9, &[]),
+        led_request(0x89, &[37]),
+        compat_setting_request(&[(37, 1)]),
+    ] {
+        assert_eq!(
+            strict.request(&request, 0).0,
+            Reply::Set(Err(ReplyError::Unsupported))
+        );
+        assert_eq!(strict.retained().led_rgbw, None);
+        assert_eq!(strict.retained().led_override, None);
+    }
+    let mut native = SteamController2026Outputs::default();
+    let RequestKind::Set(report) = led_request(0xc5, &[25, 0, 0, 0]) else {
+        unreachable!()
+    };
+    assert_eq!(
+        crate::retained::OutputState::apply(&mut native, &report),
+        Err(ReplyError::Unsupported)
+    );
+    assert_eq!(native.led_rgbw, None); // uinput has no numbered HID feature channel
+}
+
+#[test]
+fn steam_client_colour_getter_uses_observed_zero_reply_and_preserves_raw_intent() {
+    use crate::retained::RetainedProtocol;
+    let mut protocol = SteamHidProtocol::with_options("VGP-FAKE".into(), true);
+    // 0, 10 and 25 are physical stimulus points. The synthetic 255 case checks
+    // the deliberately conservative zero-reply policy, not physical behavior.
+    for raw in [0, 10, 25, 255] {
+        protocol.request(&led_request(0xc5, &[raw; 4]), 0);
+        protocol.request(&led_request(0xe9, &[]), 1);
+        assert_eq!(protocol.request(&get(), 2).0, led_reply(0xe9, &[0; 4]));
+        assert_eq!(protocol.retained().led_rgbw, Some([raw; 4]));
+    }
+}
+
+#[test]
+fn negative_trigger_validation_preserves_feature_query_and_input_sequence() {
+    let mut protocol = SteamHidProtocol::with_options("VGP-FAKE".into(), true);
+    assert_eq!(
+        protocol.request(&set("feature-attrs-get"), 0).0,
+        Reply::Set(Ok(()))
+    );
+    for side in 0..2 {
+        for value in [-1, i16::MIN] {
+            let mut state = State::default();
+            state.triggers[side] = value;
+            assert_eq!(protocol.validate(&state), Err(Error::InvalidState));
+            assert_eq!(protocol.input(&state, 0), Err(Error::InvalidState));
+            assert_eq!(protocol.protocol.sequence, 0);
+        }
+    }
+    let Reply::Get(Ok(reply)) = protocol.request(&get(), 0).0 else {
+        panic!("attribute query was lost")
+    };
+    assert_eq!(
+        reply.wire(),
+        detection_fixture("steam-d9-1302-attributes.hex")
+    );
+    let state = State {
+        triggers: [0, i16::MAX],
+        ..Default::default()
+    };
+    let reports = protocol.input(&state, 0).unwrap();
+    assert_eq!(reports[0].wire()[1], 0);
+    assert_eq!(protocol.protocol.sequence, 1);
+}
+
+fn captured_desktop_reports() -> std::collections::BTreeSet<Vec<u8>> {
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/protocol-research/steam-d9-lizard-desktop.hex"
+    ))
+    .lines()
+    .map(|line| {
+        line.as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect()
+    })
+    .collect()
+}
+
+fn desktop_reports(protocol: &mut SteamHidProtocol, state: &State, now: u64) -> Vec<Vec<u8>> {
+    protocol
+        .input(state, now)
+        .unwrap()
+        .into_iter()
+        .filter(|r| matches!(r.id(), Some(0x40 | 0x41)))
+        .map(|r| r.wire())
+        .collect()
+}
+
+#[test]
+fn lizard_option_off_is_silent_and_native_input_is_preserved() {
+    let state = all_buttons();
+    let mut off = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, false);
+    assert!(desktop_reports(&mut off, &state, 0).is_empty());
+    assert_eq!(
+        off.input(&state, 1).unwrap()[0].wire()[2..6],
+        state.button_bits().to_le_bytes()
+    );
+    assert!(
+        !crate::steam_controller_2026::SteamController2026CreationOptions::default().lizard_mode
+    );
+}
+
+#[test]
+fn lizard_single_keys_match_observed_complete_reports_and_release_once() {
+    for (button, usage) in [
+        (Button::A, 0x28),
+        (Button::B, 0x29),
+        (Button::Menu, 0x29),
+        (Button::View, 0x2b),
+        (Button::Up, 0x52),
+        (Button::Down, 0x51),
+        (Button::Left, 0x50),
+        (Button::Right, 0x4f),
+    ] {
+        let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+        let mut s = State::default();
+        s.set_button(button, true);
+        let expected = vec![0x41, 0, 0, usage, 0, 0, 0, 0, 0];
+        assert!(captured_desktop_reports().contains(&expected));
+        assert_eq!(desktop_reports(&mut p, &s, 0), vec![expected]);
+        assert!(desktop_reports(&mut p, &s, 1).is_empty());
+        s.neutralize();
+        assert_eq!(
+            desktop_reports(&mut p, &s, 2),
+            vec![vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0]]
+        );
+        assert!(desktop_reports(&mut p, &s, 3).is_empty());
+    }
+    for button in [
+        Button::X,
+        Button::Y,
+        Button::Qam,
+        Button::Steam,
+        Button::L4,
+        Button::L5,
+        Button::R4,
+        Button::R5,
+        Button::LeftShoulder,
+        Button::RightShoulder,
+        Button::LeftStick,
+        Button::RightStick,
+    ] {
+        let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+        let mut s = State::default();
+        s.set_button(button, true);
+        assert!(desktop_reports(&mut p, &s, 0).is_empty());
+    }
+}
+
+#[test]
+fn lizard_mouse_uses_native_trigger_bits_repeats_and_releases() {
+    for mask in [0, 1, 2] {
+        assert!(captured_desktop_reports().contains(&vec![0x40, mask, 0, 0, 0, 0]));
+    }
+    for (button, mask) in [(Button::LeftTrigger, 2), (Button::RightTrigger, 1)] {
+        let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+        let mut s = State {
+            triggers: [32767; 2],
+            ..State::default()
+        };
+        assert!(
+            desktop_reports(&mut p, &s, 0).is_empty(),
+            "no guessed analogue threshold"
+        );
+        s.set_button(button, true);
+        assert_eq!(
+            desktop_reports(&mut p, &s, 1),
+            vec![vec![0x40, mask, 0, 0, 0, 0]]
+        );
+        assert_eq!(p.deadline(), Some(4001));
+        assert_eq!(
+            desktop_reports(&mut p, &s, 4001),
+            vec![vec![0x40, mask, 0, 0, 0, 0]]
+        );
+        s.set_button(button, false);
+        assert_eq!(
+            desktop_reports(&mut p, &s, 8001),
+            vec![vec![0x40, 0, 0, 0, 0, 0]]
+        );
+        assert_eq!(p.deadline(), None);
+    }
+}
+
+#[test]
+fn lizard_pad_scaling_fraction_overflow_and_contact_boundaries_are_bounded() {
+    let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+    let mut s = State::default();
+    s.pads[1].touch = true;
+    s.pads[1].position = [-32000, -32000];
+    assert!(
+        desktop_reports(&mut p, &s, 0).is_empty(),
+        "contact establishes baseline"
+    );
+    s.pads[1].position = [-31936, -31936];
+    assert!(desktop_reports(&mut p, &s, 1).is_empty());
+    s.pads[1].position = [-31872, -31872];
+    assert_eq!(
+        desktop_reports(&mut p, &s, 2),
+        vec![vec![0x40, 0, 1, 255, 0, 0]]
+    );
+    s.pads[1].position = [32000, 32000];
+    let reports = desktop_reports(&mut p, &s, 3);
+    assert!(reports.len() <= 4);
+    assert_eq!(
+        reports
+            .iter()
+            .map(|r| i32::from(i8::from_le_bytes([r[2]])))
+            .sum::<i32>(),
+        499
+    );
+    assert_eq!(
+        reports
+            .iter()
+            .map(|r| i32::from(i8::from_le_bytes([r[3]])))
+            .sum::<i32>(),
+        -499
+    );
+    s.pads[1].touch = false;
+    assert!(desktop_reports(&mut p, &s, 4).is_empty());
+    s.pads[1].position = [-32000, 32000];
+    s.pads[1].touch = true;
+    assert!(desktop_reports(&mut p, &s, 5).is_empty());
+    s.pads[0].touch = true;
+    p.input(&s, 6).unwrap();
+    s.pads[0].position = [1024, 1024];
+    assert_eq!(
+        desktop_reports(&mut p, &s, 7),
+        vec![vec![0x40, 0, 0, 0, 255, 1]]
+    );
+    s.pads[0].click = true;
+    assert!(desktop_reports(&mut p, &s, 8).is_empty());
+    s.pads[1].click = true;
+    assert_eq!(
+        desktop_reports(&mut p, &s, 9),
+        vec![vec![0x40, 1, 0, 0, 0, 0]]
+    );
+}
+
+#[test]
+fn lizard_setting9_gates_mouse_and_mapping_clear_gates_keyboard_independently() {
+    let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+    let mut s = State::default();
+    s.pads[1].touch = true;
+    p.input(&s, 0).unwrap();
+    assert_eq!(
+        p.request(&compat_setting_request(&[(9, 0)]), 1).0,
+        Reply::Set(Ok(()))
+    );
+    s.pads[1].position = [2048, 2048];
+    s.set_button(Button::A, true);
+    assert_eq!(
+        desktop_reports(&mut p, &s, 2),
+        vec![vec![0x41, 0, 0, 0x28, 0, 0, 0, 0, 0]]
+    );
+    assert_eq!(
+        p.request(&set("feature-lizard-disable-clear"), 3).0,
+        Reply::Set(Ok(()))
+    );
+    assert_eq!(
+        desktop_reports(&mut p, &s, 4),
+        vec![vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0]]
+    );
+    assert_eq!(
+        p.request(&set("feature-lizard-enable-map"), 5).0,
+        Reply::Set(Ok(()))
+    );
+    assert_eq!(
+        desktop_reports(&mut p, &s, 6),
+        vec![vec![0x41, 0, 0, 0x28, 0, 0, 0, 0, 0]]
+    );
+    assert_eq!(
+        p.request(&set("feature-lizard-enable-defaults"), 7).0,
+        Reply::Set(Ok(()))
+    );
+    assert_eq!(
+        p.request(&compat_setting_request(&[(71, 1)]), 8).0,
+        Reply::Set(Ok(()))
+    );
+    s.neutralize();
+    p.input(&s, 9).unwrap();
+    assert!(
+        desktop_reports(&mut p, &s, 10_000_000).is_empty(),
+        "no invented watchdog output"
+    );
+}
+
+#[test]
+fn lizard_fake_polling_acks_every_mode_write_and_cleanup_preserves_sibling() {
+    let a = Fake::default();
+    let b = Fake::default();
+    let mut first = Runtime::new(
+        SteamHidProtocol::with_desktop_options("VGP-A".into(), true, false, true),
+        a.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    let mut sibling = Runtime::new(
+        SteamHidProtocol::with_desktop_options("VGP-B".into(), true, false, true),
+        b.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    first.service(0).unwrap();
+    sibling.service(0).unwrap();
+    for (i, request) in [
+        compat_setting_request(&[(9, 0)]),
+        set("feature-lizard-disable-clear"),
+        set("feature-lizard-enable-map"),
+        set("feature-lizard-enable-defaults"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let i = u64::try_from(i).unwrap() + 1;
+        enqueue(&a, i, request);
+        first.service(i).unwrap();
+        assert_eq!(a.0.borrow().commands.iter().filter(|c|matches!(c,Command::Reply{token,reply:Reply::Set(Ok(()))}if token.ordinal==i)).count(),1);
+        assert!(!first.wants_write());
+    }
+    first
+        .update(|s| {
+            s.set_button(Button::A, true);
+            Ok(())
+        })
+        .unwrap();
+    first.service(20).unwrap();
+    first.close().unwrap();
+    first.close().unwrap();
+    sibling
+        .update(|s| {
+            s.set_button(Button::View, true);
+            Ok(())
+        })
+        .unwrap();
+    sibling.service(21).unwrap();
+    assert!(
+        b.0.borrow()
+            .commands
+            .iter()
+            .any(|c| matches!(c,Command::Input(r)if r.wire()==vec![0x41,0,0,0x2b,0,0,0,0,0]))
+    );
+    assert_eq!(a.0.borrow().closes, 1);
+    sibling.close().unwrap();
+    let mut p = SteamHidProtocol::with_desktop_options("VGP-C".into(), true, false, true);
+    let mut s = State::default();
+    s.set_button(Button::RightTrigger, true);
+    p.input(&s, 0).unwrap();
+    p.lifecycle(Lifecycle::Stop, 1);
+    p.lifecycle(Lifecycle::Stop, 2);
+    assert!(p.input(&s, 3).unwrap().is_empty());
+    assert_eq!(p.deadline(), None);
+    p.lifecycle(
+        Lifecycle::Start {
+            numbered_input: true,
+            numbered_output: true,
+            numbered_feature: true,
+        },
+        4,
+    );
+    assert!(desktop_reports(&mut p, &State::default(), 5).is_empty());
+}
+
+#[test]
+fn lizard_keyboard_deduplicates_shared_keys_and_reports_six_slot_rollover() {
+    let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+    let mut s = State::default();
+    s.set_button(Button::B, true);
+    s.set_button(Button::Menu, true);
+    assert_eq!(
+        desktop_reports(&mut p, &s, 0),
+        vec![vec![0x41, 0, 0, 0x29, 0, 0, 0, 0, 0]]
+    );
+    s.set_button(Button::B, false);
+    assert!(desktop_reports(&mut p, &s, 1).is_empty());
+    for button in [
+        Button::A,
+        Button::View,
+        Button::Up,
+        Button::Down,
+        Button::Left,
+        Button::Right,
+    ] {
+        s.set_button(button, true);
+    }
+    assert_eq!(
+        desktop_reports(&mut p, &s, 2),
+        vec![vec![0x41, 0, 0, 1, 1, 1, 1, 1, 1]]
+    );
+    s.set_button(Button::A, false);
+    let keys = desktop_reports(&mut p, &s, 3);
+    assert_eq!(
+        keys,
+        vec![vec![0x41, 0, 0, 0x29, 0x2b, 0x4f, 0x50, 0x51, 0x52]]
+    );
+    s.neutralize();
+    assert_eq!(
+        desktop_reports(&mut p, &s, 4),
+        vec![vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0]]
+    );
+}
+
+#[test]
+fn update_and_bootloader_requests_never_schedule_an_accepted_exchange() {
+    // Synthetic zero-data requests against a fake transport only. This test
+    // never opens a HID device or sends an update command to any controller.
+    let fake = Fake::default();
+    let mut runtime = Runtime::new(
+        SteamHidProtocol::with_options("VGP-FAKE".into(), true),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    runtime.service(0).unwrap();
+    for (index, command) in [0x90, 0x9f].into_iter().enumerate() {
+        let ordinal = u64::try_from(index).unwrap() * 3 + 1;
+        enqueue(&fake, ordinal, set("feature-attrs-get"));
+        runtime.service(ordinal).unwrap();
+        let mut body = vec![0; 63];
+        body[0] = command;
+        enqueue(
+            &fake,
+            ordinal + 1,
+            RequestKind::Set(Report::new(ReportType::Feature, Some(1), body).unwrap()),
+        );
+        runtime.service(ordinal + 1).unwrap();
+        enqueue(&fake, ordinal + 2, get());
+        runtime.service(ordinal + 2).unwrap();
+        let commands = &fake.0.borrow().commands;
+        assert_eq!(commands.iter().filter(|c| matches!(c, Command::Reply { token, reply: Reply::Set(Err(ReplyError::Unsupported)) } if token.ordinal == ordinal + 1)).count(), 1);
+        assert_eq!(commands.iter().filter(|c| matches!(c, Command::Reply { token, reply: Reply::Get(Err(ReplyError::Unsupported)) } if token.ordinal == ordinal + 2)).count(), 1);
+        assert!(!runtime.wants_write());
+    }
+    for now in [10, 1000, 1_000_000] {
+        runtime.service(now).unwrap();
+    }
+    runtime.close().unwrap();
+    runtime.close().unwrap();
+    assert_eq!(fake.0.borrow().closes, 1);
+}
+
+#[test]
+fn lizard_batched_mode_changes_clear_mouse_history_but_invalid_batches_preserve_it() {
+    let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+    let mut s = State::default();
+    s.pads[1].touch = true;
+    assert!(desktop_reports(&mut p, &s, 0).is_empty());
+    s.pads[1].position = [128, 0];
+    assert_eq!(
+        desktop_reports(&mut p, &s, 1),
+        vec![vec![0x40, 0, 1, 0, 0, 0]]
+    );
+    // No input poll between either pair of host mode requests.
+    for (off, on) in [
+        (
+            compat_setting_request(&[(9, 0)]),
+            compat_setting_request(&[(9, 1)]),
+        ),
+        (
+            set("feature-lizard-disable-clear"),
+            set("feature-lizard-enable-map"),
+        ),
+    ] {
+        assert_eq!(p.request(&off, 2).0, Reply::Set(Ok(())));
+        assert_eq!(p.request(&on, 3).0, Reply::Set(Ok(())));
+        s.pads[1].position[0] = -s.pads[1].position[0] + 1000;
+        assert!(desktop_reports(&mut p, &s, 4).is_empty());
+        s.pads[1].position[0] += 128;
+        assert_eq!(
+            desktop_reports(&mut p, &s, 5),
+            vec![vec![0x40, 0, 1, 0, 0, 0]]
+        );
+    }
+    assert_eq!(
+        p.request(&compat_setting_request(&[(9, 0), (250, 1)]), 6).0,
+        Reply::Set(Err(ReplyError::Unsupported))
+    );
+    s.pads[1].position[0] += 128;
+    assert_eq!(
+        desktop_reports(&mut p, &s, 7),
+        vec![vec![0x40, 0, 1, 0, 0, 0]]
+    );
+}
+
+#[test]
+fn lizard_mapping_transitions_release_held_mouse_and_keys_exactly_once() {
+    for request in [
+        set("feature-lizard-disable-clear"),
+        set("feature-lizard-enable-map"),
+    ] {
+        let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+        let mut s = State::default();
+        s.set_button(Button::A, true);
+        s.set_button(Button::RightTrigger, true);
+        assert_eq!(desktop_reports(&mut p, &s, 0).len(), 2);
+        assert_eq!(p.request(&request, 1).0, Reply::Set(Ok(())));
+        assert_eq!(p.deadline(), Some(0));
+        // A second accepted reset before polling must preserve/coalesce releases.
+        assert_eq!(p.request(&request, 2).0, Reply::Set(Ok(())));
+        assert_eq!(
+            desktop_reports(&mut p, &s, 3),
+            vec![
+                vec![0x40, 0, 0, 0, 0, 0],
+                vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0],
+            ]
+        );
+        assert_eq!(p.deadline(), None);
+        s.neutralize();
+        for now in [4, 4_000, 1_000_000] {
+            assert!(desktop_reports(&mut p, &s, now).is_empty());
+        }
+    }
+}
+
+#[test]
+fn lizard_mouse_only_transitions_release_buttons_and_preserve_held_keyboard() {
+    for request in [
+        compat_setting_request(&[(9, 0)]),
+        set("feature-lizard-enable-defaults"),
+    ] {
+        let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+        let mut s = State::default();
+        s.set_button(Button::A, true);
+        s.set_button(Button::LeftTrigger, true);
+        assert_eq!(desktop_reports(&mut p, &s, 0).len(), 2);
+        assert_eq!(p.request(&request, 1).0, Reply::Set(Ok(())));
+        assert_eq!(p.deadline(), Some(0));
+        assert_eq!(
+            desktop_reports(&mut p, &s, 2),
+            vec![vec![0x40, 0, 0, 0, 0, 0]]
+        );
+        s.set_button(Button::LeftTrigger, false);
+        assert!(desktop_reports(&mut p, &s, 3).is_empty());
+        s.set_button(Button::A, false);
+        assert_eq!(
+            desktop_reports(&mut p, &s, 4),
+            vec![vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0]]
+        );
+        assert!(desktop_reports(&mut p, &s, 5).is_empty());
+    }
+}
+
+#[test]
+fn lizard_empty_or_rejected_mode_changes_queue_no_release() {
+    for request in [
+        set("feature-lizard-disable-clear"),
+        set("feature-lizard-enable-map"),
+        set("feature-lizard-enable-defaults"),
+        compat_setting_request(&[(9, 0)]),
+    ] {
+        let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+        assert!(desktop_reports(&mut p, &State::default(), 0).is_empty());
+        assert_eq!(p.request(&request, 1).0, Reply::Set(Ok(())));
+        assert_eq!(p.deadline(), None);
+        assert!(desktop_reports(&mut p, &State::default(), 2).is_empty());
+    }
+    let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+    let mut s = State::default();
+    s.set_button(Button::A, true);
+    s.set_button(Button::RightTrigger, true);
+    p.input(&s, 0).unwrap();
+    let before = p.protocol.outputs.clone();
+    assert_eq!(
+        p.request(&compat_setting_request(&[(9, 0), (250, 1)]), 1).0,
+        Reply::Set(Err(ReplyError::Unsupported))
+    );
+    assert_eq!(p.protocol.outputs, before);
+    assert!(!p.protocol.desktop.has_releases());
+    // The existing held-button refresh is not a release or a key re-press.
+    assert_eq!(
+        desktop_reports(&mut p, &s, 2),
+        vec![vec![0x40, 1, 0, 0, 0, 0]]
+    );
+    assert_eq!(
+        p.request(&compat_setting_request(&[(9, 2)]), 3).0,
+        Reply::Set(Err(ReplyError::Invalid))
+    );
+    assert!(!p.protocol.desktop.has_releases());
+}
+
+#[test]
+fn lizard_runtime_services_release_without_application_input_and_preserves_sibling() {
+    let fake = Fake::default();
+    let sibling_fake = Fake::default();
+    let mut runtime = Runtime::new(
+        SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    let mut sibling = Runtime::new(
+        SteamHidProtocol::with_desktop_options("VGP-SIBLING".into(), true, false, true),
+        sibling_fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    runtime.service(0).unwrap();
+    sibling.service(0).unwrap();
+    for r in [&mut runtime, &mut sibling] {
+        r.update(|s| {
+            s.set_button(Button::A, true);
+            s.set_button(Button::RightTrigger, true);
+            Ok(())
+        })
+        .unwrap();
+        r.service(1).unwrap();
+    }
+    let rejected_start = fake.0.borrow().commands.len();
+    enqueue(&fake, 1, compat_setting_request(&[(9, 0), (250, 1)]));
+    runtime.service(2).unwrap();
+    let rejected = fake.0.borrow().commands[rejected_start..].to_vec();
+    assert_eq!(rejected.len(), 1);
+    assert!(matches!(
+        &rejected[0],
+        Command::Reply {
+            reply: Reply::Set(Err(ReplyError::Unsupported)),
+            ..
+        }
+    ));
+    let start = fake.0.borrow().commands.len();
+    enqueue(&fake, 2, set("feature-lizard-disable-clear"));
+    runtime.service(3).unwrap();
+    let commands = fake.0.borrow().commands[start..].to_vec();
+    assert!(matches!(
+        &commands[0],
+        Command::Reply {
+            reply: Reply::Set(Ok(())),
+            ..
+        }
+    ));
+    let released: Vec<_> = commands
+        .iter()
+        .filter_map(|c| match c {
+            Command::Input(r) if matches!(r.id(), Some(0x40 | 0x41)) => Some(r.wire()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        released,
+        vec![
+            vec![0x40, 0, 0, 0, 0, 0],
+            vec![0x41, 0, 0, 0, 0, 0, 0, 0, 0]
+        ]
+    );
+    let count = fake.0.borrow().commands.len();
+    for now in [4, 4_001, 20_000] {
+        runtime.service(now).unwrap();
+    }
+    assert_eq!(fake.0.borrow().commands.len(), count);
+    let sibling_start = sibling_fake.0.borrow().commands.len();
+    sibling.service(4_001).unwrap();
+    assert!(
+        sibling_fake.0.borrow().commands[sibling_start..]
+            .iter()
+            .any(|c| matches!(c, Command::Input(r) if r.wire() == vec![0x40, 1, 0, 0, 0, 0]))
+    );
+    runtime.close().unwrap();
+    runtime.close().unwrap();
+    sibling.close().unwrap();
+    assert_eq!(fake.0.borrow().closes, 1);
+    assert_eq!(sibling_fake.0.borrow().closes, 1);
+}
+
+#[test]
+fn lizard_stop_discards_pending_releases_without_replaying_them_after_start() {
+    let mut p = SteamHidProtocol::with_desktop_options("VGP-FAKE".into(), true, false, true);
+    let mut s = State::default();
+    s.set_button(Button::A, true);
+    s.set_button(Button::RightTrigger, true);
+    p.input(&s, 0).unwrap();
+    p.request(&set("feature-lizard-disable-clear"), 1);
+    assert!(p.protocol.desktop.has_releases());
+    p.lifecycle(Lifecycle::Stop, 2);
+    p.lifecycle(Lifecycle::Stop, 3);
+    assert!(!p.protocol.desktop.has_releases());
+    assert_eq!(p.deadline(), None);
+    assert!(p.input(&s, 4).unwrap().is_empty());
+    p.lifecycle(
+        Lifecycle::Start {
+            numbered_input: true,
+            numbered_output: true,
+            numbered_feature: true,
+        },
+        5,
+    );
+    p.request(&set("feature-lizard-enable-map"), 6);
+    assert!(desktop_reports(&mut p, &State::default(), 7).is_empty());
 }

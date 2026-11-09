@@ -9,7 +9,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-GENERATOR_VERSION = 5
+GENERATOR_VERSION = 6
 SUBMODULE = 'protocol-research'
 
 
@@ -58,6 +58,18 @@ def check_acceptance_evidence(root, research, pin):
         if missing:
             raise ValueError('missing acceptance evidence at declared revision: '
                              + path.name + ': ' + ', '.join(sorted(missing)))
+
+
+def validate_desktop_fixture(data):
+    """Keep complete reviewed mouse/keyboard records, not a flat ambiguous blob."""
+    for line in data.decode('ascii').splitlines():
+        packet = bytes.fromhex(line)
+        if not packet or (packet[0], len(packet)) not in ((0x40, 6), (0x41, 9)):
+            raise ValueError('unexpected desktop report shape')
+        if packet[0] == 0x40 and packet[1] & ~3:
+            raise ValueError('unexpected desktop mouse reserved bits')
+        if packet[0] == 0x41 and (packet[2] or any(key > 101 for key in packet[3:])):
+            raise ValueError('unexpected desktop keyboard fields')
 
 
 def check(root, write=False, verify_remote=False):
@@ -126,13 +138,15 @@ def check(root, write=False, verify_remote=False):
                                 ('steam-c6-reply-attributes-short', 3),
                                 ('steam-d9-1302-attributes', 63),
                                 ('steam-d9-steam-settings', 3520),
+                                ('steam-d9-lizard-desktop', 2202),
                                 ('steam-s3-1302-report-descriptor', 372)]:
         record_path = 'records/fixture/' + name + '.json'
         record_bytes = (research / record_path).read_bytes()
         record = json.loads(record_bytes)
         path = (research / record['path']).resolve()
         physical = name in ('steam-s3-1302-report-descriptor',
-                            'steam-d9-1302-attributes', 'steam-d9-steam-settings')
+                            'steam-d9-1302-attributes', 'steam-d9-steam-settings',
+                            'steam-d9-lizard-desktop')
         expected_kind = 'physical' if physical else 'synthetic'
         if not path.is_relative_to(research) or record['kind'] != expected_kind:
             raise ValueError('expected a research-local ' + expected_kind + ' fixture')
@@ -148,7 +162,9 @@ def check(root, write=False, verify_remote=False):
                 raise ValueError('unexpected consumer shape: ' + name)
         elif len(bytes.fromhex(data.decode().strip())) != expected_size:
             raise ValueError('unexpected fixture size: ' + name)
-        if physical and name != 'steam-d9-steam-settings':
+        if name == 'steam-d9-lizard-desktop':
+            validate_desktop_fixture(data)
+        if physical and name not in ('steam-d9-steam-settings', 'steam-d9-lizard-desktop'):
             # steam-s3-1302-report-shapes / steam-s3-1302-usb-interface.
             # Compile the exact decoded capture, without parsing profiles at runtime.
             raw = bytes.fromhex(data.decode())

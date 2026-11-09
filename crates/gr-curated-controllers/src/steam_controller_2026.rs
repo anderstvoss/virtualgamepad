@@ -14,7 +14,11 @@
 //! state.pads[0] = SteamTrackpadState {
 //!     position: [-100, 200], pressure: 123, touch: true, click: false,
 //! };
-//! state.motion = SteamMotionSample { gyroscope: [10, -20, 30], ..Default::default() };
+//! // Synthetic stationary pose for a Steam motion example, not calibration.
+//! state.motion = SteamMotionSample {
+//!     gyroscope: [10, -20, 30], accelerometer: [0, 0, 16384],
+//!     quaternion: [32767, 0, 0, 0], ..Default::default()
+//! };
 //! assert!(state.pressed(SteamController2026Button::Menu));
 //! state.neutralize();
 //! assert_eq!(state, SteamController2026State::default());
@@ -27,6 +31,8 @@ mod definition;
 #[allow(dead_code)] // Exact compiled capture is used by the private 14c UHID path.
 mod descriptor;
 mod evdev;
+mod lizard;
+mod streaming;
 mod topology;
 pub use codec::{SteamController2026Haptic, SteamController2026Outputs};
 pub use controller::{
@@ -34,6 +40,7 @@ pub use controller::{
     create_steam_controller_2026, create_steam_controller_2026_with_options,
 };
 pub(crate) use definition::SteamController2026Definition;
+pub use streaming::{SteamController2026StreamOutputs, SteamController2026StreamPacket};
 
 /// Stable compiled family ID for the wired Steam family.
 pub use gr_controller_wire::registry::ids::STEAM_CONTROLLER_2026 as STEAM_CONTROLLER_2026_ID;
@@ -109,7 +116,12 @@ pub struct SteamTrackpadState {
     /// Digital pad click, independent of contact and pressure.
     pub click: bool,
 }
-/// Native IMU sample. Records: `steam-c6-input-42`, `steam-c6-input-scaling`.
+/// Native IMU sample. Raw-zero defaults do not provide a valid pose to Steam.
+/// Callers sending gyro for Steam must also supply a valid acceleration and
+/// quaternion sample; the demo uses a synthetic stationary pose. D9 #305 observed
+/// acceptance with acceleration [0, 0, 16384] and quaternion [32767, 0, 0, 0];
+/// their individual necessity and physical calibration were not isolated.
+/// Records: `steam-c6-input-42`, `steam-c6-input-scaling`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SteamMotionSample {
     /// Native 0x42/0x45 timestamp interpreted as microseconds by SDL.
@@ -128,7 +140,8 @@ pub struct SteamController2026State {
     buttons: u32,
     /// Left/right sticks, each native signed X/Y.
     pub sticks: [[i16; 2]; 2],
-    /// Left/right analog triggers as signed raw consumer fields.
+    /// Left/right native triggers, accepted range 0..=32767.
+    /// Negative signed inputs are rejected for both wired UHID and uinput.
     pub triggers: [i16; 2],
     /// Left/right trackpads, with independent touch, click and pressure.
     pub pads: [SteamTrackpadState; 2],
