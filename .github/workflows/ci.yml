@@ -82,6 +82,70 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
+  cross-target-lint:
+    name: Cross-target lint (${{ matrix.target }})
+    # Compiles and lints the workspace for macOS and Windows from a Linux
+    # runner, so code that only builds on Linux is caught without waiting
+    # on GitHub's hosted macOS queue. It does not run tests; the
+    # rust-test matrix still runs them on real macOS and Windows runners.
+    # Kept separate from rust-lint so a cross-target failure is reported
+    # on its own check.
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-pc-windows-msvc]
+
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            raw.githubusercontent.com:443
+            uploads.github.com:443
+            static.rust-lang.org:443
+            static.crates.io:443
+            index.crates.io:443
+            crates.io:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        # See rust-lint job's Install Rust step for rationale.
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Add cross target to the pinned toolchain
+        # rustup resolves rust-toolchain.toml here, so the target is added
+        # to the pinned channel that cargo actually uses.
+        env:
+          TARGET: ${{ matrix.target }}
+        run: rustup target add "$TARGET"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: cross-${{ matrix.target }}
+
+      - name: Clippy for target
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo clippy --locked --workspace --all-targets --all-features --target "$TARGET" -- -D warnings
+
   msrv:
     name: MSRV (cargo check on rust-version)
     # Verifies the crate still builds on the rust-version declared in
