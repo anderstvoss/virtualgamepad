@@ -132,8 +132,11 @@ fn assert_shape(nodes: &[serde_json::Value], index: usize) {
 #[ignore = "requires accessible local UHID, hid-wiimote, event and LED permissions; records bounded host observations"]
 fn bluetooth_host_binding_extensions_outputs_and_battery_probe() {
     let mut c = create_wii_remote(
-        gr_realization_api::RealizationTarget::LINUX_UHID_BLUETOOTH,
-        0,
+        crate::CreationOptions {
+            target: gr_realization_api::RealizationTarget::LINUX_UHID_BLUETOOTH,
+            session: gr_realization_api::RealizationSessionId(0),
+        },
+        WiiRemoteOptions::default(),
     )
     .unwrap();
     c.set_battery_raw(0xc0).unwrap();

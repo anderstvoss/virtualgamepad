@@ -42,9 +42,15 @@ fn error(p: &mut WiiProtocol, slave: u8, start: u8, count: u16) {
 }
 fn imported() -> WiiProtocol {
     let (mp, n, c) = super::super::calibration::synthetic_blocks();
-    WiiProtocol::with_image(WiiEepromImage::default().with_extension_calibration(
-        WiiExtensionCalibration::import(Some(mp), Some(n), Some(c)).unwrap(),
-    ))
+    WiiProtocol::with_image(
+        WiiEepromImage::default().with_extension_calibration(
+            WiiExtensionCalibration::default()
+                .with_motion_plus(Some(mp))
+                .and_then(|calibration| calibration.with_nunchuk(Some(n)))
+                .and_then(|calibration| calibration.with_classic(Some(c)))
+                .unwrap(),
+        ),
+    )
 }
 fn attach(p: &mut WiiProtocol, ext: WiiExtension, mp: bool) {
     p.change_attachment(ext, mp, 1).unwrap();
@@ -78,9 +84,10 @@ fn missing_imports_keep_exact_error_seven_without_pending_reads() {
 fn a_missing_addressed_block_never_falls_back_to_an_imported_other_device() {
     let (mp, n, _) = super::super::calibration::synthetic_blocks();
     for mp_only in [false, true] {
-        let calibration =
-            WiiExtensionCalibration::import(mp_only.then_some(mp), (!mp_only).then_some(n), None)
-                .unwrap();
+        let calibration = WiiExtensionCalibration::default()
+            .with_motion_plus(mp_only.then_some(mp))
+            .and_then(|calibration| calibration.with_nunchuk((!mp_only).then_some(n)))
+            .unwrap();
         let mut p = WiiProtocol::with_image(
             WiiEepromImage::default().with_extension_calibration(calibration),
         );
@@ -117,7 +124,7 @@ fn addressed_device_wins_in_all_modes_and_mp_reads_are_chunked() {
     ] {
         let mut p = imported();
         // Preserve the pre-shim refusal sequence as the explicit off control.
-        p.memory.options = crate::wii_remote::WiiRemoteCreationOptions {
+        p.memory.options = crate::wii_remote::Compat {
             motionplus_passthrough_id_mirror: false,
             motionplus_passthrough_calibration_copy: false,
             motionplus_inactive_id_external_style: false,
@@ -197,10 +204,10 @@ fn detach_hides_imports_reattach_restores_them_and_writes_are_rejected() {
 
 #[test]
 fn compat_switches_are_independent_and_f7_never_claims_challenge_readiness() {
-    use crate::wii_remote::WiiRemoteCreationOptions;
+    use crate::wii_remote::Compat;
     assert_eq!(
-        WiiRemoteCreationOptions::default(),
-        WiiRemoteCreationOptions {
+        Compat::default(),
+        Compat {
             motionplus_passthrough_id_mirror: true,
             motionplus_passthrough_calibration_copy: true,
             motionplus_inactive_id_external_style: false,
@@ -226,7 +233,7 @@ fn compat_switches_are_independent_and_f7_never_claims_challenge_readiness() {
                     ),
                 ] {
                     let mut p = imported();
-                    p.memory.options = WiiRemoteCreationOptions {
+                    p.memory.options = Compat {
                         motionplus_passthrough_id_mirror: mirror,
                         motionplus_passthrough_calibration_copy: copy,
                         motionplus_inactive_id_external_style: false,

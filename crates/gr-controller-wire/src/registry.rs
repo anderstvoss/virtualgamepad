@@ -111,7 +111,7 @@ pub const WII_REMOTE: FamilySpec = FamilySpec {
     dummy_hcd_report_length: None,
     usb_profile: None,
 };
-/// Wired Steam metadata only; provider construction remains gated by step 16.
+/// Wired Steam has no broker, gadget or USB/IP profile.
 pub const STEAM_CONTROLLER_2026: FamilySpec = FamilySpec {
     id: ControllerId::new("virtualgamepad.steam-controller-2026"),
     worker_name: "steam-controller-2026",
@@ -131,6 +131,7 @@ macro_rules! compiled_families {
             (switch_pro, SwitchProDefinition, SWITCH_PRO, []),
             (xbox360, Xbox360Definition, XBOX360, [Xbox360]),
             (wii_remote, WiiRemoteDefinition, WII_REMOTE, []),
+            (steam_controller_2026, SteamController2026Definition, STEAM_CONTROLLER_2026, []),
         }
     };
 }
@@ -143,8 +144,6 @@ crate::compiled_families!(metadata);
 
 pub mod ids {
     use super::ControllerId;
-    /// Staged Steam family ID; not advertised by the active family registry.
-    pub const STEAM_CONTROLLER_2026: ControllerId = super::STEAM_CONTROLLER_2026.id;
     macro_rules! constants {
         ($(($module:ident, $definition:ident, $spec:ident, [$($variant:ident)?]),)*) => { $(pub const $spec: ControllerId = super::$spec.id;)* };
     }

@@ -1,73 +1,40 @@
-use super::{BLUETOOTH, UINPUT, WiiRemoteButton, WiiRemoteState};
-use crate::common;
+use super::{
+    BLUETOOTH, UINPUT, WiiRemoteButton, WiiRemoteIdentity, WiiRemoteOptions, WiiRemoteState,
+};
+use crate::{CreationOptions, common};
 use gr_controller_contract::{CommitError, ControlError, ControllerSurface, DigitalControlUpdate};
 use gr_realization_api::{ProviderError, RawReverseEvent, RealizationTarget};
 
 pub struct WiiRemoteController {
+    identity: WiiRemoteIdentity,
     pub(super) live: common::topology::LiveTopology<super::codec::WiiProtocol>,
     pub(super) session: Box<Storage>,
     pub(super) native: Option<super::native::Nodes>,
 }
-/// Create an original Remote with an empty, explicitly unmodelled EEPROM.
+/// Create a Remote with optional caller-owned EEPROM and compatibility settings.
 pub fn create_wii_remote(
-    target: RealizationTarget,
-    session: u64,
+    options: CreationOptions,
+    family: WiiRemoteOptions,
 ) -> Result<WiiRemoteController, ProviderError> {
-    create_wii_remote_with_image(
-        target,
-        session,
-        super::WiiRemoteRevision::Original,
-        super::WiiEepromImage::default(),
-    )
+    create(options, family, None)
 }
-pub fn create_wii_remote_with_image(
-    target: RealizationTarget,
-    session: u64,
-    revision: super::WiiRemoteRevision,
-    image: super::WiiEepromImage,
-) -> Result<WiiRemoteController, ProviderError> {
-    create(target, session, revision, image, None)
-}
-/// Create with caller resources and independent creation-time compat switches.
-/// Existing constructors use the default (enabled) policy.
-pub fn create_wii_remote_with_options(
-    target: RealizationTarget,
-    session: u64,
-    revision: super::WiiRemoteRevision,
-    image: super::WiiEepromImage,
-    options: super::WiiRemoteCreationOptions,
-) -> Result<WiiRemoteController, ProviderError> {
-    create_configured(target, session, revision, image, options, None)
-}
+
 pub(super) fn create(
-    target: RealizationTarget,
-    session: u64,
-    revision: super::WiiRemoteRevision,
-    image: super::WiiEepromImage,
-    provider: Option<std::sync::Arc<dyn gr_realization_api::NativeProviderFactory>>,
-) -> Result<WiiRemoteController, ProviderError> {
-    create_configured(
-        target,
-        session,
-        revision,
-        image,
-        super::WiiRemoteCreationOptions::default(),
-        provider,
-    )
-}
-fn create_configured(
-    target: RealizationTarget,
-    session: u64,
-    revision: super::WiiRemoteRevision,
-    image: super::WiiEepromImage,
-    options: super::WiiRemoteCreationOptions,
+    options: CreationOptions,
+    family: WiiRemoteOptions,
     provider: Option<std::sync::Arc<dyn gr_realization_api::NativeProviderFactory>>,
 ) -> Result<WiiRemoteController, ProviderError> {
     use super::{
         definition::Configured,
         realizations::{self, Role},
     };
-    use gr_realization_api::RealizationSessionId;
+    let target = options.target;
+    let WiiRemoteOptions {
+        revision,
+        eeprom_image: image,
+        identity,
+        compat,
+    } = family;
     if !revision.has_identity_evidence()
         || !matches!(
             target,
@@ -85,10 +52,11 @@ fn create_configured(
             reason: "uinput has no EEPROM or extension calibration address channel".into(),
         });
     }
+    let identity = identity.map_or_else(WiiRemoteIdentity::generate, Ok)?;
     let state = WiiRemoteState::new(revision);
     let driver = Configured {
         image,
-        options,
+        options: compat,
         revision,
         role: Role::Core,
         provider: provider.clone(),
@@ -98,14 +66,14 @@ fn create_configured(
     } else {
         realizations::hid(revision)
     };
-    let session = common::create(
-        driver,
-        specification,
-        crate::CreationOptions {
-            target,
-            session: RealizationSessionId(session),
-        },
-    )?;
+    let mut session = common::create(driver, specification, options)?;
+    if target == RealizationTarget::LINUX_UHID_BLUETOOTH {
+        // Existing Wii consumer records do not establish the meaning of uniq.
+        // Keep the address as association metadata and preserve the host label.
+        let mut association = session.association().clone();
+        association.requested_unique_id = Some(common::address_label(identity.bytes()));
+        session = session.with_association(association);
+    }
     let native = if target == RealizationTarget::LINUX_UINPUT {
         Some(super::native::Nodes::new(
             provider,
@@ -140,12 +108,19 @@ fn create_configured(
         )
     };
     Ok(WiiRemoteController {
+        identity,
         session: Box::new(storage),
         live,
         native,
     })
 }
 impl WiiRemoteController {
+    /// Resolved identity for caller-owned restoration, including on uinput.
+    #[must_use]
+    pub const fn identity(&self) -> WiiRemoteIdentity {
+        self.identity
+    }
+
     #[must_use]
     pub fn current_topology(&self) -> &'static gr_controller_contract::InputTopology {
         self.live.current_topology()
@@ -246,6 +221,8 @@ impl WiiRemoteController {
             &BLUETOOTH
         }
     }
+    /// On Bluetooth-bus UHID the requested uniq is the library identity.
+    /// The host still receives a synthetic transport label.
     #[must_use]
     pub fn association(&self) -> &crate::ControllerAssociation {
         self.native

@@ -1,9 +1,9 @@
 use super::*;
-use crate::common;
 use gr_realization_api::*;
 use std::sync::{Arc, Mutex};
 #[derive(Default)]
 struct Record {
+    opened: Vec<ProviderOpenRequest>,
     sent: Vec<ProviderFrame>,
     events: std::collections::VecDeque<RawReverseEvent>,
     closed: usize,
@@ -24,8 +24,9 @@ impl NativeProviderFactory for Fake {
     }
     fn open(
         &self,
-        _: ProviderOpenRequest,
+        request: ProviderOpenRequest,
     ) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
+        self.0.lock().unwrap().opened.push(request);
         Ok(Box::new(self.clone()))
     }
 }
@@ -73,46 +74,100 @@ impl NativeProviderSession for Fake {
     }
 }
 fn create(image: WiiEepromImage) -> (WiiRemoteController, Fake) {
-    create_with_options(image, WiiRemoteCreationOptions::default())
+    create_with_options(image, Compat::default())
 }
-fn create_with_options(
-    image: WiiEepromImage,
-    options: WiiRemoteCreationOptions,
-) -> (WiiRemoteController, Fake) {
+fn create_with_options(image: WiiEepromImage, options: Compat) -> (WiiRemoteController, Fake) {
     let fake = Fake::default();
-    let driver = definition::Configured {
-        options,
-        image,
-        role: super::realizations::Role::Core,
-        revision: WiiRemoteRevision::Original,
-        provider: Some(Arc::new(fake.clone())),
-    };
-    let mut realization = common::hid_realization("synthetic-wii-test", 0x057e, 0x0306);
-    let NativeControllerRealization::Uhid(spec) = &mut realization else {
-        unreachable!()
-    };
-    spec.target = RealizationTarget::LINUX_UHID_BLUETOOTH;
-    spec.numbered_input_reports = true;
-    spec.numbered_output_reports = true;
-    let session = common::create(
-        driver,
-        realization,
+    let controller = controller::create(
         crate::CreationOptions {
             target: RealizationTarget::LINUX_UHID_BLUETOOTH,
             session: RealizationSessionId(7),
         },
+        WiiRemoteOptions {
+            compat: options,
+            ..WiiRemoteOptions::default().with_eeprom_image(image)
+        },
+        Some(Arc::new(fake.clone())),
     )
     .unwrap();
-    let controller = WiiRemoteController {
-        native: None,
-        session: Box::new(controller::Storage::Hid(
-            common::resources::ResourceSession::new(session).unwrap(),
-        )),
-        live: common::topology::LiveTopology::new(&topology::MAXIMUM, &topology::BASE, None)
-            .unwrap(),
-    };
     (controller, fake)
 }
+#[test]
+fn wii_address_is_restorable_association_metadata_with_a_fresh_host_label() {
+    let (mut first, first_io) = create(WiiEepromImage::default());
+    let (mut second, second_io) = create(WiiEepromImage::default());
+    let identity = first.identity();
+    assert_ne!(identity, second.identity());
+    assert_eq!(identity.bytes()[0] & 3, 2);
+
+    let options = crate::CreationOptions {
+        target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+        session: RealizationSessionId(7),
+    };
+    let fake = Fake::default();
+    let bad =
+        WiiRemoteIdentity::from_bytes(identity.bytes().map(|byte| byte | 1)).and_then(|invalid| {
+            controller::create(
+                options,
+                WiiRemoteOptions::default().with_identity(invalid),
+                Some(Arc::new(fake.clone())),
+            )
+        });
+    assert!(bad.is_err());
+    assert!(fake.0.lock().unwrap().opened.is_empty());
+
+    let restored_identity = WiiRemoteIdentity::from_bytes(identity.bytes()).unwrap();
+    let mut restored = controller::create(
+        options,
+        WiiRemoteOptions::default().with_identity(restored_identity),
+        Some(Arc::new(fake.clone())),
+    )
+    .unwrap();
+    let association = restored.association();
+    assert_eq!(restored.identity(), first.identity());
+    assert_eq!(
+        association.requested_unique_id,
+        first.association().requested_unique_id
+    );
+    assert_ne!(
+        association.requested_unique_id,
+        second.association().requested_unique_id
+    );
+    assert_eq!(
+        association.requested_unique_id.as_deref(),
+        Some(crate::common::address_label(identity.bytes()).as_str())
+    );
+    assert_ne!(
+        association.requested_physical_path,
+        first.association().requested_physical_path
+    );
+    assert!(restored.surface().restrictions().iter().any(|restriction| {
+        restriction.feature == "host-visible Bluetooth identity"
+            && restriction.reason.contains("association metadata")
+    }));
+    let record = fake.0.lock().unwrap();
+    let NativeControllerRealization::Uhid(spec) = &record.opened[0].realization else {
+        panic!("Bluetooth UHID");
+    };
+    assert_eq!(spec.bus_type, 5);
+    assert!(spec.unique_id.starts_with("virtualgamepad-"));
+    assert_ne!(
+        Some(&spec.unique_id),
+        association.requested_unique_id.as_ref()
+    );
+    drop(record);
+
+    first.close();
+    first.close();
+    assert_eq!(first_io.0.lock().unwrap().closed, 1);
+    for controller in [&mut second, &mut restored] {
+        controller.service(&mut |_| {}).unwrap();
+        controller.close();
+    }
+    assert_eq!(second_io.0.lock().unwrap().closed, 1);
+    assert_eq!(fake.0.lock().unwrap().closed, 1);
+}
+
 fn output(fake: &Fake, id: u8, payload: &[u8]) {
     fake.0
         .lock()
@@ -142,7 +197,9 @@ fn write(slave: u8, offset: u8, bytes: &[u8]) -> Vec<u8> {
 fn imported_calibration_survives_snapshot_and_cleanup_is_per_controller() {
     let (_, nunchuk, _) = calibration::synthetic_blocks();
     let image = WiiEepromImage::default().with_extension_calibration(
-        WiiExtensionCalibration::import(None, Some(nunchuk), None).unwrap(),
+        WiiExtensionCalibration::default()
+            .with_nunchuk(Some(nunchuk))
+            .unwrap(),
     );
     let (mut first, one) = create(image.clone());
     let (mut second, two) = create(image.clone());
@@ -764,17 +821,14 @@ fn detached_attachment_projection_matches_live_state_and_rejects_atomically() {
 
 #[test]
 fn compat_creation_options_are_per_controller_and_replies_cleanup_once() {
-    let off = WiiRemoteCreationOptions {
+    let off = Compat {
         motionplus_passthrough_id_mirror: false,
         motionplus_passthrough_calibration_copy: false,
         motionplus_inactive_id_external_style: false,
         motionplus_activation_reattach_status: false,
     };
     let (mut first, one) = create_with_options(WiiEepromImage::default(), off);
-    let (mut second, two) = create_with_options(
-        WiiEepromImage::default(),
-        WiiRemoteCreationOptions::default(),
-    );
+    let (mut second, two) = create_with_options(WiiEepromImage::default(), Compat::default());
     for (controller, fake, enabled) in [(&mut first, &one, false), (&mut second, &two, true)] {
         controller
             .attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
@@ -824,12 +878,11 @@ fn compat_creation_options_are_per_controller_and_replies_cleanup_once() {
 fn complete_terminal_resource_round_trip_preserves_optional_blocks_and_failed_export_retry() {
     let (mp, n, classic) = calibration::synthetic_blocks();
     for flags in 0..8 {
-        let calibration = WiiExtensionCalibration::import(
-            (flags & 1 != 0).then_some(mp),
-            (flags & 2 != 0).then_some(n),
-            (flags & 4 != 0).then_some(classic),
-        )
-        .unwrap();
+        let calibration = WiiExtensionCalibration::default()
+            .with_motion_plus((flags & 1 != 0).then_some(mp))
+            .and_then(|calibration| calibration.with_nunchuk((flags & 2 != 0).then_some(n)))
+            .and_then(|calibration| calibration.with_classic((flags & 4 != 0).then_some(classic)))
+            .unwrap();
         let original = WiiEepromImage::import((0..=255).collect())
             .unwrap()
             .with_extension_calibration(calibration);
@@ -883,12 +936,11 @@ fn complete_terminal_resource_round_trip_preserves_optional_blocks_and_failed_ex
         let restored = WiiEepromImage::import(retry.bytes().to_vec())
             .unwrap()
             .with_extension_calibration(
-                WiiExtensionCalibration::import(
-                    blocks.motion_plus(),
-                    blocks.nunchuk(),
-                    blocks.classic(),
-                )
-                .unwrap(),
+                WiiExtensionCalibration::default()
+                    .with_motion_plus(blocks.motion_plus())
+                    .and_then(|calibration| calibration.with_nunchuk(blocks.nunchuk()))
+                    .and_then(|calibration| calibration.with_classic(blocks.classic()))
+                    .unwrap(),
             );
         assert_eq!(restored, kept);
         assert_eq!(

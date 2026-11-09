@@ -5,7 +5,7 @@ mod snapshot;
 pub(crate) use snapshot::{SnapshotProtocol, logical_input};
 mod session;
 #[cfg(test)]
-mod session_tests;
+pub(crate) mod session_tests;
 #[allow(dead_code)] // Internal opt-in seam; first production consumer is Wii.
 pub(crate) mod topology;
 use crate::CreationOptions;
@@ -188,6 +188,10 @@ where
     create_with_identity(driver, realization, options, None)
 }
 
+pub(crate) fn address_label([first, second, third, fourth, fifth, sixth]: [u8; 6]) -> String {
+    format!("{first:02x}:{second:02x}:{third:02x}:{fourth:02x}:{fifth:02x}:{sixth:02x}")
+}
+
 fn creation_labels(
     physical_path: &str,
     unique_id: &str,
@@ -272,20 +276,36 @@ fn steam_lab_root(
     }
 }
 
-pub(crate) fn create_with_identity<D>(
+pub(crate) fn create_with_identity<D: HidDriver>(
     driver: D,
-    mut realization: NativeControllerRealization,
+    realization: NativeControllerRealization,
     options: CreationOptions,
     restored: Option<[u8; 6]>,
-) -> Result<ControllerSession<D>, ProviderError>
-where
-    D: HidDriver,
-{
+) -> Result<ControllerSession<D>, ProviderError> {
     if restored.is_some() && options.target != RealizationTarget::LINUX_UHID_USB {
         return Err(ProviderError::Unsupported {
             reason: "identity restoration is supported only for USB/UHID".into(),
         });
     }
+    create_labeled(driver, realization, options, restored, restored.is_some())
+}
+
+/// Create using the prepared family uniq verbatim while allocating a fresh physical path.
+pub(crate) fn create_with_hid_uniq<D: HidDriver>(
+    driver: D,
+    realization: NativeControllerRealization,
+    options: CreationOptions,
+) -> Result<ControllerSession<D>, ProviderError> {
+    create_labeled(driver, realization, options, None, true)
+}
+
+fn create_labeled<D: HidDriver>(
+    driver: D,
+    mut realization: NativeControllerRealization,
+    options: CreationOptions,
+    restored: Option<[u8; 6]>,
+    preserve_uniq: bool,
+) -> Result<ControllerSession<D>, ProviderError> {
     let prepared: PreparedRealization =
         prepare_realization(&driver, options.target).map_err(|error| {
             ProviderError::Unsupported {
@@ -316,7 +336,7 @@ where
         (specification.physical_path, specification.unique_id) = creation_labels(
             &specification.physical_path,
             &specification.unique_id,
-            restored.is_some(),
+            preserve_uniq,
         )?;
     }
     if let NativeControllerRealization::Evdev(specification) = &mut realization {

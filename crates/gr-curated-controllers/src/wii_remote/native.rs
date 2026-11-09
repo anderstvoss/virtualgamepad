@@ -49,7 +49,7 @@ impl Nodes {
                 continue;
             }
             let driver = Configured {
-                options: super::WiiRemoteCreationOptions::default(),
+                options: super::Compat::default(),
                 image: WiiEepromImage::default(),
                 revision: self.revision,
                 role,

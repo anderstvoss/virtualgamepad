@@ -1,7 +1,8 @@
 use super::WiiRemoteState;
 use crate::common;
 use crate::registry::{
-    ControllerFamily, FamilyRealization, FamilySpec, PermissionClass, RealizationTier,
+    ControllerFamily, CreationOptionKind, CreationToggle, FamilyOperation, FamilyRealization,
+    FamilySpec, PermissionClass, RealizationTier,
 };
 use gr_controller_contract::{
     AuxiliaryButtonInput, ControlError, ControllerSurface, DigitalControlUpdate, InputControlId,
@@ -76,6 +77,10 @@ pub static TOPOLOGY: InputTopology = InputTopologySpec {
 .build();
 static RESTRICTIONS: &[TargetRestriction] = &[
     TargetRestriction {
+        feature: "host-visible Bluetooth identity",
+        reason: "the typed address is association metadata; the pinned consumer evidence does not establish address semantics for UHID uniq",
+    },
+    TargetRestriction {
         feature: "source-only compatibility model",
         reason: "synthetic descriptor; factory calibration, early Plus and Classic Pro identity remain No evidence",
     },
@@ -102,6 +107,10 @@ static EVDEV_OUTPUT_KINDS: &[gr_controller_contract::OutputKind] =
         ],
     }];
 static EVDEV_RESTRICTIONS: &[TargetRestriction] = &[
+    TargetRestriction {
+        feature: "host-visible Bluetooth identity",
+        reason: "uinput exposes a physical correlation path but has no unique-ID setter",
+    },
     TargetRestriction {
         feature: "speaker controls",
         reason: "uinput has no HID output-report or addressed memory channel; speaker enable/mute and register acknowledgements are unavailable",
@@ -233,8 +242,71 @@ impl common::HidDriver for WiiRemoteDefinition {
         }
     }
 }
+const WII_HID: &[RealizationTarget] = &[RealizationTarget::LINUX_UHID_BLUETOOTH];
+const EVDEV: &[RealizationTarget] = &[RealizationTarget::LINUX_UINPUT];
 impl ControllerFamily for WiiRemoteDefinition {
     const OUTPUT_KINDS: &'static [gr_controller_contract::OutputKind] = NATIVE_OUTPUT_KINDS;
+    const SUBSYSTEMS: &'static [FamilyOperation] = &[FamilyOperation {
+        name: "speaker_control",
+        targets: WII_HID,
+        detail: "Acknowledges speaker control and register writes. Playback is unavailable.",
+    }];
+    const PERSISTENT_RESOURCES: &'static [FamilyOperation] = &[FamilyOperation {
+        name: "eeprom",
+        targets: WII_HID,
+        detail: "Caller-owned EEPROM and extension calibration, with explicit retain or discard after close.",
+    }];
+    const REFUSED_OPERATIONS: &'static [FamilyOperation] = &[
+        FamilyOperation {
+            name: "speaker_control",
+            targets: EVDEV,
+            detail: "Uinput has no HID output-report or addressed memory channel.",
+        },
+        FamilyOperation {
+            name: "speaker_playback",
+            targets: WII_HID,
+            detail: "Speaker data is discarded while preserving the shared rumble bit.",
+        },
+        FamilyOperation {
+            name: "eeprom",
+            targets: EVDEV,
+            detail: "Uinput has no addressed memory channel.",
+        },
+    ];
+    const CREATION_TOGGLES: &'static [CreationToggle] = &[
+        CreationToggle {
+            name: "motionplus_passthrough_id_mirror",
+            label: "Passthrough ID mirror (compat)",
+            default: true,
+            kind: CreationOptionKind::Compat,
+            targets: WII_HID,
+            fidelity: "Mirrors the active child ID at F6. F7 stays 0x02 without challenge readiness.",
+        },
+        CreationToggle {
+            name: "motionplus_passthrough_calibration_copy",
+            label: "Child calibration copy (compat)",
+            default: true,
+            kind: CreationOptionKind::Compat,
+            targets: WII_HID,
+            fidelity: "Exposes the exact imported child block at 0x40 during active passthrough.",
+        },
+        CreationToggle {
+            name: "motionplus_activation_reattach_status",
+            label: "Activation re-attach status (compat)",
+            default: true,
+            kind: CreationOptionKind::Compat,
+            targets: WII_HID,
+            fidelity: "Sends a status edge so consumers reselect reporting after MotionPlus activation.",
+        },
+        CreationToggle {
+            name: "motionplus_inactive_id_external_style",
+            label: "External-style inactive MotionPlus ID (compat)",
+            default: false,
+            kind: CreationOptionKind::Feature,
+            targets: WII_HID,
+            fidelity: "On TR, exposes the external-style inactive ID for Cemu activation.",
+        },
+    ];
     const SPEC: &'static FamilySpec = &gr_controller_wire::registry::WII_REMOTE;
     fn topology() -> &'static InputTopology {
         &super::topology::MAXIMUM
@@ -261,7 +333,7 @@ impl ControllerFamily for WiiRemoteDefinition {
 
 /// Instance configuration stays in the controller package, outside registry metadata.
 pub(super) struct Configured {
-    pub(super) options: super::WiiRemoteCreationOptions,
+    pub(super) options: super::Compat,
     pub(super) image: super::WiiEepromImage,
     pub(super) revision: super::WiiRemoteRevision,
     pub(super) role: super::realizations::Role,

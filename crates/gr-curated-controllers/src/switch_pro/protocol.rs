@@ -1,6 +1,6 @@
 use super::{
-    RawReverseEvent, RealizationSessionId, SwitchProDefinition, SwitchProState, common,
-    switch_frame, switch_subcommand_reply, switch_usb_reply,
+    RawReverseEvent, RealizationSessionId, SwitchProDefinition, SwitchProIdentity, SwitchProState,
+    common, switch_frame, switch_subcommand_reply, switch_usb_reply,
 };
 use gr_hid::{
     Command, Delivery, Error, Lifecycle, Protocol, Reply, ReplyError, Report, ReportType,
@@ -10,6 +10,7 @@ use std::collections::VecDeque;
 
 #[derive(Clone)]
 pub(crate) struct SwitchUsbProtocol {
+    identity: SwitchProIdentity,
     retained: crate::retained::SwitchProOutputState,
     state: SwitchProState,
     pub(crate) timer: u8,
@@ -20,8 +21,9 @@ pub(crate) struct SwitchUsbProtocol {
     valid: bool,
 }
 impl SwitchUsbProtocol {
-    fn new() -> Self {
+    fn new(identity: SwitchProIdentity) -> Self {
         Self {
+            identity,
             state: SwitchProState::default(),
             retained: crate::retained::SwitchProOutputState::default(),
             timer: 0,
@@ -51,11 +53,16 @@ impl SwitchUsbProtocol {
             return Err(ReplyError::Busy);
         }
         match report.id() {
-            Some(0x80) if !bytes.is_empty() => self
-                .pending
-                .push_back(common::logical_input(switch_usb_reply(bytes[0]))),
+            Some(0x80) if !bytes.is_empty() => {
+                self.pending
+                    .push_back(common::logical_input(switch_usb_reply(
+                        bytes[0],
+                        self.identity,
+                    )));
+            }
             Some(1) if bytes.len() >= 10 => {
-                let (reply, enable) = switch_subcommand_reply(&self.state, bytes[9], &bytes[10..]);
+                let (reply, enable) =
+                    switch_subcommand_reply(&self.state, bytes[9], &bytes[10..], self.identity);
                 self.stream_enabled |= enable;
                 self.pending.push_back(common::logical_input(reply));
             }
@@ -150,8 +157,8 @@ impl common::HidDriver for SwitchProDefinition {
     }
 
     type Hid = SwitchUsbProtocol;
-    fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
-        SwitchUsbProtocol::new()
+    fn hid_protocol(&self, _: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
+        SwitchUsbProtocol::new(SwitchProIdentity(identity))
     }
 }
 

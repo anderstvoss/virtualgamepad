@@ -113,17 +113,17 @@ fn usb_worker_retries_one_accepted_snapshot_and_closes_once() {
 }
 
 #[derive(Default)]
-struct Record {
-    events: VecDeque<RawReverseEvent>,
-    sent: Vec<ProviderFrame>,
+pub(crate) struct Record {
+    pub(crate) events: VecDeque<RawReverseEvent>,
+    pub(crate) sent: Vec<ProviderFrame>,
     attempts: Vec<ProviderFrame>,
     fail: VecDeque<ProviderError>,
     closed: bool,
-    destroys: usize,
+    pub(crate) destroys: usize,
     burst: usize,
     read_error: Option<ProviderError>,
 }
-struct Fake(Arc<Mutex<Record>>);
+pub(crate) struct Fake(pub(crate) Arc<Mutex<Record>>);
 impl NativeProviderSession for Fake {
     fn send(&mut self, frame: ProviderFrame) -> Result<(), ProviderError> {
         let mut r = self.0.lock().unwrap();
@@ -377,6 +377,51 @@ fn switch_handshake_runs_without_callbacks_or_semantic_commits() {
         )
     );
 }
+#[test]
+fn switch_restored_identity_is_shared_by_both_host_probe_replies() {
+    use crate::switch_pro::SwitchProIdentity;
+    let identity = SwitchProIdentity::generate().unwrap();
+    let distinct = SwitchProIdentity::generate().unwrap();
+    assert_ne!(identity, distinct);
+    assert_eq!(
+        SwitchProIdentity::from_bytes(identity.bytes()).unwrap(),
+        identity
+    );
+    for identity in [identity, distinct, identity] {
+        let (mut runtime, io) =
+            rig_with_identity(&SwitchProDefinition, [true, true, false], identity.bytes());
+        let mut subcommand = vec![0; 63];
+        subcommand[9] = 2;
+        io.lock().unwrap().events.extend([
+            RawReverseEvent::HidOutput {
+                report_id: Some(0x80),
+                bytes: vec![1],
+            },
+            RawReverseEvent::HidOutput {
+                report_id: Some(1),
+                bytes: subcommand,
+            },
+        ]);
+        for now in 0..4 {
+            runtime.service(now).unwrap();
+        }
+        let mut status_address = identity.bytes();
+        status_address.reverse();
+        let record = io.lock().unwrap();
+        assert!(record.events.is_empty());
+        assert!(record.sent.iter().any(|frame| matches!(frame,
+            ProviderFrame::HidInput { report_id: Some(0x81), bytes }
+                if bytes[0] == 1 && bytes[3..9] == status_address)));
+        assert!(record.sent.iter().any(|frame| matches!(frame,
+            ProviderFrame::HidInput { report_id: Some(0x21), bytes }
+                if bytes[12..14] == [0x82, 0x02] && bytes[18..24] == identity.bytes())));
+        drop(record);
+        runtime.close().unwrap();
+        runtime.close().unwrap();
+        assert_eq!(io.lock().unwrap().destroys, 1);
+    }
+}
+
 #[test]
 fn stop_cancels_unsent_input_start_resumes_and_consumer_close_is_not_terminal() {
     let (mut rt, io) = rig(&DualSenseDefinition, [true; 3]);

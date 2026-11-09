@@ -44,7 +44,8 @@ pub mod wii_remote;
 pub mod xbox360;
 
 use gr_controller_contract::ControlError;
-use gr_realization_api::{RealizationSessionId, RealizationTarget};
+pub use gr_realization_api::RealizationSessionId;
+use gr_realization_api::RealizationTarget;
 
 /// Options for one exact curated realization target.
 #[derive(Debug, Clone, Copy)]

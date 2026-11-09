@@ -134,7 +134,7 @@ impl<D: HidDriver> ControllerSession<D> {
             feedback: super::feedback::Feedback::default(),
         })
     }
-    pub(super) fn with_association(mut self, association: crate::ControllerAssociation) -> Self {
+    pub(crate) fn with_association(mut self, association: crate::ControllerAssociation) -> Self {
         self.association = association;
         self
     }

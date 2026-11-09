@@ -1178,21 +1178,18 @@ fn compat_setting_request(settings: &[(u8, u16)]) -> RequestKind {
 }
 #[test]
 fn steam_client_profile_defaults_on_and_can_disable_attributes_without_changing_identity() {
-    use crate::steam_controller_2026::SteamController2026CreationOptions as Options;
+    use crate::steam_controller_2026::SteamController2026Options as Options;
     let expected = detection_fixture("steam-d9-1302-attributes.hex");
     for options in [
         Options::default(),
-        Options {
-            steam_client_compat: false,
-            ..Options::default()
-        },
+        Options::default().with_steam_client_compat(false),
     ] {
-        let enabled = options.steam_client_compat;
-        assert!(!options.haptic_streaming);
+        let enabled = options.steam_client_compat();
+        assert!(!options.haptic_streaming());
         let mut protocol = SteamHidProtocol::with_streaming_options(
             "VGP-FAKE".into(),
             enabled,
-            options.haptic_streaming,
+            options.haptic_streaming(),
         );
         assert_eq!(
             protocol.request(&set("feature-attrs-get"), 0).0,
@@ -1220,8 +1217,7 @@ fn steam_client_profile_defaults_on_and_can_disable_attributes_without_changing_
         assert_eq!(response.wire().len(), 64);
     }
     assert!(
-        crate::steam_controller_2026::SteamController2026CreationOptions::default()
-            .steam_client_compat
+        crate::steam_controller_2026::SteamController2026Options::default().steam_client_compat()
     );
 }
 #[test]
@@ -2218,9 +2214,7 @@ fn lizard_option_off_is_silent_and_native_input_is_preserved() {
         off.input(&state, 1).unwrap()[0].wire()[2..6],
         state.button_bits().to_le_bytes()
     );
-    assert!(
-        !crate::steam_controller_2026::SteamController2026CreationOptions::default().lizard_mode
-    );
+    assert!(!crate::steam_controller_2026::SteamController2026Options::default().lizard_mode());
 }
 
 #[test]
