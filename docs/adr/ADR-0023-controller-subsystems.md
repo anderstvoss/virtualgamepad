@@ -1,7 +1,7 @@
 # ADR-0023: Controller-owned bounded in-band subsystems
 
-Status: Proposed; adopted by the owner under D4 (2026-10-21). No implementation or
-ordinary-root API addition is approved here.
+Status: Accepted as design under D4 (2026-10-21). Family implementation and
+ordinary-root API additions require their own approval.
 
 ## Context
 
@@ -11,7 +11,7 @@ such as a UAC endpoint or an explicitly selected keyboard/pointer companion.
 Putting bulk data through service callbacks or the 32-entry observation queue
 would couple payload lifetime to optional observation delivery and hide loss.
 
-## Proposed decision
+## Decision
 
 A compiled controller family declares supported in-band subsystems and exposes
 explicit opt-in creation options only when a measured family needs them. The
@@ -54,8 +54,8 @@ never implies that payloads persist or that Drop writes files.
 Wii Remote speaker support is the first prospective consumer; VMU-class displays,
 NFC and IR camera are later examples, not commitments. A family proposal must
 supply evidence-backed formats, bounded limits, typed operations, realization
-limitations and deterministic validation/backpressure/cleanup tests. This draft
-implements no Wii feature, decoder, transport or physical acceptance claim.
+limitations and deterministic validation/backpressure/cleanup tests. Wii speaker
+playback remains deferred.
 
 ## API snapshot growth when a family ships
 
@@ -71,3 +71,13 @@ D4 adopted this ADR on 2026-10-21 as the shared shape for controller subsystems
 in later checkpoints. Implementation still needs a separate approved family scope;
 [brief 04](../plans/pre-controller-buildout/04-contract-adrs.md) supplies the design
 questions only.
+
+## Steam streaming
+
+The wired Steam package already handles opt-in PCM through a bounded compatibility
+FIFO. Its retained view exposes the last decoded packet through
+`SteamController2026StreamOutputs::last_packet`, `SteamController2026Haptic::Stream`
+represents decoded PCM, and raw reverse observations can carry host PCM writes.
+The latest packet is diagnostic state; the retained haptic slots do not hold a
+stream history. An open question for Anders is whether a future typed stream API
+should replace the retained packet and the PCM payloads in raw observations.

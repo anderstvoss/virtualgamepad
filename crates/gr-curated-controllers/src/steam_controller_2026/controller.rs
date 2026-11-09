@@ -250,6 +250,30 @@ impl SteamController2026Controller {
         self.session.readiness()
     }
 
+    /// Time until the next required service call. Continue watching readiness.
+    #[must_use]
+    pub fn next_service_in(&self) -> Option<std::time::Duration> {
+        self.session.next_service_in()
+    }
+
+    /// Whether the readiness descriptor also needs write interest.
+    #[must_use]
+    pub fn wants_write(&self) -> bool {
+        self.session.wants_write()
+    }
+
+    /// Whether edited input or queued input is pending delivery.
+    #[must_use]
+    pub fn is_dirty(&self) -> bool {
+        self.session.is_dirty()
+    }
+
+    /// Cumulative optional output observations evicted by bounded queues.
+    #[must_use]
+    pub fn dropped_output_events(&self) -> u64 {
+        self.session.dropped_observations()
+    }
+
     #[must_use]
     pub fn state(&self) -> &SteamController2026State {
         self.session.state()

@@ -82,6 +82,19 @@ Pinned [SDL Triton lines 453–471](https://github.com/libsdl-org/SDL/blob/e0232
 register wired controllers without querying the feature serial, so that driver
 imposes no additional wire bound.
 
+## Servicing a controller
+
+Service the controller on `readiness()` and at the relative deadline from
+`next_service_in()`, including while inputs are idle. Wired PCM feedback can
+need service on a timer without a fresh host request. Watch descriptor writes
+while `wants_write()` is true. Poll with a bounded interval when readiness is
+`Poll`. `is_dirty()` reports pending input, and `dropped_output_events()`
+counts evicted optional observations separately from retained output state.
+
+`SteamController2026Outputs`, `SteamController2026Haptic` and
+`SteamController2026StreamOutputs` can gain new fields or variants. The raw
+haptic `side`, `command` and stream `target` bytes are protocol-native.
+
 ## Demo editor
 
 The demo includes a native Steam editor for both realizations: buttons, sticks,

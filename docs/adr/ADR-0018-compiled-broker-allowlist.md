@@ -1,6 +1,6 @@
 # ADR-0018: Compiled family registry and broker allowlist
 
-Status: Proposed. Owner acceptance is pending checkpoint C1 review.
+Status: Accepted. The compiled family list and broker allowlist shipped in checkpoint C1 (#194).
 
 ## Decision
 

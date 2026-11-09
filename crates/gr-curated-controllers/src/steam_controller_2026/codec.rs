@@ -123,9 +123,12 @@ fn battery(state: &Battery) -> Report {
     Report::from_wire(ReportType::Input, true, &wire).expect("compiled battery frame")
 }
 
+/// Retained decoded host haptic commands. The raw `side` and `command`
+/// values are protocol-native. Stream targets use their report's selectors.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SteamController2026Haptic {
-    /// Opt-in, captured haptic PCM request; raw callbacks preserve every write.
+    /// Opt-in, captured haptic PCM request. Raw callbacks can expose the host write.
     Stream(Box<SteamController2026StreamPacket>),
     // steam-c6-output-80-81 / disagreement-gain-kernel/sdl: gains stay raw.
     Rumble {
@@ -717,6 +720,7 @@ impl Protocol for SteamHidProtocol {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SteamController2026Outputs {
     pub revision: u64,
     pub haptics: [Option<SteamController2026Haptic>; 6],
