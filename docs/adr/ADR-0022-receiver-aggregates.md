@@ -1,11 +1,11 @@
 # ADR-0022: Receiver-owned presentation with typed controller slots
 
-Status: Proposed. No ordinary-root API addition is approved here.
+Status: Accepted in C8. C4 shipped deterministic evidence for the contract.
 
 ## Context
 
 A receiver can present several logical controllers through one host device.
-The Steam Puck is the first consumer (#159, #165), with four protocol slots;
+The Steam Puck is a candidate consumer (#159, #165), with four protocol slots;
 Joy-Con pairs are a fixed two-slot case. Those slots are protocol addresses,
 not GamepadManager player assignments or global application slot allocation.
 
@@ -34,8 +34,8 @@ and must not be used to replay ambiguously delivered slot requests.
 Optional keyboard/pointer companions are explicit required components when
 selected. Their creation and removal share receiver preflight/rollback boundaries;
 they are not silently added or degraded. Slot-local loss and receiver failure
-remain distinct, as do logical controllers and host presentation epochs from
-the planned ADR-0021 contract when it is introduced in C4.
+remain distinct. The separate [presentation epoch proposal](ADR-0021-presentation-epochs.md)
+is deferred.
 
 ## Alternatives and consequences
 
@@ -49,9 +49,12 @@ assignment can change independently of receiver attachment and pairing. Generic
 provider-owned slot policy is also rejected: controller/receiver code owns report
 meaning and valid transitions; providers carry transport operations only.
 
-Step 13b must prove a synthetic 0-to-4-slot receiver with optional companions,
-simultaneous changes, failed preparation/rollback, required requests, terminal
-close/failure and sibling survival. Root additions proposed when a real receiver
-ships are a receiver handle, typed slot access/presence and retained aggregate
-association metadata. Exact signatures and snapshot growth require explicit owner
-approval; C2 keeps all of this internal and does not implement a Puck or Joy-Con.
+Step 13b shipped the [synthetic receiver fixture](../spec/receiver-aggregate-fixture.md)
+with zero to four typed slots, required request acknowledgements, companion
+rollback, per-slot failure isolation and receiver-wide terminal cleanup. The
+compiled registry vocabulary includes `FamilyKind::Receiver`; the receiver
+fixture and metadata test do not advertise a production realization.
+
+The receiver handle outside tests, including any ordinary-root slot or aggregate
+API, is deferred under [#165](https://github.com/anderstvoss/virtualgamepad/issues/165).
+Puck and Joy-Con implementations require their own evidence and scopes.
