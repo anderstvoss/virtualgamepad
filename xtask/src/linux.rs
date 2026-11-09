@@ -273,6 +273,11 @@ fn wait_child(
 }
 impl Backend for Linux {
     type Session = Session;
+
+    fn observes_live_virtual_devices(&self) -> bool {
+        true
+    }
+
     fn create(&mut self, family: &str, realization: &str) -> Result<Session, String> {
         let target = gr_curated_controllers::registry::FAMILIES
             .iter()
