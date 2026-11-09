@@ -160,23 +160,24 @@ impl BatteryState {
 
 pub use dualsense::{
     DualSenseAudioPath, DualSenseAxis, DualSenseControl, DualSenseController, DualSenseFeature,
-    DualSenseHidOutput, DualSenseIdentity, DualSenseOutputEvent, DualSenseState, DualSenseSurface,
-    DualSenseTouchContact, DualSenseTrigger, MotionSample, TouchSlot, create_dualsense,
-    create_dualsense_with_identity,
+    DualSenseHidOutput, DualSenseIdentity, DualSenseOptions, DualSenseOutputEvent, DualSenseState,
+    DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, MotionSample, TouchSlot,
+    create_dualsense,
 };
 pub use dualshock4::{
     DualShock4Axis, DualShock4Control, DualShock4Controller, DualShock4HidOutput,
-    DualShock4Identity, DualShock4MotionSample, DualShock4OutputEvent, DualShock4State,
-    DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger,
-    create_dualshock4, create_dualshock4_with_identity,
+    DualShock4Identity, DualShock4MotionSample, DualShock4Options, DualShock4OutputEvent,
+    DualShock4State, DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot,
+    DualShock4Trigger, create_dualshock4,
 };
 pub use switch_pro::{
-    SwitchProAxis, SwitchProControl, SwitchProController, SwitchProMotionSample,
-    SwitchProOutputEvent, SwitchProRumble, SwitchProState, SwitchProSurface, create_switch_pro,
+    SwitchProAxis, SwitchProControl, SwitchProController, SwitchProIdentity, SwitchProMotionSample,
+    SwitchProOptions, SwitchProOutputEvent, SwitchProRumble, SwitchProState, SwitchProSurface,
+    create_switch_pro,
 };
 pub use xbox360::{
-    Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360State,
-    Xbox360Surface, Xbox360Trigger, create_xbox360,
+    Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360Options, Xbox360OutputEvent,
+    Xbox360State, Xbox360Surface, Xbox360Trigger, create_xbox360,
 };
 
 #[cfg(test)]

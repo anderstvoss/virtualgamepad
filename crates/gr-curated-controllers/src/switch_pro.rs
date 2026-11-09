@@ -864,12 +864,7 @@ pub struct SwitchProIdentity([u8; 6]);
 
 impl SwitchProIdentity {
     pub fn from_bytes(address: [u8; 6]) -> Result<Self, ProviderError> {
-        if address[0] & 0x03 != 0x02 {
-            return Err(ProviderError::Open {
-                reason: "Switch Pro identity must be a locally administered unicast address".into(),
-            });
-        }
-        Ok(Self(address))
+        common::validate_address(address, "Switch Pro").map(Self)
     }
 
     pub fn generate() -> Result<Self, ProviderError> {
@@ -1192,21 +1187,40 @@ impl From<RawReverseEvent> for SwitchProOutputEvent {
         }
     }
 }
-pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, ProviderError> {
-    create_switch_pro_configured(o, None, SwitchProIdentity::generate)
+/// Family options for a new `SwitchPro` session.
+#[derive(Debug, Clone, Copy, Default)]
+#[non_exhaustive]
+pub struct SwitchProOptions {
+    identity: Option<SwitchProIdentity>,
 }
 
-/// Restore an address while opening a fresh realization session.
-pub fn create_switch_pro_with_identity(
-    o: CreationOptions,
-    identity: SwitchProIdentity,
+impl SwitchProOptions {
+    /// Restore a caller-owned controller identity. USB/UHID presents this address to the host. Evdev retains it in the
+    /// handle for caller storage without presenting it to the host.
+    #[must_use]
+    pub const fn with_identity(mut self, identity: SwitchProIdentity) -> Self {
+        self.identity = Some(identity);
+        self
+    }
+
+    /// An explicitly supplied identity, if any.
+    #[must_use]
+    pub const fn identity(self) -> Option<SwitchProIdentity> {
+        self.identity
+    }
+}
+
+/// Create an exact realization with fresh session state.
+pub fn create_switch_pro(
+    options: CreationOptions,
+    family: SwitchProOptions,
 ) -> Result<SwitchProController, ProviderError> {
-    create_switch_pro_configured(o, Some(identity), SwitchProIdentity::generate)
+    create_switch_pro_configured(options, family, SwitchProIdentity::generate)
 }
 
 fn create_switch_pro_configured(
     o: CreationOptions,
-    identity: Option<SwitchProIdentity>,
+    family: SwitchProOptions,
     generate_identity: impl FnOnce() -> Result<SwitchProIdentity, ProviderError>,
 ) -> Result<SwitchProController, ProviderError> {
     let build_realization: fn(SwitchProIdentity) -> NativeControllerRealization = match o.target {
@@ -1224,7 +1238,7 @@ fn create_switch_pro_configured(
         }
     };
     common::require_linux_platform(o.target)?;
-    let identity = identity.map_or_else(generate_identity, Ok)?;
+    let identity = family.identity().map_or_else(generate_identity, Ok)?;
     let realization = build_realization(identity);
     let is_dummy_hcd = o.target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID;
     let mut controller = if o.target == RealizationTarget::LINUX_UHID_USB {
@@ -1256,6 +1270,24 @@ pub fn test_controller(
 impl crate::registry::ControllerFamily for SwitchProDefinition {
     const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::SWITCH_PRO;
     const OUTPUT_KINDS: &'static [OutputKind] = NATIVE_OUTPUT_KINDS;
+    const REFUSED_OPERATIONS: &'static [crate::registry::FamilyOperation] = &[
+        crate::registry::refusal(EVDEV_RESTRICTIONS[0], &[RealizationTarget::LINUX_UINPUT]),
+        crate::registry::refusal(EVDEV_RESTRICTIONS[1], &[RealizationTarget::LINUX_UINPUT]),
+        crate::registry::refusal(EVDEV_RESTRICTIONS[2], &[RealizationTarget::LINUX_UINPUT]),
+        crate::registry::refusal(EVDEV_RESTRICTIONS[3], &[RealizationTarget::LINUX_UINPUT]),
+        crate::registry::refusal(
+            RESTRICTIONS[0],
+            &[
+                RealizationTarget::LINUX_UINPUT,
+                RealizationTarget::LINUX_UHID_USB,
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            ],
+        ),
+        crate::registry::refusal(
+            RETAINED_DUMMY[1],
+            &[RealizationTarget::LINUX_DUMMY_HCD_USB_HID],
+        ),
+    ];
     fn topology() -> &'static InputTopology {
         &INPUT_TOPOLOGY_WITH_MOTION
     }
@@ -1299,7 +1331,7 @@ mod tests {
             session: RealizationSessionId(7),
         };
         assert!(matches!(
-            create_switch_pro_configured(options, None, || panic!(
+            create_switch_pro_configured(options, SwitchProOptions::default(), || panic!(
                 "invalid target requested entropy"
             )),
             Err(ProviderError::Unsupported { .. })
@@ -1319,7 +1351,7 @@ mod tests {
                 session: RealizationSessionId(7),
             };
             assert!(matches!(
-                create_switch_pro(options),
+                create_switch_pro(options, SwitchProOptions::default()),
                 Err(ProviderError::Preflight(gr_realization_api::ProviderPreflightError::UnsupportedPlatform {
                     target: rejected
                 })) if rejected == target
@@ -1512,10 +1544,13 @@ mod tests {
     #[test]
     #[ignore = "requires the installed root-owned DummyHcd broker"]
     fn dummy_hcd_broker_opens_the_switch_usb_profile() {
-        let mut controller = create_switch_pro(CreationOptions {
-            target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
-            session: RealizationSessionId(0x5357_4954),
-        })
+        let mut controller = create_switch_pro(
+            CreationOptions {
+                target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                session: RealizationSessionId(0x5357_4954),
+            },
+            SwitchProOptions::default(),
+        )
         .expect("open Switch Pro through the privileged broker");
         controller.close();
     }

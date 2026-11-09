@@ -355,27 +355,28 @@ impl DualSenseController {
 }
 /// Controller-owned persistent identity, independent of runtime session tokens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DualSenseIdentity(gr_curated_controllers::DualSenseIdentity);
+pub struct DualSenseIdentity([u8; 6]);
 impl DualSenseIdentity {
     /// Generate from OS entropy without opening a controller.
     /// # Errors
     /// Returns an error when OS entropy is unavailable.
     pub fn generate() -> Result<Self, ControllerError> {
         gr_curated_controllers::DualSenseIdentity::generate()
-            .map(Self)
+            .map(|identity| Self(identity.bytes()))
             .map_err(controller_error)
     }
     /// Restore locally administered unicast bytes; invalid flags return None.
     #[must_use]
     pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self> {
-        match gr_curated_controllers::DualSenseIdentity::from_bytes(bytes) {
-            Some(id) => Some(Self(id)),
-            None => None,
+        if bytes[0] & 3 == 2 {
+            Some(Self(bytes))
+        } else {
+            None
         }
     }
     #[must_use]
     pub const fn to_bytes(self) -> [u8; 6] {
-        self.0.to_bytes()
+        self.0
     }
 }
 /// Create with explicit controller identity and fresh transport/session state.
@@ -397,8 +398,14 @@ pub fn create_dualsense_with_identity(
         options.session.0,
     )?;
     let inner = crate::creation::finish(
-        gr_curated_controllers::create_dualsense_with_identity(options, identity.0)
-            .map_err(controller_error),
+        gr_curated_controllers::create_dualsense(
+            options,
+            gr_curated_controllers::DualSenseOptions::default().with_identity(
+                gr_curated_controllers::DualSenseIdentity::from_bytes(identity.0)
+                    .map_err(controller_error)?,
+            ),
+        )
+        .map_err(controller_error),
         || crate::creation::close_audio(&mut audio),
     )?;
     let association = ControllerAssociation::single(
@@ -434,7 +441,11 @@ pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController,
         options.session.0,
     )?;
     let inner = crate::creation::finish(
-        gr_curated_controllers::create_dualsense(options).map_err(controller_error),
+        gr_curated_controllers::create_dualsense(
+            options,
+            gr_curated_controllers::DualSenseOptions::default(),
+        )
+        .map_err(controller_error),
         || crate::creation::close_audio(&mut audio),
     )?;
     let association = ControllerAssociation::single(
@@ -501,27 +512,28 @@ impl DualShock4Controller {
 }
 /// Controller-owned persistent identity, independent of runtime session tokens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DualShock4Identity(gr_curated_controllers::DualShock4Identity);
+pub struct DualShock4Identity([u8; 6]);
 impl DualShock4Identity {
     /// Generate from OS entropy without opening a controller.
     /// # Errors
     /// Returns an error when OS entropy is unavailable.
     pub fn generate() -> Result<Self, ControllerError> {
         gr_curated_controllers::DualShock4Identity::generate()
-            .map(Self)
+            .map(|identity| Self(identity.bytes()))
             .map_err(controller_error)
     }
     /// Restore locally administered unicast bytes; invalid flags return None.
     #[must_use]
     pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self> {
-        match gr_curated_controllers::DualShock4Identity::from_bytes(bytes) {
-            Some(id) => Some(Self(id)),
-            None => None,
+        if bytes[0] & 3 == 2 {
+            Some(Self(bytes))
+        } else {
+            None
         }
     }
     #[must_use]
     pub const fn to_bytes(self) -> [u8; 6] {
-        self.0.to_bytes()
+        self.0
     }
 }
 /// Create with explicit controller identity and fresh transport/session state.
@@ -543,8 +555,14 @@ pub fn create_dualshock4_with_identity(
         options.session.0,
     )?;
     let inner = crate::creation::finish(
-        gr_curated_controllers::create_dualshock4_with_identity(options, identity.0)
-            .map_err(controller_error),
+        gr_curated_controllers::create_dualshock4(
+            options,
+            gr_curated_controllers::DualShock4Options::default().with_identity(
+                gr_curated_controllers::DualShock4Identity::from_bytes(identity.0)
+                    .map_err(controller_error)?,
+            ),
+        )
+        .map_err(controller_error),
         || crate::creation::close_audio(&mut audio),
     )?;
     let association = ControllerAssociation::single(
@@ -582,7 +600,11 @@ pub fn create_dualshock4(
         options.session.0,
     )?;
     let inner = crate::creation::finish(
-        gr_curated_controllers::create_dualshock4(options).map_err(controller_error),
+        gr_curated_controllers::create_dualshock4(
+            options,
+            gr_curated_controllers::DualShock4Options::default(),
+        )
+        .map_err(controller_error),
         || crate::creation::close_audio(&mut audio),
     )?;
     let association = ControllerAssociation::single(
@@ -657,7 +679,11 @@ pub fn create_switch_pro(options: CreationOptions) -> Result<SwitchProController
         });
     }
     let options = options.internal()?;
-    let inner = gr_curated_controllers::create_switch_pro(options).map_err(controller_error)?;
+    let inner = gr_curated_controllers::create_switch_pro(
+        options,
+        gr_curated_controllers::SwitchProOptions::default(),
+    )
+    .map_err(controller_error)?;
     let association = ControllerAssociation::single(
         ControllerId::new("virtualgamepad.switch-pro"),
         options,
@@ -724,7 +750,11 @@ pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, Con
         options.session.0,
     )?;
     let inner = crate::creation::finish(
-        gr_curated_controllers::create_xbox360(options).map_err(controller_error),
+        gr_curated_controllers::create_xbox360(
+            options,
+            gr_curated_controllers::Xbox360Options::default(),
+        )
+        .map_err(controller_error),
         || crate::creation::close_audio(&mut audio),
     )?;
     let association = ControllerAssociation::single(

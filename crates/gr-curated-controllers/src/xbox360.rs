@@ -954,7 +954,17 @@ fn hid_realization() -> NativeControllerRealization {
     let (vendor, product) = gr_controller_wire::STANDARD_GAMEPAD_VIRTUAL_IDENTITY;
     common::hid_realization("Virtual Xbox 360 (standard HID)", vendor, product)
 }
-pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, ProviderError> {
+/// Family options for the wired Xbox 360 presentation. This family has no
+/// restorable host-visible controller identity.
+#[derive(Debug, Clone, Copy, Default)]
+#[non_exhaustive]
+pub struct Xbox360Options {}
+
+/// Create an exact realization with fresh session state.
+pub fn create_xbox360(
+    options: CreationOptions,
+    _family: Xbox360Options,
+) -> Result<Xbox360Controller, ProviderError> {
     let realization = match options.target {
         RealizationTarget::LINUX_UINPUT => realization(),
         RealizationTarget::LINUX_UHID_USB => hid_realization(),
@@ -1041,6 +1051,70 @@ pub fn test_controller(
 impl crate::registry::ControllerFamily for Xbox360Definition {
     const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::XBOX360;
     const OUTPUT_KINDS: &'static [OutputKind] = EVDEV_OUTPUT_KINDS;
+    const SUBSYSTEMS: &'static [crate::registry::FamilyOperation] =
+        crate::registry::AUDIO_SUBSYSTEMS;
+    const REFUSED_OPERATIONS: &'static [crate::registry::FamilyOperation] = &[
+        crate::registry::refusal(
+            RESTRICTIONS[0],
+            &[
+                RealizationTarget::LINUX_UINPUT,
+                RealizationTarget::LINUX_UHID_USB,
+            ],
+        ),
+        crate::registry::refusal(
+            RESTRICTIONS[1],
+            &[
+                RealizationTarget::LINUX_UINPUT,
+                RealizationTarget::LINUX_UHID_USB,
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            ],
+        ),
+        crate::registry::refusal(
+            RESTRICTIONS[2],
+            &[
+                RealizationTarget::LINUX_UINPUT,
+                RealizationTarget::LINUX_UHID_USB,
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                RealizationTarget::LINUX_USBIP_USB_AUDIO,
+            ],
+        ),
+        crate::registry::refusal(
+            STANDARD_HID_IDENTITY_RESTRICTION,
+            &[
+                RealizationTarget::LINUX_UHID_USB,
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                RealizationTarget::LINUX_USBIP_USB_AUDIO,
+            ],
+        ),
+        crate::registry::FamilyOperation {
+            name: "dummy_hcd XInput/xpad protocol",
+            ..crate::registry::refusal(
+                RETAINED_DUMMY[3],
+                &[RealizationTarget::LINUX_DUMMY_HCD_USB_HID],
+            )
+        },
+        crate::registry::FamilyOperation {
+            name: "dummy_hcd retained host outputs",
+            ..crate::registry::refusal(
+                RETAINED_DUMMY[4],
+                &[RealizationTarget::LINUX_DUMMY_HCD_USB_HID],
+            )
+        },
+        crate::registry::FamilyOperation {
+            name: "USB/IP XInput/xpad protocol",
+            ..crate::registry::refusal(
+                RETAINED_WORKER[2],
+                &[RealizationTarget::LINUX_USBIP_USB_AUDIO],
+            )
+        },
+        crate::registry::FamilyOperation {
+            name: "USB/IP retained host outputs",
+            ..crate::registry::refusal(
+                RETAINED_WORKER[3],
+                &[RealizationTarget::LINUX_USBIP_USB_AUDIO],
+            )
+        },
+    ];
     fn topology() -> &'static InputTopology {
         &INPUT_TOPOLOGY
     }
@@ -1377,10 +1451,13 @@ mod tests {
     #[test]
     #[ignore = "requires the installed root-owned DummyHcd broker"]
     fn dummy_hcd_broker_opens_and_delivers_the_xbox_hid_report() {
-        let mut controller = create_xbox360(CreationOptions {
-            target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
-            session: RealizationSessionId(0x5842_4f58),
-        })
+        let mut controller = create_xbox360(
+            CreationOptions {
+                target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                session: RealizationSessionId(0x5842_4f58),
+            },
+            Xbox360Options::default(),
+        )
         .expect("open Xbox HID through the privileged broker");
         controller.commit().expect("deliver Xbox HID report");
         controller.close();

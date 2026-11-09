@@ -222,10 +222,13 @@ fn dualsense_services_kernel_startup_and_removes_its_device() {
         owned_devices().is_empty(),
         "ambiguous existing test identity"
     );
-    let mut controller = create_dualsense(CreationOptions {
-        target: RealizationTarget::LINUX_UHID_USB,
-        session: RealizationSessionId(session),
-    })
+    let mut controller = create_dualsense(
+        CreationOptions {
+            target: RealizationTarget::LINUX_UHID_USB,
+            session: RealizationSessionId(session),
+        },
+        gr_curated_controllers::DualSenseOptions::default(),
+    )
     .expect("create production DualSense USB personality");
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut bound = false;
@@ -878,10 +881,13 @@ fn repeated_application_ids_keep_three_kernel_sessions_independent() {
     let mut controllers: Vec<_> = [7, 7, 7 + (1 << 16)]
         .into_iter()
         .map(|session| {
-            create_dualsense(CreationOptions {
-                target: RealizationTarget::LINUX_UHID_USB,
-                session: RealizationSessionId(session),
-            })
+            create_dualsense(
+                CreationOptions {
+                    target: RealizationTarget::LINUX_UHID_USB,
+                    session: RealizationSessionId(session),
+                },
+                gr_curated_controllers::DualSenseOptions::default(),
+            )
             .unwrap()
         })
         .collect();
@@ -941,10 +947,13 @@ fn sdl_failure_boundaries_reap_consumer_and_remove_controller() {
     let binary = std::env::var_os("VIRTUALGAMEPAD_SDL_PROBE").expect("private SDL probe");
     for remove_controller in [false, true] {
         assert!(owned_devices().is_empty());
-        let mut controller = create_dualsense(CreationOptions {
-            target: RealizationTarget::LINUX_UHID_USB,
-            session: RealizationSessionId(7),
-        })
+        let mut controller = create_dualsense(
+            CreationOptions {
+                target: RealizationTarget::LINUX_UHID_USB,
+                session: RealizationSessionId(7),
+            },
+            gr_curated_controllers::DualSenseOptions::default(),
+        )
         .unwrap();
         let start = Instant::now();
         let mut probe = None;
@@ -1059,7 +1068,7 @@ macro_rules! acceptance_controller {
                 $create(CreationOptions {
                     target,
                     session: RealizationSessionId(session),
-                })
+                }, Default::default())
                 .unwrap()
             }
             fn physical_paths(&self) -> Vec<String> {

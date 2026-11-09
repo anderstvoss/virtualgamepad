@@ -69,6 +69,32 @@ pub struct FamilyOperation {
     pub detail: &'static str,
 }
 
+use gr_controller_contract::TargetRestriction;
+
+pub(crate) const AUDIO_SUBSYSTEMS: &[FamilyOperation] = &[
+    FamilyOperation {
+        name: "pipewire_audio",
+        targets: &[RealizationTarget::LINUX_UHID_USB],
+        detail: "The application crate can create associated PipeWire endpoints with explicit emulated audio.",
+    },
+    FamilyOperation {
+        name: "usbip_audio",
+        targets: &[RealizationTarget::LINUX_USBIP_USB_AUDIO],
+        detail: "The application crate can create an opt-in functional USB/IP composite with emulated audio.",
+    },
+];
+
+pub(crate) const fn refusal(
+    restriction: TargetRestriction,
+    targets: &'static [RealizationTarget],
+) -> FamilyOperation {
+    FamilyOperation {
+        name: restriction.feature,
+        targets,
+        detail: restriction.reason,
+    }
+}
+
 // Metadata registration must not require a provider implementation before its gate.
 pub(crate) trait ControllerFamily: RealizationControllerDefinition {
     const SPEC: &'static FamilySpec;
@@ -243,6 +269,80 @@ mod tests {
                     .any(|operation| operation.name == name
                         && operation.targets == [RealizationTarget::LINUX_UINPUT])
             );
+        }
+    }
+
+    #[test]
+    fn older_family_options_only_restore_an_explicit_typed_identity() {
+        use crate::{
+            DualSenseIdentity, DualSenseOptions, DualShock4Identity, DualShock4Options,
+            SwitchProIdentity, SwitchProOptions,
+        };
+        let address = crate::common::test_address(7);
+        macro_rules! roundtrip {
+            ($identity:ident, $options:ident) => {
+                let identity = $identity::from_bytes(address).unwrap();
+                let defaults = $options::default();
+                assert_eq!(defaults.identity(), None);
+                let restored = defaults.with_identity(identity);
+                assert_eq!(restored.identity().unwrap().bytes(), address);
+                assert_eq!(defaults.identity(), None);
+                let mut multicast = address;
+                multicast[0] |= 1;
+                assert!($identity::from_bytes(multicast).is_err());
+            };
+        }
+        roundtrip!(DualSenseIdentity, DualSenseOptions);
+        roundtrip!(DualShock4Identity, DualShock4Options);
+        roundtrip!(SwitchProIdentity, SwitchProOptions);
+    }
+
+    #[test]
+    fn older_family_metadata_covers_each_surface_restriction_and_existing_audio() {
+        use gr_controller_wire::registry::ids;
+        for (id, audio) in [
+            (ids::DUALSENSE, true),
+            (ids::DUALSHOCK4, true),
+            (ids::SWITCH_PRO, false),
+            (ids::XBOX360, true),
+        ] {
+            let family = FAMILIES.iter().find(|family| family.id == id).unwrap();
+            let expected: Vec<_> = (family.realizations)()
+                .iter()
+                .flat_map(|realization| {
+                    realization
+                        .surface
+                        .restrictions()
+                        .iter()
+                        .map(|restriction| (realization.surface.target(), restriction.reason))
+                })
+                .collect();
+            let registered: Vec<_> = family
+                .refused_operations
+                .iter()
+                .flat_map(|operation| {
+                    operation
+                        .targets
+                        .iter()
+                        .map(|&target| (target, operation.detail))
+                })
+                .collect();
+            assert_eq!(registered.len(), expected.len());
+            for entry in expected {
+                assert_eq!(
+                    registered
+                        .iter()
+                        .filter(|&&registered| registered == entry)
+                        .count(),
+                    1
+                );
+            }
+            assert_eq!(
+                family.subsystems,
+                if audio { AUDIO_SUBSYSTEMS } else { &[] }
+            );
+            assert!(family.creation_toggles.is_empty());
+            assert!(family.persistent_resources.is_empty());
         }
     }
 
