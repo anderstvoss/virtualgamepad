@@ -193,10 +193,13 @@ fn player_ack_rejects_wrong_status_truncation_and_nonzero_reserved_bytes() {
 fn dualsense_exact_host_outputs_and_idle_service() {
     enabled();
     assert!(nodes("dualsense").is_empty());
-    let mut controller = create_dualsense(CreationOptions {
-        target: RealizationTarget::LINUX_UHID_USB,
-        session: RealizationSessionId(0x4f55_5450),
-    })
+    let mut controller = create_dualsense(
+        CreationOptions {
+            target: RealizationTarget::LINUX_UHID_USB,
+            session: RealizationSessionId(0x4f55_5450),
+        },
+        gr_curated_controllers::DualSenseOptions::default(),
+    )
     .expect("production DualSense");
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let path = hidraw("dualsense", &mut || {
@@ -292,10 +295,13 @@ fn dualsense_exact_host_outputs_and_idle_service() {
 fn ds4_exact_rumble_lightbar_and_idle_service() {
     enabled();
     assert!(nodes("dualshock4").is_empty());
-    let mut controller = create_dualshock4(CreationOptions {
-        target: RealizationTarget::LINUX_UHID_USB,
-        session: RealizationSessionId(0x4f55_5450),
-    })
+    let mut controller = create_dualshock4(
+        CreationOptions {
+            target: RealizationTarget::LINUX_UHID_USB,
+            session: RealizationSessionId(0x4f55_5450),
+        },
+        gr_curated_controllers::DualShock4Options::default(),
+    )
     .expect("production DS4");
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let path = hidraw("dualshock4", &mut || {
@@ -353,10 +359,13 @@ fn ds4_exact_rumble_lightbar_and_idle_service() {
 fn switch_exact_encoded_rumble_and_player_request() {
     enabled();
     assert!(nodes("switch-pro").is_empty());
-    let mut controller = create_switch_pro(CreationOptions {
-        target: RealizationTarget::LINUX_UHID_USB,
-        session: RealizationSessionId(0x4f55_5450),
-    })
+    let mut controller = create_switch_pro(
+        CreationOptions {
+            target: RealizationTarget::LINUX_UHID_USB,
+            session: RealizationSessionId(0x4f55_5450),
+        },
+        gr_curated_controllers::SwitchProOptions::default(),
+    )
     .expect("production Switch Pro");
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let path = hidraw("switch-pro", &mut || {
@@ -445,10 +454,13 @@ fn switch_exact_encoded_rumble_and_player_request() {
 fn switch_usb_handshake_commands_reply_in_service_cycle() {
     enabled();
     assert!(nodes("switch-pro").is_empty());
-    let mut controller = create_switch_pro(CreationOptions {
-        target: RealizationTarget::LINUX_UHID_USB,
-        session: RealizationSessionId(0x4f55_5450),
-    })
+    let mut controller = create_switch_pro(
+        CreationOptions {
+            target: RealizationTarget::LINUX_UHID_USB,
+            session: RealizationSessionId(0x4f55_5450),
+        },
+        gr_curated_controllers::SwitchProOptions::default(),
+    )
     .expect("production Switch Pro");
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let path = hidraw("switch-pro", &mut || {

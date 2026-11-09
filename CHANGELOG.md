@@ -6,7 +6,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- The ordinary root now includes Wii Remote and Steam Controller 2026 handles
+  with typed input, retained outputs and service scheduling. Wii Remote exposes
+  attachment topology and explicit EEPROM resolution.
+
 ### Changed
+
+- Root and curated controller constructors take common realization options
+  plus family options. The family options restore Sony and Switch Pro identity
+  through `with_identity`. See the [alpha migration guide](docs/ALPHA_API_MIGRATION.md).
 
 - Switch Pro UHID uses its per-instance address as the requested uniq in place
   of the old generic label. The curated API can restore that address while

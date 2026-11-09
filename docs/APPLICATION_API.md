@@ -5,10 +5,13 @@ virtual controllers, not physical discovery, normalization, routing, player slot
 host provisioning, application threads, or filesystem persistence.
 
 ```rust,no_run
-use virtualgamepad::{create_dualsense, CreationOptions, RealizationId, DualSenseControl};
+use virtualgamepad::{create_dualsense, CreationOptions, RealizationId, DualSenseControl, DualSenseOptions};
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
-let mut controller = create_dualsense(CreationOptions::new(RealizationId::LINUX_UHID_USB))?;
-let identity = controller.identity().map(|identity| identity.to_bytes());
+let mut controller = create_dualsense(
+    CreationOptions::new(RealizationId::LINUX_UHID_USB),
+    DualSenseOptions::default(),
+)?;
+let identity = controller.identity().map(|identity| identity.bytes());
 controller.set_native(DualSenseControl::Cross, true)?;
 controller.commit()?;
 controller.service(&mut |output| { /* consume native output promptly */ })?;
@@ -23,21 +26,35 @@ if let Some(error) = controller.diagnostics().last_error() {
 
 The example is a short lifecycle illustration. A live endpoint requires continuous
 servicing. See [`controller_loop`](../examples/controller_loop.rs) for a bounded
-four-family application owner.
+application owner for the original four families.
 
 ## Selection and identity
 
-Use `CreationOptions::new(RealizationId::LINUX_UINPUT)` or
-`RealizationId::LINUX_UHID_USB` for the current application controllers. There is
-no automatic fallback. `LINUX_UHID_BLUETOOTH` is an exact research target identifier,
-not a supported current controller personality or actual Bluetooth transport.
+Choose an exact realization with `CreationOptions::new(target)`. All six
+families offer `LINUX_UINPUT`. Wii Remote offers `LINUX_UHID_BLUETOOTH`,
+which uses Bluetooth bus metadata through local UHID. The other five families
+offer `LINUX_UHID_USB`. Each realization has its own published restrictions
+and acceptance status. Creation has no automatic fallback.
 
-Options are reusable and contain no application/session identifier. Each creation
-gets fresh internal request/session ownership. `association().creation()` is a
-process-local observation, never persistent identity. Sony identities are typed,
-can be read from USB/UHID handles, and can be restored through the explicit
-`create_*_with_identity` constructors. No files are read/written for persistence.
-Concurrent controllers should use distinct persistent identities.
+Use common `CreationOptions` for realization and audio and the matching
+family options for controller-specific settings. Family options implement
+`Default` and can be reused. Each creation gets fresh internal request and
+session ownership. `association().creation()` is a process-local observation.
+
+For Sony USB/UHID and USB/IP, or Switch Pro USB/UHID, save the handle's
+typed `identity().bytes()` (unwrap the Sony option when present). Restore it
+with the matching `Identity::from_bytes(bytes)?` and pass it to
+`FamilyOptions::default().with_identity(identity)`. The root re-exports the
+curated identity types, so generation and restoration return the same errors
+at both layers. Sony uses pairing-feature byte order, and Switch Pro uses
+display order. Both require locally administered unicast flags. Switch Pro
+also retains the address on uinput, where the kernel provider has no unique-ID
+setter. Wii Remote options restore a locally administered unicast address in
+display order, and Steam Controller 2026 options restore a validated serial
+via `SteamController2026Identity::from_serial`. Both handles expose their
+resolved identity on either realization. Wired Xbox 360 uses options with no
+persistent identity. Use distinct identities for simultaneously connected controllers. Storage belongs to the
+application.
 
 For opt-in acceptance tests only, `VIRTUALGAMEPAD_INPUT_LAB=1` relabels
 DualSense/DS4 UHID or uinput `phys` into the corresponding
@@ -106,16 +123,16 @@ ordinary builds do not enable it.
 
 Each ordinary family handle now exposes `host_outputs()` under owner D2
 (#176 comments 6325147128 and 6328169640). It returns a typed snapshot
-(`DualSenseOutputState`, `DualShock4OutputState`, `SwitchProOutputState`, or
-`Xbox360OutputState`) of accepted in-process host output values and a revision,
+(`DualSenseOutputState`, `DualShock4OutputState`, `SwitchProOutputState`,
+`Xbox360OutputState`, `WiiRemoteOutputs`, or `SteamController2026Outputs`) of accepted in-process host output values and a revision,
 independently of the bounded observation queue, including after close. The
 revision advances once per accepted value change; repeated identical values and
 malformed requests do not advance it. Read the snapshot for latest levels and
 use events for edges and diagnostics. These values do not prove physical delivery.
 The same views remain available through the experimental curated handles.
 On UHID, Xbox 360 retains no supported host outputs (an empty snapshot at revision
-zero), and `evdev_rumble` is `None` for every family because evdev playback belongs
-to the uinput realization. USB-worker retained views explicitly return
+zero). The `evdev_rumble` field on the original four retained state types is
+`None` on UHID because evdev playback belongs to the uinput realization. USB-worker retained views explicitly return
 `UnavailableInRealization`: their lossy observation channel has no recovery query.
 
 Ordinary-root `surface().restrictions()` also exposes the retained-host-outputs
@@ -152,14 +169,13 @@ an enum variant alone. Existing restriction reasons still apply.
 `InputTopology::typed_inputs()` describes pressure buttons, binary capacitive
 contact, signed relative 2D displacement, bounded point sets and load cells.
 Descriptors retain native ranges and load-cell units; controller-native state
-and operations own values. The current four families leave this new slice empty.
+and operations own values. The original four families leave this slice empty.
 Future controller packages can declare these kinds without hiding them in custom
 modules. New kind and retained-state types are non-exhaustive; consumers must
 allow future variants/fields. `InputTopologyError` is also non-exhaustive;
 downstream matches must include a wildcard arm to handle future validation errors.
-The reviewed D2 snapshot grows from 110 to 122
-items with four handle methods, two descriptor accessors and a typed-input
-validation error; no old signature is removed.
+The reviewed D2 update added retained outputs, descriptor accessors and a
+typed-input validation error.
 
 Topology descriptors are read-only semantic metadata, not external controller
 construction or GUI sizing policy. Inspect their accessor slices and native ranges;
@@ -209,9 +225,64 @@ custom implementations must return their observation or `None` after state
 handling. Supporting `ControllerAssociation` constructors also need the new
 `companions` field. These SPI changes leave ordinary root signatures unchanged.
 
-Retained accepted host outputs are a supporting curated-controller interface, not
-a new ordinary-root method. Optional observation callbacks remain bounded and
-lossy. The internal retained view survives event eviction and terminal close,
-and revisions count semantic accepted changes rather than delivery or physical
-playback. USB-worker snapshots are explicitly unavailable because the lossy
-worker channel has no recovery query (tracked separately in #203).
+The supporting curated and ordinary-root handles expose retained host outputs.
+Optional observation callbacks remain bounded and lossy. The internal retained
+view survives event eviction and terminal close. USB-worker snapshots are
+explicitly unavailable because the lossy worker channel has no recovery query
+(tracked separately in #203).
+
+## Wii attachment and EEPROM, and Steam scheduling
+
+Use `create_wii_remote(creation, WiiRemoteOptions::default())` with the
+selected target. `attach` applies the attachment and `MotionPlus` presence in
+one transaction. Re-read `current_topology()`, `topology_generation()` and
+`association().components()` after an accepted change. The Bluetooth-bus UHID
+realization owns an addressed EEPROM image. Supply it through
+`WiiRemoteOptions::with_eeprom_image` and check `resource_dirty()` before or
+after closing. Resolve the terminal resource with
+`resolve_resource(WiiResourceDisposition::KeepSnapshot)` or `Discard`.
+Persist a kept image in the application. Uinput lacks the addressed memory
+channel and reports the resource unavailable. See
+[ADR-0013](adr/ADR-0013-persistent-resources.md) and
+[ADR-0019](adr/ADR-0019-live-topology.md).
+
+```rust,no_run
+use virtualgamepad::{
+    create_wii_remote, CreationOptions, RealizationId, WiiExtension,
+    WiiRemoteOptions, WiiResourceDisposition,
+};
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let mut wii = create_wii_remote(
+    CreationOptions::new(RealizationId::LINUX_UHID_BLUETOOTH),
+    WiiRemoteOptions::default(),
+)?;
+wii.attach(WiiExtension::None, true)?;
+let topology = wii.current_topology();
+wii.service(&mut |event| { /* consume optional native observations */ })?;
+wii.close();
+let snapshot = wii.resolve_resource(WiiResourceDisposition::KeepSnapshot)?;
+# Ok(()) }
+```
+
+```rust,no_run
+use virtualgamepad::{
+    create_steam_controller_2026, CreationOptions, RealizationId,
+    SteamController2026Options,
+};
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let mut steam = create_steam_controller_2026(
+    CreationOptions::new(RealizationId::LINUX_UHID_USB),
+    SteamController2026Options::default(),
+)?;
+steam.service(&mut |event| { /* consume optional native observations */ })?;
+let readiness = steam.readiness();
+let watch_write = steam.wants_write();
+let service_in = steam.next_service_in();
+let latest = steam.host_outputs()?;
+# Ok(()) }
+```
+
+Use the same readiness and deadline loop for Wii and Steam. Steam compatibility
+options retain their curated defaults. The opt-in PCM observation payload and
+retained last-packet view follow the existing curated behavior described in
+[ADR-0023](adr/ADR-0023-controller-subsystems.md).

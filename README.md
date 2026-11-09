@@ -30,16 +30,18 @@ validated.
   resources are opened.
 
 No cell is promoted beyond WIP yet; see the [support matrix](docs/CONTROLLER_SUPPORT.md)
-for the status definitions. Wii Remote is available as a WIP
-[supporting package](docs/WII_REMOTE.md), with uinput and Bluetooth-bus UHID;
-the ordinary-root constructors remain unchanged. Steam Controller (2026) and
-Xbox Series remain separate planned work.
+for the status definitions. The ordinary root includes all six families,
+including [Wii Remote](docs/WII_REMOTE.md) with uinput and Bluetooth-bus UHID,
+and Steam Controller 2026 with uinput and wired UHID. Xbox Series remains planned.
 
 ## Usage
 
 ```rust
-use virtualgamepad::{create_dualsense, CreationOptions, DualSenseControl, RealizationId};
-let mut pad = create_dualsense(CreationOptions::new(RealizationId::LINUX_UHID_USB))?;
+use virtualgamepad::{create_dualsense, CreationOptions, DualSenseControl, DualSenseOptions, RealizationId};
+let mut pad = create_dualsense(
+    CreationOptions::new(RealizationId::LINUX_UHID_USB),
+    DualSenseOptions::default(),
+)?;
 pad.set_native(DualSenseControl::Cross, true)?;
 pad.commit()?;
 pad.service(&mut |_output| {})?; // keep servicing, even while input is idle

@@ -26,10 +26,13 @@ macro_rules! live {
         impl LiveController for $controller {
             const NAME: &'static str = $name;
             fn create() -> Self {
-                let mut controller = $create(CreationOptions {
-                    target: RealizationTarget::LINUX_UINPUT,
-                    session: RealizationSessionId(7),
-                })
+                let mut controller = $create(
+                    CreationOptions {
+                        target: RealizationTarget::LINUX_UINPUT,
+                        session: RealizationSessionId(7),
+                    },
+                    Default::default(),
+                )
                 .unwrap();
                 controller.commit().unwrap();
                 controller

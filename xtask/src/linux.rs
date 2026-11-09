@@ -41,7 +41,7 @@ macro_rules! controllers {
                 if id == "virtualgamepad.steam-controller-2026" {
                     return gr_curated_controllers::steam_controller_2026::create_steam_controller_2026(supporting_creation(target), gr_curated_controllers::steam_controller_2026::SteamController2026Options::default()).map(Self::Steam).map_err(|e|e.to_string());
                 }
-                match id { $($id=>virtualgamepad::$create(CreationOptions::new(target)).map(Self::$variant).map_err(|e|e.to_string()),)+ _=>Err("unmapped compiled family".into()) }
+                match id { $($id=>virtualgamepad::$create(CreationOptions::new(target), Default::default()).map(Self::$variant).map_err(|e|e.to_string()),)+ _=>Err("unmapped compiled family".into()) }
             }
             fn physical_paths(&self)->Vec<String> { match self { $(Self::$variant(c)=>c.association().components().iter().filter_map(|c|c.requested_physical_path().map(str::to_owned)).collect(),)+ Self::Steam(c)=>c.association().requested_physical_path.iter().cloned().collect(), Self::Wii(c)=>c.association().requested_physical_path.iter().cloned().chain(c.association().companions.iter().filter_map(|c|c.requested_physical_path.clone())).collect() } }
             fn topology(&self)->&InputTopology { match self { $(Self::$variant(c)=>c.surface().common_surface().input_topology(),)+ Self::Steam(c)=>c.surface().input_topology(), Self::Wii(c)=>c.surface().input_topology() } }

@@ -37,3 +37,80 @@ Post-GUI audit: the empty root `audio-alsa` feature is removed. ALSA host-device
 routing belongs to the demo's `audio-alsa` feature, whose defaults are unchanged.
 Library users enable `audio-pipewire` for local UHID audio or `audio-usbip` for the
 WIP composite; ALSA routing does not add a library realization.
+
+## C7 step 20a · Curated controller creation
+
+The curated crate and corresponding `virtualgamepad::experimental` exports
+now use common realization options plus family options. The ordinary root,
+Wii and Steam snapshots are unchanged in this step.
+
+| Before | After |
+| --- | --- |
+| Curated `create_dualsense(creation)` | `create_dualsense(creation, DualSenseOptions::default())` |
+| Curated `create_dualshock4(creation)` | `create_dualshock4(creation, DualShock4Options::default())` |
+| Curated `create_switch_pro(creation)` | `create_switch_pro(creation, SwitchProOptions::default())` |
+| Curated `create_xbox360(creation)` | `create_xbox360(creation, Xbox360Options::default())` |
+| Curated `create_dualsense_with_identity(creation, id)` | `create_dualsense(creation, DualSenseOptions::default().with_identity(id))` |
+| Curated `create_dualshock4_with_identity(creation, id)` | `create_dualshock4(creation, DualShock4Options::default().with_identity(id))` |
+| Curated `create_switch_pro_with_identity(creation, id)` | `create_switch_pro(creation, SwitchProOptions::default().with_identity(id))` |
+| Curated Sony identity `to_bytes()` | `bytes()` |
+| Curated Sony identity `from_bytes(bytes) -> Option<_>` | `from_bytes(bytes) -> Result<_, ProviderError>` |
+
+Curated Sony handles expose their local USB/UHID pairing identity via
+`identity()`. Sony address bytes use pairing-feature order. Switch Pro and Wii
+use display order. All require locally administered unicast flags. The wired
+Xbox 360 options carry no persistent identity for the existing standard-HID
+presentation (research `x360-l0-consumer-sdl360-vs-generic-hid`).
+
+Curated USB worker constructors still bind an already opened bridge. The
+application-side USB/IP path resolves identity before opening that bridge.
+Registry entries now describe the older families' existing audio components
+and realization restrictions. Sony input-lab isolation is an environment
+setting for acceptance runs, so it has no family option or demo toggle.
+
+## C7 step 20b · Ordinary-root controller creation
+
+Root `CreationOptions` still selects the realization and audio.
+The family options and identity types are re-exported from the curated crate.
+The ordinary API remains open to changes during alpha.
+
+| Before | After |
+| --- | --- |
+| Root `create_dualsense(creation)` | `create_dualsense(creation, DualSenseOptions::default())` |
+| Root `create_dualshock4(creation)` | `create_dualshock4(creation, DualShock4Options::default())` |
+| Root `create_switch_pro(creation)` | `create_switch_pro(creation, SwitchProOptions::default())` |
+| Root `create_xbox360(creation)` | `create_xbox360(creation, Xbox360Options::default())` |
+| Root `create_dualsense_with_identity(creation, id)` | `create_dualsense(creation, DualSenseOptions::default().with_identity(id))` |
+| Root `create_dualshock4_with_identity(creation, id)` | `create_dualshock4(creation, DualShock4Options::default().with_identity(id))` |
+| Root Sony identity `to_bytes()` | `bytes()` |
+| Root Sony identity `const from_bytes(bytes) -> Option<_>` | `from_bytes(bytes) -> Result<_, ProviderError>`. Use `.ok()` for an option. Validate at runtime if migrating a const initializer. |
+| Root Sony identity `generate() -> Result<_, ControllerError>` | `generate() -> Result<_, ProviderError>` from the shared curated type. Handle the error at the persistence boundary. |
+
+The root adds `SwitchProIdentity` and `SwitchProController::identity()`.
+Restore a stored Switch Pro address via `SwitchProOptions::with_identity`.
+The existing Sony root handle identity accessors still return an option.
+Wii and Steam supporting snapshots are unchanged.
+
+## C7 step 20c · Wii and Steam at the ordinary root
+
+Wii Remote and Steam Controller 2026 constructors now also live at
+`virtualgamepad::create_wii_remote` and
+`virtualgamepad::create_steam_controller_2026`. Call them with ordinary
+`CreationOptions::new(realization)` and the existing curated family options.
+The curated constructors retain their signatures. The root creates the
+process-local session token internally. The root re-exports family option,
+identity, state, retained-output and resource types.
+
+The root `service` callbacks receive `WiiRemoteOutputEvent` or
+`SteamController2026OutputEvent`. For curated callers switching to the root,
+match `HostLifecycle`, `ForceFeedback` and `HidOutput` on the corresponding
+typed enum in place of the raw reverse event. `HidOutput` preserves the report
+ID and payload. Use `host_outputs()` for retained accepted values. Steam
+`readiness()`, `wants_write()` and `next_service_in()` preserve curated
+scheduling. Wii `attach()`, topology accessors, `resource_dirty()` and
+`resolve_resource()` preserve the curated ownership and cleanup rules.
+`association()` exposes application components, refreshed after a successful
+Wii attachment change.
+
+The Wii and Steam supporting snapshots are unchanged. No existing ordinary-root
+declaration is removed or renamed in this step.

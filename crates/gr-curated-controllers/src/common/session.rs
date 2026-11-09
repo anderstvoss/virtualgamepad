@@ -68,6 +68,7 @@ pub(crate) struct ControllerSession<D: HidDriver> {
     backend: Backend<D>,
     association: crate::ControllerAssociation,
     selection: gr_realization_api::RealizationSelection,
+    hid_identity: Option<[u8; 6]>,
     started: Instant,
     observations: VecDeque<RawReverseEvent>,
     dropped: u64,
@@ -90,6 +91,7 @@ impl<D: HidDriver> ControllerSession<D> {
                 closed: false,
                 bridge,
             },
+            hid_identity: None,
             started: Instant::now(),
             observations: VecDeque::new(),
             dropped: 0,
@@ -101,6 +103,7 @@ impl<D: HidDriver> ControllerSession<D> {
             selection: runtime.selection(),
             association: crate::ControllerAssociation::default(),
             backend: Backend::Native(runtime),
+            hid_identity: None,
             started: Instant::now(),
             observations: VecDeque::new(),
             dropped: 0,
@@ -128,6 +131,7 @@ impl<D: HidDriver> ControllerSession<D> {
             backend: Backend::Hid { driver, runtime },
             association,
             selection,
+            hid_identity: Some(identity),
             started: Instant::now(),
             observations: VecDeque::new(),
             dropped: 0,
@@ -140,6 +144,9 @@ impl<D: HidDriver> ControllerSession<D> {
     }
     pub(crate) const fn association(&self) -> &crate::ControllerAssociation {
         &self.association
+    }
+    pub(crate) const fn hid_identity(&self) -> Option<[u8; 6]> {
+        self.hid_identity
     }
     pub(crate) const fn state(&self) -> &D::State {
         match &self.backend {

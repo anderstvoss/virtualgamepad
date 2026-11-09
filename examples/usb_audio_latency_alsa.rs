@@ -20,8 +20,9 @@ mod linux {
         time::{Duration, Instant},
     };
     use virtualgamepad::{
-        AudioExposure, AudioOptions, ControllerAudio, CreationOptions, RealizationId,
-        SampleDirection, create_dualsense, create_dualshock4, create_xbox360,
+        AudioExposure, AudioOptions, ControllerAudio, CreationOptions, DualSenseOptions,
+        DualShock4Options, RealizationId, SampleDirection, Xbox360Options, create_dualsense,
+        create_dualshock4, create_xbox360,
     };
 
     const BLOCK: usize = 128;
@@ -272,19 +273,19 @@ mod linux {
             .with_audio(AudioOptions::new(AudioExposure::Emulated));
         match args[0].as_str() {
             "dualsense" => {
-                let mut c = create_dualsense(options)?;
+                let mut c = create_dualsense(options, DualSenseOptions::default())?;
                 let result = run(c.audio().ok_or("missing audio")?, &args[0], seconds, port);
                 c.close();
                 result?;
             }
             "dualshock4" => {
-                let mut c = create_dualshock4(options)?;
+                let mut c = create_dualshock4(options, DualShock4Options::default())?;
                 let result = run(c.audio().ok_or("missing audio")?, &args[0], seconds, port);
                 c.close();
                 result?;
             }
             "xbox360" => {
-                let mut c = create_xbox360(options)?;
+                let mut c = create_xbox360(options, Xbox360Options::default())?;
                 let result = run(c.audio().ok_or("missing audio")?, &args[0], seconds, port);
                 c.close();
                 result?;

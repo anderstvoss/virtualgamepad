@@ -659,6 +659,72 @@
             "impl UnwindSafe for SpeakerFormat"
           ]
         },
+        "enum.SteamController2026Button.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SteamController2026Button { Show 22 variants A, B, X, Y, Qam, RightStick, Menu, R4, R5, RightShoulder, Down, Right, Left, Up, View, LeftStick, Steam, L4, L5, LeftShoulder, RightTrigger, LeftTrigger, }"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026Button",
+            "impl Copy for SteamController2026Button",
+            "impl Debug for SteamController2026Button",
+            "impl Eq for SteamController2026Button",
+            "impl PartialEq for SteamController2026Button",
+            "impl RefUnwindSafe for SteamController2026Button",
+            "impl Send for SteamController2026Button",
+            "impl Sync for SteamController2026Button",
+            "impl Unpin for SteamController2026Button",
+            "impl UnwindSafe for SteamController2026Button"
+          ]
+        },
+        "enum.SteamController2026Haptic.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SteamController2026Haptic { Stream(Box<SteamController2026StreamPacket>), Rumble { kind: u8, intensity: u16, left_speed: u16, left_gain: u8, right_speed: u16, right_gain: u8, }, Pulse { side: u8, on_us: u16, off_us: u16, count: u16, }, Command { side: u8, command: u8, gain_db: i8, }, Lfo { side: u8, gain_db: i8, frequency: u16, duration_ms: u16, lfo_frequency: u16, depth: u8, }, Sweep { side: u8, gain_db: i8, duration_ms: u16, start: u16, end: u16, }, Script { side: u8, script: u8, gain_db: i8, }, }"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026Haptic",
+            "impl Debug for SteamController2026Haptic",
+            "impl Eq for SteamController2026Haptic",
+            "impl PartialEq for SteamController2026Haptic",
+            "impl RefUnwindSafe for SteamController2026Haptic",
+            "impl Send for SteamController2026Haptic",
+            "impl Sync for SteamController2026Haptic",
+            "impl Unpin for SteamController2026Haptic",
+            "impl UnwindSafe for SteamController2026Haptic"
+          ]
+        },
+        "enum.SteamController2026OutputEvent.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SteamController2026OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026OutputEvent",
+            "impl Debug for SteamController2026OutputEvent",
+            "impl Eq for SteamController2026OutputEvent",
+            "impl PartialEq for SteamController2026OutputEvent",
+            "impl RefUnwindSafe for SteamController2026OutputEvent",
+            "impl Send for SteamController2026OutputEvent",
+            "impl Sync for SteamController2026OutputEvent",
+            "impl Unpin for SteamController2026OutputEvent",
+            "impl UnwindSafe for SteamController2026OutputEvent"
+          ]
+        },
+        "enum.SteamController2026StreamPacket.html": {
+          "declarations": [
+            "pub enum SteamController2026StreamPacket { Configure { operation: u8, target: u8, mode: u8, }, Mono { target: u8, data: Vec<u8>, }, Stereo { left: Vec<u8>, right: Vec<u8>, }, }",
+            "pub fn from_output( report_id: u8, payload: &[u8], ) -> Option<SteamController2026StreamPacket>"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026StreamPacket",
+            "impl Debug for SteamController2026StreamPacket",
+            "impl Eq for SteamController2026StreamPacket",
+            "impl PartialEq for SteamController2026StreamPacket",
+            "impl RefUnwindSafe for SteamController2026StreamPacket",
+            "impl Send for SteamController2026StreamPacket",
+            "impl Sync for SteamController2026StreamPacket",
+            "impl Unpin for SteamController2026StreamPacket",
+            "impl UnwindSafe for SteamController2026StreamPacket"
+          ]
+        },
         "enum.SwitchProControl.html": {
           "declarations": [
             "pub enum SwitchProControl { Show 14 variants B, A, Y, X, L, R, Zl, Zr, Minus, Plus, Home, Capture, LeftStickPress, RightStickPress, }"
@@ -744,6 +810,92 @@
             "impl UnwindSafe for TriggerInputKind"
           ]
         },
+        "enum.WiiExtension.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum WiiExtension { None, Nunchuk(WiiNunchukState), Classic(WiiClassicState), ClassicPro(WiiClassicState), }"
+          ],
+          "traits": [
+            "impl Clone for WiiExtension",
+            "impl Debug for WiiExtension",
+            "impl Default for WiiExtension",
+            "impl Eq for WiiExtension",
+            "impl PartialEq for WiiExtension",
+            "impl RefUnwindSafe for WiiExtension",
+            "impl Send for WiiExtension",
+            "impl Sync for WiiExtension",
+            "impl Unpin for WiiExtension",
+            "impl UnwindSafe for WiiExtension"
+          ]
+        },
+        "enum.WiiRemoteButton.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum WiiRemoteButton { Left, Right, Up, Down, Plus, Minus, One, Two, A, B, Home, }"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteButton",
+            "impl Copy for WiiRemoteButton",
+            "impl Debug for WiiRemoteButton",
+            "impl Eq for WiiRemoteButton",
+            "impl PartialEq for WiiRemoteButton",
+            "impl RefUnwindSafe for WiiRemoteButton",
+            "impl Send for WiiRemoteButton",
+            "impl Sync for WiiRemoteButton",
+            "impl Unpin for WiiRemoteButton",
+            "impl UnwindSafe for WiiRemoteButton"
+          ]
+        },
+        "enum.WiiRemoteOutputEvent.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum WiiRemoteOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteOutputEvent",
+            "impl Debug for WiiRemoteOutputEvent",
+            "impl Eq for WiiRemoteOutputEvent",
+            "impl PartialEq for WiiRemoteOutputEvent",
+            "impl RefUnwindSafe for WiiRemoteOutputEvent",
+            "impl Send for WiiRemoteOutputEvent",
+            "impl Sync for WiiRemoteOutputEvent",
+            "impl Unpin for WiiRemoteOutputEvent",
+            "impl UnwindSafe for WiiRemoteOutputEvent"
+          ]
+        },
+        "enum.WiiRemoteRevision.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum WiiRemoteRevision { Original, EarlyIntegratedPlus, Tr, }",
+            "pub const fn has_identity_evidence(self) -> bool"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteRevision",
+            "impl Copy for WiiRemoteRevision",
+            "impl Debug for WiiRemoteRevision",
+            "impl Default for WiiRemoteRevision",
+            "impl Eq for WiiRemoteRevision",
+            "impl PartialEq for WiiRemoteRevision",
+            "impl RefUnwindSafe for WiiRemoteRevision",
+            "impl Send for WiiRemoteRevision",
+            "impl Sync for WiiRemoteRevision",
+            "impl Unpin for WiiRemoteRevision",
+            "impl UnwindSafe for WiiRemoteRevision"
+          ]
+        },
+        "enum.WiiResourceDisposition.html": {
+          "declarations": [
+            "pub enum WiiResourceDisposition { KeepSnapshot, Discard, }"
+          ],
+          "traits": [
+            "impl Clone for WiiResourceDisposition",
+            "impl Copy for WiiResourceDisposition",
+            "impl Debug for WiiResourceDisposition",
+            "impl Eq for WiiResourceDisposition",
+            "impl PartialEq for WiiResourceDisposition",
+            "impl RefUnwindSafe for WiiResourceDisposition",
+            "impl Send for WiiResourceDisposition",
+            "impl Sync for WiiResourceDisposition",
+            "impl Unpin for WiiResourceDisposition",
+            "impl UnwindSafe for WiiResourceDisposition"
+          ]
+        },
         "enum.Xbox360Control.html": {
           "declarations": [
             "pub enum Xbox360Control { A, B, X, Y, LeftShoulder, RightShoulder, Back, Start, Guide, LeftStickPress, RightStickPress, }"
@@ -779,37 +931,37 @@
         },
         "fn.create_dualsense.html": {
           "declarations": [
-            "pub fn create_dualsense( options: CreationOptions, ) -> Result<DualSenseController, ControllerError>"
-          ],
-          "traits": []
-        },
-        "fn.create_dualsense_with_identity.html": {
-          "declarations": [
-            "pub fn create_dualsense_with_identity( options: CreationOptions, identity: DualSenseIdentity, ) -> Result<DualSenseController, ControllerError>"
+            "pub fn create_dualsense( options: CreationOptions, family: DualSenseOptions, ) -> Result<DualSenseController, ControllerError>"
           ],
           "traits": []
         },
         "fn.create_dualshock4.html": {
           "declarations": [
-            "pub fn create_dualshock4( options: CreationOptions, ) -> Result<DualShock4Controller, ControllerError>"
+            "pub fn create_dualshock4( options: CreationOptions, family: DualShock4Options, ) -> Result<DualShock4Controller, ControllerError>"
           ],
           "traits": []
         },
-        "fn.create_dualshock4_with_identity.html": {
+        "fn.create_steam_controller_2026.html": {
           "declarations": [
-            "pub fn create_dualshock4_with_identity( options: CreationOptions, identity: DualShock4Identity, ) -> Result<DualShock4Controller, ControllerError>"
+            "pub fn create_steam_controller_2026( options: CreationOptions, family: SteamController2026Options, ) -> Result<SteamController2026Controller, ControllerError>"
           ],
           "traits": []
         },
         "fn.create_switch_pro.html": {
           "declarations": [
-            "pub fn create_switch_pro( options: CreationOptions, ) -> Result<SwitchProController, ControllerError>"
+            "pub fn create_switch_pro( options: CreationOptions, family: SwitchProOptions, ) -> Result<SwitchProController, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.create_wii_remote.html": {
+          "declarations": [
+            "pub fn create_wii_remote( options: CreationOptions, family: WiiRemoteOptions, ) -> Result<WiiRemoteController, ControllerError>"
           ],
           "traits": []
         },
         "fn.create_xbox360.html": {
           "declarations": [
-            "pub fn create_xbox360( options: CreationOptions, ) -> Result<Xbox360Controller, ControllerError>"
+            "pub fn create_xbox360( options: CreationOptions, family: Xbox360Options, ) -> Result<Xbox360Controller, ControllerError>"
           ],
           "traits": []
         },
@@ -1269,9 +1421,9 @@
         "struct.DualSenseIdentity.html": {
           "declarations": [
             "pub struct DualSenseIdentity(/* private fields */);",
-            "pub fn generate() -> Result<Self, ControllerError>",
-            "pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self>",
-            "pub const fn to_bytes(self) -> [u8; 6]"
+            "pub fn generate() -> Result<DualSenseIdentity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<DualSenseIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
           ],
           "traits": [
             "impl Clone for DualSenseIdentity",
@@ -1285,6 +1437,24 @@
             "impl Sync for DualSenseIdentity",
             "impl Unpin for DualSenseIdentity",
             "impl UnwindSafe for DualSenseIdentity"
+          ]
+        },
+        "struct.DualSenseOptions.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualSenseOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: DualSenseIdentity, ) -> DualSenseOptions",
+            "pub const fn identity(self) -> Option<DualSenseIdentity>"
+          ],
+          "traits": [
+            "impl Clone for DualSenseOptions",
+            "impl Copy for DualSenseOptions",
+            "impl Debug for DualSenseOptions",
+            "impl Default for DualSenseOptions",
+            "impl RefUnwindSafe for DualSenseOptions",
+            "impl Send for DualSenseOptions",
+            "impl Sync for DualSenseOptions",
+            "impl Unpin for DualSenseOptions",
+            "impl UnwindSafe for DualSenseOptions"
           ]
         },
         "struct.DualSenseOutputState.html": {
@@ -1446,9 +1616,9 @@
         "struct.DualShock4Identity.html": {
           "declarations": [
             "pub struct DualShock4Identity(/* private fields */);",
-            "pub fn generate() -> Result<Self, ControllerError>",
-            "pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self>",
-            "pub const fn to_bytes(self) -> [u8; 6]"
+            "pub fn generate() -> Result<DualShock4Identity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<DualShock4Identity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
           ],
           "traits": [
             "impl Clone for DualShock4Identity",
@@ -1479,6 +1649,24 @@
             "impl Sync for DualShock4MotionSample",
             "impl Unpin for DualShock4MotionSample",
             "impl UnwindSafe for DualShock4MotionSample"
+          ]
+        },
+        "struct.DualShock4Options.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualShock4Options { /* private fields */ }",
+            "pub const fn with_identity( self, identity: DualShock4Identity, ) -> DualShock4Options",
+            "pub const fn identity(self) -> Option<DualShock4Identity>"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Options",
+            "impl Copy for DualShock4Options",
+            "impl Debug for DualShock4Options",
+            "impl Default for DualShock4Options",
+            "impl RefUnwindSafe for DualShock4Options",
+            "impl Send for DualShock4Options",
+            "impl Sync for DualShock4Options",
+            "impl Unpin for DualShock4Options",
+            "impl UnwindSafe for DualShock4Options"
           ]
         },
         "struct.DualShock4OutputState.html": {
@@ -1878,6 +2066,171 @@
             "impl UnwindSafe for RumblePlayback"
           ]
         },
+        "struct.SteamController2026Controller.html": {
+          "declarations": [
+            "pub struct SteamController2026Controller { /* private fields */ }",
+            "pub const fn identity(&self) -> &SteamController2026Identity",
+            "pub fn state(&self) -> &SteamController2026State",
+            "pub fn host_outputs(&self) -> Result<SteamController2026Outputs, ControlError>",
+            "pub fn surface(&self) -> &'static ControllerSurface",
+            "pub fn wants_write(&self) -> bool",
+            "pub fn next_service_in(&self) -> Option<Duration>",
+            "pub fn dropped_output_events(&self) -> u64",
+            "pub fn is_dirty(&self) -> bool",
+            "pub fn is_closed(&self) -> bool",
+            "pub fn neutralize(&mut self) -> Result<(), ControlError>",
+            "pub fn commit(&mut self) -> Result<(), CommitError>",
+            "pub fn close(&mut self)",
+            "pub fn readiness(&self) -> Option<ServiceReadiness<'_>>",
+            "pub fn association(&self) -> &ControllerAssociation",
+            "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
+            "pub fn service( &mut self, callback: &mut dyn FnMut(SteamController2026OutputEvent), ) -> Result<(), ControllerError>",
+            "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
+            "pub fn set_inputs( &mut self, state: SteamController2026State, ) -> Result<(), ControlError>",
+            "pub fn set_button( &mut self, button: SteamController2026Button, pressed: bool, ) -> Result<(), ControlError>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for SteamController2026Controller",
+            "impl !Sync for SteamController2026Controller",
+            "impl !UnwindSafe for SteamController2026Controller",
+            "impl Send for SteamController2026Controller",
+            "impl Unpin for SteamController2026Controller"
+          ]
+        },
+        "struct.SteamController2026Identity.html": {
+          "declarations": [
+            "pub struct SteamController2026Identity { /* private fields */ }",
+            "pub fn from_serial( serial: impl Into<String>, ) -> Result<SteamController2026Identity, ProviderError>",
+            "pub fn generate() -> Result<SteamController2026Identity, ProviderError>",
+            "pub fn serial(&self) -> &str"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026Identity",
+            "impl Debug for SteamController2026Identity",
+            "impl Eq for SteamController2026Identity",
+            "impl PartialEq for SteamController2026Identity",
+            "impl RefUnwindSafe for SteamController2026Identity",
+            "impl Send for SteamController2026Identity",
+            "impl Sync for SteamController2026Identity",
+            "impl Unpin for SteamController2026Identity",
+            "impl UnwindSafe for SteamController2026Identity"
+          ]
+        },
+        "struct.SteamController2026Options.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct SteamController2026Options { /* private fields */ }",
+            "pub fn with_identity( self, identity: SteamController2026Identity, ) -> SteamController2026Options",
+            "pub const fn identity(&self) -> Option<&SteamController2026Identity>",
+            "pub fn with_steam_client_compat( self, enabled: bool, ) -> SteamController2026Options",
+            "pub const fn steam_client_compat(&self) -> bool",
+            "pub fn with_haptic_streaming(self, enabled: bool) -> SteamController2026Options",
+            "pub const fn haptic_streaming(&self) -> bool",
+            "pub fn with_lizard_mode(self, enabled: bool) -> SteamController2026Options",
+            "pub const fn lizard_mode(&self) -> bool"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026Options",
+            "impl Debug for SteamController2026Options",
+            "impl Default for SteamController2026Options",
+            "impl Eq for SteamController2026Options",
+            "impl PartialEq for SteamController2026Options",
+            "impl RefUnwindSafe for SteamController2026Options",
+            "impl Send for SteamController2026Options",
+            "impl Sync for SteamController2026Options",
+            "impl Unpin for SteamController2026Options",
+            "impl UnwindSafe for SteamController2026Options"
+          ]
+        },
+        "struct.SteamController2026Outputs.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct SteamController2026Outputs { pub revision: u64, pub haptics: [Option<SteamController2026Haptic>; 6], pub streaming: SteamController2026StreamOutputs, pub led_brightness: Option<u16>, pub led_override: Option<bool>, pub led_rgbw: Option<[u8; 4]>, }"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026Outputs",
+            "impl Debug for SteamController2026Outputs",
+            "impl Default for SteamController2026Outputs",
+            "impl Eq for SteamController2026Outputs",
+            "impl PartialEq for SteamController2026Outputs",
+            "impl RefUnwindSafe for SteamController2026Outputs",
+            "impl Send for SteamController2026Outputs",
+            "impl Sync for SteamController2026Outputs",
+            "impl Unpin for SteamController2026Outputs",
+            "impl UnwindSafe for SteamController2026Outputs"
+          ]
+        },
+        "struct.SteamController2026State.html": {
+          "declarations": [
+            "pub struct SteamController2026State { pub sticks: [[i16; 2]; 2], pub triggers: [i16; 2], pub pads: [SteamTrackpadState; 2], pub stick_touch: [bool; 2], pub grip_touch: [bool; 2], pub motion: SteamMotionSample, /* private fields */ }",
+            "pub const fn input_topology(&self) -> &'static InputTopology",
+            "pub fn neutralize(&mut self)",
+            "pub const fn pressed(&self, button: SteamController2026Button) -> bool",
+            "pub fn set_button(&mut self, button: SteamController2026Button, pressed: bool)"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026State",
+            "impl Debug for SteamController2026State",
+            "impl Default for SteamController2026State",
+            "impl Eq for SteamController2026State",
+            "impl PartialEq for SteamController2026State",
+            "impl RefUnwindSafe for SteamController2026State",
+            "impl Send for SteamController2026State",
+            "impl Sync for SteamController2026State",
+            "impl Unpin for SteamController2026State",
+            "impl UnwindSafe for SteamController2026State"
+          ]
+        },
+        "struct.SteamController2026StreamOutputs.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct SteamController2026StreamOutputs { pub enabled: bool, pub configured: [bool; 4], pub buffered_bytes: [u16; 4], pub received_bytes: [u64; 4], pub overrun_bytes: [u64; 4], pub last_packet: Option<SteamController2026StreamPacket>, }"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026StreamOutputs",
+            "impl Debug for SteamController2026StreamOutputs",
+            "impl Default for SteamController2026StreamOutputs",
+            "impl Eq for SteamController2026StreamOutputs",
+            "impl PartialEq for SteamController2026StreamOutputs",
+            "impl RefUnwindSafe for SteamController2026StreamOutputs",
+            "impl Send for SteamController2026StreamOutputs",
+            "impl Sync for SteamController2026StreamOutputs",
+            "impl Unpin for SteamController2026StreamOutputs",
+            "impl UnwindSafe for SteamController2026StreamOutputs"
+          ]
+        },
+        "struct.SteamMotionSample.html": {
+          "declarations": [
+            "pub struct SteamMotionSample { pub timestamp_us: u32, pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], pub quaternion: [i16; 4], }"
+          ],
+          "traits": [
+            "impl Clone for SteamMotionSample",
+            "impl Debug for SteamMotionSample",
+            "impl Default for SteamMotionSample",
+            "impl Eq for SteamMotionSample",
+            "impl PartialEq for SteamMotionSample",
+            "impl RefUnwindSafe for SteamMotionSample",
+            "impl Send for SteamMotionSample",
+            "impl Sync for SteamMotionSample",
+            "impl Unpin for SteamMotionSample",
+            "impl UnwindSafe for SteamMotionSample"
+          ]
+        },
+        "struct.SteamTrackpadState.html": {
+          "declarations": [
+            "pub struct SteamTrackpadState { pub position: [i16; 2], pub pressure: u16, pub touch: bool, pub click: bool, }"
+          ],
+          "traits": [
+            "impl Clone for SteamTrackpadState",
+            "impl Copy for SteamTrackpadState",
+            "impl Debug for SteamTrackpadState",
+            "impl Default for SteamTrackpadState",
+            "impl Eq for SteamTrackpadState",
+            "impl PartialEq for SteamTrackpadState",
+            "impl RefUnwindSafe for SteamTrackpadState",
+            "impl Send for SteamTrackpadState",
+            "impl Sync for SteamTrackpadState",
+            "impl Unpin for SteamTrackpadState",
+            "impl UnwindSafe for SteamTrackpadState"
+          ]
+        },
         "struct.StickInput.html": {
           "declarations": [
             "pub struct StickInput { /* private fields */ }",
@@ -1923,6 +2276,7 @@
         "struct.SwitchProController.html": {
           "declarations": [
             "pub struct SwitchProController { /* private fields */ }",
+            "pub const fn identity(&self) -> SwitchProIdentity",
             "pub fn stream_enabled(&self) -> bool",
             "pub fn motion_report_counter(&self) -> u8",
             "pub fn wants_write(&self) -> bool",
@@ -1953,6 +2307,26 @@
             "impl Unpin for SwitchProController"
           ]
         },
+        "struct.SwitchProIdentity.html": {
+          "declarations": [
+            "pub struct SwitchProIdentity(/* private fields */);",
+            "pub fn from_bytes(address: [u8; 6]) -> Result<SwitchProIdentity, ProviderError>",
+            "pub fn generate() -> Result<SwitchProIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for SwitchProIdentity",
+            "impl Copy for SwitchProIdentity",
+            "impl Debug for SwitchProIdentity",
+            "impl Eq for SwitchProIdentity",
+            "impl PartialEq for SwitchProIdentity",
+            "impl RefUnwindSafe for SwitchProIdentity",
+            "impl Send for SwitchProIdentity",
+            "impl Sync for SwitchProIdentity",
+            "impl Unpin for SwitchProIdentity",
+            "impl UnwindSafe for SwitchProIdentity"
+          ]
+        },
         "struct.SwitchProMotionSample.html": {
           "declarations": [
             "pub struct SwitchProMotionSample { pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], }"
@@ -1968,6 +2342,24 @@
             "impl Sync for SwitchProMotionSample",
             "impl Unpin for SwitchProMotionSample",
             "impl UnwindSafe for SwitchProMotionSample"
+          ]
+        },
+        "struct.SwitchProOptions.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions",
+            "pub const fn identity(self) -> Option<SwitchProIdentity>"
+          ],
+          "traits": [
+            "impl Clone for SwitchProOptions",
+            "impl Copy for SwitchProOptions",
+            "impl Debug for SwitchProOptions",
+            "impl Default for SwitchProOptions",
+            "impl RefUnwindSafe for SwitchProOptions",
+            "impl Send for SwitchProOptions",
+            "impl Sync for SwitchProOptions",
+            "impl Unpin for SwitchProOptions",
+            "impl UnwindSafe for SwitchProOptions"
           ]
         },
         "struct.SwitchProOutputState.html": {
@@ -2143,6 +2535,264 @@
             "impl UnwindSafe for TypedInput"
           ]
         },
+        "struct.WiiClassicState.html": {
+          "declarations": [
+            "pub struct WiiClassicState { pub left: [u8; 2], pub right: [u8; 2], pub triggers: [u8; 2], pub buttons: [bool; 15], }"
+          ],
+          "traits": [
+            "impl Clone for WiiClassicState",
+            "impl Debug for WiiClassicState",
+            "impl Default for WiiClassicState",
+            "impl Eq for WiiClassicState",
+            "impl PartialEq for WiiClassicState",
+            "impl RefUnwindSafe for WiiClassicState",
+            "impl Send for WiiClassicState",
+            "impl Sync for WiiClassicState",
+            "impl Unpin for WiiClassicState",
+            "impl UnwindSafe for WiiClassicState"
+          ]
+        },
+        "struct.WiiEepromImage.html": {
+          "declarations": [
+            "pub struct WiiEepromImage { /* private fields */ }",
+            "pub fn import(bytes: Vec<u8>) -> Result<WiiEepromImage, ControlError>",
+            "pub fn with_extension_calibration( self, calibration: WiiExtensionCalibration, ) -> WiiEepromImage",
+            "pub fn extension_calibration(&self) -> &WiiExtensionCalibration",
+            "pub fn bytes(&self) -> &[u8] \u24d8"
+          ],
+          "traits": [
+            "impl Clone for WiiEepromImage",
+            "impl Debug for WiiEepromImage",
+            "impl Default for WiiEepromImage",
+            "impl Eq for WiiEepromImage",
+            "impl PartialEq for WiiEepromImage",
+            "impl RefUnwindSafe for WiiEepromImage",
+            "impl Send for WiiEepromImage",
+            "impl Sync for WiiEepromImage",
+            "impl Unpin for WiiEepromImage",
+            "impl UnwindSafe for WiiEepromImage"
+          ]
+        },
+        "struct.WiiExtensionCalibration.html": {
+          "declarations": [
+            "pub struct WiiExtensionCalibration { /* private fields */ }",
+            "pub fn with_motion_plus( self, block: Option<[u8; 32]>, ) -> Result<WiiExtensionCalibration, ControlError>",
+            "pub fn with_nunchuk( self, block: Option<[u8; 16]>, ) -> Result<WiiExtensionCalibration, ControlError>",
+            "pub fn with_classic( self, block: Option<[u8; 16]>, ) -> Result<WiiExtensionCalibration, ControlError>",
+            "pub fn motion_plus(&self) -> Option<[u8; 32]>",
+            "pub fn nunchuk(&self) -> Option<[u8; 16]>",
+            "pub fn classic(&self) -> Option<[u8; 16]>"
+          ],
+          "traits": [
+            "impl Clone for WiiExtensionCalibration",
+            "impl Debug for WiiExtensionCalibration",
+            "impl Default for WiiExtensionCalibration",
+            "impl Eq for WiiExtensionCalibration",
+            "impl PartialEq for WiiExtensionCalibration",
+            "impl RefUnwindSafe for WiiExtensionCalibration",
+            "impl Send for WiiExtensionCalibration",
+            "impl Sync for WiiExtensionCalibration",
+            "impl Unpin for WiiExtensionCalibration",
+            "impl UnwindSafe for WiiExtensionCalibration"
+          ]
+        },
+        "struct.WiiIrPoint.html": {
+          "declarations": [
+            "pub struct WiiIrPoint { /* private fields */ }",
+            "pub fn new(x: u16, y: u16) -> Result<WiiIrPoint, ControlError>",
+            "pub const fn coordinates(self) -> (u16, u16)"
+          ],
+          "traits": [
+            "impl Clone for WiiIrPoint",
+            "impl Copy for WiiIrPoint",
+            "impl Debug for WiiIrPoint",
+            "impl Eq for WiiIrPoint",
+            "impl PartialEq for WiiIrPoint",
+            "impl RefUnwindSafe for WiiIrPoint",
+            "impl Send for WiiIrPoint",
+            "impl Sync for WiiIrPoint",
+            "impl Unpin for WiiIrPoint",
+            "impl UnwindSafe for WiiIrPoint"
+          ]
+        },
+        "struct.WiiMotionPlusState.html": {
+          "declarations": [
+            "pub struct WiiMotionPlusState { pub attached: bool, pub gyroscope: [u16; 3], pub slow: [bool; 3], }"
+          ],
+          "traits": [
+            "impl Clone for WiiMotionPlusState",
+            "impl Debug for WiiMotionPlusState",
+            "impl Default for WiiMotionPlusState",
+            "impl Eq for WiiMotionPlusState",
+            "impl PartialEq for WiiMotionPlusState",
+            "impl RefUnwindSafe for WiiMotionPlusState",
+            "impl Send for WiiMotionPlusState",
+            "impl Sync for WiiMotionPlusState",
+            "impl Unpin for WiiMotionPlusState",
+            "impl UnwindSafe for WiiMotionPlusState"
+          ]
+        },
+        "struct.WiiNunchukState.html": {
+          "declarations": [
+            "pub struct WiiNunchukState { pub stick: [u8; 2], pub accelerometer: [u16; 3], pub c: bool, pub z: bool, }"
+          ],
+          "traits": [
+            "impl Clone for WiiNunchukState",
+            "impl Debug for WiiNunchukState",
+            "impl Default for WiiNunchukState",
+            "impl Eq for WiiNunchukState",
+            "impl PartialEq for WiiNunchukState",
+            "impl RefUnwindSafe for WiiNunchukState",
+            "impl Send for WiiNunchukState",
+            "impl Sync for WiiNunchukState",
+            "impl Unpin for WiiNunchukState",
+            "impl UnwindSafe for WiiNunchukState"
+          ]
+        },
+        "struct.WiiRemoteController.html": {
+          "declarations": [
+            "pub struct WiiRemoteController { /* private fields */ }",
+            "pub const fn identity(&self) -> WiiRemoteIdentity",
+            "pub fn current_topology(&self) -> &'static InputTopology",
+            "pub fn topology_generation(&self) -> u64",
+            "pub fn attach( &mut self, extension: WiiExtension, motion_plus: bool, ) -> Result<(), ControlError>",
+            "pub fn resource_dirty(&self) -> bool",
+            "pub fn resolve_resource( &mut self, choice: WiiResourceDisposition, ) -> Result<Option<&WiiEepromImage>, ControlError>",
+            "pub fn state(&self) -> &WiiRemoteState",
+            "pub fn host_outputs(&self) -> Result<WiiRemoteOutputs, ControlError>",
+            "pub fn surface(&self) -> &'static ControllerSurface",
+            "pub fn wants_write(&self) -> bool",
+            "pub fn next_service_in(&self) -> Option<Duration>",
+            "pub fn dropped_output_events(&self) -> u64",
+            "pub fn is_dirty(&self) -> bool",
+            "pub fn is_closed(&self) -> bool",
+            "pub fn neutralize(&mut self) -> Result<(), ControlError>",
+            "pub fn commit(&mut self) -> Result<(), CommitError>",
+            "pub fn close(&mut self)",
+            "pub fn readiness(&self) -> Option<ServiceReadiness<'_>>",
+            "pub fn association(&self) -> &ControllerAssociation",
+            "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
+            "pub fn service( &mut self, callback: &mut dyn FnMut(WiiRemoteOutputEvent), ) -> Result<(), ControllerError>",
+            "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: WiiRemoteState) -> Result<(), ControlError>",
+            "pub fn set_button( &mut self, button: WiiRemoteButton, pressed: bool, ) -> Result<(), ControlError>",
+            "pub fn set_accelerometer( &mut self, values: [u16; 3], ) -> Result<(), ControlError>",
+            "pub fn set_ir( &mut self, points: [Option<WiiIrPoint>; 4], ) -> Result<(), ControlError>",
+            "pub fn set_battery_raw(&mut self, value: u8) -> Result<(), ControlError>",
+            "pub fn set_extension(&mut self, value: WiiExtension) -> Result<(), ControlError>",
+            "pub fn set_motion_plus( &mut self, gyroscope: [u16; 3], slow: [bool; 3], ) -> Result<(), ControlError>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for WiiRemoteController",
+            "impl !Sync for WiiRemoteController",
+            "impl !UnwindSafe for WiiRemoteController",
+            "impl Send for WiiRemoteController",
+            "impl Unpin for WiiRemoteController"
+          ]
+        },
+        "struct.WiiRemoteIdentity.html": {
+          "declarations": [
+            "pub struct WiiRemoteIdentity(/* private fields */);",
+            "pub fn from_bytes(address: [u8; 6]) -> Result<WiiRemoteIdentity, ProviderError>",
+            "pub fn generate() -> Result<WiiRemoteIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteIdentity",
+            "impl Copy for WiiRemoteIdentity",
+            "impl Debug for WiiRemoteIdentity",
+            "impl Eq for WiiRemoteIdentity",
+            "impl PartialEq for WiiRemoteIdentity",
+            "impl RefUnwindSafe for WiiRemoteIdentity",
+            "impl Send for WiiRemoteIdentity",
+            "impl Sync for WiiRemoteIdentity",
+            "impl Unpin for WiiRemoteIdentity",
+            "impl UnwindSafe for WiiRemoteIdentity"
+          ]
+        },
+        "struct.WiiRemoteOptions.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct WiiRemoteOptions { /* private fields */ }",
+            "pub fn with_revision(self, revision: WiiRemoteRevision) -> WiiRemoteOptions",
+            "pub fn with_eeprom_image(self, image: WiiEepromImage) -> WiiRemoteOptions",
+            "pub fn with_identity(self, identity: WiiRemoteIdentity) -> WiiRemoteOptions",
+            "pub const fn revision(&self) -> WiiRemoteRevision",
+            "pub const fn eeprom_image(&self) -> &WiiEepromImage",
+            "pub const fn identity(&self) -> Option<WiiRemoteIdentity>",
+            "pub fn with_motionplus_passthrough_id_mirror( self, enabled: bool, ) -> WiiRemoteOptions",
+            "pub const fn motionplus_passthrough_id_mirror(&self) -> bool",
+            "pub fn with_motionplus_passthrough_calibration_copy( self, enabled: bool, ) -> WiiRemoteOptions",
+            "pub const fn motionplus_passthrough_calibration_copy(&self) -> bool",
+            "pub fn with_motionplus_inactive_id_external_style( self, enabled: bool, ) -> WiiRemoteOptions",
+            "pub const fn motionplus_inactive_id_external_style(&self) -> bool",
+            "pub fn with_motionplus_activation_reattach_status( self, enabled: bool, ) -> WiiRemoteOptions",
+            "pub const fn motionplus_activation_reattach_status(&self) -> bool"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteOptions",
+            "impl Debug for WiiRemoteOptions",
+            "impl Default for WiiRemoteOptions",
+            "impl Eq for WiiRemoteOptions",
+            "impl PartialEq for WiiRemoteOptions",
+            "impl RefUnwindSafe for WiiRemoteOptions",
+            "impl Send for WiiRemoteOptions",
+            "impl Sync for WiiRemoteOptions",
+            "impl Unpin for WiiRemoteOptions",
+            "impl UnwindSafe for WiiRemoteOptions"
+          ]
+        },
+        "struct.WiiRemoteOutputs.html": {
+          "declarations": [
+            "pub struct WiiRemoteOutputs { pub revision: u64, pub leds: [bool; 4], pub rumble: bool, }"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteOutputs",
+            "impl Copy for WiiRemoteOutputs",
+            "impl Debug for WiiRemoteOutputs",
+            "impl Default for WiiRemoteOutputs",
+            "impl Eq for WiiRemoteOutputs",
+            "impl PartialEq for WiiRemoteOutputs",
+            "impl RefUnwindSafe for WiiRemoteOutputs",
+            "impl Send for WiiRemoteOutputs",
+            "impl Sync for WiiRemoteOutputs",
+            "impl Unpin for WiiRemoteOutputs",
+            "impl UnwindSafe for WiiRemoteOutputs"
+          ]
+        },
+        "struct.WiiRemoteState.html": {
+          "declarations": [
+            "pub struct WiiRemoteState { /* private fields */ }",
+            "pub const fn new(revision: WiiRemoteRevision) -> WiiRemoteState",
+            "pub fn neutralize(&mut self)",
+            "pub fn input_topology(&self) -> &'static InputTopology",
+            "pub const fn revision(&self) -> WiiRemoteRevision",
+            "pub const fn pressed(&self, button: WiiRemoteButton) -> bool",
+            "pub fn set_button(&mut self, button: WiiRemoteButton, pressed: bool)",
+            "pub const fn accelerometer(&self) -> [u16; 3]",
+            "pub fn set_accelerometer( &mut self, values: [u16; 3], ) -> Result<(), ControlError>",
+            "pub const fn ir(&self) -> &[Option<WiiIrPoint>; 4]",
+            "pub fn set_ir(&mut self, points: [Option<WiiIrPoint>; 4])",
+            "pub const fn extension(&self) -> &WiiExtension",
+            "pub fn set_attachment( &mut self, extension: WiiExtension, motion_plus: bool, ) -> Result<(), ControlError>",
+            "pub fn set_extension_values( &mut self, value: WiiExtension, ) -> Result<(), ControlError>",
+            "pub fn set_motion_plus_values( &mut self, gyroscope: [u16; 3], slow: [bool; 3], ) -> Result<(), ControlError>",
+            "pub const fn motion_plus(&self) -> &WiiMotionPlusState",
+            "pub const fn battery_raw(&self) -> u8",
+            "pub fn set_battery_raw(&mut self, battery: u8)"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteState",
+            "impl Debug for WiiRemoteState",
+            "impl Default for WiiRemoteState",
+            "impl Eq for WiiRemoteState",
+            "impl PartialEq for WiiRemoteState",
+            "impl RefUnwindSafe for WiiRemoteState",
+            "impl Send for WiiRemoteState",
+            "impl Sync for WiiRemoteState",
+            "impl Unpin for WiiRemoteState",
+            "impl UnwindSafe for WiiRemoteState"
+          ]
+        },
         "struct.Xbox360Axis.html": {
           "declarations": [
             "pub struct Xbox360Axis(/* private fields */);",
@@ -2194,6 +2844,22 @@
             "impl !UnwindSafe for Xbox360Controller",
             "impl Send for Xbox360Controller",
             "impl Unpin for Xbox360Controller"
+          ]
+        },
+        "struct.Xbox360Options.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct Xbox360Options {}"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Options",
+            "impl Copy for Xbox360Options",
+            "impl Debug for Xbox360Options",
+            "impl Default for Xbox360Options",
+            "impl RefUnwindSafe for Xbox360Options",
+            "impl Send for Xbox360Options",
+            "impl Sync for Xbox360Options",
+            "impl Unpin for Xbox360Options",
+            "impl UnwindSafe for Xbox360Options"
           ]
         },
         "struct.Xbox360OutputState.html": {
@@ -2948,6 +3614,72 @@
             "impl UnwindSafe for SpeakerFormat"
           ]
         },
+        "enum.SteamController2026Button.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SteamController2026Button { Show 22 variants A, B, X, Y, Qam, RightStick, Menu, R4, R5, RightShoulder, Down, Right, Left, Up, View, LeftStick, Steam, L4, L5, LeftShoulder, RightTrigger, LeftTrigger, }"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026Button",
+            "impl Copy for SteamController2026Button",
+            "impl Debug for SteamController2026Button",
+            "impl Eq for SteamController2026Button",
+            "impl PartialEq for SteamController2026Button",
+            "impl RefUnwindSafe for SteamController2026Button",
+            "impl Send for SteamController2026Button",
+            "impl Sync for SteamController2026Button",
+            "impl Unpin for SteamController2026Button",
+            "impl UnwindSafe for SteamController2026Button"
+          ]
+        },
+        "enum.SteamController2026Haptic.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SteamController2026Haptic { Stream(Box<SteamController2026StreamPacket>), Rumble { kind: u8, intensity: u16, left_speed: u16, left_gain: u8, right_speed: u16, right_gain: u8, }, Pulse { side: u8, on_us: u16, off_us: u16, count: u16, }, Command { side: u8, command: u8, gain_db: i8, }, Lfo { side: u8, gain_db: i8, frequency: u16, duration_ms: u16, lfo_frequency: u16, depth: u8, }, Sweep { side: u8, gain_db: i8, duration_ms: u16, start: u16, end: u16, }, Script { side: u8, script: u8, gain_db: i8, }, }"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026Haptic",
+            "impl Debug for SteamController2026Haptic",
+            "impl Eq for SteamController2026Haptic",
+            "impl PartialEq for SteamController2026Haptic",
+            "impl RefUnwindSafe for SteamController2026Haptic",
+            "impl Send for SteamController2026Haptic",
+            "impl Sync for SteamController2026Haptic",
+            "impl Unpin for SteamController2026Haptic",
+            "impl UnwindSafe for SteamController2026Haptic"
+          ]
+        },
+        "enum.SteamController2026OutputEvent.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SteamController2026OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026OutputEvent",
+            "impl Debug for SteamController2026OutputEvent",
+            "impl Eq for SteamController2026OutputEvent",
+            "impl PartialEq for SteamController2026OutputEvent",
+            "impl RefUnwindSafe for SteamController2026OutputEvent",
+            "impl Send for SteamController2026OutputEvent",
+            "impl Sync for SteamController2026OutputEvent",
+            "impl Unpin for SteamController2026OutputEvent",
+            "impl UnwindSafe for SteamController2026OutputEvent"
+          ]
+        },
+        "enum.SteamController2026StreamPacket.html": {
+          "declarations": [
+            "pub enum SteamController2026StreamPacket { Configure { operation: u8, target: u8, mode: u8, }, Mono { target: u8, data: Vec<u8>, }, Stereo { left: Vec<u8>, right: Vec<u8>, }, }",
+            "pub fn from_output( report_id: u8, payload: &[u8], ) -> Option<SteamController2026StreamPacket>"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026StreamPacket",
+            "impl Debug for SteamController2026StreamPacket",
+            "impl Eq for SteamController2026StreamPacket",
+            "impl PartialEq for SteamController2026StreamPacket",
+            "impl RefUnwindSafe for SteamController2026StreamPacket",
+            "impl Send for SteamController2026StreamPacket",
+            "impl Sync for SteamController2026StreamPacket",
+            "impl Unpin for SteamController2026StreamPacket",
+            "impl UnwindSafe for SteamController2026StreamPacket"
+          ]
+        },
         "enum.SwitchProControl.html": {
           "declarations": [
             "pub enum SwitchProControl { Show 14 variants B, A, Y, X, L, R, Zl, Zr, Minus, Plus, Home, Capture, LeftStickPress, RightStickPress, }"
@@ -3033,6 +3765,92 @@
             "impl UnwindSafe for TriggerInputKind"
           ]
         },
+        "enum.WiiExtension.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum WiiExtension { None, Nunchuk(WiiNunchukState), Classic(WiiClassicState), ClassicPro(WiiClassicState), }"
+          ],
+          "traits": [
+            "impl Clone for WiiExtension",
+            "impl Debug for WiiExtension",
+            "impl Default for WiiExtension",
+            "impl Eq for WiiExtension",
+            "impl PartialEq for WiiExtension",
+            "impl RefUnwindSafe for WiiExtension",
+            "impl Send for WiiExtension",
+            "impl Sync for WiiExtension",
+            "impl Unpin for WiiExtension",
+            "impl UnwindSafe for WiiExtension"
+          ]
+        },
+        "enum.WiiRemoteButton.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum WiiRemoteButton { Left, Right, Up, Down, Plus, Minus, One, Two, A, B, Home, }"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteButton",
+            "impl Copy for WiiRemoteButton",
+            "impl Debug for WiiRemoteButton",
+            "impl Eq for WiiRemoteButton",
+            "impl PartialEq for WiiRemoteButton",
+            "impl RefUnwindSafe for WiiRemoteButton",
+            "impl Send for WiiRemoteButton",
+            "impl Sync for WiiRemoteButton",
+            "impl Unpin for WiiRemoteButton",
+            "impl UnwindSafe for WiiRemoteButton"
+          ]
+        },
+        "enum.WiiRemoteOutputEvent.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum WiiRemoteOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteOutputEvent",
+            "impl Debug for WiiRemoteOutputEvent",
+            "impl Eq for WiiRemoteOutputEvent",
+            "impl PartialEq for WiiRemoteOutputEvent",
+            "impl RefUnwindSafe for WiiRemoteOutputEvent",
+            "impl Send for WiiRemoteOutputEvent",
+            "impl Sync for WiiRemoteOutputEvent",
+            "impl Unpin for WiiRemoteOutputEvent",
+            "impl UnwindSafe for WiiRemoteOutputEvent"
+          ]
+        },
+        "enum.WiiRemoteRevision.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum WiiRemoteRevision { Original, EarlyIntegratedPlus, Tr, }",
+            "pub const fn has_identity_evidence(self) -> bool"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteRevision",
+            "impl Copy for WiiRemoteRevision",
+            "impl Debug for WiiRemoteRevision",
+            "impl Default for WiiRemoteRevision",
+            "impl Eq for WiiRemoteRevision",
+            "impl PartialEq for WiiRemoteRevision",
+            "impl RefUnwindSafe for WiiRemoteRevision",
+            "impl Send for WiiRemoteRevision",
+            "impl Sync for WiiRemoteRevision",
+            "impl Unpin for WiiRemoteRevision",
+            "impl UnwindSafe for WiiRemoteRevision"
+          ]
+        },
+        "enum.WiiResourceDisposition.html": {
+          "declarations": [
+            "pub enum WiiResourceDisposition { KeepSnapshot, Discard, }"
+          ],
+          "traits": [
+            "impl Clone for WiiResourceDisposition",
+            "impl Copy for WiiResourceDisposition",
+            "impl Debug for WiiResourceDisposition",
+            "impl Eq for WiiResourceDisposition",
+            "impl PartialEq for WiiResourceDisposition",
+            "impl RefUnwindSafe for WiiResourceDisposition",
+            "impl Send for WiiResourceDisposition",
+            "impl Sync for WiiResourceDisposition",
+            "impl Unpin for WiiResourceDisposition",
+            "impl UnwindSafe for WiiResourceDisposition"
+          ]
+        },
         "enum.Xbox360Control.html": {
           "declarations": [
             "pub enum Xbox360Control { A, B, X, Y, LeftShoulder, RightShoulder, Back, Start, Guide, LeftStickPress, RightStickPress, }"
@@ -3068,37 +3886,37 @@
         },
         "fn.create_dualsense.html": {
           "declarations": [
-            "pub fn create_dualsense( options: CreationOptions, ) -> Result<DualSenseController, ControllerError>"
-          ],
-          "traits": []
-        },
-        "fn.create_dualsense_with_identity.html": {
-          "declarations": [
-            "pub fn create_dualsense_with_identity( options: CreationOptions, identity: DualSenseIdentity, ) -> Result<DualSenseController, ControllerError>"
+            "pub fn create_dualsense( options: CreationOptions, family: DualSenseOptions, ) -> Result<DualSenseController, ControllerError>"
           ],
           "traits": []
         },
         "fn.create_dualshock4.html": {
           "declarations": [
-            "pub fn create_dualshock4( options: CreationOptions, ) -> Result<DualShock4Controller, ControllerError>"
+            "pub fn create_dualshock4( options: CreationOptions, family: DualShock4Options, ) -> Result<DualShock4Controller, ControllerError>"
           ],
           "traits": []
         },
-        "fn.create_dualshock4_with_identity.html": {
+        "fn.create_steam_controller_2026.html": {
           "declarations": [
-            "pub fn create_dualshock4_with_identity( options: CreationOptions, identity: DualShock4Identity, ) -> Result<DualShock4Controller, ControllerError>"
+            "pub fn create_steam_controller_2026( options: CreationOptions, family: SteamController2026Options, ) -> Result<SteamController2026Controller, ControllerError>"
           ],
           "traits": []
         },
         "fn.create_switch_pro.html": {
           "declarations": [
-            "pub fn create_switch_pro( options: CreationOptions, ) -> Result<SwitchProController, ControllerError>"
+            "pub fn create_switch_pro( options: CreationOptions, family: SwitchProOptions, ) -> Result<SwitchProController, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.create_wii_remote.html": {
+          "declarations": [
+            "pub fn create_wii_remote( options: CreationOptions, family: WiiRemoteOptions, ) -> Result<WiiRemoteController, ControllerError>"
           ],
           "traits": []
         },
         "fn.create_xbox360.html": {
           "declarations": [
-            "pub fn create_xbox360( options: CreationOptions, ) -> Result<Xbox360Controller, ControllerError>"
+            "pub fn create_xbox360( options: CreationOptions, family: Xbox360Options, ) -> Result<Xbox360Controller, ControllerError>"
           ],
           "traits": []
         },
@@ -3558,9 +4376,9 @@
         "struct.DualSenseIdentity.html": {
           "declarations": [
             "pub struct DualSenseIdentity(/* private fields */);",
-            "pub fn generate() -> Result<Self, ControllerError>",
-            "pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self>",
-            "pub const fn to_bytes(self) -> [u8; 6]"
+            "pub fn generate() -> Result<DualSenseIdentity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<DualSenseIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
           ],
           "traits": [
             "impl Clone for DualSenseIdentity",
@@ -3574,6 +4392,24 @@
             "impl Sync for DualSenseIdentity",
             "impl Unpin for DualSenseIdentity",
             "impl UnwindSafe for DualSenseIdentity"
+          ]
+        },
+        "struct.DualSenseOptions.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualSenseOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: DualSenseIdentity, ) -> DualSenseOptions",
+            "pub const fn identity(self) -> Option<DualSenseIdentity>"
+          ],
+          "traits": [
+            "impl Clone for DualSenseOptions",
+            "impl Copy for DualSenseOptions",
+            "impl Debug for DualSenseOptions",
+            "impl Default for DualSenseOptions",
+            "impl RefUnwindSafe for DualSenseOptions",
+            "impl Send for DualSenseOptions",
+            "impl Sync for DualSenseOptions",
+            "impl Unpin for DualSenseOptions",
+            "impl UnwindSafe for DualSenseOptions"
           ]
         },
         "struct.DualSenseOutputState.html": {
@@ -3735,9 +4571,9 @@
         "struct.DualShock4Identity.html": {
           "declarations": [
             "pub struct DualShock4Identity(/* private fields */);",
-            "pub fn generate() -> Result<Self, ControllerError>",
-            "pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self>",
-            "pub const fn to_bytes(self) -> [u8; 6]"
+            "pub fn generate() -> Result<DualShock4Identity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<DualShock4Identity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
           ],
           "traits": [
             "impl Clone for DualShock4Identity",
@@ -3768,6 +4604,24 @@
             "impl Sync for DualShock4MotionSample",
             "impl Unpin for DualShock4MotionSample",
             "impl UnwindSafe for DualShock4MotionSample"
+          ]
+        },
+        "struct.DualShock4Options.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualShock4Options { /* private fields */ }",
+            "pub const fn with_identity( self, identity: DualShock4Identity, ) -> DualShock4Options",
+            "pub const fn identity(self) -> Option<DualShock4Identity>"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Options",
+            "impl Copy for DualShock4Options",
+            "impl Debug for DualShock4Options",
+            "impl Default for DualShock4Options",
+            "impl RefUnwindSafe for DualShock4Options",
+            "impl Send for DualShock4Options",
+            "impl Sync for DualShock4Options",
+            "impl Unpin for DualShock4Options",
+            "impl UnwindSafe for DualShock4Options"
           ]
         },
         "struct.DualShock4OutputState.html": {
@@ -4167,6 +5021,171 @@
             "impl UnwindSafe for RumblePlayback"
           ]
         },
+        "struct.SteamController2026Controller.html": {
+          "declarations": [
+            "pub struct SteamController2026Controller { /* private fields */ }",
+            "pub const fn identity(&self) -> &SteamController2026Identity",
+            "pub fn state(&self) -> &SteamController2026State",
+            "pub fn host_outputs(&self) -> Result<SteamController2026Outputs, ControlError>",
+            "pub fn surface(&self) -> &'static ControllerSurface",
+            "pub fn wants_write(&self) -> bool",
+            "pub fn next_service_in(&self) -> Option<Duration>",
+            "pub fn dropped_output_events(&self) -> u64",
+            "pub fn is_dirty(&self) -> bool",
+            "pub fn is_closed(&self) -> bool",
+            "pub fn neutralize(&mut self) -> Result<(), ControlError>",
+            "pub fn commit(&mut self) -> Result<(), CommitError>",
+            "pub fn close(&mut self)",
+            "pub fn readiness(&self) -> Option<ServiceReadiness<'_>>",
+            "pub fn association(&self) -> &ControllerAssociation",
+            "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
+            "pub fn service( &mut self, callback: &mut dyn FnMut(SteamController2026OutputEvent), ) -> Result<(), ControllerError>",
+            "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
+            "pub fn set_inputs( &mut self, state: SteamController2026State, ) -> Result<(), ControlError>",
+            "pub fn set_button( &mut self, button: SteamController2026Button, pressed: bool, ) -> Result<(), ControlError>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for SteamController2026Controller",
+            "impl !Sync for SteamController2026Controller",
+            "impl !UnwindSafe for SteamController2026Controller",
+            "impl Send for SteamController2026Controller",
+            "impl Unpin for SteamController2026Controller"
+          ]
+        },
+        "struct.SteamController2026Identity.html": {
+          "declarations": [
+            "pub struct SteamController2026Identity { /* private fields */ }",
+            "pub fn from_serial( serial: impl Into<String>, ) -> Result<SteamController2026Identity, ProviderError>",
+            "pub fn generate() -> Result<SteamController2026Identity, ProviderError>",
+            "pub fn serial(&self) -> &str"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026Identity",
+            "impl Debug for SteamController2026Identity",
+            "impl Eq for SteamController2026Identity",
+            "impl PartialEq for SteamController2026Identity",
+            "impl RefUnwindSafe for SteamController2026Identity",
+            "impl Send for SteamController2026Identity",
+            "impl Sync for SteamController2026Identity",
+            "impl Unpin for SteamController2026Identity",
+            "impl UnwindSafe for SteamController2026Identity"
+          ]
+        },
+        "struct.SteamController2026Options.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct SteamController2026Options { /* private fields */ }",
+            "pub fn with_identity( self, identity: SteamController2026Identity, ) -> SteamController2026Options",
+            "pub const fn identity(&self) -> Option<&SteamController2026Identity>",
+            "pub fn with_steam_client_compat( self, enabled: bool, ) -> SteamController2026Options",
+            "pub const fn steam_client_compat(&self) -> bool",
+            "pub fn with_haptic_streaming(self, enabled: bool) -> SteamController2026Options",
+            "pub const fn haptic_streaming(&self) -> bool",
+            "pub fn with_lizard_mode(self, enabled: bool) -> SteamController2026Options",
+            "pub const fn lizard_mode(&self) -> bool"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026Options",
+            "impl Debug for SteamController2026Options",
+            "impl Default for SteamController2026Options",
+            "impl Eq for SteamController2026Options",
+            "impl PartialEq for SteamController2026Options",
+            "impl RefUnwindSafe for SteamController2026Options",
+            "impl Send for SteamController2026Options",
+            "impl Sync for SteamController2026Options",
+            "impl Unpin for SteamController2026Options",
+            "impl UnwindSafe for SteamController2026Options"
+          ]
+        },
+        "struct.SteamController2026Outputs.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct SteamController2026Outputs { pub revision: u64, pub haptics: [Option<SteamController2026Haptic>; 6], pub streaming: SteamController2026StreamOutputs, pub led_brightness: Option<u16>, pub led_override: Option<bool>, pub led_rgbw: Option<[u8; 4]>, }"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026Outputs",
+            "impl Debug for SteamController2026Outputs",
+            "impl Default for SteamController2026Outputs",
+            "impl Eq for SteamController2026Outputs",
+            "impl PartialEq for SteamController2026Outputs",
+            "impl RefUnwindSafe for SteamController2026Outputs",
+            "impl Send for SteamController2026Outputs",
+            "impl Sync for SteamController2026Outputs",
+            "impl Unpin for SteamController2026Outputs",
+            "impl UnwindSafe for SteamController2026Outputs"
+          ]
+        },
+        "struct.SteamController2026State.html": {
+          "declarations": [
+            "pub struct SteamController2026State { pub sticks: [[i16; 2]; 2], pub triggers: [i16; 2], pub pads: [SteamTrackpadState; 2], pub stick_touch: [bool; 2], pub grip_touch: [bool; 2], pub motion: SteamMotionSample, /* private fields */ }",
+            "pub const fn input_topology(&self) -> &'static InputTopology",
+            "pub fn neutralize(&mut self)",
+            "pub const fn pressed(&self, button: SteamController2026Button) -> bool",
+            "pub fn set_button(&mut self, button: SteamController2026Button, pressed: bool)"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026State",
+            "impl Debug for SteamController2026State",
+            "impl Default for SteamController2026State",
+            "impl Eq for SteamController2026State",
+            "impl PartialEq for SteamController2026State",
+            "impl RefUnwindSafe for SteamController2026State",
+            "impl Send for SteamController2026State",
+            "impl Sync for SteamController2026State",
+            "impl Unpin for SteamController2026State",
+            "impl UnwindSafe for SteamController2026State"
+          ]
+        },
+        "struct.SteamController2026StreamOutputs.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct SteamController2026StreamOutputs { pub enabled: bool, pub configured: [bool; 4], pub buffered_bytes: [u16; 4], pub received_bytes: [u64; 4], pub overrun_bytes: [u64; 4], pub last_packet: Option<SteamController2026StreamPacket>, }"
+          ],
+          "traits": [
+            "impl Clone for SteamController2026StreamOutputs",
+            "impl Debug for SteamController2026StreamOutputs",
+            "impl Default for SteamController2026StreamOutputs",
+            "impl Eq for SteamController2026StreamOutputs",
+            "impl PartialEq for SteamController2026StreamOutputs",
+            "impl RefUnwindSafe for SteamController2026StreamOutputs",
+            "impl Send for SteamController2026StreamOutputs",
+            "impl Sync for SteamController2026StreamOutputs",
+            "impl Unpin for SteamController2026StreamOutputs",
+            "impl UnwindSafe for SteamController2026StreamOutputs"
+          ]
+        },
+        "struct.SteamMotionSample.html": {
+          "declarations": [
+            "pub struct SteamMotionSample { pub timestamp_us: u32, pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], pub quaternion: [i16; 4], }"
+          ],
+          "traits": [
+            "impl Clone for SteamMotionSample",
+            "impl Debug for SteamMotionSample",
+            "impl Default for SteamMotionSample",
+            "impl Eq for SteamMotionSample",
+            "impl PartialEq for SteamMotionSample",
+            "impl RefUnwindSafe for SteamMotionSample",
+            "impl Send for SteamMotionSample",
+            "impl Sync for SteamMotionSample",
+            "impl Unpin for SteamMotionSample",
+            "impl UnwindSafe for SteamMotionSample"
+          ]
+        },
+        "struct.SteamTrackpadState.html": {
+          "declarations": [
+            "pub struct SteamTrackpadState { pub position: [i16; 2], pub pressure: u16, pub touch: bool, pub click: bool, }"
+          ],
+          "traits": [
+            "impl Clone for SteamTrackpadState",
+            "impl Copy for SteamTrackpadState",
+            "impl Debug for SteamTrackpadState",
+            "impl Default for SteamTrackpadState",
+            "impl Eq for SteamTrackpadState",
+            "impl PartialEq for SteamTrackpadState",
+            "impl RefUnwindSafe for SteamTrackpadState",
+            "impl Send for SteamTrackpadState",
+            "impl Sync for SteamTrackpadState",
+            "impl Unpin for SteamTrackpadState",
+            "impl UnwindSafe for SteamTrackpadState"
+          ]
+        },
         "struct.StickInput.html": {
           "declarations": [
             "pub struct StickInput { /* private fields */ }",
@@ -4212,6 +5231,7 @@
         "struct.SwitchProController.html": {
           "declarations": [
             "pub struct SwitchProController { /* private fields */ }",
+            "pub const fn identity(&self) -> SwitchProIdentity",
             "pub fn stream_enabled(&self) -> bool",
             "pub fn motion_report_counter(&self) -> u8",
             "pub fn wants_write(&self) -> bool",
@@ -4242,6 +5262,26 @@
             "impl Unpin for SwitchProController"
           ]
         },
+        "struct.SwitchProIdentity.html": {
+          "declarations": [
+            "pub struct SwitchProIdentity(/* private fields */);",
+            "pub fn from_bytes(address: [u8; 6]) -> Result<SwitchProIdentity, ProviderError>",
+            "pub fn generate() -> Result<SwitchProIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for SwitchProIdentity",
+            "impl Copy for SwitchProIdentity",
+            "impl Debug for SwitchProIdentity",
+            "impl Eq for SwitchProIdentity",
+            "impl PartialEq for SwitchProIdentity",
+            "impl RefUnwindSafe for SwitchProIdentity",
+            "impl Send for SwitchProIdentity",
+            "impl Sync for SwitchProIdentity",
+            "impl Unpin for SwitchProIdentity",
+            "impl UnwindSafe for SwitchProIdentity"
+          ]
+        },
         "struct.SwitchProMotionSample.html": {
           "declarations": [
             "pub struct SwitchProMotionSample { pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], }"
@@ -4257,6 +5297,24 @@
             "impl Sync for SwitchProMotionSample",
             "impl Unpin for SwitchProMotionSample",
             "impl UnwindSafe for SwitchProMotionSample"
+          ]
+        },
+        "struct.SwitchProOptions.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions",
+            "pub const fn identity(self) -> Option<SwitchProIdentity>"
+          ],
+          "traits": [
+            "impl Clone for SwitchProOptions",
+            "impl Copy for SwitchProOptions",
+            "impl Debug for SwitchProOptions",
+            "impl Default for SwitchProOptions",
+            "impl RefUnwindSafe for SwitchProOptions",
+            "impl Send for SwitchProOptions",
+            "impl Sync for SwitchProOptions",
+            "impl Unpin for SwitchProOptions",
+            "impl UnwindSafe for SwitchProOptions"
           ]
         },
         "struct.SwitchProOutputState.html": {
@@ -4432,6 +5490,264 @@
             "impl UnwindSafe for TypedInput"
           ]
         },
+        "struct.WiiClassicState.html": {
+          "declarations": [
+            "pub struct WiiClassicState { pub left: [u8; 2], pub right: [u8; 2], pub triggers: [u8; 2], pub buttons: [bool; 15], }"
+          ],
+          "traits": [
+            "impl Clone for WiiClassicState",
+            "impl Debug for WiiClassicState",
+            "impl Default for WiiClassicState",
+            "impl Eq for WiiClassicState",
+            "impl PartialEq for WiiClassicState",
+            "impl RefUnwindSafe for WiiClassicState",
+            "impl Send for WiiClassicState",
+            "impl Sync for WiiClassicState",
+            "impl Unpin for WiiClassicState",
+            "impl UnwindSafe for WiiClassicState"
+          ]
+        },
+        "struct.WiiEepromImage.html": {
+          "declarations": [
+            "pub struct WiiEepromImage { /* private fields */ }",
+            "pub fn import(bytes: Vec<u8>) -> Result<WiiEepromImage, ControlError>",
+            "pub fn with_extension_calibration( self, calibration: WiiExtensionCalibration, ) -> WiiEepromImage",
+            "pub fn extension_calibration(&self) -> &WiiExtensionCalibration",
+            "pub fn bytes(&self) -> &[u8] \u24d8"
+          ],
+          "traits": [
+            "impl Clone for WiiEepromImage",
+            "impl Debug for WiiEepromImage",
+            "impl Default for WiiEepromImage",
+            "impl Eq for WiiEepromImage",
+            "impl PartialEq for WiiEepromImage",
+            "impl RefUnwindSafe for WiiEepromImage",
+            "impl Send for WiiEepromImage",
+            "impl Sync for WiiEepromImage",
+            "impl Unpin for WiiEepromImage",
+            "impl UnwindSafe for WiiEepromImage"
+          ]
+        },
+        "struct.WiiExtensionCalibration.html": {
+          "declarations": [
+            "pub struct WiiExtensionCalibration { /* private fields */ }",
+            "pub fn with_motion_plus( self, block: Option<[u8; 32]>, ) -> Result<WiiExtensionCalibration, ControlError>",
+            "pub fn with_nunchuk( self, block: Option<[u8; 16]>, ) -> Result<WiiExtensionCalibration, ControlError>",
+            "pub fn with_classic( self, block: Option<[u8; 16]>, ) -> Result<WiiExtensionCalibration, ControlError>",
+            "pub fn motion_plus(&self) -> Option<[u8; 32]>",
+            "pub fn nunchuk(&self) -> Option<[u8; 16]>",
+            "pub fn classic(&self) -> Option<[u8; 16]>"
+          ],
+          "traits": [
+            "impl Clone for WiiExtensionCalibration",
+            "impl Debug for WiiExtensionCalibration",
+            "impl Default for WiiExtensionCalibration",
+            "impl Eq for WiiExtensionCalibration",
+            "impl PartialEq for WiiExtensionCalibration",
+            "impl RefUnwindSafe for WiiExtensionCalibration",
+            "impl Send for WiiExtensionCalibration",
+            "impl Sync for WiiExtensionCalibration",
+            "impl Unpin for WiiExtensionCalibration",
+            "impl UnwindSafe for WiiExtensionCalibration"
+          ]
+        },
+        "struct.WiiIrPoint.html": {
+          "declarations": [
+            "pub struct WiiIrPoint { /* private fields */ }",
+            "pub fn new(x: u16, y: u16) -> Result<WiiIrPoint, ControlError>",
+            "pub const fn coordinates(self) -> (u16, u16)"
+          ],
+          "traits": [
+            "impl Clone for WiiIrPoint",
+            "impl Copy for WiiIrPoint",
+            "impl Debug for WiiIrPoint",
+            "impl Eq for WiiIrPoint",
+            "impl PartialEq for WiiIrPoint",
+            "impl RefUnwindSafe for WiiIrPoint",
+            "impl Send for WiiIrPoint",
+            "impl Sync for WiiIrPoint",
+            "impl Unpin for WiiIrPoint",
+            "impl UnwindSafe for WiiIrPoint"
+          ]
+        },
+        "struct.WiiMotionPlusState.html": {
+          "declarations": [
+            "pub struct WiiMotionPlusState { pub attached: bool, pub gyroscope: [u16; 3], pub slow: [bool; 3], }"
+          ],
+          "traits": [
+            "impl Clone for WiiMotionPlusState",
+            "impl Debug for WiiMotionPlusState",
+            "impl Default for WiiMotionPlusState",
+            "impl Eq for WiiMotionPlusState",
+            "impl PartialEq for WiiMotionPlusState",
+            "impl RefUnwindSafe for WiiMotionPlusState",
+            "impl Send for WiiMotionPlusState",
+            "impl Sync for WiiMotionPlusState",
+            "impl Unpin for WiiMotionPlusState",
+            "impl UnwindSafe for WiiMotionPlusState"
+          ]
+        },
+        "struct.WiiNunchukState.html": {
+          "declarations": [
+            "pub struct WiiNunchukState { pub stick: [u8; 2], pub accelerometer: [u16; 3], pub c: bool, pub z: bool, }"
+          ],
+          "traits": [
+            "impl Clone for WiiNunchukState",
+            "impl Debug for WiiNunchukState",
+            "impl Default for WiiNunchukState",
+            "impl Eq for WiiNunchukState",
+            "impl PartialEq for WiiNunchukState",
+            "impl RefUnwindSafe for WiiNunchukState",
+            "impl Send for WiiNunchukState",
+            "impl Sync for WiiNunchukState",
+            "impl Unpin for WiiNunchukState",
+            "impl UnwindSafe for WiiNunchukState"
+          ]
+        },
+        "struct.WiiRemoteController.html": {
+          "declarations": [
+            "pub struct WiiRemoteController { /* private fields */ }",
+            "pub const fn identity(&self) -> WiiRemoteIdentity",
+            "pub fn current_topology(&self) -> &'static InputTopology",
+            "pub fn topology_generation(&self) -> u64",
+            "pub fn attach( &mut self, extension: WiiExtension, motion_plus: bool, ) -> Result<(), ControlError>",
+            "pub fn resource_dirty(&self) -> bool",
+            "pub fn resolve_resource( &mut self, choice: WiiResourceDisposition, ) -> Result<Option<&WiiEepromImage>, ControlError>",
+            "pub fn state(&self) -> &WiiRemoteState",
+            "pub fn host_outputs(&self) -> Result<WiiRemoteOutputs, ControlError>",
+            "pub fn surface(&self) -> &'static ControllerSurface",
+            "pub fn wants_write(&self) -> bool",
+            "pub fn next_service_in(&self) -> Option<Duration>",
+            "pub fn dropped_output_events(&self) -> u64",
+            "pub fn is_dirty(&self) -> bool",
+            "pub fn is_closed(&self) -> bool",
+            "pub fn neutralize(&mut self) -> Result<(), ControlError>",
+            "pub fn commit(&mut self) -> Result<(), CommitError>",
+            "pub fn close(&mut self)",
+            "pub fn readiness(&self) -> Option<ServiceReadiness<'_>>",
+            "pub fn association(&self) -> &ControllerAssociation",
+            "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
+            "pub fn service( &mut self, callback: &mut dyn FnMut(WiiRemoteOutputEvent), ) -> Result<(), ControllerError>",
+            "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: WiiRemoteState) -> Result<(), ControlError>",
+            "pub fn set_button( &mut self, button: WiiRemoteButton, pressed: bool, ) -> Result<(), ControlError>",
+            "pub fn set_accelerometer( &mut self, values: [u16; 3], ) -> Result<(), ControlError>",
+            "pub fn set_ir( &mut self, points: [Option<WiiIrPoint>; 4], ) -> Result<(), ControlError>",
+            "pub fn set_battery_raw(&mut self, value: u8) -> Result<(), ControlError>",
+            "pub fn set_extension(&mut self, value: WiiExtension) -> Result<(), ControlError>",
+            "pub fn set_motion_plus( &mut self, gyroscope: [u16; 3], slow: [bool; 3], ) -> Result<(), ControlError>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for WiiRemoteController",
+            "impl !Sync for WiiRemoteController",
+            "impl !UnwindSafe for WiiRemoteController",
+            "impl Send for WiiRemoteController",
+            "impl Unpin for WiiRemoteController"
+          ]
+        },
+        "struct.WiiRemoteIdentity.html": {
+          "declarations": [
+            "pub struct WiiRemoteIdentity(/* private fields */);",
+            "pub fn from_bytes(address: [u8; 6]) -> Result<WiiRemoteIdentity, ProviderError>",
+            "pub fn generate() -> Result<WiiRemoteIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteIdentity",
+            "impl Copy for WiiRemoteIdentity",
+            "impl Debug for WiiRemoteIdentity",
+            "impl Eq for WiiRemoteIdentity",
+            "impl PartialEq for WiiRemoteIdentity",
+            "impl RefUnwindSafe for WiiRemoteIdentity",
+            "impl Send for WiiRemoteIdentity",
+            "impl Sync for WiiRemoteIdentity",
+            "impl Unpin for WiiRemoteIdentity",
+            "impl UnwindSafe for WiiRemoteIdentity"
+          ]
+        },
+        "struct.WiiRemoteOptions.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct WiiRemoteOptions { /* private fields */ }",
+            "pub fn with_revision(self, revision: WiiRemoteRevision) -> WiiRemoteOptions",
+            "pub fn with_eeprom_image(self, image: WiiEepromImage) -> WiiRemoteOptions",
+            "pub fn with_identity(self, identity: WiiRemoteIdentity) -> WiiRemoteOptions",
+            "pub const fn revision(&self) -> WiiRemoteRevision",
+            "pub const fn eeprom_image(&self) -> &WiiEepromImage",
+            "pub const fn identity(&self) -> Option<WiiRemoteIdentity>",
+            "pub fn with_motionplus_passthrough_id_mirror( self, enabled: bool, ) -> WiiRemoteOptions",
+            "pub const fn motionplus_passthrough_id_mirror(&self) -> bool",
+            "pub fn with_motionplus_passthrough_calibration_copy( self, enabled: bool, ) -> WiiRemoteOptions",
+            "pub const fn motionplus_passthrough_calibration_copy(&self) -> bool",
+            "pub fn with_motionplus_inactive_id_external_style( self, enabled: bool, ) -> WiiRemoteOptions",
+            "pub const fn motionplus_inactive_id_external_style(&self) -> bool",
+            "pub fn with_motionplus_activation_reattach_status( self, enabled: bool, ) -> WiiRemoteOptions",
+            "pub const fn motionplus_activation_reattach_status(&self) -> bool"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteOptions",
+            "impl Debug for WiiRemoteOptions",
+            "impl Default for WiiRemoteOptions",
+            "impl Eq for WiiRemoteOptions",
+            "impl PartialEq for WiiRemoteOptions",
+            "impl RefUnwindSafe for WiiRemoteOptions",
+            "impl Send for WiiRemoteOptions",
+            "impl Sync for WiiRemoteOptions",
+            "impl Unpin for WiiRemoteOptions",
+            "impl UnwindSafe for WiiRemoteOptions"
+          ]
+        },
+        "struct.WiiRemoteOutputs.html": {
+          "declarations": [
+            "pub struct WiiRemoteOutputs { pub revision: u64, pub leds: [bool; 4], pub rumble: bool, }"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteOutputs",
+            "impl Copy for WiiRemoteOutputs",
+            "impl Debug for WiiRemoteOutputs",
+            "impl Default for WiiRemoteOutputs",
+            "impl Eq for WiiRemoteOutputs",
+            "impl PartialEq for WiiRemoteOutputs",
+            "impl RefUnwindSafe for WiiRemoteOutputs",
+            "impl Send for WiiRemoteOutputs",
+            "impl Sync for WiiRemoteOutputs",
+            "impl Unpin for WiiRemoteOutputs",
+            "impl UnwindSafe for WiiRemoteOutputs"
+          ]
+        },
+        "struct.WiiRemoteState.html": {
+          "declarations": [
+            "pub struct WiiRemoteState { /* private fields */ }",
+            "pub const fn new(revision: WiiRemoteRevision) -> WiiRemoteState",
+            "pub fn neutralize(&mut self)",
+            "pub fn input_topology(&self) -> &'static InputTopology",
+            "pub const fn revision(&self) -> WiiRemoteRevision",
+            "pub const fn pressed(&self, button: WiiRemoteButton) -> bool",
+            "pub fn set_button(&mut self, button: WiiRemoteButton, pressed: bool)",
+            "pub const fn accelerometer(&self) -> [u16; 3]",
+            "pub fn set_accelerometer( &mut self, values: [u16; 3], ) -> Result<(), ControlError>",
+            "pub const fn ir(&self) -> &[Option<WiiIrPoint>; 4]",
+            "pub fn set_ir(&mut self, points: [Option<WiiIrPoint>; 4])",
+            "pub const fn extension(&self) -> &WiiExtension",
+            "pub fn set_attachment( &mut self, extension: WiiExtension, motion_plus: bool, ) -> Result<(), ControlError>",
+            "pub fn set_extension_values( &mut self, value: WiiExtension, ) -> Result<(), ControlError>",
+            "pub fn set_motion_plus_values( &mut self, gyroscope: [u16; 3], slow: [bool; 3], ) -> Result<(), ControlError>",
+            "pub const fn motion_plus(&self) -> &WiiMotionPlusState",
+            "pub const fn battery_raw(&self) -> u8",
+            "pub fn set_battery_raw(&mut self, battery: u8)"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteState",
+            "impl Debug for WiiRemoteState",
+            "impl Default for WiiRemoteState",
+            "impl Eq for WiiRemoteState",
+            "impl PartialEq for WiiRemoteState",
+            "impl RefUnwindSafe for WiiRemoteState",
+            "impl Send for WiiRemoteState",
+            "impl Sync for WiiRemoteState",
+            "impl Unpin for WiiRemoteState",
+            "impl UnwindSafe for WiiRemoteState"
+          ]
+        },
         "struct.Xbox360Axis.html": {
           "declarations": [
             "pub struct Xbox360Axis(/* private fields */);",
@@ -4483,6 +5799,22 @@
             "impl !UnwindSafe for Xbox360Controller",
             "impl Send for Xbox360Controller",
             "impl Unpin for Xbox360Controller"
+          ]
+        },
+        "struct.Xbox360Options.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct Xbox360Options {}"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Options",
+            "impl Copy for Xbox360Options",
+            "impl Debug for Xbox360Options",
+            "impl Default for Xbox360Options",
+            "impl RefUnwindSafe for Xbox360Options",
+            "impl Send for Xbox360Options",
+            "impl Sync for Xbox360Options",
+            "impl Unpin for Xbox360Options",
+            "impl UnwindSafe for Xbox360Options"
           ]
         },
         "struct.Xbox360OutputState.html": {

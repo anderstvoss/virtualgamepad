@@ -39,6 +39,13 @@
 //! use virtualgamepad::RealizationId;
 //! let ambiguous = RealizationId::Uhid;
 //! ```
+//! ```compile_fail,E0432
+//! use virtualgamepad::{create_dualsense_with_identity, create_dualshock4_with_identity};
+//! ```
+//! ```compile_fail,E0061
+//! use virtualgamepad::{create_dualsense, CreationOptions, RealizationId};
+//! create_dualsense(CreationOptions::new(RealizationId::LINUX_UHID_USB));
+//! ```
 //! ```compile_fail
 //! use virtualgamepad::DualSenseController;
 //! fn invalid(c: &mut DualSenseController) { c.poll_output(&mut |_| {}); }
@@ -76,6 +83,16 @@ pub use gr_controller_contract::{
     LedKind, MotionInput, MotorRole, OutputKind, OutputSurface, RealizationValidationStatus,
     SpeakerFormat, StickInput, TargetRestriction, TouchpadActuation, TouchpadInput, TriggerInput,
     TriggerInputKind, TriggerStack, TypedInput,
+};
+pub use gr_curated_controllers::steam_controller_2026::{
+    SteamController2026Button, SteamController2026Haptic, SteamController2026Outputs,
+    SteamController2026State, SteamController2026StreamOutputs, SteamController2026StreamPacket,
+    SteamMotionSample, SteamTrackpadState,
+};
+pub use gr_curated_controllers::wii_remote::{
+    WiiClassicState, WiiEepromImage, WiiExtension, WiiExtensionCalibration, WiiIrPoint,
+    WiiMotionPlusState, WiiNunchukState, WiiRemoteButton, WiiRemoteOutputs, WiiRemoteRevision,
+    WiiRemoteState, WiiResourceDisposition,
 };
 pub use gr_curated_controllers::{
     BatteryLevel, BatteryState, DualSenseAudioPath, DualSenseAxis, DualSenseControl,

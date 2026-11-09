@@ -8,7 +8,7 @@ use std::{
 };
 
 /// Exact realization selection. Reusing options still creates fresh sessions.
-/// Persistent Sony identity is supplied separately.
+/// Persistent identities are supplied in the family options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CreationOptions {
     target: RealizationId,
@@ -44,6 +44,16 @@ impl CreationOptions {
             target: self.target,
             session: gr_realization_api::RealizationSessionId(next_creation(&NEXT_CREATION)?),
         })
+    }
+    pub(crate) fn internal_without_audio(
+        self,
+    ) -> Result<gr_curated_controllers::CreationOptions, ControllerError> {
+        if self.audio.exposure() != crate::AudioExposure::Disabled {
+            return Err(ControllerError::Unsupported {
+                reason: "this controller has no declared associated audio profile".into(),
+            });
+        }
+        self.internal()
     }
     /// Validate topology before identity entropy or provider I/O.
     pub(crate) fn validate(self) -> Result<(), ControllerError> {
@@ -397,6 +407,23 @@ impl ControllerAssociation {
         }
         self
     }
+    /// Refresh an input-only association after an accepted attachment change.
+    pub(crate) fn refresh_inputs(
+        &mut self,
+        association: &gr_curated_controllers::ControllerAssociation,
+        surface: &'static crate::ControllerSurface,
+    ) {
+        *self = Self::single(
+            self.controller,
+            gr_curated_controllers::CreationOptions {
+                target: self.realization,
+                session: gr_realization_api::RealizationSessionId(self.creation),
+            },
+            association,
+            surface,
+        );
+    }
+
     pub(crate) fn single(
         controller: crate::ControllerId,
         options: gr_curated_controllers::CreationOptions,
@@ -516,19 +543,19 @@ mod tests {
                 Err(ControllerError::Unsupported { .. })
             ));
             assert!(matches!(
-                crate::create_dualsense(options),
+                crate::create_dualsense(options, crate::DualSenseOptions::default()),
                 Err(ControllerError::Unsupported { .. })
             ));
             assert!(matches!(
-                crate::create_dualshock4(options),
+                crate::create_dualshock4(options, crate::DualShock4Options::default()),
                 Err(ControllerError::Unsupported { .. })
             ));
             assert!(matches!(
-                crate::create_xbox360(options),
+                crate::create_xbox360(options, crate::Xbox360Options::default()),
                 Err(ControllerError::Unsupported { .. })
             ));
             assert!(matches!(
-                crate::create_switch_pro(options),
+                crate::create_switch_pro(options, crate::SwitchProOptions::default()),
                 Err(ControllerError::Unsupported { .. })
             ));
         }
@@ -651,5 +678,53 @@ mod tests {
             );
             assert!(component.observed_host_path().is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod association_refresh_tests {
+    use super::*;
+
+    #[test]
+    fn wii_association_replaces_companions_while_retaining_its_creation() {
+        use gr_curated_controllers::{CompanionAssociation, wii_remote::UINPUT};
+
+        let target = RealizationId::LINUX_UINPUT;
+        let id = crate::ControllerId::new("virtualgamepad.wii-remote");
+        let mut curated = gr_curated_controllers::ControllerAssociation {
+            requested_physical_path: Some("synthetic-core".into()),
+            ..Default::default()
+        };
+        let mut association = ControllerAssociation::single(
+            id,
+            gr_curated_controllers::CreationOptions {
+                target,
+                session: gr_curated_controllers::RealizationSessionId(9),
+            },
+            &curated,
+            &UINPUT,
+        );
+        curated.companions.push(CompanionAssociation {
+            role: "synthetic-companion",
+            requested_physical_path: Some("synthetic-companion-path".into()),
+            requested_unique_id: None,
+        });
+        association.refresh_inputs(&curated, &UINPUT);
+        assert_eq!(association.components().len(), 2);
+        assert_eq!(
+            association.components()[1].requested_physical_path(),
+            Some("synthetic-companion-path")
+        );
+
+        curated.companions.clear();
+        association.refresh_inputs(&curated, &UINPUT);
+        assert_eq!(association.components().len(), 1);
+        assert_eq!(
+            association.components()[0].requested_physical_path(),
+            Some("synthetic-core")
+        );
+        assert_eq!(association.controller(), id);
+        assert_eq!(association.realization(), target);
+        assert_eq!(association.creation(), 9);
     }
 }

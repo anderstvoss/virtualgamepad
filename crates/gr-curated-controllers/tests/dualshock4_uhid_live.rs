@@ -36,10 +36,13 @@ fn repeated_application_ids_keep_three_kernel_sessions_independent() {
     let mut controllers: Vec<_> = [7, 7, 7 + (1 << 16)]
         .into_iter()
         .map(|session| {
-            create_dualshock4(CreationOptions {
-                target: RealizationTarget::LINUX_UHID_USB,
-                session: RealizationSessionId(session),
-            })
+            create_dualshock4(
+                CreationOptions {
+                    target: RealizationTarget::LINUX_UHID_USB,
+                    session: RealizationSessionId(session),
+                },
+                gr_curated_controllers::DualShock4Options::default(),
+            )
             .unwrap()
         })
         .collect();

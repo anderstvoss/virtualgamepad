@@ -128,13 +128,7 @@ pub struct WiiRemoteIdentity([u8; 6]);
 
 impl WiiRemoteIdentity {
     pub fn from_bytes(address: [u8; 6]) -> Result<Self, gr_realization_api::ProviderError> {
-        if address[0] & 0x03 != 0x02 {
-            return Err(gr_realization_api::ProviderError::Open {
-                reason: "Wii Bluetooth identity must be a locally administered unicast address"
-                    .into(),
-            });
-        }
-        Ok(Self(address))
+        crate::common::validate_address(address, "Wii Bluetooth").map(Self)
     }
 
     pub fn generate() -> Result<Self, gr_realization_api::ProviderError> {

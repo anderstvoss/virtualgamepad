@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     macro_rules! exercise {
         ($create:path) => {{
-            let mut controller = $create(options)?;
+            let mut controller = $create(options, Default::default())?;
             let audio = controller.audio().ok_or("audio was not created")?;
             for endpoint in audio.endpoints() {
                 println!(

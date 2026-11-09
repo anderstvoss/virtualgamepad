@@ -10,8 +10,9 @@ use std::{
     time::{Duration, Instant},
 };
 use virtualgamepad::{
-    AudioAccess, AudioExposure, AudioOptions, ControllerAudio, CreationOptions, RealizationId,
-    SampleDirection, create_dualsense, create_dualshock4, create_xbox360,
+    AudioAccess, AudioExposure, AudioOptions, ControllerAudio, CreationOptions, DualSenseOptions,
+    DualShock4Options, RealizationId, SampleDirection, Xbox360Options, create_dualsense,
+    create_dualshock4, create_xbox360,
 };
 
 struct Clients {
@@ -403,7 +404,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = CreationOptions::new(RealizationId::LINUX_USBIP_USB_AUDIO).with_audio(audio);
     match args[0].as_str() {
         "dualsense" => {
-            let mut controller = create_dualsense(options)?;
+            let mut controller = create_dualsense(options, DualSenseOptions::default())?;
             let result = exercise(
                 controller.audio().ok_or("missing audio")?,
                 &args[0],
@@ -418,7 +419,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             result?;
         }
         "dualshock4" => {
-            let mut controller = create_dualshock4(options)?;
+            let mut controller = create_dualshock4(options, DualShock4Options::default())?;
             let result = exercise(
                 controller.audio().ok_or("missing audio")?,
                 &args[0],
@@ -433,7 +434,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             result?;
         }
         "xbox360" => {
-            let mut controller = create_xbox360(options)?;
+            let mut controller = create_xbox360(options, Xbox360Options::default())?;
             let result = exercise(
                 controller.audio().ok_or("missing audio")?,
                 &args[0],
