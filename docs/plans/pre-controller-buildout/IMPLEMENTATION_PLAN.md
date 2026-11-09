@@ -89,6 +89,7 @@ Large feature work accumulates on **checkpoint branches**. Anders reviews and me
 | C4 Epochs, receivers, demo | `buildout/c4-epochs-demo` | 5c, 5e, 13a, 13b, 14 | presentation and receivers in, demo driven by topology |
 | C5 Wii Remote | `buildout/c5-wii-remote` | 18 (brief 13) | playable Wii Remote on uinput and `linux.uhid.bluetooth` |
 | C6 Steam Controller, wired | `buildout/c6-steam-wired` | 19 (brief 14) | playable wired Steam Controller on `linux.uhid.usb` and uinput |
+| C7 API convergence | `buildout/c7-api-convergence` | 20a, 20b, 20c | all six families share one creation, identity and registry-metadata shape; old shapes removed |
 
 Outside the checkpoints, as their own PRs: steps 1 and 2 (already open as #180 and #181), research-repo steps 3 and 11, the live runs 7c and 16 (research-repo experiments), and step 17.
 
@@ -347,6 +348,32 @@ Needs C1 merged, D6 and D7; 13c needs C2. Sub-steps 13a to 13e, one PR each into
 
 Needs C1 merged, step 16 saying UHID is accepted, and ledger 11c. Sub-steps 14a to 14d into `buildout/c6-steam-wired`.
 **Objective:** as listed per sub-step in brief 14. The key oracles are a golden shape from the `hid-steam` records, and on a kernel v7.3-rc1 or later host, `hid-steam` binding and SDL3 opening the controller. The Steam client check stays manual for Anders. The Puck is out of scope; the C6 PR carries a feasibility note.
+
+### Step 20. API convergence (Alpha 2) · checkpoint C7
+
+Follows the 2026-11-07 API reassessment after C5 and C6, and the merged first pass (#319, #320) that set the target shape on Wii Remote and Steam Controller 2026. Owner decision (Anders, 2026-11-09): while still early alpha, any API change needed to improve or fix the API is allowed, including removing the old shapes and changing the ordinary root. This covers the API snapshot item on the owner list for this checkpoint. Every snapshot change is still listed under "Needs your attention" and in `docs/ALPHA_API_MIGRATION.md`.
+
+**Order in the Alpha 2 buildout:** run C7 now, before any new family package (Xbox Series, GameCube adapter, Joy-Con, Steam Puck receiver, Steam Bluetooth, more Wii extensions) and before per-controller creation and timing acceptance runs (#166) that feed the next release. New families then start on the converged shape, and acceptance evidence is recorded against the final constructors. Research-repo work and evidence runs that don't depend on constructor signatures may continue in parallel.
+
+- **20a. Curated layer for DualSense, DualShock 4, Switch Pro and Xbox 360:**
+  - `create_<family>(CreationOptions, <Family>Options)` with `#[non_exhaustive]` builder options, and typed identity in the options
+  - remove the `_with_identity` constructors
+  - fill the registry `subsystems`, `persistent_resources`, `refused_operations` and `creation_toggles` lists
+- **20b. Ordinary root:**
+  - the same constructor shape for the root families
+  - remove the root `_with_identity` constructors
+  - one identity rule for all families, with Switch Pro restorable from the root
+  - one place in `src/controllers.rs` for a family's options and identity types
+  - update examples, UI tests, docs, the changelog and migration notes
+- **20c. Promote Wii Remote and Steam Controller 2026 to the root** through the same family adapter (Wii topology and EEPROM resource, Steam scheduling). Steam PCM streaming stays as recorded in ADR-0023.
+
+**Objective:**
+- one constructor per family at both layers, with no old shape left
+- snapshot deltas listed per sub-step
+- every existing test assertion unchanged except call sites
+- identities generated only after target and platform validation, with deterministic test identities
+
+Prompt: `plans/agent-prompts/api-converge-all-families.md` in the project files.
 
 ---
 
