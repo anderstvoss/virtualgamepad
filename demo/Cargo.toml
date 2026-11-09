@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Native desktop file dialogs; 0.17.x portal code requires newer Rust than our MSRV.
-rfd = { version = "=0.16.0", default-features = false, features = ["xdg-portal", "async-std"] }
+rfd = { version = "=0.16.1", default-features = false, features = ["xdg-portal", "async-std"] }
 # Compiled family metadata for the topology-driven demo catalog; no runtime profiles.
 gr-curated-controllers = { path = "../crates/gr-curated-controllers", version = "0.1" }
 # Safe cancellation of discovery process groups; already present transitively.
