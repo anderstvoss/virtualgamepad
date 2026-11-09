@@ -139,11 +139,11 @@ cat > /tmp/branch-protection.json <<'EOF'
     "contexts": [
       "Rust lint",
       "MSRV (cargo check on rust-version)",
+      "Cross-target lint (aarch64-apple-darwin)",
+      "Cross-target lint (x86_64-pc-windows-msvc)",
       "Rust build and test (ubuntu-latest)",
-      "Rust build and test (macos-latest)",
       "Rust build and test (windows-latest)",
       "Policy checks (ubuntu-latest)",
-      "Policy checks (macos-latest)",
       "Policy checks (windows-latest)",
       "Supply chain audit",
       "Python script tests",
@@ -167,6 +167,12 @@ cat > /tmp/branch-protection.json <<'EOF'
 EOF
 gh api -X PUT /repos/$REPO/branches/main/protection --input /tmp/branch-protection.json
 ```
+
+The macOS legs (`Rust build and test (macos-latest)`, `Policy checks
+(macos-latest)`) still run on every PR and push but are not required:
+GitHub's hosted macOS queue often holds jobs for 5 to 20+ minutes. The
+Linux-hosted `Cross-target lint` checks catch macOS and Windows build and
+lint breaks instead; only test runs need the real macOS runner.
 
 For repos accepting community PRs, bump `required_approving_review_count`
 to `1` and flip `require_code_owner_reviews` to `true`.

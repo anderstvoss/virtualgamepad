@@ -87,6 +87,8 @@ impl LinuxIoFactory for LiveLinuxIoFactory {
     }
 }
 
+// The non-Linux stub's force-feedback handles are unit structs.
+#[cfg_attr(not(target_os = "linux"), allow(clippy::zero_sized_map_values))]
 struct LiveLinuxIo {
     file: File,
     uploads: HashMap<u32, linux_io::FfUpload>,
@@ -1047,6 +1049,7 @@ mod seam_tests {
     }
 }
 #[cfg(not(target_os = "linux"))]
+#[allow(clippy::zero_sized_map_values)]
 mod linux_io {
     use super::*;
     #[derive(Clone, Copy)]
@@ -1080,6 +1083,7 @@ mod linux_io {
     pub fn end_erase(_: &mut File, _: FfErase, _: i32) -> Result<(), ProviderError> {
         unreachable!()
     }
+    #[allow(clippy::unnecessary_wraps)] // matches the Linux signature
     pub fn destroy(_: &mut File) -> Result<(), ProviderError> {
         Ok(())
     }

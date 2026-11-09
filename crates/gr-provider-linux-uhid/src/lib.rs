@@ -6,19 +6,32 @@
 #![allow(clippy::wildcard_imports)]
 mod transport;
 use gr_realization_api::*;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
+#[cfg(target_os = "linux")]
+use std::fs::OpenOptions;
+#[cfg(target_os = "linux")]
 use std::io::{ErrorKind, Read, Write};
 pub use transport::HidTransport;
 
+#[cfg(target_os = "linux")]
 const UHID_DESTROY: u32 = 1;
+#[cfg(target_os = "linux")]
 const UHID_OUTPUT: u32 = 6;
+#[cfg(target_os = "linux")]
 const UHID_GET_REPORT: u32 = 9;
+#[cfg(target_os = "linux")]
 const UHID_GET_REPORT_REPLY: u32 = 10;
+#[cfg(target_os = "linux")]
 const UHID_CREATE2: u32 = 11;
+#[cfg(target_os = "linux")]
 const UHID_INPUT2: u32 = 12;
+#[cfg(target_os = "linux")]
 const UHID_SET_REPORT: u32 = 13;
+#[cfg(target_os = "linux")]
 const UHID_SET_REPORT_REPLY: u32 = 14;
+#[cfg(target_os = "linux")]
 const UHID_DATA_MAX: usize = 4096;
+#[cfg(target_os = "linux")]
 const UHID_EVENT_SIZE: usize = 4 + 280 + UHID_DATA_MAX;
 
 /// One exact realization served by the shared UHID mechanism.
@@ -1174,6 +1187,7 @@ mod linux_io {
     // Keep the reverse-event shape available to the platform-neutral session
     // dispatcher. `open_node` still rejects this provider outside Linux, so no
     // non-Linux backend is implied by these declarations.
+    #[allow(dead_code)]
     pub enum Event {
         Output {
             bytes: Vec<u8>,
@@ -1208,6 +1222,7 @@ mod linux_io {
     pub fn set_reply(_: &mut File, _: u32, _: i16) -> Result<(), ProviderError> {
         unreachable!()
     }
+    #[allow(clippy::unnecessary_wraps)] // matches the Linux signature
     pub fn destroy(_: &mut File) -> Result<(), ProviderError> {
         Ok(())
     }

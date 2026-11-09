@@ -211,6 +211,7 @@ impl BrokerClient {
     }
 
     #[cfg(not(unix))]
+    #[allow(clippy::unused_self)] // matches the Unix signature
     fn request(&mut self, tag: u8, body: &[u8]) -> Result<Vec<u8>, BrokerClientError> {
         let _ = (tag, body);
         Err(BrokerClientError::Unavailable(io::Error::new(

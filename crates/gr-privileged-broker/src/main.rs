@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// The broker is intentionally a Linux-only privileged attachment daemon.
 /// Keeping a small fail-closed binary on other targets allows workspace
 /// portability checks to exercise the protocol crate without implying host
-/// support where ConfigFS and `SO_PEERCRED` are unavailable.
+/// support where `ConfigFS` and `SO_PEERCRED` are unavailable.
 #[cfg(not(target_os = "linux"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     Err(io::Error::new(
