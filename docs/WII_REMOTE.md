@@ -849,8 +849,7 @@ not isolated, so its acceptance cell remains unchanged. Classic mode 07 and
 Plus have separate W9h qualification below; none is inherited from this W9g run. Corrected-run buttons are not separately qualified. Prior bound-kernel
 Dolphin contention remains a recorded limitation. Cemu gyro remains out of scope.
 
-The manifest retains its software `source-evidence` classification and states
-the bounded pass and exact preconditions; a virtual run is not physical evidence.
+The manifest records the bounded pass and exact preconditions as `virtual-live`.
 Activation remains compat with the merged #65 source provenance above; #258 still
 gates release use. No binding-mode creation option or other API/model change is
 introduced by adoption. All consumers and devices were closed and removal verified.
@@ -982,6 +981,17 @@ Plus creation remains rejected by its existing identity-evidence gate; storing
 that revision in an envelope does not lift the gate or authorize relabeling it. The envelope restores resources, not live
 inputs, attachments, compatibility options, report modes or transport state.
 Uinput disables these HID imports with an explicit limitation.
+
+### Bounded Original virtual EEPROM result
+
+On Linux 7.3.0-1-mainline, an Original virtual instance imported the private
+reference envelope and bound to the kernel driver. Kernel and Dolphin base
+accelerometer calibration readbacks matched the private reference. An
+acknowledged virtual write appeared in the first save. A fresh virtual instance
+loaded that envelope and saved identical bytes, then removed all owned nodes.
+The recorded result covers Original virtual import, addressed reads/writes and
+terminal Save/Load. The reference image stays private.
+[Owner-host result](https://github.com/anderstvoss/virtualgamepad/issues/162#issuecomment-6735616471)
 
 ### Demo envelope version 1
 

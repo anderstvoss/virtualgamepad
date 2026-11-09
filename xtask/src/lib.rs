@@ -36,6 +36,10 @@ impl Clock for Monotonic {
 /// Every observation is specific to one owned creation. Missing data is a reason.
 pub trait Backend {
     type Session;
+    /// Whether node observations come from real host devices created by this backend.
+    fn observes_live_virtual_devices(&self) -> bool {
+        false
+    }
     /// # Errors
     /// Returns a provider creation failure.
     fn create(&mut self, family: &str, realization: &str) -> Result<Self::Session, String>;
@@ -183,12 +187,22 @@ pub fn run<B: Backend, C: Clock>(
     samples.sort_by_key(|s| (s["cycle"].as_u64(), s["index"].as_u64()));
     let after = backend.resources();
     let summaries = summaries(&samples);
+    let evidence_status =
+        virtual_evidence_status(backend.observes_live_virtual_devices(), &samples);
     Ok(
-        json!({"schema_version":1,"kind":"virtual_host_run","controller":config.controller,
+        json!({"schema_version":1,"kind":"virtual_host_run","evidence_status":evidence_status,"controller":config.controller,
         "realization":config.realization,"tier":format!("{:?}",realization.tier),"permission":format!("{:?}",realization.permission),
         "config":{"cycles":config.cycles,"concurrency":config.concurrency},"environment":environment,
         "resources":{"before":baseline,"after":after},"summaries":summaries,"samples":samples}),
     )
+}
+
+fn virtual_evidence_status(live_backend: bool, samples: &[Value]) -> Option<&'static str> {
+    (live_backend
+        && samples
+            .iter()
+            .any(|sample| sample["stages"]["node_present"]["value_ns"].is_u64()))
+    .then_some("virtual-live")
 }
 
 fn summaries(samples: &[Value]) -> Value {
@@ -439,6 +453,33 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn virtual_live_requires_a_linux_observation_of_an_owned_node() {
+        let node = json!({"stages": {"node_present": measured(10)}});
+        assert_eq!(
+            virtual_evidence_status(true, std::slice::from_ref(&node)),
+            Some("virtual-live")
+        );
+        assert_eq!(virtual_evidence_status(true, &[]), None);
+        assert_eq!(
+            virtual_evidence_status(
+                true,
+                &[json!({"stages": {"node_present": missing("permission denied")}})]
+            ),
+            None
+        );
+        assert_eq!(virtual_evidence_status(false, &[node]), None);
+
+        let run = run(
+            &mut Fake::default(),
+            &mut Tick(0),
+            &config(),
+            &json!({"backend": "linux", "synthetic": false}),
+        )
+        .unwrap();
+        assert!(run.get("evidence_status").is_some_and(Value::is_null));
+    }
+
     #[test]
     fn failures_are_samples_and_successful_siblings_always_close() {
         let mut fake = Fake {
