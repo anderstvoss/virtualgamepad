@@ -618,6 +618,48 @@ fn wii_ir_renders_shared_touch_controls_without_actuation_or_legacy_list() {
 }
 
 #[test]
+fn creation_toggles_render_every_registry_label_and_fidelity_note() {
+    for target in [
+        RealizationId::LINUX_UINPUT,
+        RealizationId::LINUX_UHID_BLUETOOTH,
+    ] {
+        let labels = render(|ui| {
+            wii_import::draw_compat(
+                ui,
+                target,
+                WiiRemoteRevision::Tr,
+                &mut WiiRemoteOptions::default(),
+            );
+        });
+        for toggle in Kind::WiiRemote.entry().creation_toggles {
+            assert_eq!(
+                labels
+                    .iter()
+                    .filter(|(text, _)| text == toggle.label)
+                    .count(),
+                1
+            );
+            assert!(labels.iter().any(|(text, _)| text == toggle.fidelity));
+        }
+    }
+    for target in [RealizationId::LINUX_UINPUT, RealizationId::LINUX_UHID_USB] {
+        let labels = render(|ui| {
+            families::draw_steam_toggles(ui, target, &mut SteamController2026Options::default());
+        });
+        for toggle in Kind::Steam.entry().creation_toggles {
+            assert_eq!(
+                labels
+                    .iter()
+                    .filter(|(text, _)| text == toggle.label)
+                    .count(),
+                1
+            );
+            assert!(labels.iter().any(|(text, _)| text == toggle.fidelity));
+        }
+    }
+}
+
+#[test]
 fn plus_label_and_inactive_id_compat_are_revision_scoped() {
     assert_eq!(wii_revision_label(WiiRemoteRevision::Tr), "Wii Remote Plus");
     for revision in [WiiRemoteRevision::Original, WiiRemoteRevision::Tr] {
@@ -625,7 +667,7 @@ fn plus_label_and_inactive_id_compat_are_revision_scoped() {
             RealizationId::LINUX_UHID_BLUETOOTH,
             RealizationId::LINUX_UINPUT,
         ] {
-            let mut options = WiiRemoteCreationOptions::default();
+            let mut options = WiiRemoteOptions::default();
             let labels = render(|ui| wii_import::draw_compat(ui, target, revision, &mut options));
             assert_eq!(
                 labels
@@ -633,8 +675,8 @@ fn plus_label_and_inactive_id_compat_are_revision_scoped() {
                     .any(|(s, _)| s == "External-style inactive MotionPlus ID (compat)"),
                 revision == WiiRemoteRevision::Tr
             );
-            assert!(!options.motionplus_inactive_id_external_style);
-            assert!(options.motionplus_activation_reattach_status);
+            assert!(!options.motionplus_inactive_id_external_style());
+            assert!(options.motionplus_activation_reattach_status());
             assert!(
                 labels
                     .iter()
@@ -714,12 +756,11 @@ fn wii_recreation_retains_target_revision_and_compat_despite_sidebar_changes() {
             let mut saved = app.creation_options();
             saved.target = target;
             saved.wii_revision = revision;
-            saved.wii_compat = WiiRemoteCreationOptions {
-                motionplus_passthrough_id_mirror: true,
-                motionplus_passthrough_calibration_copy: true,
-                motionplus_inactive_id_external_style: true,
-                motionplus_activation_reattach_status: true,
-            };
+            saved.wii_compat = WiiRemoteOptions::default()
+                .with_motionplus_passthrough_id_mirror(true)
+                .with_motionplus_passthrough_calibration_copy(true)
+                .with_motionplus_inactive_id_external_style(true)
+                .with_motionplus_activation_reattach_status(true);
             let mut sidebar = app.creation_options();
             sidebar.id = 42;
             sidebar.target = RealizationId::LINUX_UHID_USB;

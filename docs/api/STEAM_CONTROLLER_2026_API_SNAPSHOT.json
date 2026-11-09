@@ -58,19 +58,14 @@
     },
     "fn.create_steam_controller_2026.html": {
       "declarations": [
-        "pub fn create_steam_controller_2026( target: RealizationTarget, session: u64, ) -> Result<SteamController2026Controller, ProviderError>"
-      ],
-      "traits": []
-    },
-    "fn.create_steam_controller_2026_with_options.html": {
-      "declarations": [
-        "pub fn create_steam_controller_2026_with_options( target: RealizationTarget, session: u64, options: SteamController2026CreationOptions, ) -> Result<SteamController2026Controller, ProviderError>"
+        "pub fn create_steam_controller_2026( options: CreationOptions, family: SteamController2026Options, ) -> Result<SteamController2026Controller, ProviderError>"
       ],
       "traits": []
     },
     "struct.SteamController2026Controller.html": {
       "declarations": [
         "pub struct SteamController2026Controller { /* private fields */ }",
+        "pub const fn identity(&self) -> &SteamController2026Identity",
         "pub fn surface(&self) -> &'static ControllerSurface",
         "pub fn association(&self) -> &ControllerAssociation",
         "pub fn is_closed(&self) -> bool",
@@ -98,19 +93,48 @@
         "impl Unpin for SteamController2026Controller"
       ]
     },
-    "struct.SteamController2026CreationOptions.html": {
+    "struct.SteamController2026Identity.html": {
       "declarations": [
-        "pub struct SteamController2026CreationOptions { pub serial: Option<String>, pub steam_client_compat: bool, pub haptic_streaming: bool, pub lizard_mode: bool, }"
+        "pub struct SteamController2026Identity { /* private fields */ }",
+        "pub fn from_serial(serial: impl Into<String>) -> Result<Self, ProviderError>",
+        "pub fn generate() -> Result<Self, ProviderError>",
+        "pub fn serial(&self) -> &str"
       ],
       "traits": [
-        "impl Clone for SteamController2026CreationOptions",
-        "impl Debug for SteamController2026CreationOptions",
-        "impl Default for SteamController2026CreationOptions",
-        "impl RefUnwindSafe for SteamController2026CreationOptions",
-        "impl Send for SteamController2026CreationOptions",
-        "impl Sync for SteamController2026CreationOptions",
-        "impl Unpin for SteamController2026CreationOptions",
-        "impl UnwindSafe for SteamController2026CreationOptions"
+        "impl Clone for SteamController2026Identity",
+        "impl Debug for SteamController2026Identity",
+        "impl Eq for SteamController2026Identity",
+        "impl PartialEq for SteamController2026Identity",
+        "impl RefUnwindSafe for SteamController2026Identity",
+        "impl Send for SteamController2026Identity",
+        "impl Sync for SteamController2026Identity",
+        "impl Unpin for SteamController2026Identity",
+        "impl UnwindSafe for SteamController2026Identity"
+      ]
+    },
+    "struct.SteamController2026Options.html": {
+      "declarations": [
+        "#[non_exhaustive]pub struct SteamController2026Options { /* private fields */ }",
+        "pub fn with_identity(self, identity: SteamController2026Identity) -> Self",
+        "pub const fn identity(&self) -> Option<&SteamController2026Identity>",
+        "pub fn with_steam_client_compat(self, enabled: bool) -> Self",
+        "pub const fn steam_client_compat(&self) -> bool",
+        "pub fn with_haptic_streaming(self, enabled: bool) -> Self",
+        "pub const fn haptic_streaming(&self) -> bool",
+        "pub fn with_lizard_mode(self, enabled: bool) -> Self",
+        "pub const fn lizard_mode(&self) -> bool"
+      ],
+      "traits": [
+        "impl Clone for SteamController2026Options",
+        "impl Debug for SteamController2026Options",
+        "impl Default for SteamController2026Options",
+        "impl Eq for SteamController2026Options",
+        "impl PartialEq for SteamController2026Options",
+        "impl RefUnwindSafe for SteamController2026Options",
+        "impl Send for SteamController2026Options",
+        "impl Sync for SteamController2026Options",
+        "impl Unpin for SteamController2026Options",
+        "impl UnwindSafe for SteamController2026Options"
       ]
     },
     "struct.SteamController2026Outputs.html": {

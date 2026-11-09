@@ -16,6 +16,13 @@ use virtualgamepad::{
 };
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
+
+fn supporting_creation(target: RealizationId) -> gr_curated_controllers::CreationOptions {
+    gr_curated_controllers::CreationOptions {
+        target,
+        session: gr_curated_controllers::RealizationSessionId(NEXT.fetch_add(1, Ordering::Relaxed)),
+    }
+}
 struct Capture(PathBuf);
 impl Drop for Capture {
     fn drop(&mut self) {
@@ -29,10 +36,10 @@ macro_rules! controllers {
         impl Controller {
             fn create(id:&str,target:RealizationId)->Result<Self,String>{
                 if id == "virtualgamepad.wii-remote" {
-                    return gr_curated_controllers::wii_remote::create_wii_remote(target, NEXT.fetch_add(1,Ordering::Relaxed)).map(Self::Wii).map_err(|e|e.to_string());
+                    return gr_curated_controllers::wii_remote::create_wii_remote(supporting_creation(target), gr_curated_controllers::wii_remote::WiiRemoteOptions::default()).map(Self::Wii).map_err(|e|e.to_string());
                 }
                 if id == "virtualgamepad.steam-controller-2026" {
-                    return gr_curated_controllers::steam_controller_2026::create_steam_controller_2026(target, NEXT.fetch_add(1,Ordering::Relaxed)).map(Self::Steam).map_err(|e|e.to_string());
+                    return gr_curated_controllers::steam_controller_2026::create_steam_controller_2026(supporting_creation(target), gr_curated_controllers::steam_controller_2026::SteamController2026Options::default()).map(Self::Steam).map_err(|e|e.to_string());
                 }
                 match id { $($id=>virtualgamepad::$create(CreationOptions::new(target)).map(Self::$variant).map_err(|e|e.to_string()),)+ _=>Err("unmapped compiled family".into()) }
             }

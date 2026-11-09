@@ -194,7 +194,7 @@ impl WiiProtocol {
     }
     pub(super) fn with_creation_options(
         image: super::WiiEepromImage,
-        options: super::WiiRemoteCreationOptions,
+        options: super::Compat,
     ) -> Self {
         let mut protocol = Self::with_image(image);
         protocol.memory.options = options;

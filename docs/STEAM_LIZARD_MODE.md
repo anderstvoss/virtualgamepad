@@ -1,6 +1,6 @@
 # Wired Steam desktop mode
 
-`SteamController2026CreationOptions::lizard_mode` enables the captured desktop
+`SteamController2026Options::lizard_mode` enables the captured desktop
 mouse/keyboard mapping on `linux.uhid.usb`. Its default is `false` by the owner's decision;
 [#311](https://github.com/anderstvoss/virtualgamepad/issues/311) tracks possible
 refinement later. The demo's Advanced

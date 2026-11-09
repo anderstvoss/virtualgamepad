@@ -19,12 +19,25 @@ the resulting component set. See [ADR-0017](adr/ADR-0017-primary-realization-and
 
 ## Compiled family registry and broker allowlist
 
-The four existing families are declared in one compile-time list in
+The existing families are declared in one compile-time list in
 `gr-controller-wire`; its immutable metadata can be consumed below the
 broker/provider dependency boundary. The typed curated `FAMILIES` registry
 attaches each definition's manifest, topology and target surfaces, including
 intended realization tier and permission class. New test-only families can use
 the same curated orchestration without editing production dispatch arms.
+
+The typed registry also declares target-scoped subsystems, persistent resources,
+refused operations and creation toggles. Each toggle has a stable family-local
+name, a default, affected realizations and a fidelity note. Consumer-compatibility
+shims default on. Features with side effects or an explicit opt-in policy default
+off. The demo uses this metadata for its Wii and Steam advanced controls.
+
+Wii and Steam use a shared `CreationOptions { target, session }` plus
+family-specific, non-exhaustive builder options. Both resolve typed identity at
+creation and keep caller storage separate from the transport session. Future
+realizations can consume additional identity fields, and resource or option
+builders can grow alongside the registry. A receiver entry can declare the
+families it hosts and the features of its own realization.
 
 USB/IP profiles take a compiled `UsbProfileSpec`; semantic channel layouts,
 report numbering, descriptors and strings remain controller metadata. Broker
@@ -36,7 +49,7 @@ for the boundary and rejected transport-only alternative.
 No ordinary-root API item, broker wire format or existing descriptor byte is
 changed by this registry. Tiers are intended mechanisms, not validation results.
 The shared UHID transport supports Bluetooth bus metadata, with curated fake-I/O
-coverage on bus 5; that is separate from real Bluetooth radio/pairing support.
+coverage on bus 5. Real Bluetooth radio and pairing support are separate.
 
 ## Ownership and data flow
 
@@ -147,6 +160,17 @@ state or host-owned outputs. Optional output order is service-observation order,
 not cross-device hardware chronology. All handles expose retained transport and
 cleanup diagnostics; terminal library state alone does not prove host removal.
 See [ADR-0011](adr/ADR-0011-neutralization-and-observation.md).
+
+Switch Pro generates a locally administered unicast address per creation. The
+curated handle returns it and accepts restoration via `create_switch_pro_with_identity`.
+USB status and device info encode the same address in their respective byte
+orders. UHID also uses the display-order address as its requested uniq, with a
+fresh physical path each time. Uinput has neither a USB controller-info channel
+nor a unique-ID setter. The identity behavior is source-backed by
+`swpro-l0-consumer-sdl-open-order`, `swpro-l0-device-info02-fields`,
+`swpro-l0-consumer-sdl-mac-serial-guid` and `swpro-l0-consumer-linux-mac-uniq`.
+The [SDL USB status address-order claim](https://github.com/anderstvoss/controller-protocol-research/blob/df63649dacdcecb073993a65260e95db5f4b7586/records/claim/swpro-l0-consumer-sdl-usb-status-address-order.json)
+records the exact reversal. Live identity acceptance remains WIP.
 
 ## Post-106 extension seams
 

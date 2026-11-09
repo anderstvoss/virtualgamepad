@@ -105,7 +105,11 @@ pub(super) fn decode(bytes: &[u8], revision: WiiRemoteRevision) -> Result<WiiEep
     let mp = block(1, 32).map(|b| b.try_into().unwrap());
     let n = block(2, 16).map(|b| b.try_into().unwrap());
     let c = block(4, 16).map(|b| b.try_into().unwrap());
-    let calibration = WiiExtensionCalibration::import(mp, n, c).map_err(|e| e.to_string())?;
+    let calibration = WiiExtensionCalibration::default()
+        .with_motion_plus(mp)
+        .and_then(|calibration| calibration.with_nunchuk(n))
+        .and_then(|calibration| calibration.with_classic(c))
+        .map_err(|e| e.to_string())?;
     Ok(image.with_extension_calibration(calibration))
 }
 
@@ -271,12 +275,11 @@ mod tests {
         )
         .unwrap()
         .with_extension_calibration(
-            WiiExtensionCalibration::import(
-                (flags & 1 != 0).then_some(mp),
-                (flags & 2 != 0).then_some(n),
-                (flags & 4 != 0).then_some(c),
-            )
-            .unwrap(),
+            WiiExtensionCalibration::default()
+                .with_motion_plus((flags & 1 != 0).then_some(mp))
+                .and_then(|calibration| calibration.with_nunchuk((flags & 2 != 0).then_some(n)))
+                .and_then(|calibration| calibration.with_classic((flags & 4 != 0).then_some(c)))
+                .unwrap(),
         )
     }
     fn revisions() -> [WiiRemoteRevision; 3] {

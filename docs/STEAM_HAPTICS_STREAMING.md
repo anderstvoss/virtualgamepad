@@ -8,7 +8,7 @@ USB Audio Class endpoint.
 
 ## Creation and output consumption
 
-`SteamController2026CreationOptions::haptic_streaming` defaults to `false`.
+`SteamController2026Options::haptic_streaming` defaults to `false`.
 Enable it before creating a wired `linux.uhid.usb` instance to handle the captured
 8-kHz s16le internal-haptic streams. It is independent of `steam_client_compat`.
 The demo exposes both options in Advanced options. Neither option adds a HID

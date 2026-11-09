@@ -614,7 +614,7 @@ impl SteamHidProtocol {
             serial,
             steam_client_compat,
             haptic_streaming,
-            super::SteamController2026CreationOptions::default().lizard_mode,
+            super::SteamController2026Options::default().lizard_mode(),
         )
     }
 

@@ -2,54 +2,29 @@ use super::{SteamController2026Definition, SteamController2026State, descriptor}
 use crate::{CreationOptions, common};
 use gr_controller_contract::ControlError;
 use gr_realization_api::{
-    NativeControllerRealization, ProviderDiagnostics, ProviderError, RealizationSessionId,
-    RealizationTarget,
+    NativeControllerRealization, ProviderDiagnostics, ProviderError, RealizationTarget,
 };
 
 /// A live Steam Controller 2026 realization.
 pub struct SteamController2026Controller {
-    session: common::ControllerSession<SteamController2026Definition>,
-}
-
-/// Create a controller with synthetic per-instance identity.
-pub fn create_steam_controller_2026(
-    target: RealizationTarget,
-    session: u64,
-) -> Result<SteamController2026Controller, ProviderError> {
-    create_steam_controller_2026_with_options(
-        target,
-        session,
-        SteamController2026CreationOptions::default(),
-    )
+    session: Box<common::ControllerSession<SteamController2026Definition>>,
+    identity: SteamController2026Identity,
 }
 
 /// Creation settings for a Steam Controller 2026.
-#[derive(Debug, Clone)]
-pub struct SteamController2026CreationOptions {
-    /// Virtual unit serial. None assigns a synthetic per-instance value.
-    pub serial: Option<String>,
-    /// Use the firmware-scoped, recorded Steam client feature profile.
-    ///
-    /// Replays non-identifying model attributes and retains captured setting
-    /// writes on wired UHID. Defaults to true. Serial identity is unaffected.
-    /// Uinput has no HID feature channel, so this option has no effect there.
-    pub steam_client_compat: bool,
-    /// Enable captured haptic PCM requests and bounded compat FIFO feedback.
-    /// Defaults to false. Supports wired 8-kHz s16le internal streams only;
-    /// buffering sizes/timing are a compat policy, not measured retail limits.
-    /// Uinput has no HID feature/output stream channel; this has no effect there.
-    pub haptic_streaming: bool,
-    /// Emit captured wired desktop mouse/keyboard mappings when enabled by host
-    /// intent. Defaults to false. Setting 9 gates mouse separately from keyboard
-    /// mappings. Initial unknown host state is treated as enabled for this opt-in.
-    /// Uinput has no composite HID mouse/keyboard channel; no effect there.
-    pub lizard_mode: bool,
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct SteamController2026Options {
+    identity: Option<SteamController2026Identity>,
+    steam_client_compat: bool,
+    haptic_streaming: bool,
+    lizard_mode: bool,
 }
 
-impl Default for SteamController2026CreationOptions {
+impl Default for SteamController2026Options {
     fn default() -> Self {
         Self {
-            serial: None,
+            identity: None,
             steam_client_compat: true,
             haptic_streaming: false,
             lizard_mode: false,
@@ -57,60 +32,140 @@ impl Default for SteamController2026CreationOptions {
     }
 }
 
-/// Create a controller with caller-selected virtual identity.
-pub fn create_steam_controller_2026_with_options(
-    target: RealizationTarget,
-    session: u64,
-    options: SteamController2026CreationOptions,
-) -> Result<SteamController2026Controller, ProviderError> {
-    let serial = resolve_serial(options.serial)?;
-    if !matches!(
-        target,
-        RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UINPUT
-    ) {
-        return Err(ProviderError::Unsupported {
-            reason: "Steam Controller 2026 supports wired UHID and reduced uinput".into(),
-        });
+impl SteamController2026Options {
+    #[must_use]
+    pub fn with_identity(mut self, identity: SteamController2026Identity) -> Self {
+        self.identity = Some(identity);
+        self
     }
-    let mut session = common::create(
-        SteamController2026Definition(
-            serial,
-            options.steam_client_compat,
-            options.haptic_streaming,
-            options.lizard_mode,
-        ),
-        if target == RealizationTarget::LINUX_UINPUT {
-            super::evdev::realization()
-        } else {
-            wired_realization()
-        },
-        CreationOptions {
-            target,
-            session: RealizationSessionId(session),
-        },
+
+    #[must_use]
+    pub const fn identity(&self) -> Option<&SteamController2026Identity> {
+        self.identity.as_ref()
+    }
+
+    /// Replay the firmware-scoped Steam client attribute and setting profile on wired UHID.
+    /// Defaults to true. Uinput has no HID feature channel.
+    #[must_use]
+    pub fn with_steam_client_compat(mut self, enabled: bool) -> Self {
+        self.steam_client_compat = enabled;
+        self
+    }
+
+    #[must_use]
+    pub const fn steam_client_compat(&self) -> bool {
+        self.steam_client_compat
+    }
+
+    /// Enable captured wired 8-kHz s16le internal PCM requests and bounded compat buffering.
+    /// Defaults to false. Uinput has no HID stream channel.
+    #[must_use]
+    pub fn with_haptic_streaming(mut self, enabled: bool) -> Self {
+        self.haptic_streaming = enabled;
+        self
+    }
+
+    #[must_use]
+    pub const fn haptic_streaming(&self) -> bool {
+        self.haptic_streaming
+    }
+
+    /// Emit captured wired mouse and keyboard mappings. Defaults to false.
+    /// Setting 9 gates the mouse separately. Initially unknown host intent is treated
+    /// as enabled after opting in. Uinput has no composite HID desktop channel.
+    #[must_use]
+    pub fn with_lizard_mode(mut self, enabled: bool) -> Self {
+        self.lizard_mode = enabled;
+        self
+    }
+
+    #[must_use]
+    pub const fn lizard_mode(&self) -> bool {
+        self.lizard_mode
+    }
+}
+
+/// Caller-restorable identity for a Steam Controller 2026.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SteamController2026Identity {
+    serial: String,
+}
+
+impl SteamController2026Identity {
+    pub fn from_serial(serial: impl Into<String>) -> Result<Self, ProviderError> {
+        let serial = serial.into();
+        // hid-steam v7.3-rc1 hid-steam.c:399,414,667–685 allows 21 bytes
+        // plus NUL. SDL Triton e0232c5 InitDevice:453–471 does not query
+        // the feature serial. Printable ASCII is the virtual identity policy.
+        if !(1..=21).contains(&serial.len())
+            || !serial.bytes().all(|b| b.is_ascii_graphic() || b == b' ')
+        {
+            return Err(ProviderError::Open {
+                reason: "unit serial must contain 1–21 printable ASCII bytes".into(),
+            });
+        }
+        Ok(Self { serial })
+    }
+
+    pub fn generate() -> Result<Self, ProviderError> {
+        Ok(Self {
+            serial: default_serial()?,
+        })
+    }
+
+    #[must_use]
+    pub fn serial(&self) -> &str {
+        &self.serial
+    }
+}
+
+/// Create a controller with a fresh identity unless the caller supplies one.
+pub fn create_steam_controller_2026(
+    options: CreationOptions,
+    family: SteamController2026Options,
+) -> Result<SteamController2026Controller, ProviderError> {
+    create(options, family, common::create_with_hid_uniq)
+}
+
+fn create(
+    options: CreationOptions,
+    mut family: SteamController2026Options,
+    open: impl FnOnce(
+        SteamController2026Definition,
+        NativeControllerRealization,
+        CreationOptions,
+    )
+        -> Result<common::ControllerSession<SteamController2026Definition>, ProviderError>,
+) -> Result<SteamController2026Controller, ProviderError> {
+    let realization = match options.target {
+        RealizationTarget::LINUX_UINPUT => super::evdev::realization(),
+        RealizationTarget::LINUX_UHID_USB => wired_realization(),
+        _ => {
+            return Err(ProviderError::Unsupported {
+                reason: "Steam Controller 2026 supports wired UHID and reduced uinput".into(),
+            });
+        }
+    };
+    let identity = family
+        .identity
+        .take()
+        .map_or_else(SteamController2026Identity::generate, Ok)?;
+    let mut realization = realization;
+    if let NativeControllerRealization::Uhid(specification) = &mut realization {
+        specification.unique_id.clone_from(&identity.serial);
+    }
+    let mut session = open(
+        SteamController2026Definition::new(identity.serial.clone(), &family),
+        realization,
+        options,
     )?;
     session.commit().map_err(|error| ProviderError::Open {
         reason: error.to_string(),
     })?;
-    Ok(SteamController2026Controller { session })
-}
-
-fn resolve_serial(serial: Option<String>) -> Result<String, ProviderError> {
-    let serial = match serial {
-        Some(serial) => serial,
-        None => default_serial()?,
-    };
-    // hid-steam v7.3-rc1 hid-steam.c:399,414,667–685 allows 21 bytes
-    // plus NUL. SDL Triton e0232c5 InitDevice:453–471 does not query
-    // the feature serial. Printable ASCII is the virtual identity policy.
-    if !(1..=21).contains(&serial.len())
-        || !serial.bytes().all(|b| b.is_ascii_graphic() || b == b' ')
-    {
-        return Err(ProviderError::Open {
-            reason: "unit serial must contain 1–21 printable ASCII bytes".into(),
-        });
-    }
-    Ok(serial)
+    Ok(SteamController2026Controller {
+        session: Box::new(session),
+        identity,
+    })
 }
 
 // Eight PID digits, eleven counter digits, a synthetic prefix and separator:
@@ -154,6 +209,12 @@ fn wired_realization() -> NativeControllerRealization {
 }
 
 impl SteamController2026Controller {
+    /// Resolved identity for caller-owned restoration, including on uinput.
+    #[must_use]
+    pub const fn identity(&self) -> &SteamController2026Identity {
+        &self.identity
+    }
+
     #[must_use]
     pub fn surface(&self) -> &'static gr_controller_contract::ControllerSurface {
         if self.session.selection().target == RealizationTarget::LINUX_UINPUT {
@@ -270,12 +331,151 @@ impl SteamController2026Controller {
 mod tests {
     use super::*;
 
+    use crate::common::session_tests::{Fake, Record};
+    use gr_realization_api::{
+        NativeProviderFactory, NativeProviderSession, ProviderCapabilities, ProviderFrame,
+        ProviderOpenRequest, ProviderPreflightError, RawReverseEvent, RealizationSessionId,
+    };
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Default)]
+    struct Factory {
+        request: Mutex<Option<ProviderOpenRequest>>,
+        record: Arc<Mutex<Record>>,
+    }
+
+    impl NativeProviderFactory for Factory {
+        fn capabilities(&self) -> ProviderCapabilities {
+            gr_provider_linux_uhid::LinuxUhidProvider::default().capabilities()
+        }
+
+        fn preflight(&self, _: &ProviderOpenRequest) -> Result<(), ProviderPreflightError> {
+            Ok(())
+        }
+
+        fn open(
+            &self,
+            request: ProviderOpenRequest,
+        ) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
+            assert!(self.request.lock().unwrap().replace(request).is_none());
+            Ok(Box::new(Fake(self.record.clone())))
+        }
+    }
+
+    fn create_wired(
+        family: SteamController2026Options,
+        factory: &Arc<Factory>,
+    ) -> SteamController2026Controller {
+        create(
+            CreationOptions {
+                target: RealizationTarget::LINUX_UHID_USB,
+                session: RealizationSessionId(7),
+            },
+            family,
+            |mut driver, spec, options| {
+                driver.provider = Some(factory.clone());
+                common::create_with_hid_uniq(driver, spec, options)
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn wired_uniq_and_serial_restore_together_with_fresh_physical_paths() {
+        let first = Arc::new(Factory::default());
+        let second = Arc::new(Factory::default());
+        let third = Arc::new(Factory::default());
+        let mut a = create_wired(SteamController2026Options::default(), &first);
+        let mut b = create_wired(SteamController2026Options::default(), &second);
+        assert_ne!(a.identity(), b.identity());
+        let identity = SteamController2026Identity::from_serial("VGP restored").unwrap();
+        let mut restored = create_wired(
+            SteamController2026Options::default().with_identity(identity.clone()),
+            &third,
+        );
+        assert_eq!(restored.identity(), &identity);
+        for (controller, factory) in [(&a, &first), (&b, &second), (&restored, &third)] {
+            let request = factory.request.lock().unwrap();
+            let NativeControllerRealization::Uhid(spec) = &request.as_ref().unwrap().realization
+            else {
+                panic!("wired UHID");
+            };
+            assert_eq!(spec.unique_id, controller.identity().serial());
+            assert_eq!(
+                controller.association().requested_unique_id.as_deref(),
+                Some(spec.unique_id.as_str())
+            );
+        }
+        let fourth = Arc::new(Factory::default());
+        let mut again = create_wired(
+            SteamController2026Options::default().with_identity(identity.clone()),
+            &fourth,
+        );
+        assert_eq!(
+            restored.association().requested_unique_id,
+            again.association().requested_unique_id
+        );
+        assert_ne!(
+            restored.association().requested_physical_path,
+            again.association().requested_physical_path
+        );
+
+        // steam-c6-feature-serial-get, numbered report 1. The serial itself is synthetic.
+        let set = include_str!(
+            "../../../../tests/fixtures/protocol-research/steam-c6-feature-serial-get.hex"
+        )
+        .split_whitespace()
+        .map(|byte| u8::from_str_radix(byte, 16).unwrap())
+        .collect();
+        third.record.lock().unwrap().events.extend([
+            RawReverseEvent::HidSetReportRequest {
+                request_id: 11,
+                report_id: 1,
+                report_type: 0,
+                bytes: set,
+            },
+            RawReverseEvent::HidGetReportRequest {
+                request_id: 12,
+                report_id: 1,
+                report_type: 0,
+            },
+        ]);
+        a.close();
+        a.close();
+        assert_eq!(first.record.lock().unwrap().destroys, 1);
+        for _ in 0..3 {
+            restored.service(&mut |_| {}).unwrap();
+        }
+        let record = third.record.lock().unwrap();
+        assert!(record.events.is_empty());
+        assert!(record.sent.iter().any(|frame| matches!(
+            frame,
+            ProviderFrame::HidSetReportReply {
+                request_id: 11,
+                status: 0
+            }
+        )));
+        assert!(record.sent.iter().any(|frame| matches!(frame,
+            ProviderFrame::HidGetReportReply { request_id: 12, status: 0, bytes }
+                if bytes.len() == 64 && bytes[4..].starts_with(identity.serial().as_bytes()))));
+        drop(record);
+        for (controller, factory) in [
+            (&mut b, second),
+            (&mut restored, third),
+            (&mut again, fourth),
+        ] {
+            controller.close();
+            controller.close();
+            assert_eq!(factory.record.lock().unwrap().destroys, 1);
+        }
+    }
+
     #[test]
     fn default_options_enable_only_the_steam_feature_profile() {
-        let options = SteamController2026CreationOptions::default();
+        let options = SteamController2026Options::default();
         assert!(options.steam_client_compat);
         assert!(!options.haptic_streaming);
-        assert!(options.serial.is_none());
+        assert!(options.identity().is_none());
     }
 
     #[test]
@@ -304,11 +504,29 @@ mod tests {
     #[test]
     fn virtual_serial_is_validated_without_truncation() {
         let max = "v".repeat(21);
-        assert_eq!(resolve_serial(Some(max.clone())).unwrap(), max);
+        assert_eq!(
+            SteamController2026Identity::from_serial(max.clone())
+                .unwrap()
+                .serial(),
+            max
+        );
         for invalid in [String::new(), "v".repeat(22), "x\0y".into(), "é".into()] {
-            assert!(resolve_serial(Some(invalid)).is_err());
+            let result = SteamController2026Identity::from_serial(invalid).and_then(|identity| {
+                create(
+                    CreationOptions {
+                        target: RealizationTarget::LINUX_UHID_USB,
+                        session: RealizationSessionId(7),
+                    },
+                    SteamController2026Options::default().with_identity(identity),
+                    |_, _, _| panic!("invalid serial reached provider"),
+                )
+            });
+            assert!(result.is_err());
         }
-        assert_ne!(resolve_serial(None).unwrap(), resolve_serial(None).unwrap());
+        assert_ne!(
+            SteamController2026Identity::generate().unwrap(),
+            SteamController2026Identity::generate().unwrap()
+        );
     }
 
     #[test]
@@ -323,7 +541,12 @@ mod tests {
         assert_eq!(serial, "v7fffffff-fffffffffff");
         assert_eq!(serial.len(), 21);
         assert!(serial.bytes().all(|byte| byte.is_ascii_graphic()));
-        assert_eq!(resolve_serial(Some(serial.clone())).unwrap(), serial);
+        assert_eq!(
+            SteamController2026Identity::from_serial(serial.clone())
+                .unwrap()
+                .serial(),
+            serial
+        );
         assert!(allocate_serial(0x7fff_ffff, &last).is_err());
         assert!(allocate_serial(0x7fff_ffff, &last).is_err());
         let generated = default_serial().unwrap();
@@ -347,7 +570,13 @@ mod tests {
     #[test]
     fn constructor_refuses_unapproved_transport() {
         assert!(matches!(
-            create_steam_controller_2026(RealizationTarget::LINUX_UHID_BLUETOOTH, 1),
+            create_steam_controller_2026(
+                CreationOptions {
+                    target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+                    session: gr_realization_api::RealizationSessionId(1)
+                },
+                SteamController2026Options::default()
+            ),
             Err(ProviderError::Unsupported { .. })
         ));
     }

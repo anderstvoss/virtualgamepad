@@ -13,18 +13,10 @@ pub struct WiiExtensionCalibration {
 }
 
 impl WiiExtensionCalibration {
-    /// Import complete blocks, rejecting bad checksums without repairing bytes.
-    ///
-    /// Layouts: `wii-gap-dolphin-motionplus-crc32-calibration`,
-    /// `wii-gap-dolphin-nunchuk-calibration-layout`, and
-    /// `wii-gap-dolphin-classic-calibration-layout`. The latter two use
-    /// `wii-gap-dolphin-calibration-additive-checksums`.
-    pub fn import(
-        motion_plus: Option<[u8; 32]>,
-        nunchuk: Option<[u8; 16]>,
-        classic: Option<[u8; 16]>,
-    ) -> Result<Self, ControlError> {
-        if let Some(bytes) = &motion_plus {
+    /// Validate the complete block's CRC32, or clear it with `None`.
+    /// Layout: `wii-gap-dolphin-motionplus-crc32-calibration`.
+    pub fn with_motion_plus(mut self, block: Option<[u8; 32]>) -> Result<Self, ControlError> {
+        if let Some(bytes) = &block {
             let crc = crc32(bytes[..14].iter().chain(&bytes[16..30]).copied());
             let stored = u32::from_be_bytes([bytes[14], bytes[15], bytes[30], bytes[31]]);
             if crc != stored {
@@ -33,34 +25,39 @@ impl WiiExtensionCalibration {
                 });
             }
         }
-        for bytes in [nunchuk.as_ref(), classic.as_ref()].into_iter().flatten() {
-            let sum = bytes[..14].iter().fold(0x55_u8, |a, b| a.wrapping_add(*b));
-            if bytes[14] != sum || bytes[15] != sum.wrapping_add(0x55) {
-                return Err(ControlError::UnsupportedControl {
-                    control: "extension calibration additive checksum mismatch",
-                });
-            }
-        }
-        Ok(Self {
-            motion_plus,
-            nunchuk,
-            classic,
-        })
+        self.motion_plus = block;
+        Ok(self)
     }
 
-    /// Complete validated `MotionPlus` block, in the form accepted by `import`.
+    /// Validate the complete Nunchuk block, or clear it with `None`.
+    /// Layout: `wii-gap-dolphin-nunchuk-calibration-layout`.
+    pub fn with_nunchuk(mut self, block: Option<[u8; 16]>) -> Result<Self, ControlError> {
+        validate_extension(block.as_ref())?;
+        self.nunchuk = block;
+        Ok(self)
+    }
+
+    /// Validate the complete Classic block, or clear it with `None`.
+    /// Layout: `wii-gap-dolphin-classic-calibration-layout`.
+    pub fn with_classic(mut self, block: Option<[u8; 16]>) -> Result<Self, ControlError> {
+        validate_extension(block.as_ref())?;
+        self.classic = block;
+        Ok(self)
+    }
+
+    /// Complete validated `MotionPlus` block, in the form accepted by `with_motion_plus`.
     #[must_use]
     pub fn motion_plus(&self) -> Option<[u8; 32]> {
         self.motion_plus
     }
 
-    /// Complete validated Nunchuk block, in the form accepted by `import`.
+    /// Complete validated Nunchuk block, in the form accepted by `with_nunchuk`.
     #[must_use]
     pub fn nunchuk(&self) -> Option<[u8; 16]> {
         self.nunchuk
     }
 
-    /// Complete validated Classic block, in the form accepted by `import`.
+    /// Complete validated Classic block, in the form accepted by `with_classic`.
     #[must_use]
     pub fn classic(&self) -> Option<[u8; 16]> {
         self.classic
@@ -69,6 +66,19 @@ impl WiiExtensionCalibration {
     pub(super) fn is_empty(&self) -> bool {
         self.motion_plus.is_none() && self.nunchuk.is_none() && self.classic.is_none()
     }
+}
+
+// wii-gap-dolphin-calibration-additive-checksums. Preserve the imported bytes.
+fn validate_extension(block: Option<&[u8; 16]>) -> Result<(), ControlError> {
+    if let Some(bytes) = block {
+        let sum = bytes[..14].iter().fold(0x55_u8, |a, b| a.wrapping_add(*b));
+        if bytes[14] != sum || bytes[15] != sum.wrapping_add(0x55) {
+            return Err(ControlError::UnsupportedControl {
+                control: "extension calibration additive checksum mismatch",
+            });
+        }
+    }
+    Ok(())
 }
 
 // IEEE CRC32, as used by the pinned Dolphin source's zlib CRC32 calls.
@@ -106,16 +116,26 @@ mod tests {
     fn imports_validate_all_checksum_bytes_and_never_repair_corruption() {
         assert_eq!(crc32(b"123456789".iter().copied()), 0xcbf4_3926);
         let (mp, n, c) = synthetic_blocks();
-        assert!(WiiExtensionCalibration::import(Some(mp), Some(n), Some(c)).is_ok());
+        assert!(
+            WiiExtensionCalibration::default()
+                .with_motion_plus(Some(mp))
+                .and_then(|calibration| calibration.with_nunchuk(Some(n)))
+                .and_then(|calibration| calibration.with_classic(Some(c)))
+                .is_ok()
+        );
         assert_eq!(
-            WiiExtensionCalibration::import(None, None, None).unwrap(),
+            WiiExtensionCalibration::default()
+                .with_motion_plus(None)
+                .unwrap(),
             WiiExtensionCalibration::default()
         );
         for i in 0..32 {
             let mut bad = mp;
             bad[i] ^= 1;
             assert!(
-                WiiExtensionCalibration::import(Some(bad), None, None).is_err(),
+                WiiExtensionCalibration::default()
+                    .with_motion_plus(Some(bad))
+                    .is_err(),
                 "MP byte {i}"
             );
         }
@@ -123,13 +143,17 @@ mod tests {
             let mut bad_n = n;
             bad_n[i] ^= 1;
             assert!(
-                WiiExtensionCalibration::import(None, Some(bad_n), None).is_err(),
+                WiiExtensionCalibration::default()
+                    .with_nunchuk(Some(bad_n))
+                    .is_err(),
                 "Nunchuk byte {i}"
             );
             let mut bad_c = c;
             bad_c[i] ^= 1;
             assert!(
-                WiiExtensionCalibration::import(None, None, Some(bad_c)).is_err(),
+                WiiExtensionCalibration::default()
+                    .with_classic(Some(bad_c))
+                    .is_err(),
                 "Classic byte {i}"
             );
         }
