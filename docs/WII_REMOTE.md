@@ -1,7 +1,7 @@
 # Wii Remote C5 package
 
-The compiled supporting package `gr-curated-controllers::wii_remote` provides
-`linux.uinput` and `linux.uhid.bluetooth`. The ordinary-root API is unchanged.
+Wii Remote provides `linux.uinput` and `linux.uhid.bluetooth`. C7 exposes
+its typed handle at the ordinary `virtualgamepad` root.
 This is a source-backed compatibility implementation under assessment, with the
 per-feature dispositions in
 [`acceptance/virtualgamepad.wii-remote.toml`](../acceptance/virtualgamepad.wii-remote.toml).
@@ -9,20 +9,20 @@ It is not physical-reference or whole-controller acceptance.
 
 ## Native ownership and use
 
-Call `create_wii_remote(CreationOptions { target, session }, WiiRemoteOptions::default())`
-for an Original Remote. Use `with_revision` to select the model and
-`with_eeprom_image` to supply a validated image. Original and TR have distinct
-device IDs. Early integrated Plus and undeclared targets reject.
-The ordinary `virtualgamepad::RealizationId` is the same underlying target type.
-Applications using the supporting package must pin it with the rest of this
-workspace; it is outside the ordinary-root compatibility snapshot.
+At the ordinary root, call
+`create_wii_remote(CreationOptions::new(realization), WiiRemoteOptions::default())`
+for an Original Remote. Choose `RealizationId::LINUX_UINPUT` or
+`RealizationId::LINUX_UHID_BLUETOOTH`. Use `with_revision` to select the model
+and `with_eeprom_image` to supply a validated image. Original and TR have
+distinct device IDs. Early integrated Plus and undeclared targets reject.
+See [the application API](APPLICATION_API.md) for root lifecycle and association.
 
 Creation generates a locally administered unicast Bluetooth address unless the
 caller supplies a validated `WiiRemoteIdentity` with `with_identity`. Save
 `identity().bytes()` for later restoration with `WiiRemoteIdentity::from_bytes`.
-Each creation gets a fresh physical path. On Bluetooth-bus UHID,
-`association().requested_unique_id` reports the synthetic label sent to the host.
-Use `identity()` for the typed address. The research covers
+Each creation gets a fresh physical path. On Bluetooth-bus UHID, the primary
+input component in `association().components()` exposes the requested synthetic
+label through `requested_unique_id()`. Use `identity()` for the typed address. The research covers
 `hid-wiimote` device recognition (`wii-original-remote-consumer-revision`),
 SDL initialization (`wii-w4-sdl-3-2-10-no-reattach`), and Dolphin's path probe
 (`wii-gap-consumer-dolphin-hidapi-usability-probe`). It does not establish how
@@ -89,8 +89,8 @@ Layouts and checksums cite `wii-gap-dolphin-motionplus-crc32-calibration`,
 `wii-gap-dolphin-classic-calibration-layout` and
 `wii-gap-dolphin-calibration-additive-checksums`. Uinput rejects calibration
 imports before opening a provider because it has no addressed memory channel.
-The ordinary-root API remains unchanged; `scripts/check-alpha-api.py` checks a
-separate Wii supporting-API snapshot for these additions. Consumer acceptance
+The API checker covers both the ordinary root and the separate Wii supporting
+snapshot. Consumer acceptance
 and physical calibration remain separate gates.
 
 Speaker control is acknowledged without producing audio. Reports `0x14` and
@@ -777,8 +777,8 @@ while inactive, set when MP is mapped even without a child. Built-in presence
 is not a physical assertion about that downstream status bit. A deterministic
 test pins the unchanged behavior; no new faithful status-bit claim follows.
 
-The approved supporting API snapshot deliberately adds the creation-option
-field; the ordinary root API stays unchanged. Source pin: research main
+The original Plus step added the creation option to the supporting API.
+C7 exposes the same options type through the ordinary root. Source pin: research main
 719befa86bbff044cb0cdc524d66085a4b610800 (232 Wii-prefixed claims), including W9f #62, Plus P1 #63, W9g #66
 and activation-status source review #65, plus W9h #71 and W9i #72. Earlier kernel-bound
 Plus qualification is recorded separately as wii-p1-* in research PR #63.
