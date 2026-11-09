@@ -4,6 +4,7 @@ mod editor;
 mod families;
 mod native_editor;
 mod wii_eeprom;
+mod wii_host;
 mod wii_import;
 #[cfg(test)]
 mod wii_tests;
@@ -1033,6 +1034,7 @@ struct NamedController {
     output_log: Vec<String>,
     service_worker: Option<ServiceWorker<Controller>>,
     closed_controller: Option<Controller>,
+    wii_binding: Option<wii_host::BindingCheck>,
     // Keep the status block allocated when the worker is briefly holding its display lock.
     service_metrics: ServiceMetrics,
     audio_view: Option<audio_lab::View>,
@@ -1670,6 +1672,15 @@ impl App {
     }
 
     fn create_one_with_options(&mut self, options: ControllerOptions) {
+        let wii_bluetooth = self.kind == Kind::WiiRemote && wii_import::available(options.target);
+        if wii_bluetooth {
+            if let Some(warning) = wii_host::allocation_warning() {
+                self.diagnostic_log.push(DiagnosticLogEntry {
+                    message: format!("Warning: {warning}"),
+                    success: false,
+                });
+            }
+        }
         let result = self.kind.create(&options);
         match result {
             Ok(mut controller) => {
@@ -1677,6 +1688,14 @@ impl App {
                     self.next_default_name()
                 } else {
                     self.name_draft.trim().to_owned()
+                };
+                let wii_binding = match &controller {
+                    Controller::WiiRemote(wii) if wii_bluetooth => wii
+                        .association()
+                        .requested_physical_path
+                        .clone()
+                        .map(wii_host::BindingCheck::new),
+                    _ => None,
                 };
                 let view = controller.snapshot();
                 let service_worker = Some(spawn_service_worker_with_label(
@@ -1701,6 +1720,7 @@ impl App {
                     output_log: Vec::new(),
                     service_worker,
                     closed_controller: None,
+                    wii_binding,
                     service_metrics: ServiceMetrics::default(),
                     audio_view: None,
                     input_ui: InputUiState::default(),
@@ -2557,6 +2577,14 @@ fn draw_controller_state(
     let identifier = controller_identifier(controller);
     let target = target_label(controller.options.target);
     ui.group(|ui| {
+        if controller.service_worker.is_some()
+            && controller.wii_binding.as_mut().is_some_and(wii_host::BindingCheck::missing_driver)
+        {
+            ui.colored_label(
+                Color32::YELLOW,
+                format!("hid-wiimote has not bound to this controller. {}", wii_host::ALLOCATION_GUIDANCE),
+            );
+        }
         egui::Grid::new("controller_topology")
             .num_columns(2)
             .spacing([8.0, 4.0])
@@ -3799,6 +3827,7 @@ mod tests {
                             output_log: Vec::new(),
                             service_worker: None,
                             closed_controller: None,
+                            wii_binding: None,
                             service_metrics: ServiceMetrics::default(),
                             audio_view: None,
                             input_ui: InputUiState::default(),

@@ -911,6 +911,27 @@ preconditions remain; no Original inheritance, new shim necessity, whole-control
 physical, game, radio or release qualification. No kernel rerun or runtime change.
 Both consumers and devices closed with verified HID/raw removal.
 
+## Known limitation — hid-wiimote allocation failure
+
+On a host with 4 KiB pages, the observed Linux 7.3 build needed an order-8
+contiguous block (1 MiB) for Wii device state. Memory fragmentation can prevent
+that allocation for either a physical Remote or a virtual UHID Bluetooth
+instance. `wiimote_hid_probe()` calls `wiimote_create()` before parsing the
+descriptor, and returns `ENOMEM` if allocation fails.
+[Linux v7.3 probe and allocation](https://github.com/torvalds/linux/blob/v7.3/drivers/hid/hid-wiimote-core.c#L1633-L1701)
+Linux 6.12 uses the same embedded output queue layout.
+[Linux v6.12 queue layout](https://github.com/torvalds/linux/blob/v6.12/drivers/hid/hid-wiimote.h#L97-L107)
+
+The demo checks the free block counts before creating a Wii on UHID Bluetooth
+and warns if no zone has a free block of order 8 or higher. Creation proceeds.
+If the kernel driver fails to bind to the created device, the demo shows the
+same guidance as a possible cause. A host owner can compact memory once and
+retry, or reboot if compaction does not help.
+
+```sh
+echo 1 | sudo tee /proc/sys/vm/compact_memory
+```
+
 ## Explicit EEPROM Save and Load
 
 `WiiEepromImage` contains the exact caller-selected EEPROM extent and bytes,
