@@ -203,14 +203,14 @@ because its combined touch node is classified as a touchscreen; do not suppress
 touch capabilities or change global udev policy to count a pass. See
 [EXP-0011](history/alpha-1/experiments/EXP-0011-evdev-sdl.md).
 
-### Proposed Steam input-lab extension
+### Steam input-lab extension
 
 The optional `steam-controller-2026` lab label uses the same isolated per-process
 seat as the Sony labels. The helper still validates the entire ASCII label,
 canonical positive PID, instance counter and 63-byte limit. Overlong labels are
 rejected before device creation. Normal creation remains opt-out.
 
-The proposed event rule grants only helper-validated Steam UHID descendants to
+The event rule grants only helper-validated Steam UHID descendants to
 the existing `virtualgamepad-uhid` group at mode 0660. Reduced uinput events use
 the existing validated uinput rule and `virtualgamepad-uinput` group. This gives
 those groups access to intentionally labelled virtual event streams, including
@@ -221,6 +221,7 @@ match, blanket input group grant or command execution is added. The helper
 performs no input-dependent file/network access. Existing seat isolation and
 libinput-ignore propagation apply before event access.
 
-This is an owner-review-only root-policy proposal under #258. It must be merged
-and installed by Anders before any Steam kernel event/ABS ioctl acceptance is
-claimed. Source changes and passing unit tests do not establish installed policy.
+This owner-reviewed root policy merged in #299 and is tracked under #258. It
+was installed and byte-verified on the D9 host on 2026-11-04. On any other host,
+install and verify it before claiming Steam kernel event/ABS ioctl acceptance:
+source changes and passing unit tests do not establish installed policy.
