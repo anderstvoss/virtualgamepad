@@ -8,6 +8,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Root and curated controller constructors take common realization options
+  plus family options. The family options restore Sony and Switch Pro identity
+  through `with_identity`. See the [alpha migration guide](docs/ALPHA_API_MIGRATION.md).
+
 - Switch Pro UHID uses its per-instance address as the requested uniq in place
   of the old generic label. The curated API can restore that address while
   creating a fresh physical path.

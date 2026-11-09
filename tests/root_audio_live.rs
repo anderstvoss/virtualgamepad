@@ -11,8 +11,8 @@ fn all_family_root_audio_creation_service_and_terminal_cleanup() {
         .with_audio(AudioOptions::new(AudioExposure::Emulated));
     macro_rules! exercise {
         ($create:ident, $channels:expr, $mic:expr) => {{
-            let mut controller = $create(options).unwrap();
-            let mut sibling = $create(options).unwrap();
+            let mut controller = $create(options, Default::default()).unwrap();
+            let mut sibling = $create(options, Default::default()).unwrap();
             assert_ne!(
                 controller.association().creation(),
                 sibling.association().creation()
@@ -63,7 +63,7 @@ fn all_family_root_audio_bounded_pcm_and_hid_threads() {
         .with_audio(AudioOptions::new(AudioExposure::Emulated));
     macro_rules! exercise {
         ($create:path, $channels:expr, $mic:expr) => {{
-            let controller = Arc::new(Mutex::new($create(options).unwrap()));
+            let controller = Arc::new(Mutex::new($create(options, Default::default()).unwrap()));
             let barrier = Arc::new(Barrier::new(2));
             let start = Instant::now();
             let mut maximum_service_us = 0;

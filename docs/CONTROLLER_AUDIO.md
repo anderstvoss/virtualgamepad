@@ -32,12 +32,12 @@ Changing topology or sample ownership requires close and recreation.
 
 ```rust,no_run
 use virtualgamepad::{
-    AudioExposure, AudioOptions, CreationOptions, RealizationId, create_dualsense,
+    AudioExposure, AudioOptions, CreationOptions, DualSenseOptions, RealizationId, create_dualsense,
 };
 
 let options = CreationOptions::new(RealizationId::LINUX_USBIP_USB_AUDIO)
     .with_audio(AudioOptions::new(AudioExposure::Emulated));
-let mut controller = create_dualsense(options)?;
+let mut controller = create_dualsense(options, DualSenseOptions::default())?;
 let audio = controller.audio().expect("enabled audio");
 let mut playback = [0_i16; 128 * 4];
 let read = audio.read_playback(&mut playback)?;

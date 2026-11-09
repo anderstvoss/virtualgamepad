@@ -144,7 +144,7 @@ requirement. No hard realtime guarantee follows from this integration.
 ### Explicit emulated identity versus transport identity
 
 Sony USB/UHID callers may opt into controller-typed identity restoration using
-`create_dualsense_with_identity` or `create_dualshock4_with_identity`. The supplied
+`DualSenseOptions::with_identity` or `DualShock4Options::with_identity`. The supplied
 pairing bytes and controller-defined UHID `uniq` remain stable; the physical-path
 instance suffix, personality, semantic state, timers and request queues are new.
 Existing creation functions retain their fresh policy. Providers do not interpret
@@ -162,7 +162,7 @@ cleanup diagnostics; terminal library state alone does not prove host removal.
 See [ADR-0011](adr/ADR-0011-neutralization-and-observation.md).
 
 Switch Pro generates a locally administered unicast address per creation. The
-curated handle returns it and accepts restoration via `SwitchProOptions::with_identity`.
+handle returns it and accepts restoration via `SwitchProOptions::with_identity`.
 USB status and device info encode the same address in their respective byte
 orders. UHID also uses the display-order address as its requested uniq, with a
 fresh physical path each time. Uinput has neither a USB controller-info channel

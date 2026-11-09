@@ -36,3 +36,10 @@ use virtualgamepad::DualSenseController;
 fn assert_sync<T: Sync>() {}
 assert_sync::<DualSenseController>();
 ```
+
+Creation accepts options for the selected controller family.
+```compile_fail,E0308
+use virtualgamepad::{create_switch_pro, CreationOptions, DualSenseOptions, RealizationId};
+let creation = CreationOptions::new(RealizationId::LINUX_UHID_USB);
+create_switch_pro(creation, DualSenseOptions::default());
+```

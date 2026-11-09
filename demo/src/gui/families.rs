@@ -144,10 +144,20 @@ impl Kind {
                     })?;
                 Ok(Controller::Steam(inner))
             }
-            Self::Xbox360 => create_xbox360(creation).map(Controller::Xbox),
-            Self::DualSense => create_dualsense(creation).map(Controller::DualSense),
-            Self::DualShock4 => create_dualshock4(creation).map(Controller::DualShock4),
-            Self::SwitchPro => create_switch_pro(creation).map(Controller::SwitchPro),
+            Self::Xbox360 => create_xbox360(creation, virtualgamepad::Xbox360Options::default())
+                .map(Controller::Xbox),
+            Self::DualSense => {
+                create_dualsense(creation, virtualgamepad::DualSenseOptions::default())
+                    .map(Controller::DualSense)
+            }
+            Self::DualShock4 => {
+                create_dualshock4(creation, virtualgamepad::DualShock4Options::default())
+                    .map(Controller::DualShock4)
+            }
+            Self::SwitchPro => {
+                create_switch_pro(creation, virtualgamepad::SwitchProOptions::default())
+                    .map(Controller::SwitchPro)
+            }
             Self::WiiRemote => create_wii_session(
                 options,
                 gr_curated_controllers::wii_remote::create_wii_remote,

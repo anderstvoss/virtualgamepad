@@ -1,22 +1,22 @@
 //! Opt-in root-API identity acceptance; no touch or button injection.
 #![cfg(target_os = "linux")]
 use virtualgamepad::{
-    ControllerStatus, CreationOptions, RealizationId, create_dualsense,
-    create_dualsense_with_identity,
+    ControllerStatus, CreationOptions, DualSenseOptions, RealizationId, create_dualsense,
 };
 
 #[test]
 #[ignore = "requires prepared isolated UHID host; no touch/button input"]
 fn root_identity_restoration_uses_fresh_session_and_preserves_logical_identity() {
     let options = CreationOptions::new(RealizationId::LINUX_UHID_USB);
-    let mut first = create_dualsense(options).unwrap();
+    let mut first = create_dualsense(options, DualSenseOptions::default()).unwrap();
     let identity = first.identity().unwrap();
     let before = first.association().clone();
     first.service(&mut |_| {}).unwrap();
     first.close();
     assert_eq!(first.diagnostics().status(), ControllerStatus::Closed);
 
-    let mut restored = create_dualsense_with_identity(options, identity).unwrap();
+    let mut restored =
+        create_dualsense(options, DualSenseOptions::default().with_identity(identity)).unwrap();
     assert_eq!(restored.identity(), Some(identity));
     assert_ne!(restored.association().creation(), before.creation());
     let component = &restored.association().components()[0];
@@ -59,8 +59,8 @@ fn all_families_service_start_and_close_siblings_independently() {
     macro_rules! family {
         ($create:path, $event:path) => {{
             let options = CreationOptions::new(RealizationId::LINUX_UHID_USB);
-            let mut first = $create(options).unwrap();
-            let mut sibling = $create(options).unwrap();
+            let mut first = $create(options, Default::default()).unwrap();
+            let mut sibling = $create(options, Default::default()).unwrap();
             let first_phys = first.association().components()[0]
                 .requested_physical_path()
                 .unwrap()
@@ -102,7 +102,7 @@ fn all_families_service_start_and_close_siblings_independently() {
             assert!(!first_node.exists(), "removed only first owned node");
             assert!(sibling_node.exists());
             sibling.service(&mut |_| {}).unwrap();
-            let mut recreated = $create(options).unwrap();
+            let mut recreated = $create(options, Default::default()).unwrap();
             assert_ne!(
                 recreated.association().components()[0].requested_physical_path(),
                 Some(first_phys.as_str())

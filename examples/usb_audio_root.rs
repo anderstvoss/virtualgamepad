@@ -1,8 +1,9 @@
 //! Root-API smoke test for the administrator-installed USB/IP audio broker.
 //! Run with `cargo run --features audio-usbip --example usb_audio_root`.
 use virtualgamepad::{
-    AudioAccess, AudioExposure, AudioOptions, CreationOptions, DualSenseControl, RealizationId,
-    create_dualsense, create_dualshock4, create_xbox360,
+    AudioAccess, AudioExposure, AudioOptions, CreationOptions, DualSenseControl, DualSenseOptions,
+    DualShock4Options, RealizationId, Xbox360Options, create_dualsense, create_dualshock4,
+    create_xbox360,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -14,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .with_microphone_access(AudioAccess::NativeClient);
     }
     let options = CreationOptions::new(RealizationId::LINUX_USBIP_USB_AUDIO).with_audio(audio);
-    let mut dualsense = create_dualsense(options)?;
+    let mut dualsense = create_dualsense(options, DualSenseOptions::default())?;
     dualsense.set_native(DualSenseControl::Cross, true)?;
     dualsense.commit()?;
     dualsense.service(&mut |_| {})?;
@@ -36,11 +37,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     dualsense.close();
 
-    let mut ds4 = create_dualshock4(options)?;
+    let mut ds4 = create_dualshock4(options, DualShock4Options::default())?;
     ds4.service(&mut |_| {})?;
     ds4.close();
 
-    let mut xbox = create_xbox360(options)?;
+    let mut xbox = create_xbox360(options, Xbox360Options::default())?;
     xbox.service(&mut |_| {})?;
     xbox.close();
     Ok(())

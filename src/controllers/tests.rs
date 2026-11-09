@@ -2185,7 +2185,7 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         let mut failures = Vec::new();
         macro_rules! exercise {
             ($factory:ident, $family:literal, $playback:literal, $microphone:literal, $options:expr, $playback_access:expr, $microphone_access:expr) => {{
-                let mut controller = crate::$factory($options)
+                let mut controller = crate::$factory($options, Default::default())
                     .unwrap_or_else(|error| report_public_factory_failure($family, &error));
                 controller.service(&mut |_| {}).unwrap();
                 controller.neutralize().unwrap();
@@ -2302,3 +2302,50 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
 
 #[path = "retained_tests.rs"]
 mod retained_outputs;
+
+#[test]
+fn sony_rejects_invalid_selection_before_identity_generation() {
+    let creation = CreationOptions::new(RealizationId::LINUX_USBIP_USB_AUDIO);
+    let result = sony_identity::<DualSenseIdentity>(creation, None, || {
+        panic!("USB/IP without audio must fail before generating an identity")
+    });
+    assert!(matches!(result, Err(ControllerError::Unsupported { .. })));
+}
+
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn sony_rejects_unsupported_platform_before_identity_generation() {
+    let target = RealizationId::LINUX_UHID_USB;
+    let result = sony_identity::<DualShock4Identity>(CreationOptions::new(target), None, || {
+        panic!("unsupported platform must fail before generating an identity")
+    });
+    assert!(
+        matches!(result, Err(ControllerError::UnsupportedPlatform { target: rejected }) if rejected == target)
+    );
+}
+
+#[test]
+fn switch_root_exposes_the_curated_identity_for_restoration() {
+    let inner = gr_curated_controllers::switch_pro::test_controller(Box::new(Fake(Arc::new(
+        Mutex::new(Record::default()),
+    ))))
+    .unwrap();
+    let identity = inner.identity();
+    let association = ControllerAssociation::single(
+        ControllerId::new("virtualgamepad.switch-pro"),
+        gr_curated_controllers::CreationOptions {
+            target: RealizationId::LINUX_UINPUT,
+            session: RealizationSessionId(7),
+        },
+        inner.association(),
+        inner.surface().common(),
+    );
+    let mut controller = SwitchProController::from_parts(association, inner);
+    let restored = SwitchProIdentity::from_bytes(controller.identity().bytes()).unwrap();
+    assert_eq!(restored, identity);
+    let family = SwitchProOptions::default().with_identity(restored);
+    assert_eq!(family.identity(), Some(identity));
+    controller.close();
+    controller.close();
+    assert_eq!(controller.identity(), identity);
+}

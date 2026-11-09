@@ -1,9 +1,9 @@
-# Working root API inventory
+# Historical root API inventory
 
 Baseline: merged PRs #122–125, #127 and #128 (`ec4c2ff`) plus the post-GUI audit tree.
 Generated from Linux all-feature rustdoc. Supporting crates and
 `experimental` are outside the alpha application compatibility promise.
-This is the post-GUI working inventory; no hard freeze is declared.
+This post-GUI inventory records the Alpha 1 baseline. See the [application API](../APPLICATION_API.md) and [current snapshot](ALPHA_API_SNAPSHOT.json) for the evolving root surface.
 Ordinary-root declarations are available with every feature set on all
 compiling platforms. Provider creation is separately gated by Linux,
 features and host prerequisites; see [the audit](../history/alpha-1/ALPHA_ROOT_API_AUDIT.md).
@@ -31,7 +31,7 @@ Concrete and auto trait implementations follow each declaration. Compiler
 blanket implementations and inherited trait method bodies are omitted.
 This rustdoc inventory is an audit aid, not a complete semver checker.
 
-## Exact current public declarations
+## Exact public declarations at the baseline
 
 ### `AudioAccess`
 

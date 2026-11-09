@@ -779,37 +779,25 @@
         },
         "fn.create_dualsense.html": {
           "declarations": [
-            "pub fn create_dualsense( options: CreationOptions, ) -> Result<DualSenseController, ControllerError>"
-          ],
-          "traits": []
-        },
-        "fn.create_dualsense_with_identity.html": {
-          "declarations": [
-            "pub fn create_dualsense_with_identity( options: CreationOptions, identity: DualSenseIdentity, ) -> Result<DualSenseController, ControllerError>"
+            "pub fn create_dualsense( options: CreationOptions, family: DualSenseOptions, ) -> Result<DualSenseController, ControllerError>"
           ],
           "traits": []
         },
         "fn.create_dualshock4.html": {
           "declarations": [
-            "pub fn create_dualshock4( options: CreationOptions, ) -> Result<DualShock4Controller, ControllerError>"
-          ],
-          "traits": []
-        },
-        "fn.create_dualshock4_with_identity.html": {
-          "declarations": [
-            "pub fn create_dualshock4_with_identity( options: CreationOptions, identity: DualShock4Identity, ) -> Result<DualShock4Controller, ControllerError>"
+            "pub fn create_dualshock4( options: CreationOptions, family: DualShock4Options, ) -> Result<DualShock4Controller, ControllerError>"
           ],
           "traits": []
         },
         "fn.create_switch_pro.html": {
           "declarations": [
-            "pub fn create_switch_pro( options: CreationOptions, ) -> Result<SwitchProController, ControllerError>"
+            "pub fn create_switch_pro( options: CreationOptions, family: SwitchProOptions, ) -> Result<SwitchProController, ControllerError>"
           ],
           "traits": []
         },
         "fn.create_xbox360.html": {
           "declarations": [
-            "pub fn create_xbox360( options: CreationOptions, ) -> Result<Xbox360Controller, ControllerError>"
+            "pub fn create_xbox360( options: CreationOptions, family: Xbox360Options, ) -> Result<Xbox360Controller, ControllerError>"
           ],
           "traits": []
         },
@@ -1269,9 +1257,9 @@
         "struct.DualSenseIdentity.html": {
           "declarations": [
             "pub struct DualSenseIdentity(/* private fields */);",
-            "pub fn generate() -> Result<Self, ControllerError>",
-            "pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self>",
-            "pub const fn to_bytes(self) -> [u8; 6]"
+            "pub fn generate() -> Result<DualSenseIdentity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<DualSenseIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
           ],
           "traits": [
             "impl Clone for DualSenseIdentity",
@@ -1285,6 +1273,24 @@
             "impl Sync for DualSenseIdentity",
             "impl Unpin for DualSenseIdentity",
             "impl UnwindSafe for DualSenseIdentity"
+          ]
+        },
+        "struct.DualSenseOptions.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualSenseOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: DualSenseIdentity, ) -> DualSenseOptions",
+            "pub const fn identity(self) -> Option<DualSenseIdentity>"
+          ],
+          "traits": [
+            "impl Clone for DualSenseOptions",
+            "impl Copy for DualSenseOptions",
+            "impl Debug for DualSenseOptions",
+            "impl Default for DualSenseOptions",
+            "impl RefUnwindSafe for DualSenseOptions",
+            "impl Send for DualSenseOptions",
+            "impl Sync for DualSenseOptions",
+            "impl Unpin for DualSenseOptions",
+            "impl UnwindSafe for DualSenseOptions"
           ]
         },
         "struct.DualSenseOutputState.html": {
@@ -1446,9 +1452,9 @@
         "struct.DualShock4Identity.html": {
           "declarations": [
             "pub struct DualShock4Identity(/* private fields */);",
-            "pub fn generate() -> Result<Self, ControllerError>",
-            "pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self>",
-            "pub const fn to_bytes(self) -> [u8; 6]"
+            "pub fn generate() -> Result<DualShock4Identity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<DualShock4Identity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
           ],
           "traits": [
             "impl Clone for DualShock4Identity",
@@ -1479,6 +1485,24 @@
             "impl Sync for DualShock4MotionSample",
             "impl Unpin for DualShock4MotionSample",
             "impl UnwindSafe for DualShock4MotionSample"
+          ]
+        },
+        "struct.DualShock4Options.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualShock4Options { /* private fields */ }",
+            "pub const fn with_identity( self, identity: DualShock4Identity, ) -> DualShock4Options",
+            "pub const fn identity(self) -> Option<DualShock4Identity>"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Options",
+            "impl Copy for DualShock4Options",
+            "impl Debug for DualShock4Options",
+            "impl Default for DualShock4Options",
+            "impl RefUnwindSafe for DualShock4Options",
+            "impl Send for DualShock4Options",
+            "impl Sync for DualShock4Options",
+            "impl Unpin for DualShock4Options",
+            "impl UnwindSafe for DualShock4Options"
           ]
         },
         "struct.DualShock4OutputState.html": {
@@ -1923,6 +1947,7 @@
         "struct.SwitchProController.html": {
           "declarations": [
             "pub struct SwitchProController { /* private fields */ }",
+            "pub const fn identity(&self) -> SwitchProIdentity",
             "pub fn stream_enabled(&self) -> bool",
             "pub fn motion_report_counter(&self) -> u8",
             "pub fn wants_write(&self) -> bool",
@@ -1953,6 +1978,26 @@
             "impl Unpin for SwitchProController"
           ]
         },
+        "struct.SwitchProIdentity.html": {
+          "declarations": [
+            "pub struct SwitchProIdentity(/* private fields */);",
+            "pub fn from_bytes(address: [u8; 6]) -> Result<SwitchProIdentity, ProviderError>",
+            "pub fn generate() -> Result<SwitchProIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for SwitchProIdentity",
+            "impl Copy for SwitchProIdentity",
+            "impl Debug for SwitchProIdentity",
+            "impl Eq for SwitchProIdentity",
+            "impl PartialEq for SwitchProIdentity",
+            "impl RefUnwindSafe for SwitchProIdentity",
+            "impl Send for SwitchProIdentity",
+            "impl Sync for SwitchProIdentity",
+            "impl Unpin for SwitchProIdentity",
+            "impl UnwindSafe for SwitchProIdentity"
+          ]
+        },
         "struct.SwitchProMotionSample.html": {
           "declarations": [
             "pub struct SwitchProMotionSample { pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], }"
@@ -1968,6 +2013,24 @@
             "impl Sync for SwitchProMotionSample",
             "impl Unpin for SwitchProMotionSample",
             "impl UnwindSafe for SwitchProMotionSample"
+          ]
+        },
+        "struct.SwitchProOptions.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions",
+            "pub const fn identity(self) -> Option<SwitchProIdentity>"
+          ],
+          "traits": [
+            "impl Clone for SwitchProOptions",
+            "impl Copy for SwitchProOptions",
+            "impl Debug for SwitchProOptions",
+            "impl Default for SwitchProOptions",
+            "impl RefUnwindSafe for SwitchProOptions",
+            "impl Send for SwitchProOptions",
+            "impl Sync for SwitchProOptions",
+            "impl Unpin for SwitchProOptions",
+            "impl UnwindSafe for SwitchProOptions"
           ]
         },
         "struct.SwitchProOutputState.html": {
@@ -2194,6 +2257,22 @@
             "impl !UnwindSafe for Xbox360Controller",
             "impl Send for Xbox360Controller",
             "impl Unpin for Xbox360Controller"
+          ]
+        },
+        "struct.Xbox360Options.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct Xbox360Options {}"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Options",
+            "impl Copy for Xbox360Options",
+            "impl Debug for Xbox360Options",
+            "impl Default for Xbox360Options",
+            "impl RefUnwindSafe for Xbox360Options",
+            "impl Send for Xbox360Options",
+            "impl Sync for Xbox360Options",
+            "impl Unpin for Xbox360Options",
+            "impl UnwindSafe for Xbox360Options"
           ]
         },
         "struct.Xbox360OutputState.html": {
@@ -3068,37 +3147,25 @@
         },
         "fn.create_dualsense.html": {
           "declarations": [
-            "pub fn create_dualsense( options: CreationOptions, ) -> Result<DualSenseController, ControllerError>"
-          ],
-          "traits": []
-        },
-        "fn.create_dualsense_with_identity.html": {
-          "declarations": [
-            "pub fn create_dualsense_with_identity( options: CreationOptions, identity: DualSenseIdentity, ) -> Result<DualSenseController, ControllerError>"
+            "pub fn create_dualsense( options: CreationOptions, family: DualSenseOptions, ) -> Result<DualSenseController, ControllerError>"
           ],
           "traits": []
         },
         "fn.create_dualshock4.html": {
           "declarations": [
-            "pub fn create_dualshock4( options: CreationOptions, ) -> Result<DualShock4Controller, ControllerError>"
-          ],
-          "traits": []
-        },
-        "fn.create_dualshock4_with_identity.html": {
-          "declarations": [
-            "pub fn create_dualshock4_with_identity( options: CreationOptions, identity: DualShock4Identity, ) -> Result<DualShock4Controller, ControllerError>"
+            "pub fn create_dualshock4( options: CreationOptions, family: DualShock4Options, ) -> Result<DualShock4Controller, ControllerError>"
           ],
           "traits": []
         },
         "fn.create_switch_pro.html": {
           "declarations": [
-            "pub fn create_switch_pro( options: CreationOptions, ) -> Result<SwitchProController, ControllerError>"
+            "pub fn create_switch_pro( options: CreationOptions, family: SwitchProOptions, ) -> Result<SwitchProController, ControllerError>"
           ],
           "traits": []
         },
         "fn.create_xbox360.html": {
           "declarations": [
-            "pub fn create_xbox360( options: CreationOptions, ) -> Result<Xbox360Controller, ControllerError>"
+            "pub fn create_xbox360( options: CreationOptions, family: Xbox360Options, ) -> Result<Xbox360Controller, ControllerError>"
           ],
           "traits": []
         },
@@ -3558,9 +3625,9 @@
         "struct.DualSenseIdentity.html": {
           "declarations": [
             "pub struct DualSenseIdentity(/* private fields */);",
-            "pub fn generate() -> Result<Self, ControllerError>",
-            "pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self>",
-            "pub const fn to_bytes(self) -> [u8; 6]"
+            "pub fn generate() -> Result<DualSenseIdentity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<DualSenseIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
           ],
           "traits": [
             "impl Clone for DualSenseIdentity",
@@ -3574,6 +3641,24 @@
             "impl Sync for DualSenseIdentity",
             "impl Unpin for DualSenseIdentity",
             "impl UnwindSafe for DualSenseIdentity"
+          ]
+        },
+        "struct.DualSenseOptions.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualSenseOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: DualSenseIdentity, ) -> DualSenseOptions",
+            "pub const fn identity(self) -> Option<DualSenseIdentity>"
+          ],
+          "traits": [
+            "impl Clone for DualSenseOptions",
+            "impl Copy for DualSenseOptions",
+            "impl Debug for DualSenseOptions",
+            "impl Default for DualSenseOptions",
+            "impl RefUnwindSafe for DualSenseOptions",
+            "impl Send for DualSenseOptions",
+            "impl Sync for DualSenseOptions",
+            "impl Unpin for DualSenseOptions",
+            "impl UnwindSafe for DualSenseOptions"
           ]
         },
         "struct.DualSenseOutputState.html": {
@@ -3735,9 +3820,9 @@
         "struct.DualShock4Identity.html": {
           "declarations": [
             "pub struct DualShock4Identity(/* private fields */);",
-            "pub fn generate() -> Result<Self, ControllerError>",
-            "pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self>",
-            "pub const fn to_bytes(self) -> [u8; 6]"
+            "pub fn generate() -> Result<DualShock4Identity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<DualShock4Identity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
           ],
           "traits": [
             "impl Clone for DualShock4Identity",
@@ -3768,6 +3853,24 @@
             "impl Sync for DualShock4MotionSample",
             "impl Unpin for DualShock4MotionSample",
             "impl UnwindSafe for DualShock4MotionSample"
+          ]
+        },
+        "struct.DualShock4Options.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualShock4Options { /* private fields */ }",
+            "pub const fn with_identity( self, identity: DualShock4Identity, ) -> DualShock4Options",
+            "pub const fn identity(self) -> Option<DualShock4Identity>"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Options",
+            "impl Copy for DualShock4Options",
+            "impl Debug for DualShock4Options",
+            "impl Default for DualShock4Options",
+            "impl RefUnwindSafe for DualShock4Options",
+            "impl Send for DualShock4Options",
+            "impl Sync for DualShock4Options",
+            "impl Unpin for DualShock4Options",
+            "impl UnwindSafe for DualShock4Options"
           ]
         },
         "struct.DualShock4OutputState.html": {
@@ -4212,6 +4315,7 @@
         "struct.SwitchProController.html": {
           "declarations": [
             "pub struct SwitchProController { /* private fields */ }",
+            "pub const fn identity(&self) -> SwitchProIdentity",
             "pub fn stream_enabled(&self) -> bool",
             "pub fn motion_report_counter(&self) -> u8",
             "pub fn wants_write(&self) -> bool",
@@ -4242,6 +4346,26 @@
             "impl Unpin for SwitchProController"
           ]
         },
+        "struct.SwitchProIdentity.html": {
+          "declarations": [
+            "pub struct SwitchProIdentity(/* private fields */);",
+            "pub fn from_bytes(address: [u8; 6]) -> Result<SwitchProIdentity, ProviderError>",
+            "pub fn generate() -> Result<SwitchProIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for SwitchProIdentity",
+            "impl Copy for SwitchProIdentity",
+            "impl Debug for SwitchProIdentity",
+            "impl Eq for SwitchProIdentity",
+            "impl PartialEq for SwitchProIdentity",
+            "impl RefUnwindSafe for SwitchProIdentity",
+            "impl Send for SwitchProIdentity",
+            "impl Sync for SwitchProIdentity",
+            "impl Unpin for SwitchProIdentity",
+            "impl UnwindSafe for SwitchProIdentity"
+          ]
+        },
         "struct.SwitchProMotionSample.html": {
           "declarations": [
             "pub struct SwitchProMotionSample { pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], }"
@@ -4257,6 +4381,24 @@
             "impl Sync for SwitchProMotionSample",
             "impl Unpin for SwitchProMotionSample",
             "impl UnwindSafe for SwitchProMotionSample"
+          ]
+        },
+        "struct.SwitchProOptions.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions",
+            "pub const fn identity(self) -> Option<SwitchProIdentity>"
+          ],
+          "traits": [
+            "impl Clone for SwitchProOptions",
+            "impl Copy for SwitchProOptions",
+            "impl Debug for SwitchProOptions",
+            "impl Default for SwitchProOptions",
+            "impl RefUnwindSafe for SwitchProOptions",
+            "impl Send for SwitchProOptions",
+            "impl Sync for SwitchProOptions",
+            "impl Unpin for SwitchProOptions",
+            "impl UnwindSafe for SwitchProOptions"
           ]
         },
         "struct.SwitchProOutputState.html": {
@@ -4483,6 +4625,22 @@
             "impl !UnwindSafe for Xbox360Controller",
             "impl Send for Xbox360Controller",
             "impl Unpin for Xbox360Controller"
+          ]
+        },
+        "struct.Xbox360Options.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct Xbox360Options {}"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Options",
+            "impl Copy for Xbox360Options",
+            "impl Debug for Xbox360Options",
+            "impl Default for Xbox360Options",
+            "impl RefUnwindSafe for Xbox360Options",
+            "impl Send for Xbox360Options",
+            "impl Sync for Xbox360Options",
+            "impl Unpin for Xbox360Options",
+            "impl UnwindSafe for Xbox360Options"
           ]
         },
         "struct.Xbox360OutputState.html": {
