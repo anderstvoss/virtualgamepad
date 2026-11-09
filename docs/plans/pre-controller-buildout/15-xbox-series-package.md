@@ -65,8 +65,10 @@ this step after uinput. Otherwise carry the Bluetooth gap into 15d.
 
 **Done when:** a deterministic golden capability fixture from the ledger
 matches the fake-provider device, including identity, names, key and
-axis codes, ranges, axis parameters and FF capabilities. Tests exercise
-each input and the two-motor reverse path, repeated polling, rollback,
+axis codes, ranges, flat and supported FF capabilities. Document and
+test each deviation from the golden fixture, including the provider’s
+zero axis fuzz because the evdev contract exposes range and flat. Tests
+exercise each input and the two-motor reverse path, repeated polling, rollback,
 individual removal, shutdown and idempotent cleanup. If HID is admitted,
 compare the descriptor with the research fixture and assert the exact
 success or error acknowledgment for every declared host request type
