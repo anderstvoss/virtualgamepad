@@ -162,7 +162,7 @@ cleanup diagnostics; terminal library state alone does not prove host removal.
 See [ADR-0011](adr/ADR-0011-neutralization-and-observation.md).
 
 Switch Pro generates a locally administered unicast address per creation. The
-curated handle returns it and accepts restoration via `create_switch_pro_with_identity`.
+curated handle returns it and accepts restoration via `SwitchProOptions::with_identity`.
 USB status and device info encode the same address in their respective byte
 orders. UHID also uses the display-order address as its requested uniq, with a
 fresh physical path each time. Uinput has neither a USB controller-info channel

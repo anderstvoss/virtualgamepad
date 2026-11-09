@@ -37,3 +37,33 @@ Post-GUI audit: the empty root `audio-alsa` feature is removed. ALSA host-device
 routing belongs to the demo's `audio-alsa` feature, whose defaults are unchanged.
 Library users enable `audio-pipewire` for local UHID audio or `audio-usbip` for the
 WIP composite; ALSA routing does not add a library realization.
+
+## C7 step 20a · Curated controller creation
+
+The curated crate and corresponding `virtualgamepad::experimental` exports
+now use common realization options plus family options. The ordinary root,
+Wii and Steam snapshots are unchanged in this step.
+
+| Before | After |
+| --- | --- |
+| Curated `create_dualsense(creation)` | `create_dualsense(creation, DualSenseOptions::default())` |
+| Curated `create_dualshock4(creation)` | `create_dualshock4(creation, DualShock4Options::default())` |
+| Curated `create_switch_pro(creation)` | `create_switch_pro(creation, SwitchProOptions::default())` |
+| Curated `create_xbox360(creation)` | `create_xbox360(creation, Xbox360Options::default())` |
+| Curated `create_dualsense_with_identity(creation, id)` | `create_dualsense(creation, DualSenseOptions::default().with_identity(id))` |
+| Curated `create_dualshock4_with_identity(creation, id)` | `create_dualshock4(creation, DualShock4Options::default().with_identity(id))` |
+| Curated `create_switch_pro_with_identity(creation, id)` | `create_switch_pro(creation, SwitchProOptions::default().with_identity(id))` |
+| Curated Sony identity `to_bytes()` | `bytes()` |
+| Curated Sony identity `from_bytes(bytes) -> Option<_>` | `from_bytes(bytes) -> Result<_, ProviderError>` |
+
+Curated Sony handles expose their local USB/UHID pairing identity via
+`identity()`. Sony address bytes use pairing-feature order. Switch Pro and Wii
+use display order. All require locally administered unicast flags. The wired
+Xbox 360 options carry no persistent identity for the existing standard-HID
+presentation (research `x360-l0-consumer-sdl360-vs-generic-hid`).
+
+Curated USB worker constructors still bind an already opened bridge. The
+application-side USB/IP path resolves identity before opening that bridge.
+Registry entries now describe the older families' existing audio components
+and realization restrictions. Sony input-lab isolation is an environment
+setting for acceptance runs, so it has no family option or demo toggle.

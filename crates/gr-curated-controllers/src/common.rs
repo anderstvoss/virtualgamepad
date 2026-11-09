@@ -198,6 +198,20 @@ pub(crate) fn require_linux_platform(target: RealizationTarget) -> Result<(), Pr
     }
 }
 
+pub(crate) const fn is_local_unicast(address: [u8; 6]) -> bool {
+    address[0] & 3 == 2
+}
+
+pub(crate) fn validate_address(address: [u8; 6], family: &str) -> Result<[u8; 6], ProviderError> {
+    if is_local_unicast(address) {
+        Ok(address)
+    } else {
+        Err(ProviderError::Open {
+            reason: format!("{family} identity must be a locally administered unicast address"),
+        })
+    }
+}
+
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn test_address(tag: u32) -> [u8; 6] {
     let [first, second, third, fourth] = tag.to_be_bytes();
@@ -329,6 +343,7 @@ fn create_labeled<D: HidDriver>(
             }
         })?;
     if let NativeControllerRealization::Uhid(specification) = &mut realization {
+        require_linux_platform(options.target)?;
         // The selected, declared realization owns the bus. Family builders may
         // share descriptor/identity defaults; callers must not patch bus bytes.
         specification.bus_type = match options.target {

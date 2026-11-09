@@ -68,8 +68,9 @@ fn hid<D: HidDriver>(driver: D, numbered: [bool; 3]) -> (ControllerSession<D>, A
         RealizationSessionId(7),
         numbered,
     );
+    let identity = super::super::test_address(2);
     let runtime = Runtime::new(
-        driver.hid_protocol(RealizationSessionId(7), [2; 6]),
+        driver.hid_protocol(RealizationSessionId(7), identity),
         transport,
         7,
         Limits::default(),
@@ -84,6 +85,7 @@ fn hid<D: HidDriver>(driver: D, numbered: [bool; 3]) -> (ControllerSession<D>, A
             backend: Backend::Hid { driver, runtime },
             association: crate::ControllerAssociation::default(),
             selection,
+            hid_identity: Some(identity),
             started: Instant::now(),
             observations: VecDeque::new(),
             dropped: 0,
