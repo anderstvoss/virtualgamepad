@@ -3,6 +3,7 @@ mod audio_topology;
 mod editor;
 mod families;
 mod native_editor;
+mod wii_eeprom;
 mod wii_import;
 #[cfg(test)]
 mod wii_tests;
@@ -50,7 +51,7 @@ struct ControllerOptions {
     wii_revision: WiiRemoteRevision,
     wii_imports: wii_import::Imports,
     wii_compat: WiiRemoteCreationOptions,
-    steam_compat: bool,
+    steam_options: SteamController2026CreationOptions,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
@@ -269,7 +270,7 @@ fn draw_advanced_options(
     target: RealizationId,
     kind: Kind,
     audio_creation: &mut audio_lab::CreationAudio,
-    steam_compat: &mut bool,
+    steam_options: &mut SteamController2026CreationOptions,
     (wii_revision, wii_imports, wii_compat): (
         &mut WiiRemoteRevision,
         &mut wii_import::Imports,
@@ -314,8 +315,12 @@ fn draw_advanced_options(
                         wii_import::draw_compat(ui, target, *wii_revision, wii_compat);
                     }
                     if kind == Kind::Steam {
-                        ui.checkbox(steam_compat, "Steam client compatibility");
+                        ui.checkbox(&mut steam_options.steam_client_compat, "Steam client compatibility");
                         ui.label("Replays captured wired attributes and accepted settings. HID targets only; uinput has no feature channel.");
+                        ui.checkbox(&mut steam_options.lizard_mode, "Desktop mouse and keyboard (lizard mode)");
+                        ui.label("Captured wired desktop mappings; HID targets only. Steam controls mouse and keyboard enable state separately.");
+                        ui.checkbox(&mut steam_options.haptic_streaming, "Haptic PCM streaming");
+                        ui.label("8-kHz internal PCM with bounded compat buffering; HID targets only.");
                     }
                     ui.strong("Audio configuration");
                     audio_lab::draw_creation(ui, audio_creation, target, kind.supports_audio());
@@ -474,6 +479,7 @@ fn target_identifier_abbreviation(target: RealizationId) -> &'static str {
     match target {
         RealizationId::LINUX_UINPUT => "UIN",
         RealizationId::LINUX_UHID_USB => "HID",
+        RealizationId::LINUX_UHID_BLUETOOTH => "HBT",
         RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB",
         RealizationId::LINUX_USBIP_USB_AUDIO => "UIP",
         _ => "UNK",
@@ -672,11 +678,63 @@ fn draw_kind_selector(ui: &mut egui::Ui, kind: &mut Kind) -> egui::Response {
     response
 }
 
+// Registry membership excludes fixture-only transports. USB/IP also needs its
+// compiled factory; host permissions are checked when the user creates a device.
+fn creation_targets(kind: Kind) -> Vec<RealizationId> {
+    (kind.entry().realizations)()
+        .iter()
+        .map(|realization| realization.surface.target())
+        .filter(|target| {
+            *target != RealizationId::LINUX_USBIP_USB_AUDIO || cfg!(feature = "audio-usbip")
+        })
+        .collect()
+}
+
+fn valid_creation_target(kind: Kind, current: RealizationId) -> RealizationId {
+    let targets = creation_targets(kind);
+    if targets.contains(&current) {
+        return current;
+    }
+    let preferred = if kind == Kind::WiiRemote {
+        RealizationId::LINUX_UHID_BLUETOOTH
+    } else {
+        audio_lab::default_creation_target()
+    };
+    if targets.contains(&preferred) {
+        preferred
+    } else {
+        *targets
+            .first()
+            .expect("compiled demo family has a realization")
+    }
+}
+
+// Wii resources and Steam creation options belong to their saved sessions.
+fn recreation_options(
+    kind: Kind,
+    saved: &ControllerOptions,
+    choices: ControllerOptions,
+) -> ControllerOptions {
+    if matches!(kind, Kind::WiiRemote | Kind::Steam) {
+        ControllerOptions {
+            id: choices.id,
+            ..saved.clone()
+        }
+    } else {
+        ControllerOptions {
+            target: valid_creation_target(kind, choices.target),
+            ..choices
+        }
+    }
+}
+
 fn draw_target_selector(
     ui: &mut egui::Ui,
     target: &mut RealizationId,
+    kind: Kind,
     row_width: f32,
 ) -> (egui::Rect, Option<egui::Rect>) {
+    *target = valid_creation_target(kind, *target);
     let mut help_rect = None;
     let row = ui
         .horizontal(|ui| {
@@ -695,12 +753,7 @@ fn draw_target_selector(
                         .truncate()
                         .width(combo_width)
                         .show_ui(ui, |ui| {
-                            for option in [
-                                RealizationId::LINUX_UINPUT,
-                                RealizationId::LINUX_UHID_USB,
-                                RealizationId::LINUX_USBIP_USB_AUDIO,
-                                RealizationId::LINUX_DUMMY_HCD_USB_HID,
-                            ] {
+                            for option in creation_targets(kind) {
                                 ui.selectable_value(target, option, target_label(option));
                             }
                         })
@@ -979,6 +1032,7 @@ struct NamedController {
     indicators: ReverseIndicators,
     output_log: Vec<String>,
     service_worker: Option<ServiceWorker<Controller>>,
+    closed_controller: Option<Controller>,
     // Keep the status block allocated when the worker is briefly holding its display lock.
     service_metrics: ServiceMetrics,
     audio_view: Option<audio_lab::View>,
@@ -1125,6 +1179,12 @@ impl<C> ServiceWorker<C> {
     fn stop(self) -> Option<C> {
         let _ = self.stop.send(());
         self.handle.join().ok()
+    }
+}
+
+fn retain_terminal<C>(worker: &mut Option<ServiceWorker<C>>, terminal: &mut Option<C>) {
+    if let Some(worker) = worker.take() {
+        *terminal = worker.stop();
     }
 }
 
@@ -1394,7 +1454,7 @@ pub struct App {
     wii_revision: WiiRemoteRevision,
     wii_imports: wii_import::Imports,
     wii_compat: WiiRemoteCreationOptions,
-    steam_compat: bool,
+    steam_options: SteamController2026CreationOptions,
     name_draft: String,
     create_count: u32,
     advanced_options_open: bool,
@@ -1419,7 +1479,7 @@ impl Default for App {
             wii_revision: WiiRemoteRevision::Original,
             wii_imports: wii_import::Imports::default(),
             wii_compat: WiiRemoteCreationOptions::default(),
-            steam_compat: false,
+            steam_options: SteamController2026CreationOptions::default(),
             name_draft: String::new(),
             create_count: 1,
             advanced_options_open: false,
@@ -1593,16 +1653,23 @@ impl App {
         }
     }
 
-    fn create_one(&mut self) {
-        let options = ControllerOptions {
+    fn creation_options(&self) -> ControllerOptions {
+        ControllerOptions {
             target: self.target,
             id: self.next_controller_id,
             audio: self.audio_creation,
             wii_revision: self.wii_revision,
             wii_imports: self.wii_imports.clone(),
             wii_compat: self.wii_compat,
-            steam_compat: self.steam_compat,
-        };
+            steam_options: self.steam_options.clone(),
+        }
+    }
+
+    fn create_one(&mut self) {
+        self.create_one_with_options(self.creation_options());
+    }
+
+    fn create_one_with_options(&mut self, options: ControllerOptions) {
         let result = self.kind.create(&options);
         match result {
             Ok(mut controller) => {
@@ -1633,6 +1700,7 @@ impl App {
                     indicators: ReverseIndicators::default(),
                     output_log: Vec::new(),
                     service_worker,
+                    closed_controller: None,
                     service_metrics: ServiceMetrics::default(),
                     audio_view: None,
                     input_ui: InputUiState::default(),
@@ -1702,7 +1770,44 @@ impl App {
             success: false,
         });
         self.lifecycle_status = Some(status_after_runtime_failure(&name, error));
-        self.remove_controller(index);
+        if self.controllers[index].kind == Kind::WiiRemote
+            && wii_import::available(self.controllers[index].options.target)
+        {
+            let named = &mut self.controllers[index];
+            retain_terminal(&mut named.service_worker, &mut named.closed_controller);
+        } else {
+            self.remove_controller(index);
+        }
+    }
+
+    fn save_eeprom(&mut self, id: u64, path: &std::path::Path) -> Result<(), String> {
+        wii_eeprom::validate_destination(path)?;
+        let named = self
+            .controllers
+            .iter_mut()
+            .find(|n| n.options.id == id)
+            .ok_or("Controller was removed; no snapshot remains")?;
+        if named.kind != Kind::WiiRemote || !wii_import::available(named.options.target) {
+            return Err("EEPROM requires a Wii UHID Bluetooth instance".into());
+        }
+        retain_terminal(&mut named.service_worker, &mut named.closed_controller);
+        let controller = named
+            .closed_controller
+            .as_mut()
+            .ok_or("Worker did not return a controller; cleanup requires verification")?;
+        let image = wii_eeprom::terminal_snapshot(controller)?;
+        let error = controller.retained_error();
+        self.last_cleanup = Some(controller.snapshot().lab_details());
+        self.diagnostic_log
+            .push(close_log(&named.name, error.as_deref()));
+        let bytes = wii_eeprom::encode(&image, named.options.wii_revision)?;
+        wii_eeprom::write(path, &bytes)?;
+        self.diagnostic_log.push(DiagnosticLogEntry {
+            message: "EEPROM saved; controller is closed. Load EEPROM to create a fresh instance."
+                .into(),
+            success: true,
+        });
+        Ok(())
     }
 }
 impl Drop for App {
@@ -1722,6 +1827,7 @@ impl eframe::App for App {
         let mut dump_state = false;
         let mut failed_controller = None;
         let mut recreate_controller = None;
+        let mut save_eeprom = None;
         let mut backend_healthy = true;
         for (index, named) in self.controllers.iter_mut().enumerate() {
             if let Some(worker) = &named.service_worker {
@@ -1810,6 +1916,7 @@ impl eframe::App for App {
                                     let _ = draw_target_selector(
                                         ui,
                                         &mut self.target,
+                                        self.kind,
                                         target_row_width,
                                     );
                                     ui.end_row();
@@ -1909,7 +2016,7 @@ impl eframe::App for App {
                                     self.target,
                                     self.kind,
                                     &mut self.audio_creation,
-                                    &mut self.steam_compat,
+                                    &mut self.steam_options,
                                     (&mut self.wii_revision, &mut self.wii_imports, &mut self.wii_compat),
                                 )
                                 .panel_rect;
@@ -2173,6 +2280,10 @@ impl eframe::App for App {
                                     {
                                         let named = &mut self.controllers[index];
                                         ui.heading(&named.name);
+                                        if named.kind == Kind::WiiRemote && wii_import::available(named.options.target) {
+                                            if named.closed_controller.is_some() { ui.label("Closed; EEPROM snapshot available until removal."); }
+                                            if ui.button("Save EEPROM…").clicked() { save_eeprom = Some(named.options.id); }
+                                        }
                                         let audio_view = named.audio_view.clone();
                                         let mut audio_routing =
                                             audio_view.as_ref().map(|view| view.routing.clone());
@@ -2234,7 +2345,7 @@ impl eframe::App for App {
                                         });
                                         section_frame.show(ui, |ui| {
                                             ui.set_min_width(section_content_width);
-                                            let inputs_ready = named.edits.ready();
+                                            let inputs_ready = named.service_worker.is_some() && named.edits.ready();
                                             let mut release_all = false;
                                             ui.horizontal(|ui| {
                                                 ui.heading("Input");
@@ -2335,6 +2446,21 @@ impl eframe::App for App {
                     });
                 });
         });
+        if let Some(id) = save_eeprom {
+            let selection = rfd::FileDialog::new()
+                .set_title("Save EEPROM (closes this controller)")
+                .add_filter("Wii EEPROM", &["wii-eeprom"])
+                .set_file_name("snapshot.wii-eeprom")
+                .save_file();
+            if let Err(error) =
+                wii_eeprom::save_selection(selection, |path| self.save_eeprom(id, path))
+            {
+                self.diagnostic_log.push(DiagnosticLogEntry {
+                    message: error,
+                    success: false,
+                });
+            }
+        }
         if dump_state {
             self.write_state_dump();
         }
@@ -2356,10 +2482,12 @@ impl eframe::App for App {
             Some(LifecycleAction::Remove(index)) => self.remove_controller(index),
             Some(LifecycleAction::Recreate(index)) => {
                 let named = &self.controllers[index];
-                if let Err(error) = self
-                    .audio_creation
-                    .options(self.target, named.kind.supports_audio())
-                    .and_then(|_| validate_wii_recreation(named.kind, self.wii_revision))
+                let options =
+                    recreation_options(named.kind, &named.options, self.creation_options());
+                if let Err(error) = options
+                    .audio
+                    .options(options.target, named.kind.supports_audio())
+                    .and_then(|_| validate_wii_recreation(named.kind, options.wii_revision))
                 {
                     self.diagnostic_log.push(DiagnosticLogEntry {
                         message: format!("Recreation rejected; original stays open: {error}"),
@@ -2369,7 +2497,7 @@ impl eframe::App for App {
                     self.kind = named.kind;
                     self.name_draft = named.name.clone();
                     self.remove_controller(index);
-                    self.create_one();
+                    self.create_one_with_options(options);
                 }
             }
             None => {}
@@ -2499,9 +2627,16 @@ fn draw_controller_state(
                 audio_action = audio_lab::draw_diagnostics(ui, audio_view);
             },
             |ui| {
+                let (label, help) = if controller.kind == Kind::WiiRemote {
+                    ("Recreate with original creation choices", "Closes this Wii first, then recreates its saved target, revision, calibration imports and compatibility options. Siblings stay open.")
+                } else if controller.kind == Kind::Steam {
+                    ("Recreate with original creation choices", "Closes this Steam controller first, then recreates its saved target and Steam options. Siblings stay open.")
+                } else {
+                    ("Recreate with current creation choices", "Closes this creation first, then creates the same family with supported sidebar realization/audio choices. Siblings stay open.")
+                };
                 if ui
-                    .button("Recreate with current creation choices")
-                    .on_hover_text("Closes this creation first, then creates the same family with the sidebar realization/audio choices. Siblings stay open.")
+                    .button(label)
+                    .on_hover_text(help)
                     .clicked()
                 {
                     *recreation_clicked = true;
@@ -3216,6 +3351,10 @@ mod tests {
     #[test]
     fn controller_ids_use_the_requested_target_and_type_abbreviations() {
         assert_eq!(
+            controller_id(9, RealizationId::LINUX_UHID_BLUETOOTH, Kind::WiiRemote),
+            "009-HBT-WII"
+        );
+        assert_eq!(
             controller_id(0, RealizationId::LINUX_UINPUT, Kind::Xbox360),
             "000-UIN-XB360"
         );
@@ -3235,14 +3374,13 @@ mod tests {
 
     #[test]
     fn creation_selectors_name_family_and_target_on_keyboard_focus() {
-        for original_target in [
-            RealizationId::LINUX_UINPUT,
-            RealizationId::LINUX_UHID_USB,
-            RealizationId::LINUX_USBIP_USB_AUDIO,
-            RealizationId::LINUX_DUMMY_HCD_USB_HID,
-        ] {
+        for (original_kind, original_target) in Kind::registered().into_iter().flat_map(|kind| {
+            creation_targets(kind)
+                .into_iter()
+                .map(move |target| (kind, target))
+        }) {
             let context = egui::Context::default();
-            let mut kind = Kind::Xbox360;
+            let mut kind = original_kind;
             let mut target = original_target;
             let mut labels = std::collections::BTreeSet::new();
             for frame in 0..17 {
@@ -3268,7 +3406,7 @@ mod tests {
                     |context| {
                         egui::CentralPanel::default().show(context, |ui| {
                             let family = draw_kind_selector(ui, &mut kind);
-                            draw_target_selector(ui, &mut target, family.rect.width());
+                            draw_target_selector(ui, &mut target, kind, family.rect.width());
                             let _ = ui.button("Adjacent control");
                         });
                     },
@@ -3281,7 +3419,10 @@ mod tests {
                         .filter_map(|event| event.widget_info().label.clone()),
                 );
             }
-            assert!(labels.contains("Controller family: Xbox 360"), "{labels:?}");
+            assert!(
+                labels.contains(&format!("Controller family: {}", original_kind.label())),
+                "{labels:?}"
+            );
             assert!(
                 labels.contains(&format!(
                     "Controller target: {}",
@@ -3290,7 +3431,7 @@ mod tests {
                 "{labels:?}"
             );
             assert!(labels.contains("Adjacent control"), "{labels:?}");
-            assert!(matches!(kind, Kind::Xbox360));
+            assert!(kind == original_kind);
             assert_eq!(target, original_target);
         }
     }
@@ -3397,7 +3538,7 @@ mod tests {
                 },
                 |context| {
                     egui::CentralPanel::default().show(context, |ui| {
-                        draw_target_selector(ui, &mut target, 220.0);
+                        draw_target_selector(ui, &mut target, Kind::Xbox360, 220.0);
                         adjacent_focused |= ui.button("Adjacent control").has_focus();
                     });
                 },
@@ -3428,11 +3569,17 @@ mod tests {
     #[test]
     fn target_help_button_stays_inside_narrow_selector_row() {
         for mut target in [
+            RealizationId::LINUX_UHID_BLUETOOTH,
             RealizationId::LINUX_UINPUT,
             RealizationId::LINUX_UHID_USB,
             RealizationId::LINUX_USBIP_USB_AUDIO,
             RealizationId::LINUX_DUMMY_HCD_USB_HID,
         ] {
+            let kind = if target == RealizationId::LINUX_UHID_BLUETOOTH {
+                Kind::WiiRemote
+            } else {
+                Kind::Xbox360
+            };
             let context = egui::Context::default();
             let mut rect = egui::Rect::NOTHING;
             let mut help_rect = None;
@@ -3470,6 +3617,7 @@ mod tests {
                                         (rect, help_rect) = draw_target_selector(
                                             ui,
                                             &mut target,
+                                            kind,
                                             type_selector_rect.width(),
                                         );
                                         ui.end_row();
@@ -3617,6 +3765,107 @@ mod tests {
                 lifecycle_action(count, false, None, None, Some(count)),
                 None
             );
+        }
+    }
+
+    #[test]
+    fn failed_wii_entries_are_retained_only_where_eeprom_save_is_available() {
+        for (target, retain) in [
+            (RealizationId::LINUX_UINPUT, false),
+            (RealizationId::LINUX_UHID_BLUETOOTH, true),
+        ] {
+            for index in [0, 7, 64, 129] {
+                let mut app = App::default();
+                app.controllers = (0..130)
+                    .map(|position| {
+                        let kind = if position == index {
+                            Kind::WiiRemote
+                        } else {
+                            Kind::Xbox360
+                        };
+                        let mut options = app.creation_options();
+                        options.id = u64::try_from(position).unwrap();
+                        options.target = target;
+                        let name = format!("Synthetic controller {position}");
+                        NamedController {
+                            kind,
+                            options,
+                            name: name.clone(),
+                            name_draft: name,
+                            name_error: None,
+                            view: editor::neutral_view(kind),
+                            edits: EditProgress::default(),
+                            indicators: ReverseIndicators::default(),
+                            output_log: Vec::new(),
+                            service_worker: None,
+                            closed_controller: None,
+                            service_metrics: ServiceMetrics::default(),
+                            audio_view: None,
+                            input_ui: InputUiState::default(),
+                        }
+                    })
+                    .collect();
+                app.selected_controller = Some(index);
+                app.close_failed_controller(index, "synthetic provider failure".into());
+                let expected: Vec<_> = (0..130_u64)
+                    .filter(|id| retain || *id != u64::try_from(index).unwrap())
+                    .collect();
+                assert_eq!(
+                    app.controllers
+                        .iter()
+                        .map(|c| c.options.id)
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+                assert_eq!(
+                    app.selected_controller,
+                    Some(if retain { index } else { index.min(128) })
+                );
+                assert!(
+                    matches!(&app.lifecycle_status, Some(ControllerLifecycleStatus::ClosedAfterFailure { error, .. }) if error == "synthetic provider failure")
+                );
+                if retain {
+                    // Repeated terminal handling keeps the save entry; explicit
+                    // removal still uses the ordinary selection/cleanup path.
+                    app.close_failed_controller(index, "synthetic provider failure".into());
+                    assert_eq!(app.controllers.len(), 130);
+                    app.remove_controller(index);
+                    assert_eq!(app.controllers.len(), 129);
+                    assert_eq!(app.selected_controller, Some(index.min(128)));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn terminal_retention_closes_once_survives_repeated_save_attempts_and_keeps_siblings_running() {
+        for failed in [false, true] {
+            let sibling = spawn_service_worker(FakeService::default());
+            let mut worker = Some(spawn_service_worker(FakeService {
+                fail: failed,
+                ..FakeService::default()
+            }));
+            if failed {
+                worker
+                    .as_ref()
+                    .unwrap()
+                    .failure
+                    .recv_timeout(Duration::from_secs(1))
+                    .unwrap();
+            }
+            let mut terminal = None;
+            retain_terminal(&mut worker, &mut terminal);
+            assert!(worker.is_none());
+            assert_eq!(terminal.as_ref().unwrap().closed, 1);
+            let serviced = terminal.as_ref().unwrap().serviced;
+            for _ in 0..3 {
+                retain_terminal(&mut worker, &mut terminal);
+                assert_eq!(terminal.as_ref().unwrap().closed, 1);
+                assert_eq!(terminal.as_ref().unwrap().serviced, serviced);
+            }
+            assert_eq!(sibling.failure.try_recv(), Err(mpsc::TryRecvError::Empty));
+            assert_eq!(sibling.stop().unwrap().closed, 1);
+            drop(terminal);
         }
     }
 
@@ -4300,7 +4549,7 @@ mod tests {
                                                 audio_lab::default_creation_target(),
                                                 Kind::DualSense,
                                                 &mut audio_creation,
-                                                &mut false,
+                                                &mut SteamController2026CreationOptions::default(),
                                                 (
                                                     &mut WiiRemoteRevision::Original,
                                                     &mut wii_import::Imports::default(),

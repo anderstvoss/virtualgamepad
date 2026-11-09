@@ -7,10 +7,12 @@ The approved Steam supporting API has its own reviewed snapshot,
 [`api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json`](api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json),
 checked by `python3 scripts/check-alpha-api.py` alongside the root and Wii APIs.
 
-Research pin: `fc6964ac8799f0b7a38ffb9526361450f0b1b87a`, including the merged
-fresh physical descriptor research PR 82 (`aeac7a5`), July notes and PR 81
-research leads. The generated fixture
-manifest records the exact revision and both fixture/record file digests.
+Research pin: `6bf1eb21f755cfd6e0cd409eb81f928cd90a7f30`, including merged
+wired stability research PR #108, LED research PR #109 and prior physical
+input/haptic references.
+The generated fixture manifest records the exact revision and fixture/record
+digests. The LED acceptance cell adopts the bounded physical and separate
+consumer records from [research PR #109](https://github.com/anderstvoss/controller-protocol-research/pull/109).
 Every `steam-c6-*` fixture used here is synthetic consumer-source evidence. The
 `steam-s3-1302-report-descriptor` fixture is physical, imported without byte changes.
 Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
@@ -56,6 +58,7 @@ Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
 | Motion | Native motion through `0x42` | No companion motion node. The provider cannot declare the accelerometer property or timestamp event |
 | Touch | Native pad coordinates, click, pressure and touch flags | Pad click and contact-gated coordinates. The kernel gamepad mapping has no independent pressure, stick/grip touch or pad-contact key |
 | Host output | Retained vendor haptics, reports `0x80`–`0x85` | Conventional rumble via reverse events. There is no vendor haptic payload for the six retained slots |
+| LED controls | Retained raw brightness, override and RGBW intent through the default Steam profile; see [wired LED controls](STEAM_LED_CONTROLS.md) | No HID feature channel or colour/brightness output representation |
 | Unit serial | Compatibility PID/counter feature string. Physical format: No evidence | No HID feature channel or evdev unique-ID setter |
 
 The default unit serial is a synthetic `v<pid-hex>-<counter-hex>` label,
@@ -81,9 +84,9 @@ per-target restrictions remain visible. No additional public API is introduced.
 
 The [C6 D9 report](C6_D9_ACCEPTANCE.md) records the new N1/N4 measurements,
 separately qualified SDL rerun, post-C6 kernel decoding and ABS ioctl results,
-manual Steam procedure and Puck feasibility note. The manifest retains
-source-only evidence levels and explicit missing live cells; none is promoted
-to physical acceptance.
+manual Steam procedure and Puck feasibility note. Later physical-reference
+records now support the bounded per-function promotions listed in the wired
+stability follow-up below; missing live and calibration claims remain explicit.
 
 ## D9 wired acceptance
 
@@ -141,15 +144,15 @@ historical/raw-not-revalidated corroboration; the fresh fixture is separate.
 | SDL-only diagnostic `0x47`, 46 bytes | **Not declared** by the fresh wired descriptor (`steam-s3-1302-sdl47-descriptor-conflict`). `steam-c6-input-47` is a source decoder, not physical declaration. Wired encoder rejects it; normal protocol only emits 0x42 | Version-pinned SDL timestamp/trackpad capture and decoding |
 | Buttons, pad position/pressure, stick/pad/grip touch, IMU | `steam-c6-input-buttons`, `steam-c6-input-scaling`; raw native fields retain signedness; touch and pressure are independent | One-control-at-a-time wired capture, physical sensor and pressure correlation |
 | Optional battery `0x43`, 15 bytes | Declared length **faithful (fresh physical capture)**; field meaning **compat** `steam-c6-battery-43`; encoder accepts caller data, no automatic status or made-up voltage/cadence | Physical wired battery/status capture |
-| Feature 1 SET/GET, 64-byte host buffer | `steam-c6-feature-kernel-exchange`, `steam-c6-feature-registration`; serial returns virtual identity and attributes retain the empty structural shape | Physical GET readback; step 16 good/short/missing optional-GET host gates |
+| Feature 1 SET/GET, 64-byte host buffer | `steam-c6-feature-kernel-exchange`, `steam-c6-feature-registration`; serial returns synthetic identity. The default Steam profile returns recorded 63-byte attributes (`steam-d9-1302-model-attributes`); explicit opt-out retains the legacy empty structural reply. | Individual attribute requirements and settings readback/persistence remain unverified |
 | Feature 2 on wired | Declaration **faithful (fresh physical capture)**: 63 body bytes (`steam-s3-1302-feature2-declaration`). Wired requests/replies remain **No evidence** (`steam-c6-no-wired-feature2`); GET and SET explicitly complete Unsupported | Separately authorized physical feature transaction capture; no fabricated reply |
 | Kernel and SDL open orders | `steam-c6-feature-kernel-lizard`, `steam-c6-feature-sdl-lizard`, `steam-c6-feature-imu`; neither requires the other's GETs | Both opening orders with kernel bound/unbound, with settings readback |
 | Retained lizard/mapping/IMU/watchdog intent | Same feature claims; unknown initial/default values remain unknown; restore-defaults discards assumed settings rather than fabricating values | Physical initial/default-settings readback and mode transition trace |
 | Haptics `0x80` through `0x85` | **faithful (fresh physical capture)** declared body lengths: `0x80=9`, `0x81=7`, `0x82=3`, `0x83=9`, `0x84=8`, `0x85=3`, per `steam-s3-1302-report-shapes`; wire length adds the ID byte. Historical corroboration: `sc2-july-wired-descriptor-report-shapes`, **physical (historical capture, raw not revalidated)**. Field meanings/retained intent remain **compat** (`steam-c6-output-80-81`, `steam-c6-output-82-85`), no input ACK | Fresh host-write bus capture correlated to observed physical actuators |
-| Unknown feature `0x87` setting IDs | Default **compat rejection** is atomic. The opt-in Steam client profile additionally retains the captured accepted keys, without asserting their effects; see the profile below and `steam-d9-steam-setting-acceptance`. | Settings readback, persistence and physical effects remain unproven |
-| Output `0x86` | **Unsupported** semantics; `steam-s3-1302-report-shapes` declares 3 body bytes, **faithful (fresh physical capture)** shape only | Planned **steam-s3-wired-output-streaming** capture: correlate host writes, `0x44` return traffic and actuator response |
-| Output `0x87` | **Unsupported** semantics; same fresh capture declares 63 body bytes, **faithful** shape only. This is an output ID, distinct from feature 1 command `0x87` | Planned **steam-s3-wired-output-streaming** capture: correlate host writes, buffer/flow control and actuator response |
-| Output `0x88` | **Unsupported** semantics; same fresh capture declares 63 body bytes, **faithful** shape only | Planned **steam-s3-wired-output-streaming** capture: correlate host writes, buffer/flow control and actuator response |
+| Unknown feature `0x87` setting IDs | With the Steam client profile disabled, **compat rejection** is atomic. The default Steam client profile additionally retains the captured accepted keys, without asserting their effects; see the profile below and `steam-d9-steam-setting-acceptance`. | Settings readback, persistence and physical effects remain unproven |
+| Output `0x86` | Opt-in `haptic_streaming`: captured internal mode-0 configuration and explicit stops; `steam-d9-pcm-framing-feedback`. Three body bytes declared by `steam-s3-1302-report-shapes`. Default off; unsupported modes/targets still reject. | Physical FIFO limits, watermarks and timing remain unmeasured; see [streaming policy](STEAM_HAPTICS_STREAMING.md) |
+| Output `0x87` | Opt-in captured 8-kHz s16le internal mono PCM, including short final writes; `steam-d9-pcm-framing-feedback` and `steam-d9-pcm-stimulus-correspondence`. This output ID is distinct from feature command `0x87`. | Buffering is explicitly compat policy; other formats/targets remain unsupported |
+| Output `0x88` | Opt-in captured stereo PCM: two 31-byte slots with 30 meaningful bytes each in the observed form; the same #106 PCM records. Generated waveform bytes matched the physical and virtual client trials. | No calibrated acoustic, native buffer-capacity or USB Audio Class claim |
 | Output `0x89` | **Unsupported** semantics; same fresh capture declares 63 body bytes, **faithful** shape only | Planned **steam-s3-wired-output-streaming** capture: correlate host writes, buffer/flow control and actuator response |
 | Raw rumble gain bytes | `steam-c6-disagreement-gain-kernel/sdl`; all byte values accepted without signed reinterpretation, kernel 2/0 and SDL 0/0 tested | Physical per-motor gain sweep; controlled tests use shared nonnegative range |
 | Unknown feature commands | **Compat kernel-path fit, not device behaviour**: explicit unsupported SET completion, followed by a descriptor-sized malformed command-echo GET if attempted; `steam-c6-feature-kernel-exchange` short-payload `-EPROTO` path | Step 16 optional-GET error injection and physical unknown-command readback |
@@ -166,8 +169,8 @@ historical/raw-not-revalidated corroboration; the fresh fixture is separate.
   feature 1 exchange; an invalid command cannot leak an earlier serial reply.
   Unknown setting IDs keep the existing atomic rejection instead of claiming
   that successful storage alone fulfils undocumented Steam-client settings.
-  The later opt-in profile accepts only captured setting keys, retaining intent
-  without assigning unproven semantics; the default path keeps this rejection.
+  The recorded profile accepts only captured setting keys, retaining intent
+  without assigning unproven semantics; the profile-disabled path keeps this rejection.
 - The old short error echo violated the fresh feature body size. It now returns
   63 body bytes with an intentionally impossible message length, preserving the
   kernel `-EPROTO` fit without a short HID frame. This is compat error framing,
@@ -216,11 +219,11 @@ lengths, report classes, retained outputs, sequence wrap, stop/restart and two
 independent fake sessions with per-cycle request completion and idempotent close.
 Fixture regeneration also checks independent fixed lengths and hashes.
 
-## Opt-in recorded Steam client profile
+## Recorded Steam client profile (default enabled)
 
 `SteamController2026CreationOptions::steam_client_compat` is a per-instance bool,
-default **false**. Enable it through `create_steam_controller_2026_with_options`
-with `SteamController2026CreationOptions { steam_client_compat: true,
+default **true**, per [owner decision #159](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6666070222). Disable it through `create_steam_controller_2026_with_options`
+with `SteamController2026CreationOptions { steam_client_compat: false,
 ..Default::default() }`. The caller must continue servicing the controller.
 
 On wired UHID, the profile returns the exact recorded 63-byte attribute reply
@@ -233,11 +236,14 @@ restore-settings invalidates known intent without inventing factory defaults.
 Malformed settings and unreviewed keys still fail atomically. Serial identity
 remains synthetic or validated caller-set; its reply behavior is unchanged.
 The profile also acknowledges the exact observed DC/E2 two-byte SET bodies
-without retaining state. For the observed ED SET declaring length 24, it returns
-the reviewed one-byte `00` value in a 63-byte report with fresh zero padding.
-Other ED forms remain unsupported, and opaque reply tails are never replayed; the three
-physical replies have different declared lengths. These choices cite
-`steam-d9-feature-response-framing` and assert no command semantics.
+without retaining state. ED accepts only the exact NUL-terminated protocol
+names `user/wireless_transport`, `esb/bond` and `esb/bond_2`. The transport reply
+is the recorded one-byte zero. Both record replies are synthetic absent records
+with declared length zero; a physical primary populated record is deliberately
+not replayed. Replies are 63 bytes with fresh zero padding. Unknown names and
+named writes remain unsupported. These choices cite
+`steam-d9-named-setting-framing` and `steam-d9-wired-entry-stability-consumer`;
+they neither access the host filesystem nor implement wireless pairing.
 C1 remains an explicit failure. Linux UHID converts all nonzero SET errors
 to EIO, so it cannot reproduce the physical USB EPIPE/STALL exactly; see the
 D9 report for the direct owned-node ioctl result and fake-provider regression.
@@ -253,12 +259,58 @@ pad position/pressure and touch observations are recorded in the D9 report,
 with GUI qualifications and a changed desktop-profile test condition. With acceleration `(0, 0, 16384)` and quaternion `(32767, 0, 0, 0)`,
 gyro +1024 showed +pitch/+roll/-yaw at approximately 62.5 degrees/s; X also
 worked with periodic streaming off. All-zero pose trials showed zero, so the
-separate acceleration/quaternion requirements remain unisolated. Virtual Ping
+separate acceleration/quaternion requirements remain unisolated.
+The supporting API keeps raw-zero motion defaults. Callers sending gyro to Steam
+must supply a valid acceleration/quaternion pose as well; setting only gyro on
+`Default::default()` is not a working Steam motion sample. The demo initializes
+and neutralizes to the synthetic stationary pose above, with zero gyro and
+timestamp. This is a caller/demo policy, not captured orientation or factory
+calibration. Arbitrary caller-supplied samples are encoded unchanged. Virtual Ping
 and both SDL rumble channels matched the physical reference. No calibrated
 motion or gameplay acceptance is claimed. The profile does not hard-code Steam's
 configurable Trackpad Lockout policy or add periodic input streaming.
 See [the D9 report](C6_D9_ACCEPTANCE.md) for exact scope and remaining differences.
 
-In the demo, select Steam Controller 2026 and enable **Steam client compatibility**
-in Advanced options before creating the controller. The checkbox defaults to off
+In the demo, select Steam Controller 2026 and use **Steam client compatibility**
+in Advanced options before creating the controller. The checkbox defaults to on
 and applies to newly created instances. It has no HID feature effect on uinput.
+
+
+## Haptic MIDI and PCM follow-up
+
+The supervised physical audio/MIDI study and matching upstream-client virtual
+checks are described in [Haptic MIDI and PCM](STEAM_HAPTICS_STREAMING.md).
+MIDI `0x83` writes accept the measured zero-padded transport form. A separate
+creation-time `haptic_streaming` option, default false, supports the captured
+8-kHz s16le internal PCM requests and bounded compat feedback. Other modes and
+output `0x89` remain unsupported; uinput has no corresponding stream channel.
+This follow-up supersedes the earlier blanket unsupported/No-evidence statements
+for the specifically captured `0x86`/`0x87`/`0x88` forms only. No USB Audio Class
+or MIDI interface is added, and native FIFO sizes remain unmeasured.
+
+
+## Wired stability and LED follow-up
+
+The fresh-instance study isolated a virtual difference: two physical controls
+were stable, while two baseline virtual runs replaced their entries on opening
+the Controller list. Exact named-record reads with synthetic absent replies
+removed the observed raw reopen/controller-info failure in two candidate runs.
+Both lists stayed stable and Begin Test opened; one details transition remained
+visually unclear. Stable serial/attribute replies and measured post-dequeue
+latency did not explain the baseline failure. This is a bounded compatibility
+workaround, not physical replay of populated record data.
+
+The supporting output API now exposes raw `led_brightness`, `led_override` and
+`led_rgbw` intent. The owner-supervised physical controls, lossy E9 reply model,
+provider limitations and two automated virtual runs are described in
+[Wired LED controls](STEAM_LED_CONTROLS.md). These findings supersede earlier
+blanket LED exclusions in the historical sections above.
+
+Acceptance now records physical packet correspondence for wired buttons,
+sticks, triggers, pads, motion and the specifically captured haptic forms.
+The Steam-client cell records consumer evidence for the named-read workaround;
+it does not claim gameplay, individual attribute requirements or universal
+stability. Kernel decoding/ABS cells remain qualified separately.
+
+Wired desktop mouse/keyboard compatibility is opt-in through `lizard_mode`; see
+[desktop mapping and limits](STEAM_LIZARD_MODE.md). Reduced uinput is unchanged.

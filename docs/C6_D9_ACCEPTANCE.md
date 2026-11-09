@@ -635,3 +635,298 @@ script request establish neither a streaming path nor MIDI semantics.
 The implementation pin adopts merged research main, including feature evidence
 from #101. The newer input/output reference in #105 is a separate review; no
 unmerged fixture is required by the production attribute/settings generator.
+
+
+### Supervised audio/MIDI and virtual client follow-up (2026-11-05)
+
+A new owner-authorized study, built on #105/#305, used the unmodified pinned
+SteamHapticsSinger for generated MIDI notes and SteamHapticsPlayer/iczero for
+PCM. The owner heard/felt all channel pairs; initial low-level PCM was quiet,
+then a moderate equal-frequency repeat was clearly heard/felt on both sides.
+The physical reduction confirmed exact generated waveform correspondence,
+64-byte padded MIDI writes, dual-channel PCM and short final mono writes.
+Internal mode0 configuration was accepted and pad mode0 rejected despite
+successful USB completions. Full raw captures remain private.
+
+The new opt-in virtual streaming implementation was tested automatically with
+those same three upstream executables. Four MIDI channels matched, all PCM
+sample bytes matched (39990 dual +40000 mono bytes per channel), the mono client
+consumed acceptance and low/high feedback, and two short final writes matched.
+Explicit stops cleared configuration/buffers. Three controller lifetimes, including shutdown with an active stream, closed
+idempotently with zero write failures and no owned hidraw/input nodes remaining.
+A creation-time access race was reproduced and covered by a bounded retry test;
+no host permissions/policy were changed. Buffer capacity/thresholds are an
+explicit compat model, not a retail FIFO measurement. See
+[Haptic MIDI and PCM](STEAM_HAPTICS_STREAMING.md) for scope and reproduction.
+
+
+## Wired freeze follow-up: defaults and discovery isolation
+
+Per [owner decision #159](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6666070222),
+new wired UHID instances enable `steam_client_compat` by default. The demo
+creation checkbox remains available. Earlier "default" and "opt-in" observations
+above describe #305 before this change. Uinput remains unaffected, the serial
+stays synthetic, and `haptic_streaming` stays false. Accepted settings record
+intent only; no feature reply reads the private map.
+
+The supporting state keeps raw-zero motion defaults. Callers targeting Steam
+must supply a valid acceleration/quaternion sample with gyro. The demo supplies
+synthetic acceleration `(0, 0, 16384)` and identity quaternion `(32767, 0, 0, 0)`
+on creation and neutralization, with zero gyro/timestamp. This is a demo policy,
+not a captured orientation or factory calibration. The #305 observations above
+established the combined pose's acceptance; individual acceleration/quaternion
+necessity remains unisolated. Regressions cover the demo pose, unchanged API raw
+zero, default-on compatibility, explicit opt-out and streaming remaining off.
+
+### Fresh-instance comparisons (2026-11-05/06 Pacific)
+
+Each comparison uses a fresh owned wired UHID instance, synthetic identity and
+a normal Steam restart, with physical controllers and Dolphin/SDL probes absent.
+These are temporary private protocol variations, not new public options or
+changes to the production profile. PCM and indefinite periodic input streaming
+stay off. Discovery, opening and activation are separate checkpoints, following
+[research #104](https://github.com/anderstvoss/controller-protocol-research/pull/104).
+
+| Variation from full profile | Discovery log marker | Open / XInput-slot markers | Owner listing / Begin Test | KDE condition |
+| --- | --- | --- | --- | --- |
+| Full profile | Present | Present | Listed / opens | No prompt; prior grant unknown |
+| Legacy empty attribute reply, 64 bytes | Present | Present, repeated probes | Not listed / unavailable | No prompt; prior grant unknown |
+| Reject extra captured setting keys | Present | Present | Listed / opens | Not separately reported |
+| DC/E2 acknowledgements rejected | Present | Present | Entry briefly disappeared/reappeared, then Begin Test opened on remaining entry | Not separately reported |
+| ED typed exchange disabled | Present | Present | Entry disappeared/reappeared on entering details, then Begin Test opened | Not separately reported |
+| Legacy empty attributes, 63-byte length control | Present | Present, repeated probes; Steam held the exact owned hidraw node | Not listed / unavailable | No prompt |
+| Full profile after owner removed pointer/keyboard authorization | Present | Present | Entry replaced on entering details; Begin Test opened before any new prompt | Prompt not yet requested by neutral input |
+| Full profile, mapped continuous gesture, Deny | Present | Present | Listed; Begin Test remained open after Deny | Prompt appeared; owner selected Deny |
+| Full profile, same gesture, Allow | Present | Present | Listed; Begin Test remained open after Allow | Prompt appeared; owner selected Allow and observed pointer movement |
+
+Open/slot markers alone do not establish stable managed activation. The UI
+listing/test outcomes are separate owner observations. Some successful runs also
+logged a failed controller-info attempt before later opening activity. Raw logs,
+request traces, identities, paths and absolute clocks remain private.
+
+**Attribute requirement.** The empty default returns the legacy
+`01 83 02 00 00 ...` structure in 64 bytes, instead of the populated recorded
+63-byte reply. A second empty control removed only one trailing zero byte to
+match 63 bytes; it also failed to list while Steam held its exact owned hidraw
+node. Length alone therefore does not explain the difference. Recorded attribute
+content/structure is required relative to these tested legacy controls. This
+does not identify a necessary individual attribute/value, prove every recorded
+attribute is needed, or distinguish populated content from valid inner-list
+structure. The populated profile was restored for subsequent successful runs.
+
+**Extra settings and acknowledgements.** Rejecting the extra captured keys,
+including key 50, still allowed listing and Begin Test. Known keys 9, 48 and 71
+kept their existing handling; unknown-containing blocks still failed atomically.
+DC/E2 SETs were observed rejecting with `Unsupported`, yet Begin Test opened.
+The ED-disabled run received repeated ED requests: SETs failed and GETs returned
+the legacy malformed error frame rather than the typed one-byte zero reply.
+Steam still listed it and opened Begin Test. These successes are not evidence
+that failure/retry traffic or transient UI behavior is equivalent to the full
+profile. The transient replacement also occurred with the full profile, so it
+cannot be uniquely assigned to disabling DC/E2 or ED.
+
+**Actual permission pair.** Initial no-prompt runs were not labelled Deny or
+Allow. The owner removed Steam's pointer/keyboard authorization through normal
+UI, then selected the initial desktop layout with keyboard/mouse bindings.
+Three held pad coordinates reached Steam's tracker but produced no prompt;
+they were not a continuous sweep and do not qualify the permission comparison.
+After another normal restart and fresh full-profile instance, a private caller
+sent intermediate right-pad positions on a 10-ms schedule for five seconds:
+center → -20000 → +20000 → center, Y=0, pressure 1000, touch held, no click,
+then lift/neutral. The caller serviced reverse requests throughout. A deterministic
+private interpolation test checked continuity, intermediate values and bounds.
+
+With an ordinary desktop window focused, the Deny run submitted 478 samples in
+about five seconds; the prompt appeared, the owner chose Deny and Begin Test
+remained open. A separate restarted/fresh-instance Allow run used the same layout
+and trajectory (477 samples), produced the prompt, and the owner chose Allow;
+the pointer moved and Begin Test remained open with the controller listed.
+Both were already listed before the desktop-output permission decision. Thus
+new consent was not needed for initial listing here, and Deny did not tear down
+the observed test session. This does not establish behavior when a persistent
+denial predates creation, nor desktop-output delivery under Deny. The owner
+restored the earlier Gyro desktop layout before final virtual removal.
+
+Required/optional/unknown for this observed client path:
+
+- **Required relative to tested controls:** recorded attribute content/structure;
+  both legacy empty variants failed despite discovery/opening activity.
+- **Optional for eventual listing and Begin Test:** acceptance of extra captured
+  settings, successful DC/E2 acknowledgement, the typed ED reply, and a new KDE
+  Allow decision for desktop output. Known settings were not disabled; all
+  production compatibility components remain in place.
+- **Unknown/unverified:** individual attributes and other valid subsets/inner-list
+  structures, the cause and stability implications of transient entry replacement,
+  persistent-denial-before-creation behavior, per-game behavior, rear GUI labels
+  and grip presentation, and calibrated motion or acoustic fidelity.
+
+Every completed probe was neutralized and double-closed with zero provider write
+failures; its owned HID was confirmed removed. Normal Steam restarts after owner
+results intentionally closed Begin Test and reopened Steam's main window. These
+transitions were not synthetic Steam-button presses. No agent root or host-policy
+changes, descriptor edits or custom physical feature injection occurred.
+
+The wired `steam-client` cell remains `wip` with the requested exit gate:
+isolate discovery's cause or obtain explicit owner acceptance of listing as-is.
+This comparison isolates the attribute-reply requirement at component level;
+the narrower attribute predicate and broader client qualifications above remain
+unverified. No formal virtual research run or gameplay acceptance is promoted.
+
+
+### Wired entry stability and cleanup follow-up (2026-11-06)
+
+Two clean physical controls (A2/A3), each with fresh Steam and wired attachment,
+kept stable entries through Controller list, details and Begin Test. A1 is
+excluded: its initial guide preceded attachment, and System Settings retained a
+raw descriptor after Steam exit. Only Steam held the raw descriptor in A2/A3.
+
+Two baseline virtual instances (B1/B2, full profile) replaced the entry while
+opening the Controller list, before details. Both later opened Begin Test.
+Steam released/reopened the same layered hidraw node; four native input children
+returned in the gap. The parent UHID stayed open. The node roles recorded by
+both discovery messages were hidraw; a reappearing evdev UI entry is not proven.
+Repeated AE/83 replies were byte-identical within each instance. Maximum
+provider dequeue-to-reply submission was 1420/965 microseconds; time queued
+before dequeue was not measured.
+
+The baseline rejected repeated ED named-record reads. A private candidate
+accepted exact `esb/bond` and `esb/bond_2` reads and returned synthetic absent
+records, without physical pairing material. B3/B4 had stable lists, no observed
+raw reopen or failed controller-info marker, and Begin Test opened in both.
+B3 details were visually unclear; B4 details were stable with no reported
+symptoms. Physical read framing and these virtual observations are recorded
+separately; the synthetic primary absent record is not a physical replay.
+
+Rear labels were compared individually: L4 top left, L5 bottom left, R4 top
+right, R5 bottom right, matching physical controls. The earlier broad GUI-label
+qualification is superseded. Left then right virtual grip grab/release showed
+both matching fan and reverse-line activity. Physical left timing remains
+qualified by switching to reverse view with L4; no independent analog grip-axis
+or calibrated force claim is made. Advanced Grip Sense emitted report 81,
+selector 3 after left release and 4 after right release, on/off 300 microseconds,
+count 1; grab-phase pulses also occurred. This is virtual reverse-output evidence.
+
+A normal demo window close after creating one Steam UHID controller exited the
+original process and removed its owned HID. The earlier idle-process symptom
+was not reproduced in this bounded run; no lifecycle fix is inferred.
+
+Both realizations now reject negative public trigger values before encoding.
+The earlier negative-trigger rows above describe the pre-fix probe. The #304
+kernel/ABS results were rechecked: UHID tuples match the golden values, while
+reduced uinput still has the explicit fuzz/resolution limitation. Those cells
+remain `wip`: neither the physical input record nor the UI stability study is a
+formal virtual kernel-decoding/ABS run record.
+
+
+### Wired LED follow-up (2026-11-06)
+
+Passive Steam brightness capture identifies feature command 87 setting 45.
+Repeated slider writes were nearby, rather than exactly synchronized to the
+reported UI values; the final captured 98 followed a 100 write. Retained raw
+intent therefore makes no exact UI, readback or persistence promise.
+
+The owner subsequently authorized direct colour tests with Steam closed.
+C5 accepts four raw RGBW bytes. With setting 37 disabled, basis values of 25
+had no visible effect. With setting 37 enabled and read back through 89, the
+same four tests visibly produced red, green, blue and white. Zero colour gave
+off between enabled trials; restoring the original override value 0 returned
+normal wired green. All selected transfers completed successfully.
+
+E9 returned four zero bytes during visibly active stimuli at raw values 25
+and 10. The cause and behavior at higher values remain unverified. The virtual
+getter returns the observed zeros as a conservative compatibility policy, with
+accepted RGBW intent retained separately. Six mixed stimuli produced qualitative hue changes;
+they do not establish calibrated optical power, sRGB values or spectral purity.
+
+Two fresh owned virtual candidates each completed 77 feature requests with
+77 submitted replies, zero unmatched requests/write failures, repeated exact
+GET replies, atomic rejection and double-close/node cleanup. The client saw
+EIO for invalid requests while instrumentation recorded the intended Invalid
+reply: Linux UHID collapses all nonzero feature reply errors to EIO. This is a
+provider limitation, not exact physical USB STALL emulation.
+
+The latest close-up reading is central LED1 flanked by D20 and D4. Physical
+package count, emitter functions and channel/die allocation remain unresolved;
+logical RGBW control is independent evidence. Full-range calibration and
+reset/restart persistence remain unverified. See
+[Wired LED controls](STEAM_LED_CONTROLS.md) for the record IDs and API scope.
+
+## Wired desktop mode closeout
+
+The owner completed passive, individually guided physical desktop captures,
+including pads, sticks, all buttons, triggers, grip contact, a separate
+hands-off USB reconnect and normal SDL open/close. The initial pad run omitted
+reconnect and is retained as existing-state evidence. The separate reconnect
+captured kernel setup, not firmware power-on defaults. Slow pad movement was
+uneven; the first right-pad center window contains early movement.
+
+Setting 9 = 0 stopped right-pad mouse reports during the SDL hold, while A
+continued to emit Enter. Successful close-time 0x85/0x8e writes preceded resumed
+mouse reports. This is kernel restoration, not an autonomous watchdog. Trigger
+clicks track native digital bits; no analogue threshold is invented. See
+[desktop mode](STEAM_LIZARD_MODE.md) for the bounded relative-scaling policy.
+
+The opt-in creation option and fake-provider/protocol regressions passed the
+local workspace gates. With the real controller disconnected, the owner
+confirmed Steam listed the lizard-enabled virtual instance and Begin Test
+opened. A five-second right-pad sweep produced a visible trace and the tester
+stayed open. KDE asked Steam for input-control permission, so lack of pointer
+movement in that first window is not treated as proof of suppression.
+
+After the owner selected Deny, an ordinary read-only observer of the attributed
+owned virtual raw interface counted 479 native 0x42/54-byte reports and zero
+0x40 mouse or 0x41 keyboard reports over 12 seconds spanning a second sweep and
+neutral. No payload content was logged. This verifies no emulated desktop-report
+leak in that repeat while Steam held the device. The earlier prompt is consistent
+with Steam applying its desktop layout to native pad input; the prompt-time raw
+stream was not observed. The owned instance was closed normally and no Valve HID
+nodes remained. Research #110 is adopted at revision `4a887d4`; exact retail
+transfer/filtering and broader consumer behavior remain unverified.
+
+## Disposable virtual firmware-update attempt
+
+The physical controller stayed disconnected. Before Steam launch and before the
+owner's update action, USB/HID inventory and `lsusb` checks found no physical
+Valve device; a continuous guard allowed only the attributed owned UHID device.
+The normal profile produced no automatic update offer. A private test-only
+variant changed only build attribute 4 from 0x6ACFF323 to 0x60000000, verified by
+a deterministic fake-protocol test. This variant is not a public creation option.
+
+The owner found the global **Force update all connected Steam Controllers**
+Start button. After one click it showed Running, then returned to Start. The
+controller remained listed and Begin Test still opened, with no behavior change
+reported. Between the pre-action guard marker and the post-result marker, the
+metadata audit observed no 0x90 or 0x9f SET and no output-report writes. The exact
+owner click time is unmeasured. Repeated setting writes and rejected 0xae requests
+were present; this does not establish that the updater caused those retries.
+No accepted firmware image, reboot, bootloader transition or successful update
+is claimed. Steam's actual handling of a rejected update command is unverified.
+
+The audit emitted only command/report IDs, lengths, relative times, counts and
+codec reply status. Incoming SET/output packets were hashed through an anonymous
+pipe; the finalized digest describes that whole host-write stream, not a firmware
+image. No payload bytes were logged or captured, and no agent update command was
+sent. The private helper had core dumps disabled. A normal-profile replacement
+listed and opened Begin Test in the same Steam session; no restart was needed.
+Both owned instances were closed and no Valve HID device remained.
+
+A fake-transport regression found and fixed an independent fail-safe gap: update
+and bootloader SETs already returned Unsupported, but a following GET previously
+received the generic malformed compatibility exchange. Those commands now leave
+no query, so SET and following GET are both Unsupported. The test covers stale
+query invalidation, complete replies in each polling cycle, repeated service and
+idempotent close. No image acceptance or bootloader emulation is implemented.
+
+## Normal-profile 0xae follow-up
+
+A fresh guarded normal-profile virtual controller was created with the real
+Valve hardware disconnected. Steam opened normally; the owner confirmed listing,
+details and Begin Test without unexpected behavior. No firmware controls were
+used. Metadata recorded three accepted 0xae SETs, three successful corresponding
+GETs, and twelve 0xae SETs rejected as Invalid. The first accepted SET/GET pair
+preceded Steam opening; the rejections occurred during ordinary Steam use.
+Thus the rejected requests observed during #309 are not unique to an update
+attempt. Request contents/selectors and serials were not logged, so their cause
+and the correct response remain unverified. The 0xae implementation is unchanged;
+any reply change requires a merged research record. The owned virtual instance
+was removed after the check.

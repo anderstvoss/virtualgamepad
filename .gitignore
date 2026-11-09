@@ -62,3 +62,6 @@ out/
 # Former local checkout of the private protocol corpus, replaced by the
 # protocol-research submodule
 /protocol-corpus/
+
+# Private Wii EEPROM dumps/envelopes belong outside every checkout.
+*.wii-eeprom

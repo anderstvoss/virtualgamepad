@@ -34,6 +34,11 @@ impl WiiEepromImage {
         self.calibration = calibration;
         self
     }
+    /// Exact validated optional accessory blocks retained with this image.
+    #[must_use]
+    pub fn extension_calibration(&self) -> &super::WiiExtensionCalibration {
+        &self.calibration
+    }
     pub(super) fn has_extension_calibration(&self) -> bool {
         !self.calibration.is_empty()
     }
