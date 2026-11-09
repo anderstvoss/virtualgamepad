@@ -47,7 +47,7 @@ such as firmware identity, raw reports and motor actuation.
 
 ## Sub-steps (one PR each into `buildout/c9-xbox-series`)
 
-**15a. Family, native state and target contract.** Register `xbox-series`
+**15a. Family, native state and target contract.** Register `virtualgamepad.xbox-series`
 with the evidenced realization, subsystems, refused operations and
 creation toggles. Add typed buttons, signed sticks, validated 10-bit
 triggers and D-pad. Fill the research gaps for identity, complete evdev
@@ -87,7 +87,7 @@ provider. Test registry-driven selection beyond the visible viewport
 where it applies.
 
 **15d. Acceptance, timing and host audit.** Add
-`acceptance/xbox-series.toml` with native function and realization
+`acceptance/virtualgamepad.xbox-series.toml` with native function and realization
 evidence. Run the #166 creation-to-ready and removal-to-node-gone
 measurements for repeated single and concurrent controllers on an
 eligible host. Amend the #258 Alpha 2 audit with Xbox Series rows,
