@@ -2349,3 +2349,22 @@ fn switch_root_exposes_the_curated_identity_for_restoration() {
     controller.close();
     assert_eq!(controller.identity(), identity);
 }
+
+#[test]
+fn promoted_families_reject_undeclared_realizations_and_associated_audio() {
+    let usb = CreationOptions::new(RealizationId::LINUX_UHID_USB);
+    let bluetooth = CreationOptions::new(RealizationId::LINUX_UHID_BLUETOOTH);
+    let audio = usb.with_audio(crate::AudioOptions::new(crate::AudioExposure::Emulated));
+    for result in [
+        create_wii_remote(usb, WiiRemoteOptions::default()).map(|_| ()),
+        create_steam_controller_2026(bluetooth, SteamController2026Options::default()).map(|_| ()),
+        create_wii_remote(
+            bluetooth.with_audio(audio.audio()),
+            WiiRemoteOptions::default(),
+        )
+        .map(|_| ()),
+        create_steam_controller_2026(audio, SteamController2026Options::default()).map(|_| ()),
+    ] {
+        assert!(matches!(result, Err(ControllerError::Unsupported { .. })));
+    }
+}

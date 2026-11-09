@@ -90,3 +90,27 @@ The root adds `SwitchProIdentity` and `SwitchProController::identity()`.
 Restore a stored Switch Pro address via `SwitchProOptions::with_identity`.
 The existing Sony root handle identity accessors still return an option.
 Wii and Steam supporting snapshots are unchanged.
+
+## C7 step 20c · Wii and Steam at the ordinary root
+
+Wii Remote and Steam Controller 2026 constructors now also live at
+`virtualgamepad::create_wii_remote` and
+`virtualgamepad::create_steam_controller_2026`. Call them with ordinary
+`CreationOptions::new(realization)` and the existing curated family options.
+The curated constructors retain their signatures. The root creates the
+process-local session token internally. The root re-exports family option,
+identity, state, retained-output and resource types.
+
+The root `service` callbacks receive `WiiRemoteOutputEvent` or
+`SteamController2026OutputEvent`. For curated callers switching to the root,
+match `HostLifecycle`, `ForceFeedback` and `HidOutput` on the corresponding
+typed enum in place of the raw reverse event. `HidOutput` preserves the report
+ID and payload. Use `host_outputs()` for retained accepted values. Steam
+`readiness()`, `wants_write()` and `next_service_in()` preserve curated
+scheduling. Wii `attach()`, topology accessors, `resource_dirty()` and
+`resolve_resource()` preserve the curated ownership and cleanup rules.
+`association()` exposes application components, refreshed after a successful
+Wii attachment change.
+
+The Wii and Steam supporting snapshots are unchanged. No existing ordinary-root
+declaration is removed or renamed in this step.

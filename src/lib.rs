@@ -84,6 +84,16 @@ pub use gr_controller_contract::{
     SpeakerFormat, StickInput, TargetRestriction, TouchpadActuation, TouchpadInput, TriggerInput,
     TriggerInputKind, TriggerStack, TypedInput,
 };
+pub use gr_curated_controllers::steam_controller_2026::{
+    SteamController2026Button, SteamController2026Haptic, SteamController2026Outputs,
+    SteamController2026State, SteamController2026StreamOutputs, SteamController2026StreamPacket,
+    SteamMotionSample, SteamTrackpadState,
+};
+pub use gr_curated_controllers::wii_remote::{
+    WiiClassicState, WiiEepromImage, WiiExtension, WiiExtensionCalibration, WiiIrPoint,
+    WiiMotionPlusState, WiiNunchukState, WiiRemoteButton, WiiRemoteOutputs, WiiRemoteRevision,
+    WiiRemoteState, WiiResourceDisposition,
+};
 pub use gr_curated_controllers::{
     BatteryLevel, BatteryState, DualSenseAudioPath, DualSenseAxis, DualSenseControl,
     DualSenseFeature, DualSenseHidOutput, DualSenseState, DualSenseSurface, DualSenseTouchContact,
