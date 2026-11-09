@@ -1640,6 +1640,9 @@ pub fn create_dualsense(
             });
         }
     };
+    if options.target == RealizationTarget::LINUX_UHID_USB {
+        common::require_linux_platform(options.target)?;
+    }
     if let (Some(identity), NativeControllerRealization::Uhid(spec)) = (identity, &mut realization)
     {
         spec.unique_id = identity.unique_id();
@@ -1851,6 +1854,21 @@ mod tests {
         assert_eq!(state, expected);
         <DualSenseDefinition as common::HidDriver>::neutralize_state(&mut state);
         assert_eq!(state, expected);
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn live_uhid_creation_rejects_unsupported_platform() {
+        let target = RealizationTarget::LINUX_UHID_USB;
+        assert!(matches!(
+            create_dualsense(
+                CreationOptions { target, session: RealizationSessionId(7) },
+                DualSenseOptions::default(),
+            ),
+            Err(ProviderError::Preflight(
+                gr_realization_api::ProviderPreflightError::UnsupportedPlatform { target: rejected }
+            )) if rejected == target
+        ));
     }
 
     #[test]

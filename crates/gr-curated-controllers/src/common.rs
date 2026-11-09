@@ -343,7 +343,6 @@ fn create_labeled<D: HidDriver>(
             }
         })?;
     if let NativeControllerRealization::Uhid(specification) = &mut realization {
-        require_linux_platform(options.target)?;
         // The selected, declared realization owns the bus. Family builders may
         // share descriptor/identity defaults; callers must not patch bus bytes.
         specification.bus_type = match options.target {
