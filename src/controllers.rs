@@ -8,9 +8,12 @@ use crate::{
     DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
     DualShock4MotionSample, DualShock4OutputEvent, DualShock4State, DualShock4Surface,
     DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
-    ServiceReadiness, SwitchProAxis, SwitchProControl, SwitchProMotionSample, SwitchProOutputEvent,
-    SwitchProState, SwitchProSurface, TouchSlot, Xbox360Axis, Xbox360Control, Xbox360OutputEvent,
-    Xbox360State, Xbox360Surface, Xbox360Trigger,
+    ServiceReadiness, SteamController2026Button, SteamController2026OutputEvent,
+    SteamController2026Outputs, SteamController2026State, SwitchProAxis, SwitchProControl,
+    SwitchProMotionSample, SwitchProOutputEvent, SwitchProState, SwitchProSurface, TouchSlot,
+    WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton, WiiRemoteOutputEvent,
+    WiiRemoteOutputs, WiiRemoteState, WiiResourceDisposition, Xbox360Axis, Xbox360Control,
+    Xbox360OutputEvent, Xbox360State, Xbox360Surface, Xbox360Trigger,
 };
 // The family adapter owns only static dispatch; protocol semantics stay curated.
 trait Family {
@@ -204,7 +207,25 @@ family!(
     Xbox360OutputEvent, xbox360, audio = true;
     provider_diagnostics, common
 );
+family!(
+    wii_remote, WiiRemoteController, create_wii_remote, WiiRemoteOptions, WiiRemoteIdentity;
+    WiiRemoteOutputEvent, wii_remote, audio = false;
+    diagnostics
+);
+family!(
+    steam_controller_2026, SteamController2026Controller, create_steam_controller_2026,
+    SteamController2026Options, SteamController2026Identity;
+    SteamController2026OutputEvent, steam_controller_2026, audio = false;
+    diagnostics
+);
 macro_rules! shared {
+    (is_closed) => {
+        /// Whether this creation has closed terminally.
+        #[must_use]
+        pub fn is_closed(&self) -> bool {
+            self.controller.inner.is_closed()
+        }
+    };
     (wants_write) => {
         /// Watch descriptor writability only when this is true.
         #[must_use]
@@ -655,6 +676,160 @@ pub fn create_xbox360(
         audio,
     )?;
     Ok(Xbox360Controller { controller })
+}
+
+/// One active Wii Remote with a controller-owned attachment topology.
+pub struct WiiRemoteController {
+    controller: Controller<gr_curated_controllers::wii_remote::WiiRemoteController>,
+}
+
+impl WiiRemoteController {
+    /// Restorable Bluetooth address in display order.
+    #[must_use]
+    pub const fn identity(&self) -> WiiRemoteIdentity {
+        self.controller.inner.identity()
+    }
+
+    /// Topology for the current attachment combination.
+    #[must_use]
+    pub fn current_topology(&self) -> &'static crate::InputTopology {
+        self.controller.inner.current_topology()
+    }
+
+    /// Advances when the semantic attachment topology changes.
+    #[must_use]
+    pub fn topology_generation(&self) -> u64 {
+        self.controller.inner.topology_generation()
+    }
+
+    /// Transactionally change the attachment and `MotionPlus` presence.
+    ///
+    /// # Errors
+    /// Returns the controller's validation or lifecycle error.
+    pub fn attach(
+        &mut self,
+        extension: WiiExtension,
+        motion_plus: bool,
+    ) -> Result<(), ControlError> {
+        let inner = &mut self.controller.inner;
+        inner.attach(extension, motion_plus)?;
+        self.controller
+            .association
+            .refresh_inputs(inner.association(), inner.surface());
+        Ok(())
+    }
+
+    /// Whether the live addressed EEPROM image has changed.
+    #[must_use]
+    pub fn resource_dirty(&self) -> bool {
+        self.controller.inner.resource_dirty()
+    }
+
+    /// Resolve the terminal EEPROM image for application-owned persistence.
+    ///
+    /// # Errors
+    /// Returns an error while the resource is live or on a target without addressed EEPROM.
+    pub fn resolve_resource(
+        &mut self,
+        choice: WiiResourceDisposition,
+    ) -> Result<Option<&WiiEepromImage>, ControlError> {
+        self.controller.inner.resolve_resource(choice)
+    }
+
+    shared!(state, WiiRemoteState);
+    shared!(host_outputs, WiiRemoteOutputs);
+    shared!(surface, crate::ControllerSurface);
+    shared!(wants_write);
+    shared!(next_service_in);
+    shared!(dropped_output_events);
+    shared!(is_dirty);
+    shared!(is_closed);
+    shared!(neutralize);
+    shared!(commit);
+    shared!(close);
+    shared!(readiness);
+    shared!(association);
+    shared!(diagnostics);
+    shared!(service, WiiRemoteOutputEvent);
+    edits! {
+        fn set_digital(update: DigitalControlUpdate);
+        fn set_inputs(state: WiiRemoteState);
+        fn set_button(button: WiiRemoteButton, pressed: bool);
+        fn set_accelerometer(values: [u16; 3]);
+        fn set_ir(points: [Option<WiiIrPoint>; 4]);
+        fn set_battery_raw(value: u8);
+        fn set_extension(value: WiiExtension);
+        fn set_motion_plus(gyroscope: [u16; 3], slow: [bool; 3]);
+    }
+}
+
+/// Create an exact Wii Remote realization with caller-owned identity and EEPROM options.
+///
+/// # Errors
+/// Returns unsupported-selection, host-prerequisite, or creation errors.
+pub fn create_wii_remote(
+    options: CreationOptions,
+    family: WiiRemoteOptions,
+) -> Result<WiiRemoteController, ControllerError> {
+    let controller = Controller::open(
+        ControllerId::new("virtualgamepad.wii-remote"),
+        options.internal_without_audio()?,
+        family,
+        None,
+    )?;
+    Ok(WiiRemoteController { controller })
+}
+
+/// One active wired Steam Controller 2026.
+pub struct SteamController2026Controller {
+    controller:
+        Controller<gr_curated_controllers::steam_controller_2026::SteamController2026Controller>,
+}
+
+impl SteamController2026Controller {
+    /// Restorable identity for caller-owned storage.
+    #[must_use]
+    pub const fn identity(&self) -> &SteamController2026Identity {
+        self.controller.inner.identity()
+    }
+
+    shared!(state, SteamController2026State);
+    shared!(host_outputs, SteamController2026Outputs);
+    shared!(surface, crate::ControllerSurface);
+    shared!(wants_write);
+    shared!(next_service_in);
+    shared!(dropped_output_events);
+    shared!(is_dirty);
+    shared!(is_closed);
+    shared!(neutralize);
+    shared!(commit);
+    shared!(close);
+    shared!(readiness);
+    shared!(association);
+    shared!(diagnostics);
+    shared!(service, SteamController2026OutputEvent);
+    edits! {
+        fn set_digital(update: DigitalControlUpdate);
+        fn set_inputs(state: SteamController2026State);
+        fn set_button(button: SteamController2026Button, pressed: bool);
+    }
+}
+
+/// Create a wired Steam Controller 2026 with caller-selected compatibility options.
+///
+/// # Errors
+/// Returns unsupported-selection, host-prerequisite, or creation errors.
+pub fn create_steam_controller_2026(
+    options: CreationOptions,
+    family: SteamController2026Options,
+) -> Result<SteamController2026Controller, ControllerError> {
+    let controller = Controller::open(
+        gr_curated_controllers::steam_controller_2026::STEAM_CONTROLLER_2026_ID,
+        options.internal_without_audio()?,
+        family,
+        None,
+    )?;
+    Ok(SteamController2026Controller { controller })
 }
 
 fn sony_identity<T>(

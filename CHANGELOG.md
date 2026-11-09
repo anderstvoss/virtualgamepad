@@ -6,6 +6,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- The ordinary root now includes Wii Remote and Steam Controller 2026 handles
+  with typed input, retained outputs and service scheduling. Wii Remote exposes
+  attachment topology and explicit EEPROM resolution.
+
 ### Changed
 
 - Root and curated controller constructors take common realization options

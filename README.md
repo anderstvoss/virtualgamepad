@@ -30,10 +30,9 @@ validated.
   resources are opened.
 
 No cell is promoted beyond WIP yet; see the [support matrix](docs/CONTROLLER_SUPPORT.md)
-for the status definitions. Wii Remote is available as a WIP
-[supporting package](docs/WII_REMOTE.md), with uinput and Bluetooth-bus UHID;
-the ordinary-root constructors remain unchanged. Steam Controller (2026) and
-Xbox Series remain separate planned work.
+for the status definitions. The ordinary root includes all six families,
+including [Wii Remote](docs/WII_REMOTE.md) with uinput and Bluetooth-bus UHID,
+and Steam Controller 2026 with uinput and wired UHID. Xbox Series remains planned.
 
 ## Usage
 

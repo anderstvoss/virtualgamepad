@@ -130,6 +130,44 @@ pub(crate) fn xbox360(
     })
 }
 
+macro_rules! native_family_output {
+    ($(#[$doc:meta])* $event:ident, $convert:ident) => {
+        $(#[$doc])*
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[non_exhaustive]
+        pub enum $event {
+            HostLifecycle(HostLifecycle),
+            ForceFeedback(ForceFeedbackEvent),
+            /// The exact native payload observed after protocol handling.
+            HidOutput { report_id: Option<u8>, bytes: Vec<u8> },
+        }
+
+        pub(crate) fn $convert(
+            event: gr_realization_api::RawReverseEvent,
+        ) -> Result<Option<$event>, ControllerError> {
+            use gr_realization_api::RawReverseEvent as E;
+            Ok(match event {
+                E::HidLifecycle(event) => Some($event::HostLifecycle(lifecycle(event))),
+                E::ForceFeedback(event) => Some($event::ForceFeedback(event)),
+                E::HidOutput { report_id, bytes } => Some($event::HidOutput { report_id, bytes }),
+                E::HidGetReportRequest { .. } | E::HidSetReportRequest { .. }
+                | E::ForceFeedbackUpload { .. } | E::ForceFeedbackErase { .. } => {
+                    return Err(request_leaked());
+                }
+                E::Evdev(_) => None,
+            })
+        }
+    };
+}
+native_family_output!(
+    /// Optional native Wii Remote observations.
+    WiiRemoteOutputEvent, wii_remote
+);
+native_family_output!(
+    /// Optional native Steam Controller 2026 observations, including existing PCM payloads.
+    SteamController2026OutputEvent, steam_controller_2026
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,5 +282,53 @@ mod tests {
             })
             .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod promoted_family_tests {
+    use super::*;
+    use gr_realization_api::RawReverseEvent;
+
+    #[test]
+    fn wii_and_steam_keep_native_observations_and_reject_leaked_requests() {
+        let native = RawReverseEvent::HidOutput {
+            report_id: Some(7),
+            bytes: vec![4, 5, 6],
+        };
+        assert_eq!(
+            wii_remote(native.clone()).unwrap(),
+            Some(WiiRemoteOutputEvent::HidOutput {
+                report_id: Some(7),
+                bytes: vec![4, 5, 6],
+            })
+        );
+        assert_eq!(
+            steam_controller_2026(native).unwrap(),
+            Some(SteamController2026OutputEvent::HidOutput {
+                report_id: Some(7),
+                bytes: vec![4, 5, 6],
+            })
+        );
+        let opened = RawReverseEvent::HidLifecycle(gr_hid::Lifecycle::Open);
+        assert_eq!(
+            steam_controller_2026(opened).unwrap(),
+            Some(SteamController2026OutputEvent::HostLifecycle(
+                HostLifecycle::Opened
+            ))
+        );
+        let request = RawReverseEvent::HidGetReportRequest {
+            request_id: 3,
+            report_id: 7,
+            report_type: 0,
+        };
+        assert!(matches!(
+            wii_remote(request.clone()),
+            Err(ControllerError::InvalidRequest { .. })
+        ));
+        assert!(matches!(
+            steam_controller_2026(request),
+            Err(ControllerError::InvalidRequest { .. })
+        ));
     }
 }

@@ -124,12 +124,18 @@ pub fn create_steam_controller_2026(
     options: CreationOptions,
     family: SteamController2026Options,
 ) -> Result<SteamController2026Controller, ProviderError> {
-    create(options, family, common::create_with_hid_uniq)
+    create(
+        options,
+        family,
+        common::require_linux_platform,
+        common::create_with_hid_uniq,
+    )
 }
 
 fn create(
     options: CreationOptions,
     mut family: SteamController2026Options,
+    validate_platform: impl FnOnce(RealizationTarget) -> Result<(), ProviderError>,
     open: impl FnOnce(
         SteamController2026Definition,
         NativeControllerRealization,
@@ -146,6 +152,7 @@ fn create(
             });
         }
     };
+    validate_platform(options.target)?;
     let identity = family
         .identity
         .take()
@@ -372,12 +379,32 @@ mod tests {
                 session: RealizationSessionId(7),
             },
             family,
+            |_| Ok(()),
             |mut driver, spec, options| {
                 driver.provider = Some(factory.clone());
                 common::create_with_hid_uniq(driver, spec, options)
             },
         )
         .unwrap()
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn live_creation_rejects_unsupported_platform() {
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+        ] {
+            assert!(matches!(
+                create_steam_controller_2026(
+                    CreationOptions { target, session: RealizationSessionId(7) },
+                    SteamController2026Options::default(),
+                ),
+                Err(ProviderError::Preflight(
+                    gr_realization_api::ProviderPreflightError::UnsupportedPlatform { target: rejected }
+                )) if rejected == target
+            ));
+        }
     }
 
     #[test]
@@ -518,6 +545,7 @@ mod tests {
                         session: RealizationSessionId(7),
                     },
                     SteamController2026Options::default().with_identity(identity),
+                    |_| Ok(()),
                     |_, _, _| panic!("invalid serial reached provider"),
                 )
             });
