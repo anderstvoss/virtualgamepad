@@ -183,12 +183,22 @@ pub fn run<B: Backend, C: Clock>(
     samples.sort_by_key(|s| (s["cycle"].as_u64(), s["index"].as_u64()));
     let after = backend.resources();
     let summaries = summaries(&samples);
+    let evidence_status = virtual_evidence_status(environment, &samples);
     Ok(
-        json!({"schema_version":1,"kind":"virtual_host_run","controller":config.controller,
+        json!({"schema_version":1,"kind":"virtual_host_run","evidence_status":evidence_status,"controller":config.controller,
         "realization":config.realization,"tier":format!("{:?}",realization.tier),"permission":format!("{:?}",realization.permission),
         "config":{"cycles":config.cycles,"concurrency":config.concurrency},"environment":environment,
         "resources":{"before":baseline,"after":after},"summaries":summaries,"samples":samples}),
     )
+}
+
+fn virtual_evidence_status(environment: &Value, samples: &[Value]) -> Option<&'static str> {
+    (environment["backend"] == "linux"
+        && environment["synthetic"] == false
+        && samples
+            .iter()
+            .any(|sample| sample["stages"]["node_present"]["value_ns"].is_u64()))
+    .then_some("virtual-live")
 }
 
 fn summaries(samples: &[Value]) -> Value {
@@ -439,6 +449,30 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn virtual_live_requires_a_linux_observation_of_an_owned_node() {
+        let linux = json!({"backend": "linux", "synthetic": false});
+        let node = json!({"stages": {"node_present": measured(10)}});
+        assert_eq!(
+            virtual_evidence_status(&linux, std::slice::from_ref(&node)),
+            Some("virtual-live")
+        );
+        assert_eq!(virtual_evidence_status(&linux, &[]), None);
+        assert_eq!(
+            virtual_evidence_status(
+                &linux,
+                &[json!({"stages": {"node_present": missing("permission denied")}})]
+            ),
+            None
+        );
+        for environment in [json!({}), json!({"backend": "fake", "synthetic": true})] {
+            assert_eq!(
+                virtual_evidence_status(&environment, std::slice::from_ref(&node)),
+                None
+            );
+        }
+    }
+
     #[test]
     fn failures_are_samples_and_successful_siblings_always_close() {
         let mut fake = Fake {

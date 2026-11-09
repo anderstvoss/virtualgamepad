@@ -17,12 +17,6 @@ use virtualgamepad::{
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
-fn supporting_creation(target: RealizationId) -> gr_curated_controllers::CreationOptions {
-    gr_curated_controllers::CreationOptions {
-        target,
-        session: gr_curated_controllers::RealizationSessionId(NEXT.fetch_add(1, Ordering::Relaxed)),
-    }
-}
 struct Capture(PathBuf);
 impl Drop for Capture {
     fn drop(&mut self) {
@@ -31,33 +25,29 @@ impl Drop for Capture {
 }
 
 macro_rules! controllers {
-    ($(($variant:ident,$ty:ident,$create:ident,$id:literal)),+ $(,)?) => {
-        pub enum Controller { $($variant(virtualgamepad::$ty),)+ Wii(gr_curated_controllers::wii_remote::WiiRemoteController), Steam(gr_curated_controllers::steam_controller_2026::SteamController2026Controller) }
+    ($(($variant:ident,$ty:ident,$create:ident,$id:literal $(,$common:ident)?)),+ $(,)?) => {
+        pub enum Controller { $($variant(virtualgamepad::$ty),)+ }
         impl Controller {
             fn create(id:&str,target:RealizationId)->Result<Self,String>{
-                if id == "virtualgamepad.wii-remote" {
-                    return gr_curated_controllers::wii_remote::create_wii_remote(supporting_creation(target), gr_curated_controllers::wii_remote::WiiRemoteOptions::default()).map(Self::Wii).map_err(|e|e.to_string());
-                }
-                if id == "virtualgamepad.steam-controller-2026" {
-                    return gr_curated_controllers::steam_controller_2026::create_steam_controller_2026(supporting_creation(target), gr_curated_controllers::steam_controller_2026::SteamController2026Options::default()).map(Self::Steam).map_err(|e|e.to_string());
-                }
                 match id { $($id=>virtualgamepad::$create(CreationOptions::new(target), Default::default()).map(Self::$variant).map_err(|e|e.to_string()),)+ _=>Err("unmapped compiled family".into()) }
             }
-            fn physical_paths(&self)->Vec<String> { match self { $(Self::$variant(c)=>c.association().components().iter().filter_map(|c|c.requested_physical_path().map(str::to_owned)).collect(),)+ Self::Steam(c)=>c.association().requested_physical_path.iter().cloned().collect(), Self::Wii(c)=>c.association().requested_physical_path.iter().cloned().chain(c.association().companions.iter().filter_map(|c|c.requested_physical_path.clone())).collect() } }
-            fn topology(&self)->&InputTopology { match self { $(Self::$variant(c)=>c.surface().common_surface().input_topology(),)+ Self::Steam(c)=>c.surface().input_topology(), Self::Wii(c)=>c.surface().input_topology() } }
-            fn digital(&mut self,update:DigitalControlUpdate)->Result<(),String>{match self {$(Self::$variant(c)=>c.set_digital(update).map_err(|e|e.to_string()),)+ Self::Steam(c)=>c.set_digital(update).map_err(|e|e.to_string()), Self::Wii(c)=>c.set_digital(update).map_err(|e|e.to_string())}}
-            fn commit(&mut self)->Result<(),String>{match self {$(Self::$variant(c)=>c.commit().map_err(|e|e.to_string()),)+ Self::Steam(c)=>c.commit().map_err(|e|e.to_string()), Self::Wii(c)=>c.commit().map_err(|e|e.to_string())}}
-            fn service(&mut self)->Result<(),String>{match self {$(Self::$variant(c)=>c.service(&mut |_|{}).map_err(|e|e.to_string()),)+ Self::Steam(c)=>c.service(&mut |_|{}).map_err(|e|e.to_string()), Self::Wii(c)=>c.service(&mut |_|{}).map_err(|e|e.to_string())}}
-            fn close(&mut self){match self {$(Self::$variant(c)=>c.close(),)+ Self::Steam(c)=>c.close(), Self::Wii(c)=>c.close()}}
+            fn physical_paths(&self)->Vec<String> { match self { $(Self::$variant(c)=>c.association().components().iter().filter_map(|c|c.requested_physical_path().map(str::to_owned)).collect(),)+ } }
+            fn topology(&self)->&InputTopology { match self { $(Self::$variant(c)=>c.surface()$(.$common())?.input_topology(),)+ } }
+            fn digital(&mut self,update:DigitalControlUpdate)->Result<(),String>{match self {$(Self::$variant(c)=>c.set_digital(update).map_err(|e|e.to_string()),)+}}
+            fn commit(&mut self)->Result<(),String>{match self {$(Self::$variant(c)=>c.commit().map_err(|e|e.to_string()),)+}}
+            fn service(&mut self)->Result<(),String>{match self {$(Self::$variant(c)=>c.service(&mut |_|{}).map_err(|e|e.to_string()),)+}}
+            fn close(&mut self){match self {$(Self::$variant(c)=>c.close(),)+}}
         }
-        pub const MAPPED_IDS:&[&str]=&[$($id,)+ "virtualgamepad.wii-remote", "virtualgamepad.steam-controller-2026"];
+        pub const MAPPED_IDS:&[&str]=&[$($id,)+];
     };
 }
 controllers! {
-    (DualSense,DualSenseController,create_dualsense,"virtualgamepad.dualsense"),
-    (DualShock4,DualShock4Controller,create_dualshock4,"virtualgamepad.dualshock4"),
-    (SwitchPro,SwitchProController,create_switch_pro,"virtualgamepad.switch-pro"),
-    (Xbox360,Xbox360Controller,create_xbox360,"virtualgamepad.xbox360"),
+    (DualSense,DualSenseController,create_dualsense,"virtualgamepad.dualsense",common_surface),
+    (DualShock4,DualShock4Controller,create_dualshock4,"virtualgamepad.dualshock4",common_surface),
+    (SwitchPro,SwitchProController,create_switch_pro,"virtualgamepad.switch-pro",common_surface),
+    (Xbox360,Xbox360Controller,create_xbox360,"virtualgamepad.xbox360",common_surface),
+    (Wii,WiiRemoteController,create_wii_remote,"virtualgamepad.wii-remote"),
+    (Steam,SteamController2026Controller,create_steam_controller_2026,"virtualgamepad.steam-controller-2026"),
 }
 
 pub struct Linux {
@@ -150,10 +140,8 @@ fn bound_driver(node: &Path) -> Option<String> {
             .map(|s| s.to_string_lossy().into_owned())
     })
 }
-fn steam_sample(
-    sample: i16,
-) -> gr_curated_controllers::steam_controller_2026::SteamController2026State {
-    use gr_curated_controllers::steam_controller_2026::SteamController2026Button as B;
+fn steam_sample(sample: i16) -> virtualgamepad::SteamController2026State {
+    use virtualgamepad::SteamController2026Button as B;
     const BUTTONS: [B; 22] = [
         B::A,
         B::B,
@@ -178,8 +166,7 @@ fn steam_sample(
         B::RightTrigger,
         B::LeftTrigger,
     ];
-    let mut state =
-        gr_curated_controllers::steam_controller_2026::SteamController2026State::default();
+    let mut state = virtualgamepad::SteamController2026State::default();
     state.motion.timestamp_us = u32::from(u16::from_ne_bytes(sample.to_ne_bytes())) * 10_000;
     state.motion.accelerometer = [sample % 250 * 100, 500, 1000];
     state.motion.gyroscope = [sample % 250 * 30, -250, 100];
@@ -203,7 +190,7 @@ fn steam_sample(
     state
 }
 fn drive_steam_sample(
-    steam: &mut gr_curated_controllers::steam_controller_2026::SteamController2026Controller,
+    steam: &mut virtualgamepad::SteamController2026Controller,
     sample: i16,
 ) -> Result<(), String> {
     steam
@@ -409,7 +396,7 @@ impl Backend for Linux {
 mod tests {
     #[test]
     fn steam_controls_wait_for_consumer_neutral_after_arbitrary_startup_delay() {
-        use gr_curated_controllers::steam_controller_2026::SteamController2026Button as B;
+        use virtualgamepad::SteamController2026Button as B;
         assert!(super::steam_sample(1).pressed(B::A));
         assert!(!super::steam_sample(4).pressed(B::A));
         assert!(super::steam_sample(127).pressed(B::LeftTrigger));

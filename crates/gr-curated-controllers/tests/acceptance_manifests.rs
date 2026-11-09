@@ -6,7 +6,24 @@ fn strings(value: &Value) -> Option<BTreeSet<&str>> {
     value.as_array()?.iter().map(Value::as_str).collect()
 }
 
-fn valid(value: &Value, id: &str, targets: &BTreeSet<&str>) -> bool {
+fn live_evidence_exists(root: &Path, cell: &Value) -> bool {
+    cell.get("live_evidence")
+        .and_then(Value::as_str)
+        .is_some_and(|reference| {
+            let path = reference
+                .split_once('#')
+                .map_or(reference, |(path, _)| path);
+            let path = Path::new(path);
+            path.starts_with("docs")
+                && path
+                    .components()
+                    .all(|part| matches!(part, std::path::Component::Normal(_)))
+                && path.extension().is_some_and(|extension| extension == "md")
+                && root.join(path).is_file()
+        })
+}
+
+fn valid(root: &Path, value: &Value, id: &str, targets: &BTreeSet<&str>) -> bool {
     let Some(revision) = value["research_revision"].as_str() else {
         return false;
     };
@@ -41,15 +58,22 @@ fn valid(value: &Value, id: &str, targets: &BTreeSet<&str>) -> bool {
                     };
                     matches!(
                         status,
-                        "not-supported" | "wip" | "source-evidence" | "physical-evidence"
+                        "not-supported"
+                            | "wip"
+                            | "source-evidence"
+                            | "virtual-live"
+                            | "physical-evidence"
                     ) && cell["test_id"].as_str().is_some_and(|s| !s.is_empty())
                         && evidence
                             .iter()
                             .all(|id| !id.is_empty() && !id.contains('/'))
-                        && if matches!(status, "source-evidence" | "physical-evidence") {
-                            !evidence.is_empty()
-                        } else {
-                            cell["reason"].as_str().is_some_and(|s| !s.is_empty())
+                        && match status {
+                            "source-evidence" | "physical-evidence" => !evidence.is_empty(),
+                            "virtual-live" => {
+                                live_evidence_exists(root, cell)
+                                    && cell["reason"].as_str().is_some_and(|s| !s.is_empty())
+                            }
+                            _ => cell["reason"].as_str().is_some_and(|s| !s.is_empty()),
                         }
                 })
         })
@@ -57,7 +81,8 @@ fn valid(value: &Value, id: &str, targets: &BTreeSet<&str>) -> bool {
 
 #[test]
 fn every_compiled_family_has_complete_declared_realization_cells() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../acceptance");
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = repo.join("acceptance");
     let files: BTreeSet<_> = std::fs::read_dir(&root)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
@@ -85,7 +110,7 @@ fn every_compiled_family_has_complete_declared_realization_cells() {
             .map(|e| e.target.as_str())
             .collect();
         assert!(
-            valid(&value, family.id.as_str(), &targets),
+            valid(&repo, &value, family.id.as_str(), &targets),
             "{}",
             family.id.as_str()
         );
@@ -95,7 +120,7 @@ fn every_compiled_family_has_complete_declared_realization_cells() {
             .unwrap()
             .remove(*targets.first().unwrap());
         assert!(
-            !valid(&invalid, family.id.as_str(), &targets),
+            !valid(&repo, &invalid, family.id.as_str(), &targets),
             "missing cell"
         );
         let mut invalid = value.clone();
@@ -108,7 +133,7 @@ fn every_compiled_family_has_complete_declared_realization_cells() {
             .1;
         cell["status"] = Value::String("accepted".into());
         assert!(
-            !valid(&invalid, family.id.as_str(), &targets),
+            !valid(&repo, &invalid, family.id.as_str(), &targets),
             "unknown status"
         );
         let mut invalid = value.clone();
@@ -117,8 +142,39 @@ fn every_compiled_family_has_complete_declared_realization_cells() {
             .unwrap()
             .insert("undeclared".into(), Value::Table(toml::Table::default()));
         assert!(
-            !valid(&invalid, family.id.as_str(), &targets),
+            !valid(&repo, &invalid, family.id.as_str(), &targets),
             "undeclared realization"
         );
+    }
+}
+
+#[test]
+fn virtual_live_requires_a_repository_evidence_report() {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let path = repo.join("acceptance/virtualgamepad.steam-controller-2026.toml");
+    let mut value: Value = toml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let family = "virtualgamepad.steam-controller-2026";
+    let targets = strings(&value["realizations"])
+        .unwrap()
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let targets = targets.iter().map(String::as_str).collect();
+    assert!(valid(&repo, &value, family, &targets));
+
+    for missing_or_invalid in [
+        None,
+        Some("docs/missing-run.md"),
+        Some("docs/../docs/C6_D9_ACCEPTANCE.md"),
+    ] {
+        let cell = value["functions"][0]["cells"]["linux.uinput"]
+            .as_table_mut()
+            .unwrap();
+        assert_eq!(cell["status"].as_str(), Some("virtual-live"));
+        cell.remove("live_evidence");
+        if let Some(reference) = missing_or_invalid {
+            cell.insert("live_evidence".into(), Value::String(reference.into()));
+        }
+        assert!(!valid(&repo, &value, family, &targets));
     }
 }
