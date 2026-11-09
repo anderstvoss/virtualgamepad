@@ -1,6 +1,7 @@
 # ADR-0019: Retained generations of controller-owned live topology
 
-Status: Proposed. No ordinary-root API addition is approved by this document.
+Status: Accepted and implemented for the Wii supporting package. The ordinary-root
+API is unchanged.
 
 ## Context
 
@@ -50,9 +51,8 @@ can be evicted. Treating the static maximum as the live shape would silently
 permit edits to missing controls. A controller must validate the current subset
 and retain its generation outside the queue.
 
-Step 8 implements the seam crate-internally and proves it with the synthetic
-fifth family, including attach/detach, absent edits, close and uinput policy.
-When a real consumer family ships, proposed root additions are read-only
-`topology_generation()` and `current_topology()` accessors on its handle. Their
-exact public signatures and snapshot changes require separate owner approval;
-this Proposed ADR and C2 do not grow the 110-item snapshot.
+Step 8 implemented the internal seam with a synthetic family, covering
+attach/detach, absent edits and terminal close. The Wii handle now exposes
+`topology_generation()` and `current_topology()` and preserves a static maximum
+uinput capability set across live accessory edits. Any future ordinary-root
+exposure needs separate owner approval.

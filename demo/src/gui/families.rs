@@ -67,7 +67,7 @@ pub(super) enum Controller {
     DualShock4(DualShock4Controller),
     SwitchPro(SwitchProController),
     WiiRemote(gr_curated_controllers::wii_remote::WiiRemoteController),
-    Steam(SteamDemoController),
+    Steam(gr_curated_controllers::steam_controller_2026::SteamController2026Controller),
 }
 
 // Synthetic stationary pose used by the demo, not a captured orientation or
@@ -79,43 +79,6 @@ fn steam_demo_neutral() -> gr_curated_controllers::steam_controller_2026::SteamC
     state.motion.accelerometer = [0, 0, 16384];
     state.motion.quaternion = [i16::MAX, 0, 0, 0];
     state
-}
-
-// Keep UI edit bookkeeping in the demo; the supporting API needs no dirty accessor.
-pub(super) struct SteamDemoController {
-    inner: gr_curated_controllers::steam_controller_2026::SteamController2026Controller,
-    dirty: bool,
-}
-impl std::ops::Deref for SteamDemoController {
-    type Target = gr_curated_controllers::steam_controller_2026::SteamController2026Controller;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-impl std::ops::DerefMut for SteamDemoController {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-impl SteamDemoController {
-    pub(super) fn set_inputs(
-        &mut self,
-        state: gr_curated_controllers::steam_controller_2026::SteamController2026State,
-    ) -> Result<(), virtualgamepad::ControlError> {
-        self.inner.set_inputs(state)?;
-        self.dirty = true;
-        Ok(())
-    }
-    fn neutralize(&mut self) -> Result<(), virtualgamepad::ControlError> {
-        self.inner.set_inputs(steam_demo_neutral())?;
-        self.dirty = true;
-        Ok(())
-    }
-    fn commit(&mut self) -> Result<(), virtualgamepad::CommitError> {
-        self.inner.commit()?;
-        self.dirty = false;
-        Ok(())
-    }
 }
 
 impl Kind {
@@ -179,10 +142,7 @@ impl Kind {
                     .map_err(|e| virtualgamepad::ControllerError::Open {
                         reason: e.to_string(),
                     })?;
-                Ok(Controller::Steam(SteamDemoController {
-                    inner,
-                    dirty: false,
-                }))
+                Ok(Controller::Steam(inner))
             }
             Self::Xbox360 => create_xbox360(creation).map(Controller::Xbox),
             Self::DualSense => create_dualsense(creation).map(Controller::DualSense),
@@ -221,7 +181,7 @@ impl ServicedController for Controller {
             Self::DualShock4(c) => c.neutralize(),
             Self::SwitchPro(c) => c.neutralize(),
             Self::WiiRemote(c) => c.neutralize(),
-            Self::Steam(c) => c.neutralize(),
+            Self::Steam(c) => c.set_inputs(steam_demo_neutral()),
         }
         .map_err(|error| error.to_string())
     }
@@ -285,7 +245,9 @@ impl Controller {
             Self::DualShock4(controller) => controller.next_service_in(),
             Self::SwitchPro(controller) => controller.next_service_in(),
             Self::WiiRemote(controller) => controller.next_service_in(),
-            Self::Steam(_) => Some(Duration::from_millis(4)),
+            Self::Steam(controller) => controller
+                .next_service_in()
+                .or_else(|| (!controller.is_closed()).then_some(Duration::from_millis(4))),
         }
     }
 
@@ -344,7 +306,7 @@ impl Controller {
             Self::DualShock4(controller) => controller.is_dirty(),
             Self::SwitchPro(controller) => controller.is_dirty(),
             Self::WiiRemote(controller) => controller.is_dirty(),
-            Self::Steam(controller) => controller.dirty,
+            Self::Steam(controller) => controller.is_dirty(),
         }
     }
     pub(super) fn poll_output(

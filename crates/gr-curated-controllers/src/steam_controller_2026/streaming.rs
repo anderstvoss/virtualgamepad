@@ -3,7 +3,8 @@ use gr_hid::{ReplyError, Report, ReportType};
 use std::collections::VecDeque;
 
 /// A decoded host packet. PCM bytes are signed 16-bit little endian, 8 kHz.
-/// Every packet is also exposed through the controller's raw reverse callback.
+/// Each raw `target` value is protocol-native and interpreted within its report.
+/// Raw reverse output observations expose packets as well.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SteamController2026StreamPacket {
     /// Captured operations: 1 disables; 2 configures mode 0. Targets 2/5 are
@@ -68,8 +69,9 @@ impl SteamController2026StreamPacket {
 }
 
 /// Bounded retained diagnostics, not a recording or an audio sink. Slot order is
-/// feedback IDs [0, 1, 3, 4]. Use raw reverse callbacks to consume every chunk.
+/// feedback IDs [0, 1, 3, 4]. Raw reverse callbacks are optional observations.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SteamController2026StreamOutputs {
     pub enabled: bool,
     pub configured: [bool; 4],

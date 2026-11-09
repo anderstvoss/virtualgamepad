@@ -1,6 +1,7 @@
 # ADR-0020: Retained accepted host outputs and typed surface kinds
 
-Status: Proposed. Public additions require D2; this document does not grant it.
+Status: Accepted and implemented. D2 granted the root retained-output and typed
+kind additions in step 10c.
 
 ## Context
 
@@ -43,10 +44,10 @@ Reconstructing state from lossy events is rejected. Keeping raw unvalidated repo
 bytes as the public output state is also rejected: report meaning, acceptance and
 errors belong to each controller personality.
 
-Step 10b implements retained state below the root, with a burst exceeding queue
-capacity, accepted-change revision checks and malformed-output regressions. Step
-10c remains draft while D2 is open. Proposed ordinary-root additions requiring
-that decision are `host_outputs()` on typed handles, retained typed output state
-and revision access, typed `OutputKind`/input-kind descriptors, and associated
-surface accessors. Public enums are non-exhaustive. The exact snapshot diff must
-be listed in 10c; this ADR/C2 changes none of the reviewed 110 items.
+Step 10b implemented retained state below the root with overflow,
+accepted-change revision and malformed-output regressions. The owner granted
+D2 for step 10c in [#176](https://github.com/anderstvoss/virtualgamepad/issues/176#issuecomment-6325147128)
+and [confirmed the scope](https://github.com/anderstvoss/virtualgamepad/issues/176#issuecomment-6328169640).
+The root exposes `host_outputs()` on typed handles and the reviewed typed input
+and output descriptors. USB worker snapshots remain unavailable because the
+worker's lossy event channel has no retained-state query.

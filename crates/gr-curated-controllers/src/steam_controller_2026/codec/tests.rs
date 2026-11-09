@@ -676,6 +676,7 @@ struct FakeState {
     events: VecDeque<HostEvent>,
     commands: Vec<Command>,
     closes: usize,
+    block_next_submission: bool,
 }
 #[derive(Clone, Default)]
 struct Fake(Rc<RefCell<FakeState>>);
@@ -684,7 +685,11 @@ impl Transport for Fake {
         Ok(self.0.borrow_mut().events.pop_front())
     }
     fn submit(&mut self, command: &Command) -> Delivery {
-        self.0.borrow_mut().commands.push(command.clone());
+        let mut state = self.0.borrow_mut();
+        if std::mem::take(&mut state.block_next_submission) {
+            return Delivery::DefinitelyUnsent;
+        }
+        state.commands.push(command.clone());
         Delivery::Submitted
     }
     fn close(&mut self) -> Result<(), Error> {
@@ -1840,6 +1845,77 @@ fn streaming_invalid_requests_complete_without_pending_replies() {
         (Reply::Set(Err(ReplyError::Unsupported)), None)
     );
     assert!(!disabled.outputs.streaming.enabled);
+}
+
+#[test]
+fn steam_schedule_distinguishes_dirty_input_pending_write_and_idle_deadline() {
+    let fake = Fake::default();
+    let mut runtime = Runtime::new(
+        SteamHidProtocol::with_streaming_options("VGP-FAKE".into(), false, true),
+        fake.clone(),
+        1,
+        Limits::default(),
+    )
+    .unwrap();
+    runtime.service(0).unwrap();
+    assert!(!runtime.is_dirty());
+    assert!(!runtime.wants_write());
+
+    runtime
+        .update(|state| {
+            state.set_button(Button::A, true);
+            Ok(())
+        })
+        .unwrap();
+    assert!(runtime.is_dirty());
+    assert_eq!(runtime.deadline(), Some(0));
+    runtime.service(1).unwrap();
+    assert!(!runtime.is_dirty());
+
+    fake.0.borrow_mut().block_next_submission = true;
+    enqueue(&fake, 1, streamed_output(0x86, &[2, 2, 0]));
+    runtime.service(2).unwrap();
+    assert!(runtime.wants_write());
+    assert!(runtime.deadline().is_some());
+    assert!(
+        !fake
+            .0
+            .borrow()
+            .commands
+            .iter()
+            .any(|command| matches!(command, Command::Reply { .. }))
+    );
+    runtime.service(3).unwrap();
+    assert!(!runtime.wants_write());
+    assert!(fake.0.borrow().commands.iter().any(|command| matches!(
+        command,
+        Command::Reply {
+            token: RequestId {
+                session: 1,
+                ordinal: 1
+            },
+            reply: Reply::Set(Ok(()))
+        }
+    )));
+
+    runtime_stream_request(
+        &mut runtime,
+        &fake,
+        3,
+        streamed_output(0x87, &[0; 63]),
+        Reply::Set(Ok(())),
+    );
+    let wake = runtime
+        .deadline()
+        .expect("active PCM needs an idle deadline");
+    assert!(wake > 4);
+    runtime.service(wake).unwrap();
+    assert_eq!(runtime.dropped_observations(), 0);
+    runtime.close().unwrap();
+    runtime.close().unwrap();
+    assert!(!runtime.wants_write());
+    assert_eq!(runtime.deadline(), None);
+    assert_eq!(fake.0.borrow().closes, 1);
 }
 
 #[test]
