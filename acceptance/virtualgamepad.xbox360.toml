@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.xbox360"
-research_revision = "8a479b934bb8758988dc5252fb4c2306476dc3b0"
+research_revision = "3dcf5b6edb4480408c8dd9119d78bc3547fe8770"
 realizations = ["linux.uinput", "linux.uhid.usb", "linux.dummy_hcd.usb-hid", "linux.usbip.usb-audio"]
 refused_operations = []
 persistent_resources = []
