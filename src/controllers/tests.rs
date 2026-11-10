@@ -2401,3 +2401,5 @@ fn xbox_series_converged_constructors_reject_unavailable_targets_and_audio() {
         Err(ControllerError::Unsupported { .. })
     ));
 }
+
+mod input_snapshots;

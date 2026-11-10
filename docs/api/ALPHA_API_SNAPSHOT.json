@@ -1427,6 +1427,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &DualSenseState",
+            "pub fn set_inputs(&mut self, state: DualSenseState) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<DualSenseOutputState, ControlError>",
             "pub fn surface(&self) -> &'static DualSenseSurface",
             "pub fn is_dirty(&self) -> bool",
@@ -1524,7 +1525,13 @@
             "pub const fn battery(&self) -> BatteryState",
             "pub const fn face_pressed(&self, button: FaceButton) -> bool",
             "pub const fn native_pressed(&self, control: DualSenseControl) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool"
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub fn set_sticks( &mut self, left: (DualSenseAxis, DualSenseAxis), right: (DualSenseAxis, DualSenseAxis), )",
+            "pub fn set_triggers(&mut self, left: DualSenseTrigger, right: DualSenseTrigger)",
+            "pub fn set_touch( &mut self, slot: TouchSlot, contact: Option<DualSenseTouchContact>, )",
+            "pub fn set_motion(&mut self, motion: MotionSample)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, control: DualSenseControl, pressed: bool)"
           ],
           "traits": [
             "impl Clone for DualSenseState",
@@ -1625,6 +1632,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &DualShock4State",
+            "pub fn set_inputs(&mut self, state: DualShock4State) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<DualShock4OutputState, ControlError>",
             "pub fn is_dirty(&self) -> bool",
             "pub fn surface(&self) -> &'static DualShock4Surface",
@@ -1735,7 +1743,13 @@
             "pub const fn touch( &self, slot: DualShock4TouchSlot, ) -> Option<DualShock4TouchContact>",
             "pub const fn native_pressed(&self, control: DualShock4Control) -> bool",
             "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool"
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub fn set_sticks( &mut self, left: (DualShock4Axis, DualShock4Axis), right: (DualShock4Axis, DualShock4Axis), )",
+            "pub fn set_triggers( &mut self, left: DualShock4Trigger, right: DualShock4Trigger, )",
+            "pub fn set_touch( &mut self, slot: DualShock4TouchSlot, contact: Option<DualShock4TouchContact>, )",
+            "pub fn set_motion(&mut self, motion: DualShock4MotionSample)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, control: DualShock4Control, pressed: bool)"
           ],
           "traits": [
             "impl Clone for DualShock4State",
@@ -2322,6 +2336,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &SwitchProState",
+            "pub fn set_inputs(&mut self, state: SwitchProState) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>",
             "pub fn is_dirty(&self) -> bool",
             "pub fn surface(&self) -> &'static SwitchProSurface",
@@ -2443,7 +2458,11 @@
             "pub const fn motion(&self) -> SwitchProMotionSample",
             "pub const fn native_pressed(&self, control: SwitchProControl) -> bool",
             "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool"
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub fn set_sticks( &mut self, left: (SwitchProAxis, SwitchProAxis), right: (SwitchProAxis, SwitchProAxis), )",
+            "pub fn set_motion(&mut self, motion: SwitchProMotionSample)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, c: SwitchProControl, p: bool)"
           ],
           "traits": [
             "impl Clone for SwitchProState",
@@ -2859,6 +2878,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &Xbox360State",
+            "pub fn set_inputs(&mut self, state: Xbox360State) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<Xbox360OutputState, ControlError>",
             "pub fn surface(&self) -> &'static Xbox360Surface",
             "pub fn is_dirty(&self) -> bool",
@@ -2927,7 +2947,11 @@
             "pub const fn battery(&self) -> BatteryState",
             "pub const fn face_pressed(&self, button: FaceButton) -> bool",
             "pub const fn native_pressed(&self, control: Xbox360Control) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool"
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub fn set_sticks( &mut self, left: (Xbox360Axis, Xbox360Axis), right: (Xbox360Axis, Xbox360Axis), )",
+            "pub fn set_triggers(&mut self, left: Xbox360Trigger, right: Xbox360Trigger)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, control: Xbox360Control, pressed: bool)"
           ],
           "traits": [
             "impl Clone for Xbox360State",
@@ -4529,6 +4553,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &DualSenseState",
+            "pub fn set_inputs(&mut self, state: DualSenseState) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<DualSenseOutputState, ControlError>",
             "pub fn surface(&self) -> &'static DualSenseSurface",
             "pub fn is_dirty(&self) -> bool",
@@ -4626,7 +4651,13 @@
             "pub const fn battery(&self) -> BatteryState",
             "pub const fn face_pressed(&self, button: FaceButton) -> bool",
             "pub const fn native_pressed(&self, control: DualSenseControl) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool"
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub fn set_sticks( &mut self, left: (DualSenseAxis, DualSenseAxis), right: (DualSenseAxis, DualSenseAxis), )",
+            "pub fn set_triggers(&mut self, left: DualSenseTrigger, right: DualSenseTrigger)",
+            "pub fn set_touch( &mut self, slot: TouchSlot, contact: Option<DualSenseTouchContact>, )",
+            "pub fn set_motion(&mut self, motion: MotionSample)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, control: DualSenseControl, pressed: bool)"
           ],
           "traits": [
             "impl Clone for DualSenseState",
@@ -4727,6 +4758,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &DualShock4State",
+            "pub fn set_inputs(&mut self, state: DualShock4State) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<DualShock4OutputState, ControlError>",
             "pub fn is_dirty(&self) -> bool",
             "pub fn surface(&self) -> &'static DualShock4Surface",
@@ -4837,7 +4869,13 @@
             "pub const fn touch( &self, slot: DualShock4TouchSlot, ) -> Option<DualShock4TouchContact>",
             "pub const fn native_pressed(&self, control: DualShock4Control) -> bool",
             "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool"
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub fn set_sticks( &mut self, left: (DualShock4Axis, DualShock4Axis), right: (DualShock4Axis, DualShock4Axis), )",
+            "pub fn set_triggers( &mut self, left: DualShock4Trigger, right: DualShock4Trigger, )",
+            "pub fn set_touch( &mut self, slot: DualShock4TouchSlot, contact: Option<DualShock4TouchContact>, )",
+            "pub fn set_motion(&mut self, motion: DualShock4MotionSample)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, control: DualShock4Control, pressed: bool)"
           ],
           "traits": [
             "impl Clone for DualShock4State",
@@ -5424,6 +5462,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &SwitchProState",
+            "pub fn set_inputs(&mut self, state: SwitchProState) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>",
             "pub fn is_dirty(&self) -> bool",
             "pub fn surface(&self) -> &'static SwitchProSurface",
@@ -5545,7 +5584,11 @@
             "pub const fn motion(&self) -> SwitchProMotionSample",
             "pub const fn native_pressed(&self, control: SwitchProControl) -> bool",
             "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool"
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub fn set_sticks( &mut self, left: (SwitchProAxis, SwitchProAxis), right: (SwitchProAxis, SwitchProAxis), )",
+            "pub fn set_motion(&mut self, motion: SwitchProMotionSample)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, c: SwitchProControl, p: bool)"
           ],
           "traits": [
             "impl Clone for SwitchProState",
@@ -5961,6 +6004,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &Xbox360State",
+            "pub fn set_inputs(&mut self, state: Xbox360State) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<Xbox360OutputState, ControlError>",
             "pub fn surface(&self) -> &'static Xbox360Surface",
             "pub fn is_dirty(&self) -> bool",
@@ -6029,7 +6073,11 @@
             "pub const fn battery(&self) -> BatteryState",
             "pub const fn face_pressed(&self, button: FaceButton) -> bool",
             "pub const fn native_pressed(&self, control: Xbox360Control) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool"
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub fn set_sticks( &mut self, left: (Xbox360Axis, Xbox360Axis), right: (Xbox360Axis, Xbox360Axis), )",
+            "pub fn set_triggers(&mut self, left: Xbox360Trigger, right: Xbox360Trigger)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, control: Xbox360Control, pressed: bool)"
           ],
           "traits": [
             "impl Clone for Xbox360State",

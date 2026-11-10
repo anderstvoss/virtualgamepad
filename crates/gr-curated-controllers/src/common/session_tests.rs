@@ -13,17 +13,17 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
-struct WorkerRecord {
-    attempts: Vec<crate::DualSenseState>,
+struct WorkerRecord<S> {
+    attempts: Vec<S>,
     fail_once: bool,
     fail_output: bool,
     lost_outputs: u64,
     outputs: VecDeque<RawReverseEvent>,
     closes: usize,
 }
-struct FakeWorker(Arc<Mutex<WorkerRecord>>);
-impl super::WorkerBridge<crate::DualSenseState> for FakeWorker {
-    fn update(&mut self, state: &crate::DualSenseState) -> Result<(), ProviderError> {
+struct FakeWorker<S>(Arc<Mutex<WorkerRecord<S>>>);
+impl<S: Clone + Send> super::WorkerBridge<S> for FakeWorker<S> {
+    fn update(&mut self, state: &S) -> Result<(), ProviderError> {
         let mut record = self.0.lock().unwrap();
         record.attempts.push(state.clone());
         if std::mem::take(&mut record.fail_once) {
@@ -1433,4 +1433,192 @@ fn all_hid_protocols_observe_lifecycle_in_order_without_replay() {
     check(&DualShock4Definition, [true; 3]);
     check(&SwitchProDefinition, [true, true, false]);
     check(&Xbox360Definition, [false; 3]);
+}
+
+pub(crate) fn snapshot_session<D: HidDriver>(
+    driver: D,
+    target: RealizationTarget,
+    numbered: [bool; 3],
+) -> (ControllerSession<D>, Arc<Mutex<Record>>) {
+    if target == RealizationTarget::LINUX_UHID_USB {
+        let identity = super::test_address(2);
+        let (runtime, io) = rig_with_identity(&driver, numbered, identity);
+        io.lock()
+            .unwrap()
+            .events
+            .push_back(RawReverseEvent::HidLifecycle(gr_hid::Lifecycle::Start {
+                numbered_input: numbered[0],
+                numbered_output: numbered[1],
+                numbered_feature: numbered[2],
+            }));
+        (
+            ControllerSession::injected_hid(driver, runtime, identity),
+            io,
+        )
+    } else {
+        let io = Arc::new(Mutex::new(Record::default()));
+        let session = super::injected_native(driver, target, Box::new(Fake(io.clone()))).unwrap();
+        (session, io)
+    }
+}
+
+pub(crate) fn assert_snapshot_report(
+    actual: &ProviderFrame,
+    expected: &ProviderFrame,
+    clock_masks: &[(usize, u8)],
+) {
+    if let (
+        ProviderFrame::HidInput { report_id, bytes },
+        ProviderFrame::HidInput {
+            report_id: expected_id,
+            bytes: expected_bytes,
+        },
+    ) = (actual, expected)
+    {
+        assert_eq!(*report_id, *expected_id);
+        let mut bytes = bytes.clone();
+        let mut expected_bytes = expected_bytes.clone();
+        for &(index, mask) in clock_masks {
+            bytes[index] &= !mask;
+            expected_bytes[index] &= !mask;
+        }
+        assert_eq!(bytes, expected_bytes);
+    } else {
+        assert_eq!(actual, expected);
+    }
+}
+
+macro_rules! check_snapshot_session {
+    ($controller:ident, $io:ident, $snapshot:ident, $expected:ident, $invalid:expr,
+     $encoded:expr, $clock_masks:expr) => {{
+        $controller.service(&mut |_| {}).unwrap();
+        $controller.commit().unwrap();
+        let before = $controller.state().clone();
+        let invalid = $invalid;
+        if let Some((candidate, error)) = &invalid {
+            assert_eq!(
+                $controller.set_inputs(candidate.clone()),
+                Err(error.clone())
+            );
+            assert_eq!($controller.state(), &before);
+            assert!(!$controller.is_dirty());
+        }
+        let reports = $io.lock().unwrap().sent.len();
+        $controller.set_inputs($snapshot.clone()).unwrap();
+        assert_eq!($controller.state(), &$expected);
+        assert!($controller.is_dirty());
+        assert_eq!($io.lock().unwrap().sent.len(), reports);
+        $io.lock()
+            .unwrap()
+            .fail
+            .push_back(ProviderError::WouldBlock);
+        assert!($controller.commit().is_err());
+        assert!($controller.is_dirty());
+        if let Some((candidate, error)) = invalid {
+            assert_eq!($controller.set_inputs(candidate), Err(error));
+            assert_eq!($controller.state(), &$expected);
+            assert!($controller.is_dirty());
+        }
+        $controller.commit().unwrap();
+        assert!(!$controller.is_dirty());
+        super::common::session_tests::assert_snapshot_report(
+            $io.lock().unwrap().sent.last().unwrap(),
+            &$encoded,
+            $clock_masks,
+        );
+        $controller.set_inputs($snapshot.clone()).unwrap();
+        assert_eq!($controller.state(), &$expected);
+        assert!($controller.is_dirty());
+        $controller.commit().unwrap();
+        $controller.neutralize().unwrap();
+        $controller.commit().unwrap();
+        $controller.set_inputs($snapshot).unwrap();
+        $controller.commit().unwrap();
+        super::common::session_tests::assert_snapshot_report(
+            $io.lock().unwrap().sent.last().unwrap(),
+            &$encoded,
+            $clock_masks,
+        );
+        let accepted = $controller.state().clone();
+        if $controller.0.selection().target == RealizationTarget::LINUX_UHID_USB {
+            $controller.set_inputs(accepted.clone()).unwrap();
+            $io.lock().unwrap().fail.push_back(ProviderError::Write {
+                reason: "synthetic terminal HID write".into(),
+            });
+            assert!($controller.commit().is_err());
+            assert!(!$controller.is_dirty());
+            assert_eq!(
+                $controller.set_inputs(before.clone()),
+                Err(ControlError::Closed)
+            );
+        }
+        $controller.close();
+        $controller.close();
+        assert_eq!($controller.set_inputs(before), Err(ControlError::Closed));
+        assert_eq!($controller.state(), &accepted);
+        assert_eq!($io.lock().unwrap().destroys, 1);
+    }};
+}
+pub(crate) use check_snapshot_session;
+
+#[test]
+fn usb_workers_receive_only_accepted_whole_states() {
+    use gr_controller_contract::{DigitalControlUpdate, DpadDirection, FaceButton};
+    macro_rules! check {
+        ($create:ident) => {{
+            let record = Arc::new(Mutex::new(WorkerRecord::default()));
+            let mut controller = crate::$create(Box::new(FakeWorker(record.clone())));
+            controller.commit().unwrap();
+            let neutral = controller.state().clone();
+            let mut snapshot = neutral.clone();
+            snapshot.set_digital(DigitalControlUpdate::FaceButton {
+                button: FaceButton::South,
+                pressed: true,
+            });
+            snapshot.set_digital(DigitalControlUpdate::Dpad {
+                direction: DpadDirection::Up,
+                pressed: true,
+            });
+            let mut invalid = snapshot.clone();
+            invalid.set_digital(DigitalControlUpdate::Dpad {
+                direction: DpadDirection::Down,
+                pressed: true,
+            });
+            assert!(controller.set_inputs(invalid.clone()).is_err());
+            assert_eq!(controller.state(), &neutral);
+            assert!(!controller.is_dirty());
+
+            controller.set_inputs(snapshot.clone()).unwrap();
+            record.lock().unwrap().fail_once = true;
+            assert!(controller.commit().is_err());
+            assert!(controller.set_inputs(invalid).is_err());
+            assert_eq!(controller.state(), &snapshot);
+            assert!(controller.is_dirty());
+            controller.commit().unwrap();
+            assert!(!controller.is_dirty());
+            assert_eq!(
+                record.lock().unwrap().attempts,
+                [neutral.clone(), snapshot.clone(), snapshot.clone(),]
+            );
+
+            controller.neutralize().unwrap();
+            controller.commit().unwrap();
+            controller.set_inputs(snapshot.clone()).unwrap();
+            controller.commit().unwrap();
+            assert_eq!(record.lock().unwrap().attempts.last(), Some(&snapshot));
+
+            controller.set_inputs(snapshot.clone()).unwrap();
+            record.lock().unwrap().fail_output = true;
+            assert!(controller.service(&mut |_| {}).is_err());
+            assert!(controller.commit().is_err());
+            assert_eq!(controller.set_inputs(neutral), Err(ControlError::Closed));
+            assert_eq!(controller.state(), &snapshot);
+            assert!(controller.is_dirty());
+            controller.close();
+            assert_eq!(record.lock().unwrap().closes, 1);
+        }};
+    }
+    check!(create_dualsense_usb_worker);
+    check!(create_dualshock4_usb_worker);
+    check!(create_xbox360_usb_worker);
 }

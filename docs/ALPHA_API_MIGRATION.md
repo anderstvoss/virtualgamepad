@@ -160,3 +160,43 @@ separate Wii and Steam snapshots are unchanged.
 - Update the installed worker alongside the application. USB/IP creation
   requires private retained-output operation v1. Ordinary-root API signatures
   and the reviewed signature snapshots are unchanged.
+
+## VG-1 · Whole-state input replacement
+
+Each of these methods is available on the ordinary root handle and its
+curated counterpart. Each takes the named state by value and returns
+`Result<(), ControlError>`.
+
+- `DualSenseController::set_inputs(DualSenseState)`
+- `DualShock4Controller::set_inputs(DualShock4State)`
+- `SwitchProController::set_inputs(SwitchProState)`
+- `Xbox360Controller::set_inputs(Xbox360State)`
+
+Start with `State::default()` for a neutral snapshot or clone `controller.state()`
+to edit an accepted snapshot. The state types exposed by both layers gained
+these methods for building a candidate independently of the controller.
+
+| State type | Added methods |
+| --- | --- |
+| `DualSenseState` | `set_native`, `set_digital`, `set_sticks`, `set_triggers`, `set_touch`, `set_motion` |
+| `DualShock4State` | `set_native`, `set_digital`, `set_sticks`, `set_triggers`, `set_touch`, `set_motion` |
+| `SwitchProState` | `set_native`, `set_digital`, `set_sticks`, `set_motion` |
+| `Xbox360State` | `set_native`, `set_digital`, `set_sticks`, `set_triggers` |
+
+A successful replacement stages one complete input edit. Rejection preserves
+the accepted state and its dirty flag. The destination session keeps its
+battery metadata, identity, host outputs, and protocol handshakes. Changed
+motion advances the destination's motion counters. DS4 touch changes also
+advance the touch packet sequence. Repeating an identical snapshot keeps the
+accepted counters at their current values.
+Call `commit()` for delivery and continue servicing the session on its advertised
+readiness and deadlines. A commit can produce zero or multiple reports, and
+consumers can observe intermediate deliveries. See [ADR-0004](adr/ADR-0004-synchronous-hid-session.md).
+
+Whole-state edits reject opposing D-pad directions when the target encodes
+them as a hat. Switch Pro USB reports carry separate directional bits. On
+uinput, nonzero DualSense, DualShock 4 and Switch Pro motion and an active
+DualSense microphone mute button return `UnavailableInRealization`. DualShock
+4 touch IDs and DualSense USB touch IDs are limited to `0..=127`. DualSense
+uinput touch IDs use `0..=255`. The per-field DualSense mute setter still
+accepts the button level on uinput. That target emits no event for the button.
