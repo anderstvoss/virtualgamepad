@@ -1106,7 +1106,7 @@ impl DualShock4Controller {
         }
     }
     /// Replace the complete native input state as one validated edit.
-    /// Call `commit()` to deliver it. Session metadata is preserved.
+    /// Call `commit()` to deliver it. Protocol counters are session-owned.
     ///
     /// # Errors
     /// Returns a control error if the session is closed or the snapshot cannot
@@ -1115,6 +1115,7 @@ impl DualShock4Controller {
         let target = self.0.selection().target;
         self.0.update_state(|current| {
             common::validate_hat(state.dpad)?;
+            // The DS4 evdev tracking ID range also ends at 127.
             common::validate_touch_ids(
                 state
                     .touches
@@ -1137,6 +1138,13 @@ impl DualShock4Controller {
             state.sequence = current.sequence;
             state.sensor_timestamp = current.sensor_timestamp;
             state.touch_sequence = current.touch_sequence;
+            if state.motion != current.motion {
+                advance_ds4_timing(&mut state);
+            }
+            // Motion already advances the touch packet when a contact is active.
+            if state.touches != current.touches && state.touch_sequence == current.touch_sequence {
+                state.touch_sequence = state.touch_sequence.wrapping_add(1);
+            }
             *current = state;
             Ok(())
         })
@@ -1609,11 +1617,15 @@ mod tests {
             if target != RealizationTarget::LINUX_UINPUT {
                 snapshot.set_motion(motion);
             }
+            let current = controller.state();
+            let motion_changed = snapshot.motion != current.motion;
             let expected = DualShock4State {
-                battery: controller.state().battery,
-                sequence: controller.state().sequence,
-                sensor_timestamp: controller.state().sensor_timestamp,
-                touch_sequence: controller.state().touch_sequence,
+                battery: current.battery,
+                sequence: current.sequence.wrapping_add(u8::from(motion_changed)),
+                sensor_timestamp: current
+                    .sensor_timestamp
+                    .wrapping_add(u16::from(motion_changed) * 750),
+                touch_sequence: current.touch_sequence.wrapping_add(1),
                 ..snapshot.clone()
             };
             let mut bad = snapshot.clone();
@@ -1658,6 +1670,37 @@ mod tests {
             );
             assert_eq!(controller.identity(), identity);
         }
+    }
+
+    #[test]
+    fn whole_state_sequences_the_last_touch_release_with_changed_motion() {
+        use common::session_tests::snapshot_session;
+        let (session, _) = snapshot_session(
+            DualShock4Definition,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            [true; 3],
+        );
+        let mut controller = DualShock4Controller(session);
+        let mut snapshot = DualShock4State::default();
+        snapshot.set_touch(
+            DualShock4TouchSlot::First,
+            Some(DualShock4TouchContact::new(7, 10, 20).unwrap()),
+        );
+        controller.set_inputs(snapshot.clone()).unwrap();
+        assert_eq!(controller.state().touch_sequence, 1);
+        assert_eq!(controller.state().sensor_timestamp, 0);
+
+        snapshot.set_touch(DualShock4TouchSlot::First, None);
+        snapshot.motion.gyroscope[0] = 123;
+        controller.set_inputs(snapshot.clone()).unwrap();
+        assert_eq!(controller.state().touch_sequence, 2);
+        assert_eq!(controller.state().sensor_timestamp, 750);
+        assert_eq!(controller.state().touch(DualShock4TouchSlot::First), None);
+
+        let accepted = controller.state().clone();
+        controller.set_inputs(snapshot).unwrap();
+        assert_eq!(controller.state(), &accepted);
+        controller.close();
     }
 
     #[test]

@@ -1527,6 +1527,7 @@ macro_rules! check_snapshot_session {
             $clock_masks,
         );
         $controller.set_inputs($snapshot.clone()).unwrap();
+        assert_eq!($controller.state(), &$expected);
         assert!($controller.is_dirty());
         $controller.commit().unwrap();
         $controller.neutralize().unwrap();

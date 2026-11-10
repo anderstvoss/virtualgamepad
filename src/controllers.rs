@@ -272,7 +272,7 @@ macro_rules! shared {
     };
     (set_inputs, $state:ty) => {
         /// Replace the complete native input state as one validated edit.
-        /// Call `commit()` to deliver it. Session metadata is preserved.
+        /// Call `commit()` to deliver it. Protocol counters are session-owned.
         ///
         /// # Errors
         /// Returns a control error if the session is closed or the snapshot

@@ -16,6 +16,31 @@ fn assert_axis_values(frame: &ProviderFrame, axes: &[(u16, i32)]) {
 }
 
 macro_rules! root_snapshot_case {
+    (@assert_state dualshock4, $actual:ident, $candidate:ident) => {
+        // DS4 advances its private touch sequence when it accepts the contacts.
+        assert_eq!($actual.left_stick(), $candidate.left_stick());
+        assert_eq!($actual.right_stick(), $candidate.right_stick());
+        assert_eq!($actual.triggers(), $candidate.triggers());
+        assert_eq!($actual.motion(), $candidate.motion());
+        for control in [
+            DualShock4Control::Cross, DualShock4Control::Circle, DualShock4Control::Square,
+            DualShock4Control::Triangle, DualShock4Control::L1, DualShock4Control::R1,
+            DualShock4Control::Share, DualShock4Control::Options, DualShock4Control::PlayStation,
+            DualShock4Control::TouchpadClick, DualShock4Control::LeftStickPress,
+            DualShock4Control::RightStickPress,
+        ] {
+            assert_eq!($actual.native_pressed(control), $candidate.native_pressed(control));
+        }
+        for direction in [DpadDirection::Up, DpadDirection::Down, DpadDirection::Left, DpadDirection::Right] {
+            assert_eq!($actual.dpad_pressed(direction), $candidate.dpad_pressed(direction));
+        }
+        for slot in [DualShock4TouchSlot::First, DualShock4TouchSlot::Second] {
+            assert_eq!($actual.touch(slot), $candidate.touch(slot));
+        }
+    };
+    (@assert_state $module:ident, $actual:ident, $candidate:ident) => {
+        assert_eq!($actual, $candidate);
+    };
     ($test:ident, $module:ident, $controller:ident, $id:literal, $axes:expr,
      [$($part:expr),*], |$snapshot:ident, $extra_invalid:ident| $setup:block) => {
         #[test]
@@ -56,7 +81,8 @@ macro_rules! root_snapshot_case {
             }
 
             controller.set_inputs($snapshot.clone()).unwrap();
-            assert_eq!(controller.state(), &$snapshot);
+            let accepted = controller.state().clone();
+            root_snapshot_case!(@assert_state $module, accepted, $snapshot);
             assert!(controller.is_dirty());
             assert_eq!(record.lock().unwrap().sent.len(), 1);
             record.lock().unwrap().fail_write = true;
@@ -66,7 +92,7 @@ macro_rules! root_snapshot_case {
                     button: FaceButton::South, pressed: false,
                 });
                 assert!(controller.set_inputs(invalid).is_err());
-                assert_eq!(controller.state(), &$snapshot);
+                assert_eq!(controller.state(), &accepted);
                 assert!(controller.is_dirty());
             }
             controller.commit().unwrap();
@@ -76,6 +102,7 @@ macro_rules! root_snapshot_case {
             assert_axis_values(&populated_frame, $axes);
 
             controller.set_inputs($snapshot.clone()).unwrap();
+            assert_eq!(controller.state(), &accepted);
             assert!(controller.is_dirty());
             controller.commit().unwrap();
             assert_eq!(record.lock().unwrap().sent.last(), Some(&populated_frame));

@@ -172,7 +172,10 @@ these methods for building a candidate independently of the controller.
 
 A successful replacement stages one complete input edit. Rejection preserves
 the accepted state and its dirty flag. The destination session keeps its
-battery metadata, identity, host outputs, and protocol clocks and handshakes.
+battery metadata, identity, host outputs, and protocol handshakes. Changed
+motion advances the destination's motion counters. DS4 touch changes also
+advance the touch packet sequence. Repeating an identical snapshot keeps the
+accepted counters at their current values.
 Call `commit()` for delivery and continue servicing the session on its advertised
 readiness and deadlines. A commit can produce zero or multiple reports, and
 consumers can observe intermediate deliveries. See [ADR-0004](adr/ADR-0004-synchronous-hid-session.md).
@@ -182,4 +185,5 @@ them as a hat. Switch Pro USB reports carry separate directional bits. On
 uinput, nonzero DualSense, DualShock 4 and Switch Pro motion and an active
 DualSense microphone mute button return `UnavailableInRealization`. DualShock
 4 touch IDs and DualSense USB touch IDs are limited to `0..=127`. DualSense
-uinput touch IDs use `0..=255`.
+uinput touch IDs use `0..=255`. The per-field DualSense mute setter still
+accepts the button level on uinput. That target emits no event for the button.

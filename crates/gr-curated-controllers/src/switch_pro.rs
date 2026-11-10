@@ -960,7 +960,7 @@ impl SwitchProController {
         }
     }
     /// Replace the complete native input state as one validated edit.
-    /// Call `commit()` to deliver it. Session metadata is preserved.
+    /// Call `commit()` to deliver it. Protocol counters are session-owned.
     ///
     /// # Errors
     /// Returns a control error if the session is closed or the snapshot cannot
@@ -983,6 +983,9 @@ impl SwitchProController {
             let mut state = state;
             state.timer = current.timer;
             state.stream_enabled = current.stream_enabled;
+            if state.motion != current.motion {
+                state.timer = state.timer.wrapping_add(1);
+            }
             *current = state;
             Ok(())
         })
@@ -1419,9 +1422,11 @@ mod tests {
             if target != RealizationTarget::LINUX_UINPUT {
                 snapshot.dpad[1] = true;
             }
+            let current = controller.state();
+            let motion_changed = snapshot.motion != current.motion;
             let expected = SwitchProState {
-                timer: controller.state().timer,
-                stream_enabled: controller.state().stream_enabled,
+                timer: current.timer.wrapping_add(u8::from(motion_changed)),
+                stream_enabled: current.stream_enabled,
                 ..snapshot.clone()
             };
             let mut bad = snapshot.clone();

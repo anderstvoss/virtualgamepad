@@ -1283,7 +1283,7 @@ impl DualSenseController {
         self.0.diagnostics()
     }
     /// Replace the complete native input state as one validated edit.
-    /// Call `commit()` to deliver it. Session metadata is preserved.
+    /// Call `commit()` to deliver it. Protocol counters are session-owned.
     ///
     /// # Errors
     /// Returns a control error if the session is closed or the snapshot cannot
@@ -1310,6 +1310,9 @@ impl DualSenseController {
             state.battery = current.battery;
             state.input_sequence = current.input_sequence;
             state.sensor_timestamp = current.sensor_timestamp;
+            if state.motion != current.motion {
+                advance_sensor_timestamp(&mut state);
+            }
             *current = state;
             Ok(())
         })
@@ -1827,6 +1830,7 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
+            let is_uinput = target == RealizationTarget::LINUX_UINPUT;
             let (session, io) = snapshot_session(DualSenseDefinition, target, [true, true, true]);
             let mut controller = DualSenseController(session);
             controller
@@ -1852,14 +1856,10 @@ mod tests {
                 triggers: (DualSenseTrigger::new(255), DualSenseTrigger::new(23)),
                 ..Default::default()
             };
-            if target == RealizationTarget::LINUX_UINPUT {
+            if is_uinput {
                 snapshot.set_native(DualSenseControl::MicrophoneMute, false);
             }
-            let first_id = if target == RealizationTarget::LINUX_UINPUT {
-                255
-            } else {
-                127
-            };
+            let first_id = if is_uinput { 255 } else { 127 };
             let first = DualSenseTouchContact::new(first_id, 1919, 941).unwrap();
             let second = DualSenseTouchContact::new(7, 0, 0).unwrap();
             snapshot.set_touch(TouchSlot::First, Some(first));
@@ -1870,18 +1870,24 @@ mod tests {
                 accelerometer: [i16::MIN, 24, i16::MAX],
                 gyroscope: [50, -60, 70],
             };
-            if target != RealizationTarget::LINUX_UINPUT {
+            if !is_uinput {
                 snapshot.set_motion(motion);
             }
+            let current = controller.state();
+            let motion_changed = snapshot.motion != current.motion;
             let expected = DualSenseState {
-                battery: controller.state().battery,
-                input_sequence: controller.state().input_sequence,
-                sensor_timestamp: controller.state().sensor_timestamp,
+                battery: current.battery,
+                input_sequence: current
+                    .input_sequence
+                    .wrapping_add(u8::from(motion_changed)),
+                sensor_timestamp: current
+                    .sensor_timestamp
+                    .wrapping_add(u32::from(motion_changed) * 12_000),
                 ..snapshot.clone()
             };
             let mut bad = snapshot.clone();
             bad.face[0] = false;
-            let invalid = if target == RealizationTarget::LINUX_UINPUT {
+            let invalid = if is_uinput {
                 bad.set_motion(motion);
                 Some((
                     bad,
