@@ -745,12 +745,12 @@ fn draw_target_selector(
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     let response = egui::ComboBox::from_id_salt("controller_target")
-                        .selected_text(target_label(*target))
+                        .selected_text(target.as_str())
                         .truncate()
                         .width(combo_width)
                         .show_ui(ui, |ui| {
                             for option in creation_targets(kind) {
-                                ui.selectable_value(target, option, target_label(option));
+                                ui.selectable_value(target, option, option.as_str());
                             }
                         })
                         .response;
@@ -758,7 +758,7 @@ fn draw_target_selector(
                         egui::WidgetInfo::labeled(
                             egui::WidgetType::ComboBox,
                             response.enabled(),
-                            format!("Controller target: {}", target_label(*target)),
+                            format!("Controller target: {}", target.as_str()),
                         )
                     });
                 },
@@ -1562,7 +1562,7 @@ impl App {
                 index + 1,
                 controller.name,
                 controller_identifier(controller),
-                target_label(controller.options.target),
+                controller.options.target.as_str(),
                 controller.kind.label(),
                 controller.edits.applied,
                 controller.edits.submitted,
@@ -2548,17 +2548,6 @@ fn lifecycle_action(
         .map(LifecycleAction::Recreate)
 }
 
-fn target_label(target: RealizationId) -> &'static str {
-    match target {
-        RealizationId::LINUX_UINPUT => "Evdev / uinput",
-        RealizationId::LINUX_UHID_USB => "HID / UHID",
-        RealizationId::LINUX_UHID_BLUETOOTH => "HID / UHID (Bluetooth)",
-        RealizationId::LINUX_USBIP_USB_AUDIO => "USB/IP / HID + Audio (WIP)",
-        RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB / dummy_hcd",
-        _ => "Unknown target",
-    }
-}
-
 #[allow(clippy::too_many_lines)] // Keeps the compact diagnostics grid together.
 fn draw_controller_state(
     ui: &mut egui::Ui,
@@ -2570,7 +2559,7 @@ fn draw_controller_state(
     recreation_clicked: &mut bool,
 ) -> Option<audio_lab::Action> {
     let identifier = controller_identifier(controller);
-    let target = target_label(controller.options.target);
+    let target = controller.options.target.as_str();
     ui.group(|ui| {
         if controller.service_worker.is_some()
             && controller.wii_binding.as_mut().is_some_and(wii_host::BindingCheck::missing_driver)
@@ -2810,7 +2799,7 @@ fn draw_wii_feedback_rows(
             }
         });
     } else {
-        ui.label("Not exposed on Evdev / uinput");
+        ui.label("Not exposed on linux.uinput");
     }
     ui.horizontal(|ui| {
         ui.label("Rumble");
@@ -3447,10 +3436,7 @@ mod tests {
                 "{labels:?}"
             );
             assert!(
-                labels.contains(&format!(
-                    "Controller target: {}",
-                    target_label(original_target)
-                )),
+                labels.contains(&format!("Controller target: {}", original_target.as_str())),
                 "{labels:?}"
             );
             assert!(labels.contains("Adjacent control"), "{labels:?}");
@@ -3460,33 +3446,20 @@ mod tests {
     }
 
     #[test]
-    fn target_help_explains_each_provider_path_and_distinguishes_uhid() {
-        assert_eq!(target_label(RealizationId::LINUX_UINPUT), "Evdev / uinput");
-        assert_eq!(target_label(RealizationId::LINUX_UHID_USB), "HID / UHID");
-        assert_eq!(
-            target_label(RealizationId::LINUX_UHID_BLUETOOTH),
-            "HID / UHID (Bluetooth)"
-        );
-        assert_eq!(
-            target_label(RealizationId::LINUX_USBIP_USB_AUDIO),
-            "USB/IP / HID + Audio (WIP)"
-        );
-        assert_eq!(
-            target_label(RealizationId::LINUX_DUMMY_HCD_USB_HID),
-            "USB / dummy_hcd"
-        );
-
+    fn target_help_preserves_provider_details_and_status() {
         assert!(target_help(RealizationId::LINUX_UINPUT).is_none());
         assert!(target_help(RealizationId::LINUX_UHID_USB).is_none());
 
         let audio = target_help(RealizationId::LINUX_USBIP_USB_AUDIO).unwrap();
         assert!(audio.title.contains("USB/IP"));
+        assert!(audio.title.contains("work in progress"));
         assert!(audio.body.contains("second computer"));
         assert!(audio.body.contains("Unlike UHID"));
         assert!(audio.body.contains("#115"));
 
         let dummy = target_help(RealizationId::LINUX_DUMMY_HCD_USB_HID).unwrap();
         assert!(dummy.title.contains("dummy_hcd"));
+        assert!(dummy.title.contains("Experimental"));
         assert!(dummy.body.contains("USB gadget test path"));
 
         assert_eq!(
