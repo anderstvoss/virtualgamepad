@@ -22,7 +22,7 @@ create it. Each controller receives a session-local **Controller ID** in the
 form `NNN-TGT-TYPE`: a three-digit creation sequence, realization abbreviation,
 and controller-family abbreviation. The ID is a GUI label, not library identity
 or session ownership. The Advanced options panel previews the next ID. Hover the
-`!` beside **USB / dummy_hcd** for its kernel protocol limitation. This target is
+`!` beside **linux.dummy_hcd.usb-hid** for its kernel protocol limitation. This target is
 currently unavailable and rejects creation before opening resources.
 
 Select any controller to exercise its existing button, axis, motion, battery and
@@ -55,7 +55,7 @@ broker socket does not establish request handling or controller support.
 
 ## Wii Remote functional baseline
 
-Choose **Wii Remote**, then **Evdev / uinput** or **HID / UHID (Bluetooth)**.
+Choose **Wii Remote**, then **linux.uinput** or **linux.uhid.bluetooth**.
 The Bluetooth target is a local UHID device with Bluetooth bus metadata, not
 radio pairing. **Advanced options** selects Original (default), Early integrated
 Plus or -TR; the state grid reports the actual revision. Early integrated Plus
@@ -84,7 +84,7 @@ Use an isolated consumer environment for touch experiments, as described below.
 
 On UHID Bluetooth, **Controller output** shows four host-controlled player LEDs
 and rumble from retained typed output snapshots. On uinput, rumble remains and
-LEDs read **Not exposed on Evdev / uinput**. **Speaker (planned)** is inert:
+LEDs read **Not exposed on linux.uinput**. **Speaker (planned)** is inert:
 State, Format, Volume and Muted are placeholders for audio plan phase A3. Muted
 is a host command, not an input button. This baseline adds no speaker behavior,
 provider/model changes, host permissions or physical acceptance claims. Visual
