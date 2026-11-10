@@ -78,9 +78,29 @@ Use 100 ms per stage as a provisional Series uinput regression budget on
 the same provisioned host, comparing the maximum of each populated
 `*/consumer_open` and `*/node_gone` summary to `100000000` ns and
 requiring zero missing samples. This host-local check excludes SDL probe
-startup and is subject to #166 review. SDL's neutral observation comes from
-its bounded control sweep. The runner still has no timestamp oracle for the
-first valid consumer neutral state.
+startup and is subject to #166 review. Run the same-host check after the
+two timing commands.
+
+```sh
+python3 - /tmp/series-1.json /tmp/series-4.json <<'PY'
+import json
+import sys
+from pathlib import Path
+
+for path, count in zip(sys.argv[1:], (50, 200), strict=True):
+    run = json.loads(Path(path).read_text())
+    assert len(run["samples"]) == count
+    assert all(not sample["errors"] for sample in run["samples"])
+    for stage in ("consumer_open", "node_gone"):
+        summaries = [run["summaries"][f"{temp}/{stage}"] for temp in ("cold", "warm")]
+        assert sum(summary["n"] for summary in summaries) == count
+        for summary in summaries:
+            assert summary["missing"] == 0 and summary["max_ns"] <= 100_000_000
+PY
+```
+
+SDL's neutral observation comes from its bounded control sweep. The runner
+still has no timestamp oracle for the first valid consumer neutral state.
 
 For the manual Steam Input check, create one Series uinput controller, select
 the exact virtual pad in Steam's controller tester, verify Share, Guide, both
