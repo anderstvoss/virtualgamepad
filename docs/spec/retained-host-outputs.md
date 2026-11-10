@@ -1,8 +1,7 @@
-# Retained accepted host outputs (step 10b)
+# Retained accepted host outputs
 
-Each curated family exposes a supporting `host_outputs()` snapshot with its
-revision. Nothing is re-exported through the ordinary application root; public
-root access and typed kinds remain gated by D2. In-process UHID personalities
+Curated and ordinary family handles expose a typed `host_outputs()` snapshot
+with its revision. In-process UHID personalities
 update their typed view at validated acceptance, before either bounded
 observation queue. uinput retains the latest accepted conventional force-feedback
 playback request, preserving full u16 strengths and stop semantics. Upload and
@@ -26,17 +25,41 @@ change. The Xbox 360 standard-HID fallback rejects HID output reports, preservin
 its existing protocol rather than inventing XInput or LED support; its evdev
 rumble view is implemented. Native and HID domains are kept separate.
 
-## Unavailable realizations
+## USB worker recovery
 
-Owner decision #176 comment6298389648 scopes this step to in-process realizations.
-USB-worker getters return `UnavailableInRealization` before and after close,
-never a silently incomplete reconstruction: the 128-entry observation channel
-drops reports and the current IPC has no retained-state/revision query. #203
-tracks a separately approved recovery feature. No IPC/broker frame or version
-changes are made. Worker factories explicitly omit snapshot bookkeeping while
-reusing the same controller acceptance policy. Native dummy_hcd remains unavailable for a complete curated
-view under its existing f_hid protocol-ownership limitation; its experimental
-raw event stream is not relabeled as validated retained state.
+DualSense and DualShock 4 use the same retained report semantics as UHID.
+The standard-HID Xbox 360 worker returns an empty snapshot at revision zero.
+The application validates an initial snapshot when opening the worker and
+refreshes it during `service()`. The getter reads the cached typed snapshot.
+On orderly close the worker stops both processing threads before returning the
+final snapshot. If shutdown fails or the worker dies, the last validated
+snapshot remains available and diagnostics retain the cause.
+
+The private worker control channel adds operation 8, version 1. Its request
+body is the little-endian u64 generation followed by the version byte and a
+mode byte (0 for live, 1 for final and close). A successful operation 8 reply
+echoes these fields and adds a one-byte family (1 for DualSense, 2 for DualShock
+4, 3 for Xbox 360), a little-endian u64 revision, and the family fields below.
+Each optional field uses a one-byte 0/1 presence flag followed, when present,
+by its fixed-size value. The maximum reply body is 64 bytes.
+
+- DualSense fields in order are motors (2 bytes), right trigger (11), left
+  trigger (11), mute LED (1), microphone muted (1, boolean), audio path
+  (1, enum 0–3), speaker volume (1), microphone volume (1), speaker preamp
+  (1, range 0–7), player LEDs (1), and lightbar RGB (3).
+- DualShock 4 fields in order are motors (2 bytes), lightbar RGB (3), and
+  blink (2).
+- Xbox 360 has no fields and its revision is zero.
+
+The client checks the operation, generation, version, mode, family, field
+shape and revision before replacing its cache. Tag 2 continues to return
+surviving events, tag 3 continues to report loss independently, and older
+clients can still close with tag 4. A new application requires operation 8 v1
+at USB/IP creation and reports an installation error with older workers.
+The public broker framing and USB report bytes are unchanged.
+
+Native dummy_hcd retains its f_hid limitation. Its incomplete request metadata
+and reply support cannot establish a complete validated retained view.
 
 ## Evidence and regression boundary
 

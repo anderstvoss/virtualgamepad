@@ -1,6 +1,7 @@
 //! Private application-to-worker control client. No protocol construction is
 //! exported by the root library. All malformed replies terminally close control.
-use gr_curated_controllers::usb_personality::state::NativeState;
+use crate::output_control;
+use gr_curated_controllers::usb_personality::{outputs::WorkerOutputs, state::NativeState};
 use gr_privileged_broker::{socket_wire::read_startup_frame, write_message};
 use gr_realization_api::RawReverseEvent;
 use std::{io, net::Shutdown, os::unix::net::UnixStream, time::Duration};
@@ -12,6 +13,8 @@ pub struct Control {
     sequence: u64,
     closed: bool,
     retained: [u64; 9],
+    outputs: Option<WorkerOutputs>,
+    terminal_error: Option<String>,
 }
 impl Control {
     #[must_use]
@@ -30,15 +33,32 @@ impl Control {
             sequence: 0,
             closed: false,
             retained: [0; 9],
+            outputs: None,
+            terminal_error: None,
         })
     }
     fn terminal(&mut self) {
         self.closed = true;
         let _ = self.socket.shutdown(Shutdown::Both);
     }
+    #[must_use]
+    pub fn terminal_error(&self) -> Option<&str> {
+        self.terminal_error.as_deref()
+    }
+    fn fail(&mut self, error: &io::Error) {
+        self.terminal_error = Some(error.to_string());
+        self.terminal();
+    }
+    fn invalid<T>(&mut self, reason: &'static str) -> io::Result<T> {
+        let error = io::Error::other(reason);
+        self.fail(&error);
+        Err(error)
+    }
     fn exchange(&mut self, tag: u8, suffix: &[u8]) -> io::Result<Vec<u8>> {
         if self.closed {
-            return Err(io::ErrorKind::BrokenPipe.into());
+            return Err(self
+                .terminal_error()
+                .map_or_else(|| io::ErrorKind::BrokenPipe.into(), io::Error::other));
         }
         let result = (|| {
             let mut request = self.generation.to_le_bytes().to_vec();
@@ -58,8 +78,8 @@ impl Control {
             }
             Ok(response[8..].to_vec())
         })();
-        if result.is_err() {
-            self.terminal();
+        if let Err(error) = &result {
+            self.fail(error);
         }
         result
     }
@@ -83,8 +103,7 @@ impl Control {
         payload.extend(bytes);
         let response = self.exchange(1, &payload)?;
         if response.len() != 9 || response[..8] != sequence.to_le_bytes() || response[8] > 1 {
-            self.terminal();
-            return Err(io::Error::other("invalid native-state acknowledgement"));
+            return self.invalid("invalid native-state acknowledgement");
         }
         if response[8] == 0 {
             return Err(io::Error::other("worker rejected native state"));
@@ -100,10 +119,7 @@ impl Control {
                 report_id: (*report != 0).then_some(*report),
                 bytes: bytes.to_vec(),
             })),
-            _ => {
-                self.terminal();
-                Err(io::Error::other("invalid worker output"))
-            }
+            _ => self.invalid("invalid worker output"),
         }
     }
     pub fn diagnostics(&mut self) -> io::Result<[u64; 9]> {
@@ -112,8 +128,7 @@ impl Control {
         }
         let response = self.exchange(3, &[])?;
         if response.len() != 72 {
-            self.terminal();
-            return Err(io::Error::other("invalid worker diagnostics"));
+            return self.invalid("invalid worker diagnostics");
         }
         for (value, bytes) in self.retained.iter_mut().zip(response.chunks_exact(8)) {
             *value = u64::from_le_bytes(bytes.try_into().map_err(io::Error::other)?);
@@ -124,8 +139,7 @@ impl Control {
     pub fn microphone_consumed_frames(&mut self) -> io::Result<u64> {
         let response = self.exchange(5, &[])?;
         if response.len() != 8 {
-            self.terminal();
-            return Err(io::Error::other("invalid microphone credit"));
+            return self.invalid("invalid microphone credit");
         }
         Ok(u64::from_le_bytes(
             response.as_slice().try_into().map_err(io::Error::other)?,
@@ -136,14 +150,12 @@ impl Control {
     pub fn microphone_host_frames(&mut self) -> io::Result<(u64, u64)> {
         let response = self.exchange(7, &[])?;
         if response.len() != 16 {
-            self.terminal();
-            return Err(io::Error::other("invalid microphone host-frame reply"));
+            return self.invalid("invalid microphone host-frame reply");
         }
         let host = u64::from_le_bytes(response[..8].try_into().map_err(io::Error::other)?);
         let silence = u64::from_le_bytes(response[8..].try_into().map_err(io::Error::other)?);
         if silence > host {
-            self.terminal();
-            return Err(io::Error::other("microphone silence exceeds host frames"));
+            return self.invalid("microphone silence exceeds host frames");
         }
         Ok((host, silence))
     }
@@ -152,24 +164,57 @@ impl Control {
     pub fn maximum_pcm_pump_lateness_us(&mut self) -> io::Result<u64> {
         let response = self.exchange(6, &[])?;
         if response.len() != 8 {
-            self.terminal();
-            return Err(io::Error::other("invalid PCM pump timing reply"));
+            return self.invalid("invalid PCM pump timing reply");
         }
         Ok(u64::from_le_bytes(
             response.as_slice().try_into().map_err(io::Error::other)?,
         ))
     }
+    #[must_use]
+    pub const fn retained_outputs(&self) -> Option<&WorkerOutputs> {
+        self.outputs.as_ref()
+    }
+
+    pub fn refresh_outputs(&mut self) -> io::Result<()> {
+        self.snapshot(output_control::LIVE)
+    }
+
+    fn snapshot(&mut self, mode: u8) -> io::Result<()> {
+        let body = self.exchange(output_control::TAG, &[output_control::VERSION, mode])?;
+        let [output_control::VERSION, response_mode, payload @ ..] = body.as_slice() else {
+            return self.invalid("invalid worker retained-output response version");
+        };
+        if *response_mode != mode {
+            return self.invalid("invalid worker retained-output response mode");
+        }
+        let Ok(next) = WorkerOutputs::decode(payload, self.family) else {
+            return self.invalid("invalid worker retained-output snapshot shape");
+        };
+        if self.outputs.as_ref().is_some_and(|previous| {
+            next.revision() < previous.revision()
+                || (next.revision() == previous.revision() && &next != previous)
+        }) {
+            return self.invalid("inconsistent worker retained-output revision");
+        }
+        self.outputs = Some(next);
+        Ok(())
+    }
+
     pub fn close(&mut self) -> io::Result<()> {
         if self.closed {
             return Ok(());
         }
-        let result = self.exchange(4, &[]).and_then(|response| {
-            if response.is_empty() {
-                Ok(())
-            } else {
-                Err(io::Error::other("invalid worker close acknowledgement"))
-            }
-        });
+        let result = if self.outputs.is_some() {
+            self.snapshot(output_control::FINAL)
+        } else {
+            self.exchange(4, &[]).and_then(|response| {
+                if response.is_empty() {
+                    Ok(())
+                } else {
+                    self.invalid("invalid worker close acknowledgement")
+                }
+            })
+        };
         self.terminal();
         result
     }
@@ -327,3 +372,6 @@ mod tests {
         task.join().unwrap();
     }
 }
+
+#[cfg(test)]
+mod retained_tests;

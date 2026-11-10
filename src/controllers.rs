@@ -255,7 +255,8 @@ macro_rules! shared {
     };
     (host_outputs, $state:ty) => {
         /// Snapshot of latest accepted host outputs and revision, independent of lossy events.
-        /// Remains readable after close; this is not proof of physical delivery.
+        /// Remains readable after close. USB/IP worker snapshots refresh during
+        /// service and orderly close. Accepted values do not prove physical delivery.
         ///
         /// # Errors
         /// Returns `UnavailableInRealization` when the transport has no retained-state query.

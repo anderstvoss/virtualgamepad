@@ -3,6 +3,7 @@
 #[cfg(all(test, target_os = "linux"))]
 mod host_probe;
 mod protocol;
+pub(crate) use protocol::DualSenseUsbProtocol;
 mod worker_state;
 
 use crate::{BatteryLevel, BatteryState, CreationOptions, common};
@@ -768,8 +769,6 @@ static USB_SURFACE: DualSenseSurface = DualSenseSurface {
     }
     .build(),
 };
-static RETAINED_WORKER: [TargetRestriction; 2] =
-    [USBIP_RESTRICTIONS[0], crate::retained::WORKER_RESTRICTION];
 static USBIP_SURFACE: DualSenseSurface = DualSenseSurface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
@@ -778,7 +777,7 @@ static USBIP_SURFACE: DualSenseSurface = DualSenseSurface {
         axes: &AXES,
         outputs: &OUTPUTS,
         output_kinds: NATIVE_OUTPUT_KINDS,
-        restrictions: &RETAINED_WORKER,
+        restrictions: &USBIP_RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
@@ -1229,8 +1228,8 @@ impl DualSenseController {
         self.0.hid_identity().map(DualSenseIdentity)
     }
 
-    /// Latest accepted host values and revision, retained after close. USB
-    /// workers are unavailable: their lossy event channel has no recovery query.
+    /// Latest accepted host values and revision, retained after close.
+    /// USB worker snapshots refresh during service and orderly close.
     pub fn host_outputs(&self) -> Result<crate::retained::DualSenseOutputState, ControlError> {
         self.0.retained_outputs()
     }
@@ -1774,16 +1773,9 @@ impl crate::registry::ControllerFamily for DualSenseDefinition {
             )
         },
         crate::registry::refusal(
-            RETAINED_WORKER[0],
+            USBIP_RESTRICTIONS[0],
             &[RealizationTarget::LINUX_USBIP_USB_AUDIO],
         ),
-        crate::registry::FamilyOperation {
-            name: "USB/IP retained host outputs",
-            ..crate::registry::refusal(
-                RETAINED_WORKER[1],
-                &[RealizationTarget::LINUX_USBIP_USB_AUDIO],
-            )
-        },
     ];
     fn topology() -> &'static InputTopology {
         &INPUT_TOPOLOGY_WITH_MOTION

@@ -148,6 +148,19 @@ D-pad edits. The compiled registry adds Xbox Series with no USB worker,
 audio subsystem or creation toggles. Existing family signatures and the
 separate Wii and Steam snapshots are unchanged.
 
+## USB/IP retained host outputs (#203)
+
+- The existing DualSense, DualShock 4, and Xbox 360 `host_outputs()` getters now
+  return typed snapshots on the USB/IP realization. Read after `service()` for
+  a refreshed view and after orderly close for the final view. On worker failure,
+  read the last validated snapshot and consult controller diagnostics.
+- The USB/IP surfaces and compiled registry no longer refuse retained host
+  outputs. The Xbox 360 standard-HID worker returns an empty snapshot at
+  revision zero because that personality accepts no host output reports.
+- Update the installed worker alongside the application. USB/IP creation
+  requires private retained-output operation v1. Ordinary-root API signatures
+  and the reviewed signature snapshots are unchanged.
+
 ## VG-1 · Whole-state input replacement
 
 Each of these methods is available on the ordinary root handle and its
