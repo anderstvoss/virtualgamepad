@@ -23,20 +23,20 @@ at least two hours ready. PR readiness is not a claim that it has merged.
 both #217 has merged and a receiver handle exists in a crate outside `tests/`.
 The failure-isolation PR remains a synthetic proof; it does not supply that handle.
 
-## Waiting on Anders
+## Checkpoint disposition
 
-| Decision | Remaining work |
+| Checkpoint or decision | Current state |
 | --- | --- |
-| D6/D7 | Wii production gate and first realizations; C5 not started |
-| D9 | Host running kernel 7.3-rc1 or newer for Steam step 16, then C6 |
-| D2 | Ordinary-root output/kind API growth, step 10c |
-| D3 | Presentation epochs implementation, step 13a |
-| D4 | ADR-0023 adoption; #211 stays draft |
-| D5 | Provider disposition, step 12b; retain `dummy_hcd` |
-| D8 | Authorized CI-file work, step 17 |
+| C5 · D6/D7 | Wii Remote shipped on uinput and local Bluetooth-bus UHID in [#233](https://github.com/anderstvoss/virtualgamepad/pull/233), `714958d`. Speaker and actual Bluetooth stay deferred. |
+| C6 · D9 | Step 16 gate closed. Wired Steam Controller 2026 shipped in [#301](https://github.com/anderstvoss/virtualgamepad/pull/301), `ad80ae6`. [D9 results](../../C6_D9_ACCEPTANCE.md) retain their individual scopes. |
+| C7 · Alpha API | [#329](https://github.com/anderstvoss/virtualgamepad/pull/329), `692f41b`, converged all six constructors, promoted Wii and Steam to the root, and updated the root snapshot to 155 items per feature view. [Migration](../../ALPHA_API_MIGRATION.md). |
+| D2 | Step 10c shipped root retained outputs and typed surface kinds. The current alpha policy governs later changes. |
+| D3 | Closed under E4. Step 13a dropped and ADR-0021 deferred. |
+| D4 | ADR-0023 adopted. The Steam PCM API decision is tracked on #322. |
+| D5 | Keep `dummy_hcd` experimental and unavailable through ordinary construction. |
+| D8 | Historical step 17. Any new CI or release file change still requires Anders. |
 
-The current 6.12 host cannot run Steam P1. Historical virtual-host measurements
-retain their original revisions and environments; missing consumer and physical
-cells remain explicit. The ordinary-root snapshot remains 110 items. No new
-third-party dependency, broker/IPC format change or prohibited-file change is
-part of these follow-ups. C5 and C6 remain unstarted; stop here under Part 3.
+Phase 2 is tracked on [#322](https://github.com/anderstvoss/virtualgamepad/issues/322).
+C8 drafts the Alpha 2 host audit. C9 adds Xbox Series and its host setup before
+Anders signs off #258. Historical virtual runs keep their original revisions,
+hosts and missing observations.

@@ -51,3 +51,9 @@ and [confirmed the scope](https://github.com/anderstvoss/virtualgamepad/issues/1
 The root exposes `host_outputs()` on typed handles and the reviewed typed input
 and output descriptors. USB worker snapshots remain unavailable because the
 worker's lossy event channel has no retained-state query.
+
+C7 extends the ordinary-root typed handles to Wii Remote and Steam Controller
+2026. The root delegates their snapshots to the curated controllers. The
+retained HID values live in the controller protocol, and the uinput force
+feedback values live in the owning controller session. The USB/IP refusal is
+published in the registry for worker-backed families (#203).

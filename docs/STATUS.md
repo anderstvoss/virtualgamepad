@@ -30,36 +30,25 @@ an API freeze do not promote a cell.
   because Linux `f_hid` lacks complete GET_REPORT metadata and negative replies.
   Near feature-complete UHID realizations are the supported target for controller
   buildout; dummy_hcd and USB/IP are optional faithful tiers, never defaults.
-- Shared UHID Bluetooth-bus transport is available, with deterministic curated
-  fake-provider coverage; no shipped family declares that personality yet.
-  Actual Bluetooth radio, pairing and BlueZ remain deferred.
+- Wii Remote ships a local UHID Bluetooth-bus realization. Actual Bluetooth
+  radio, pairing and BlueZ remain deferred under #164.
 - Steam acceptance is deferred (#144). Broader GUI review is deferred (#126).
 
 ## Next release
 
-Steam C6 integrates the exact fresh physical wired descriptor, reviewed
-supporting API with validated virtual serial identity, wired UHID and reduced
-uinput realizations, active registry advertisement and native demo editor.
-Step 16's kernel-or-SDL gate is closed; 14c #298 and 14d #300 are merged into
-the buildout branch for the owner-reviewed C6 checkpoint. Root and Wii API
-snapshots are unchanged; the Steam supporting snapshot is independently checked.
+The next release is Alpha 2. C5 (Wii Remote), C6 (wired Steam Controller
+2026), and C7 (API convergence) are merged. C8 closes out the core work and
+drafts the host setup and permissions audit (#258). C9 adds Xbox Series (#160)
+and its host surfaces before Anders signs off the audit.
 
-Field meanings and feature replies remain compat. D9 timing covers N1/N4 on both
-realizations with owned-node cleanup; the latest SDL run has partial button
-coverage. Direct kernel event decoding and ABS ioctls remain No evidence pending
-owner-reviewed policy #299 and installed-policy acceptance. Steam client
-acceptance is manual and untested; physical haptics, serial format, boot sequence,
-firmware, calibration and cadence remain open. See [Steam Controller 2026](STEAM_CONTROLLER_2026.md)
-and the [C6 D9 report](C6_D9_ACCEPTANCE.md) for exact evidence and owner steps.
-
-The next release targets validated controller creation per controller, with
-per-controller acceptance issues and new Wii Remote, Steam Controller (2026)
-and Xbox Series families. Work is sequenced to land the compiled controller
-registry (#173) and a repeatable acceptance and timing harness (#166) before new
-families are wired in.
-After C5 and C6, checkpoint C7 converges the creation, identity and registry
-shape across all six families, including the ordinary root (owner decision
-2026-11-09), before further families and per-controller acceptance runs.
+C7 [#329](https://github.com/anderstvoss/virtualgamepad/pull/329) landed as
+`692f41b`. All six families now use
+`create_<family>(CreationOptions, <Family>Options)` at the ordinary root and
+curated layer. Wii topology and EEPROM and Steam scheduling are reachable
+through their root handles. The ordinary-root snapshot has 155 items per feature
+view. The alpha API policy requires snapshot updates and migration notes for
+changes. [Owner policy](https://github.com/anderstvoss/virtualgamepad/issues/322#issuecomment-6747067225)
+· [C7 migration](ALPHA_API_MIGRATION.md)
 
 The C1 registry checkpoint adds compiled family metadata and a typed registry,
 with deterministic Bluetooth-bus fake-provider coverage. It changes no support
@@ -79,8 +68,9 @@ claim; fixed-family runtime layout and provider identity remain unchanged.
 Step 10c exposes retained-output snapshots on ordinary handles for in-process
 UHID and uinput under D2 (#176 comments 6325147128 and 6328169640). The API
 snapshot grows from 110 to 122 items with non-exhaustive retained-state and kind
-types; selected output metadata respects realization limits. The new native input
-kinds remain unused by the four current families. USB-worker views return `UnavailableInRealization` under the owner
+types; selected output metadata respects realization limits. The original four
+families leave typed native input kinds unused. USB-worker views return
+`UnavailableInRealization` under the owner
 scoping decision; recovery is tracked in #203 and needs separate protocol
 approval. No physical-output acceptance is implied.
 
@@ -89,27 +79,29 @@ root reexports and root-specific creation error mapping. The wire crate fold
 keeps `gr_controller_wire::dualsense` and its exact bytes. Feature behavior and
 dummy_hcd disposition are preserved; no new external dependencies are added.
 
-## Proposed runtime contracts
+## Runtime contracts
 
 - [ADR-0019](adr/ADR-0019-live-topology.md): retained live-topology generations,
   with static uinput capability supersets and neutralization of absent controls.
-  The production seam remains internal; public additions await owner approval.
+  Wii uses this seam, including through the ordinary root.
 - [ADR-0020](adr/ADR-0020-retained-outputs-and-kinds.md): retained accepted host
   outputs and typed surface kinds. D2 was granted on #176; step 10c exposes
   ordinary-handle snapshots and read-only typed capability descriptors.
 - [ADR-0021](adr/ADR-0021-presentation-epochs.md): logical controller and host
-  presentation epochs, Proposed under D3; step 13a remains deferred.
+  presentation epochs, Deferred under E4. Step 13a was dropped.
 - [ADR-0022](adr/ADR-0022-receiver-aggregates.md): receiver-owned presentation,
-  typed protocol slots, rollback and sibling-safe teardown; no Puck implementation.
+  typed protocol slots, rollback and sibling-safe teardown. C4 shipped the
+  synthetic fixture. The production receiver handle remains tracked under #165.
 - [ADR-0023](adr/ADR-0023-controller-subsystems.md): controller-owned bounded
-  in-band subsystems, adopted under D4; no subsystem implementation or public API.
+  in-band subsystems, adopted under D4. Steam has opt-in PCM compatibility; its
+  retained-packet and observation policy is an owner decision on #322.
 
 C4 step 13b adds a [synthetic receiver lifecycle fixture](spec/receiver-aggregate-fixture.md):
 typed zero-to-four slots, transactional companions, exact required replies and
 slot-local companion failure, sibling survival and shared failure/cleanup.
 A companion failure disconnects its slot; a primary failure closes the receiver.
 No Puck bytes, public receiver API or epoch implementation
-is advertised; D3 still defers step 13a.
+is advertised.
 
 C4 step 14 uses a [compiled demo catalog and shared topology editor](spec/demo-topology-editors.md).
 Native conversion stays in typed adapters; current-shape cache reconciliation
@@ -119,8 +111,8 @@ modules remain unchanged; no public API or live acceptance claim is added.
 The step 6 synthetic topology audit covers queued bytes/replies, saturation,
 malformed writes, probe/edit overlap, terminal close, delivery uncertainty,
 observation eviction, delivery feedback after edits and explicit host STOP.
-Seventeen low-seam tests pass with no `gr-hid` runtime change. Production Wii
-integration and live-topology generations remain separate work.
+Seventeen low-seam tests pass with no `gr-hid` runtime change. C5 supplies the
+production Wii integration.
 
 ## Registry checkpoint C1
 
@@ -151,9 +143,9 @@ LiveTopology is already non-Copy in the integrated C3 implementation.
 
 ## Acceptance manifests
 
-The four compiled families have per-function TOML manifests under `acceptance/`,
-checked against actual declared realizations. All usable cells remain WIP; the
-dummy_hcd refusal is explicit. Empty pending evidence is not acceptance.
+All six compiled families have per-function TOML manifests under `acceptance/`,
+checked against actual declared realizations. They record the scope of source,
+virtual-host and physical evidence and keep refusals and missing evidence explicit.
 
 The acceptance `xtask` records monotonic API/node/consumer/removal stages,
 raw failures, cold/warm samples and nearest-rank summaries without budgets.
@@ -167,8 +159,8 @@ discovery instant. Live evidence remains separate.
 An opt-in retained topology sidecar validates compiled subsets, counts accepted
 shape changes and guards absent controls without adding fields to ordinary
 sessions. The fifth synthetic family covers attach/detach, atomic rejection,
-terminal failure and static-superset uinput neutralization. Public topology
-accessors remain deferred until a real consumer family and owner API approval.
+terminal failure and static-superset uinput neutralization. The Wii root handle
+exposes the current topology and retained generation.
 
 ## Internal persistent resources
 
@@ -177,7 +169,8 @@ of transport cleanup. The synthetic fifth family proves pre-open import
 validation, isolated working values, sticky resource dirty, exact ACK retries and
 kept/discarded terminal snapshots. Ordinary stateless sessions gain no fields.
 The [integration recipe](spec/persistent-resource-integration.md) maps all scoped
-minimum regressions; Wii semantics and an optional file helper remain separate.
+minimum regressions. The Wii package provides the typed resource, and the demo
+provides opt-in Save/Load.
 
 ## Post-checkpoint follow-ups
 
@@ -187,14 +180,14 @@ C3 [#209](https://github.com/anderstvoss/virtualgamepad/pull/209) landed as
 as `7a809e1`. The pinned research revision is `f22d6ef`; these merges do not
 promote missing live, consumer or physical acceptance cells.
 
-Owner-directed small follow-ups precede any new checkpoint: receiver slot-failure
-isolation (#165), remaining C1 registry checks, and documentation/harness repairs.
-The receiver still exists only as a synthetic fixture, so #165 remains open.
-ADR-0023 is adopted under D4. The owner-directed C5 session is described below.
+The small C3/C4 follow-ups are listed in the
+[disposition report](plans/pre-controller-buildout/POST_CHECKPOINT_FOLLOW_UPS.md).
+Current tracking moved to [#322](https://github.com/anderstvoss/virtualgamepad/issues/322).
 
 ## C5 Wii Remote buildout
 
-The supporting `gr-curated-controllers::wii_remote` package opens explicit
+C5 [#233](https://github.com/anderstvoss/virtualgamepad/pull/233) landed as
+`714958d`. The Wii package opens explicit
 `linux.uinput` and Bluetooth-bus UHID (bus5) realizations under D6/D7. Original
 and TR identities remain distinct; early integrated Plus identity is No evidence.
 There is no USB-UHID fallback, radio/pairing/BlueZ or speaker realization.
@@ -217,18 +210,40 @@ beyond advertised ABS bounds and the missing-IR1023/1023 sentinel. Target surfac
 and regression tests document provider bus/fuzz limits, IR metadata, LED/battery,
 EEPROM and Classic Pro restrictions. Demo creation and native editing are wired.
 
-On Linux6.12.113+deb13-arm64, the bounded host probe at ccb98dc bound `wiimote`,
-matched all six interface names and key/axis masks, observed Nunchuk-to-Classic
-replacement and standalone MP, and verified power_supply presence and kernel
-evdev rumble reaching retained intent. LED-class writes failed permission checks.
-Live absinfo/fuzz and sensor delivery, SDL HIDAPI, Dolphin, physical fidelity and
-calibration remain unmeasured. The [Wii report](WII_REMOTE.md) and acceptance manifest record38 feature rows
-across both realizations. Four10-cycle N1/N4 runs yielded100 creation/removal
-samples at ccb98dc with resource restoration; consumer/oracle gaps and slow
-early-initialization UHID removal remain explicit. There is no latency budget.
+The historical C5 UHID probe bound `wiimote` and observed extension changes,
+kernel rumble and battery. Its LED writes were permission denied. Later bounded
+runs measured selected live axes, obtained temporary per-device grants, and
+recorded scoped SDL, kernel and Dolphin results. The Original virtual EEPROM
+Save/Load round trip also matched bounded kernel and Dolphin calibration
+readbacks against a private reference. Four C5 timing runs yielded 100 N1/N4
+samples at `ccb98dc` with resource restoration. First-neutral timing, calibrated
+physical motion, broader consumer combinations and general physical fidelity
+remain open. [Wii evidence and limits](WII_REMOTE.md) ·
+[Original EEPROM acceptance](https://github.com/anderstvoss/virtualgamepad/issues/162#issuecomment-6735616471)
 
 Classic Pro wire identity, early Plus discrimination, encrypted/calibration
 register defaults, retail EEPROM size and visible extended/full IR blob metadata
-remain No evidence. No firmware cadence is guessed: application edits/commits and
-host requests drive reports. Research#16 is merged; research#17 publishes native
-conversion evidence and bounded host/timing records without physical promotion.
+remain unverified. Wii speaker audio is deferred. Actual Bluetooth is outside
+the local Bluetooth-bus UHID realization.
+
+## C6 Steam Controller 2026 wired buildout
+
+C6 [#301](https://github.com/anderstvoss/virtualgamepad/pull/301) landed as
+`ad80ae6`. It shipped wired USB-bus UHID and reduced uinput, the reviewed
+supporting API, synthetic serial identity, and the native demo editor. The
+kernel-or-SDL step 16 gate is closed. Wired USB/IP, receiver/Puck and Bluetooth
+remain separate work.
+
+D9 records N1/N4 timing, bounded SDL observations, and #304 kernel decoding
+and ABS ioctl comparisons for both realizations. Reduced uinput has no sensor
+companion and cannot reproduce the kernel's fuzz and resolution attributes.
+The wired Steam client follow-ups observed listing and Begin Test with the
+compatibility profile. The two legacy empty-attribute controls did not list.
+Reduced uinput also did not list in its bounded test. The report distinguishes
+listing, UI stability, input delivery and the desktop consent prompt.
+
+Opt-in MIDI/PCM client tests verified virtual payload/feedback delivery and
+cleanup. LED tests record bounded brightness and RGBW intent. Physical actuator
+calibration, firmware/boot sequence, serial format, cadence and broader game
+behavior remain open. [C6 D9 report](C6_D9_ACCEPTANCE.md) ·
+[Steam controller scope](STEAM_CONTROLLER_2026.md)
