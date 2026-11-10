@@ -42,3 +42,24 @@ worker acknowledgement sequencing are preserved.
   viewport, discovery isolation and terminal-cleanup regressions remain green.
 
 No new live timing, physical input/output or sustained-audio acceptance is claimed.
+
+## Wii production topology
+
+C5 Wii Remote uses the transactional topology seam through the curated
+controller. C7 exposes the same operation at the ordinary root. Create
+with `create_wii_remote(CreationOptions::new(realization), WiiRemoteOptions::default())`,
+call `attach(extension, motion_plus)`, then read `current_topology()` and
+`topology_generation()` to reconcile controls and `association().components()`
+to refresh the owned host nodes. An attachment edit can change Wii accessory
+companions without replacing the primary node or another controller.
+
+The [Wii lifecycle tests](../../crates/gr-curated-controllers/src/wii_remote/lifecycle_tests.rs)
+exercise same-shape edits, shape changes, host replies and terminal close.
+The [native tests](../../crates/gr-curated-controllers/src/wii_remote/native_tests.rs)
+cover preparation rollback and per-controller companion cleanup. The
+[bounded C5 UHID result](../WII_REMOTE.md#bounded-host-evidence) records observed
+Nunchuk-to-Classic replacement and standalone MotionPlus on the owned Wii.
+The [runtime audit](../plans/pre-controller-buildout/06-live-topology.md)
+covers accepted packet and reply ownership across edits. This integration
+required no additional `gr-hid` core change. Wii is the production consumer.
+The #165 receiver outside tests remains separate.

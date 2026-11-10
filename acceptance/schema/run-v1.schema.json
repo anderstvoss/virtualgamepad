@@ -23,6 +23,9 @@
     "kind": {
       "const": "virtual_host_run"
     },
+    "evidence_status": {
+      "enum": ["virtual-live", null]
+    },
     "controller": {
       "type": "string"
     },

@@ -108,16 +108,7 @@ triggers, all axes and D-pad directions, then remove the controller and verify
 that Steam stops listing it. Record the Steam build and observed result with
 [#160](https://github.com/anderstvoss/virtualgamepad/issues/160).
 
-## Alpha 2 host audit amendment for #258
+## Alpha 2 host audit
 
-The C9 entries below extend the C8 audit's creator and consumer surfaces. They
-cover the Series-specific evidence and can be folded into the corresponding
-rows when the C8 audit is on main.
-
-| What | Who needs it | Privilege | Scope and persistence | Implications and cleanup | Proposed release default and user steps | Evidence |
-| --- | --- | --- | --- | --- | --- | --- |
-| `/dev/uinput` creator access for Series | Required for the Series root, demo and Linux runner | Existing ordinary-user access, with an administrator only for initial node registration or an explicit access grant | System creation node. Persistent creator access depends on installed policy. Each Series node is tied to its owning descriptor. | The creation grant permits input injection beyond Series. Removal closes the owning descriptor. C9 required no new group, module load, broker or rule. | Use existing uinput access. If unavailable, follow the existing opt-in deployment policy and verify ordinary-user creation. | [C9 Linux acceptance](#c9-linux-and-sdl-acceptance) and [permission boundaries](DEPLOYMENT_AND_VALIDATION.md#permission-boundaries) |
-| Association-owned Series `/dev/input/event*` access | Required for SDL and evdev acceptance. Steam Input remains manual. | Existing active-seat joystick access, separate from creator permissions | Per event node and active seat. Access and the node end when the device is removed. | Sysfs identity can be visible before the consumer ACL is effective. Confirm the current association before opening, and close the consumer descriptor and owning controller when done. | Keep distro/seat policy. Allow ACL readiness to settle, and record access denials without widening event permissions. | [C9 SDL and timing evidence](#c9-linux-and-sdl-acceptance) |
-
-The Bluetooth and USB paths above have no C9 provisioning. Owner review and
-sign-off remain on [#258](https://github.com/anderstvoss/virtualgamepad/issues/258).
+The [Alpha 2 host audit](ALPHA_2_HOST_AUDIT.md) covers the Series creator and
+consumer permissions. Owner sign-off remains on [#258](https://github.com/anderstvoss/virtualgamepad/issues/258).

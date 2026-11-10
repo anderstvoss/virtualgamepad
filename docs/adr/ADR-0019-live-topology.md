@@ -1,7 +1,7 @@
 # ADR-0019: Retained generations of controller-owned live topology
 
-Status: Accepted and implemented for the Wii supporting package. The ordinary-root
-API is unchanged.
+Status: Accepted and implemented for Wii Remote in C5, with ordinary-root access
+added in C7.
 
 ## Context
 
@@ -54,5 +54,7 @@ and retain its generation outside the queue.
 Step 8 implemented the internal seam with a synthetic family, covering
 attach/detach, absent edits and terminal close. The Wii handle now exposes
 `topology_generation()` and `current_topology()` and preserves a static maximum
-uinput capability set across live accessory edits. Any future ordinary-root
-exposure needs separate owner approval.
+uinput capability set across live accessory edits. C7 exposes both readbacks and
+typed `attach()` on the ordinary-root `WiiRemoteController`. The static-superset
+policy applies to the primary uinput node. Selected accessory companion nodes
+follow their own prepare, publish and removal lifecycle.

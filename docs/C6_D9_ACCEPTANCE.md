@@ -289,10 +289,9 @@ Raw record SHA-256 (kept locally, no raw captures or host paths published):
 - Reduced uinput isolated rerun: `9db537b643a4378ba90939714bab34c8a9b72a1685929ab9795e1011645b870b`
 - Owner's independent reduced-uinput run: `e0fdfdb79545477131036e2f92364674c2442ae7ccd110fe74d27948ce2507b0`
 
-The kernel/ABS cells retain `wip` with these scoped observations because the
-schema has no virtual-live status and no formal research run record is adopted.
-Source evidence and historical runs remain intact. The manual Steam results
-below are separate owner observations, not kernel or physical input acceptance.
+C8 classifies these scoped kernel/ABS observations as `virtual-live`.
+The manual Steam results below are separate owner observations. Source evidence
+and historical run provenance remain intact.
 
 ### Manual Steam baseline (owner screenshots, 2026-11-04)
 
@@ -766,11 +765,10 @@ results intentionally closed Begin Test and reopened Steam's main window. These
 transitions were not synthetic Steam-button presses. No agent root or host-policy
 changes, descriptor edits or custom physical feature injection occurred.
 
-The wired `steam-client` cell remains `wip` with the requested exit gate:
-isolate discovery's cause or obtain explicit owner acceptance of listing as-is.
-This comparison isolates the attribute-reply requirement at component level;
-the narrower attribute predicate and broader client qualifications above remain
-unverified. No formal virtual research run or gameplay acceptance is promoted.
+This comparison isolates the attribute-reply requirement at component level.
+The narrower attribute predicate and broader client qualifications above remain
+unverified. The `virtual-live` cell records bounded listing and Begin Test,
+with gameplay qualification still open.
 
 
 ### Wired entry stability and cleanup follow-up (2026-11-06)
@@ -813,9 +811,8 @@ was not reproduced in this bounded run; no lifecycle fix is inferred.
 Both realizations now reject negative public trigger values before encoding.
 The earlier negative-trigger rows above describe the pre-fix probe. The #304
 kernel/ABS results were rechecked: UHID tuples match the golden values, while
-reduced uinput still has the explicit fuzz/resolution limitation. Those cells
-remain `wip`: neither the physical input record nor the UI stability study is a
-formal virtual kernel-decoding/ABS run record.
+reduced uinput still has the explicit fuzz/resolution limitation. The
+`virtual-live` cells cite the earlier kernel run for these results.
 
 
 ### Wired LED follow-up (2026-11-06)
