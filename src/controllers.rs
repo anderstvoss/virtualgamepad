@@ -270,6 +270,18 @@ macro_rules! shared {
             self.controller.inner.state()
         }
     };
+    (set_inputs, $state:ty) => {
+        /// Replace the complete native input state as one validated edit.
+        /// Call `commit()` to deliver it. Session metadata is preserved.
+        ///
+        /// # Errors
+        /// Returns a control error if the session is closed or the snapshot
+        /// cannot be represented by the selected realization.
+        pub fn set_inputs(&mut self, state: $state) -> Result<(), ControlError> {
+            self.controller.reap_audio_failure();
+            self.controller.inner.set_inputs(state)
+        }
+    };
     (surface, $surface:ty) => {
         /// Inspect native model metadata and selected-realization restrictions.
         #[must_use]
@@ -392,6 +404,7 @@ impl DualSenseController {
     shared!(next_service_in);
     shared!(dropped_output_events);
     shared!(state, DualSenseState);
+    shared!(set_inputs, DualSenseState);
     shared!(host_outputs, crate::DualSenseOutputState);
     shared!(surface, DualSenseSurface);
     shared!(is_dirty);
@@ -485,6 +498,7 @@ impl DualShock4Controller {
     shared!(next_service_in);
     shared!(dropped_output_events);
     shared!(state, DualShock4State);
+    shared!(set_inputs, DualShock4State);
     shared!(host_outputs, crate::DualShock4OutputState);
     shared!(is_dirty);
     shared!(surface, DualShock4Surface);
@@ -579,6 +593,7 @@ impl SwitchProController {
     shared!(next_service_in);
     shared!(dropped_output_events);
     shared!(state, SwitchProState);
+    shared!(set_inputs, SwitchProState);
     shared!(host_outputs, crate::SwitchProOutputState);
     shared!(is_dirty);
     shared!(surface, SwitchProSurface);
@@ -639,6 +654,7 @@ impl Xbox360Controller {
     shared!(next_service_in);
     shared!(dropped_output_events);
     shared!(state, Xbox360State);
+    shared!(set_inputs, Xbox360State);
     shared!(host_outputs, crate::Xbox360OutputState);
     shared!(surface, Xbox360Surface);
     shared!(is_dirty);

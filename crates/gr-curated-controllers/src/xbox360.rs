@@ -126,7 +126,32 @@ impl Xbox360State {
     pub const fn dpad_pressed(&self, direction: gr_controller_contract::DpadDirection) -> bool {
         self.dpad[common::dpad_index(direction)]
     }
-    fn set_native(&mut self, control: Xbox360Control, pressed: bool) {
+    /// Set both sticks in the family's native units.
+    pub fn set_sticks(
+        &mut self,
+        left: (Xbox360Axis, Xbox360Axis),
+        right: (Xbox360Axis, Xbox360Axis),
+    ) {
+        self.left = left;
+        self.right = right;
+    }
+    /// Set both triggers in the family's native units.
+    pub fn set_triggers(&mut self, left: Xbox360Trigger, right: Xbox360Trigger) {
+        self.triggers = (left, right);
+    }
+    /// Set a face button or D-pad direction by spatial position.
+    pub fn set_digital(&mut self, update: DigitalControlUpdate) {
+        match update {
+            DigitalControlUpdate::FaceButton { button, pressed } => {
+                self.face[common::face_index(button)] = pressed;
+            }
+            DigitalControlUpdate::Dpad { direction, pressed } => {
+                self.dpad[common::dpad_index(direction)] = pressed;
+            }
+        }
+    }
+    /// Set the level of a controller-native button.
+    pub fn set_native(&mut self, control: Xbox360Control, pressed: bool) {
         match control {
             Xbox360Control::A => self.face[0] = pressed,
             Xbox360Control::B => self.face[1] = pressed,
@@ -588,14 +613,7 @@ impl TargetAwareControllerDriver for Xbox360Definition {
         state: &mut Self::State,
         update: DigitalControlUpdate,
     ) -> Result<(), ControlError> {
-        match update {
-            DigitalControlUpdate::FaceButton { button, pressed } => {
-                state.face[common::face_index(button)] = pressed;
-            }
-            DigitalControlUpdate::Dpad { direction, pressed } => {
-                state.dpad[common::dpad_index(direction)] = pressed;
-            }
-        }
+        state.set_digital(update);
         Ok(())
     }
     fn validate_state(
@@ -775,6 +793,21 @@ impl Xbox360Controller {
     pub fn is_dirty(&self) -> bool {
         self.0.is_dirty()
     }
+    /// Replace the complete native input state as one validated edit.
+    /// Call `commit()` to deliver it. Session metadata is preserved.
+    ///
+    /// # Errors
+    /// Returns a control error if the session is closed or the snapshot cannot
+    /// be represented by the selected realization.
+    pub fn set_inputs(&mut self, state: Xbox360State) -> Result<(), ControlError> {
+        self.0.update_state(|current| {
+            common::validate_hat(state.dpad)?;
+            let mut state = state;
+            state.battery = current.battery;
+            *current = state;
+            Ok(())
+        })
+    }
     pub fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), ControlError> {
         self.0.apply_digital(update)
     }
@@ -820,7 +853,7 @@ impl Xbox360Controller {
         right: Xbox360Trigger,
     ) -> Result<(), ControlError> {
         self.0.update_state(|state| {
-            state.triggers = (left, right);
+            state.set_triggers(left, right);
             Ok(())
         })
     }
@@ -1151,6 +1184,64 @@ impl crate::registry::ControllerFamily for Xbox360Definition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn whole_state_through_each_report_encoder() {
+        use common::session_tests::{check_snapshot_session, snapshot_session};
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            let (session, io) = snapshot_session(Xbox360Definition, target, [false, false, false]);
+            let mut controller = Xbox360Controller(session);
+            controller
+                .0
+                .update_state(|current| {
+                    current.battery.set_exposed(true);
+                    current
+                        .battery
+                        .set_level(crate::BatteryLevel::new(37).unwrap());
+                    Ok(())
+                })
+                .unwrap();
+            let axis = Xbox360Axis::new;
+            let snapshot = Xbox360State {
+                face: [true; 4],
+                dpad: [true, false, false, true],
+                left: (axis(i16::MIN), axis(i16::MAX)),
+                right: (axis(i16::MAX), axis(i16::MIN)),
+                buttons: [true; 7],
+                triggers: (Xbox360Trigger::new(255), Xbox360Trigger::new(23)),
+                ..Default::default()
+            };
+            let expected = Xbox360State {
+                battery: controller.state().battery,
+                ..snapshot.clone()
+            };
+            let mut bad = snapshot.clone();
+            bad.face[0] = false;
+            bad.dpad[1] = true;
+            let invalid = Some((
+                bad,
+                ControlError::UnsupportedControl {
+                    control: "opposing D-pad directions on a hat",
+                },
+            ));
+            check_snapshot_session!(
+                controller,
+                io,
+                snapshot,
+                expected,
+                invalid,
+                Xbox360Definition
+                    .encode(controller.0.selection(), controller.state())
+                    .unwrap(),
+                &[]
+            );
+        }
+    }
+
     use gr_realization_api::RealizationSessionId;
 
     #[test]
