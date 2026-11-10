@@ -201,8 +201,10 @@ fn commits_every_key_and_full_axis_domain_with_xpad_hat_orientation() {
         assert_eq!(keys, [(code, 1)]);
         controller.set_button(button, false).unwrap();
     }
-    let mut state = XboxSeriesState::default();
-    state.sticks = [[i16::MIN, i16::MAX], [i16::MAX, i16::MIN]];
+    let mut state = XboxSeriesState {
+        sticks: [[i16::MIN, i16::MAX], [i16::MAX, i16::MIN]],
+        ..XboxSeriesState::default()
+    };
     state.set_triggers(1023, 756).unwrap();
     for (x, y) in [
         (-1, -1),
