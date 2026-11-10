@@ -104,6 +104,30 @@ fn matching_nodes(physical_paths: &[String]) -> BTreeSet<PathBuf> {
     }
     result
 }
+fn open_consumer(node: &Path, wait_for_udev: bool) -> std::io::Result<File> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(node)
+        {
+            Err(error)
+                if wait_for_udev
+                    && Instant::now() < deadline
+                    && matches!(
+                        error.kind(),
+                        std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound
+                    ) =>
+            {
+                // Sysfs enumeration may precede the session's evdev ACL.
+                thread::sleep(Duration::from_millis(1));
+            }
+            result => return result,
+        }
+    }
+}
+
 fn evdev_capabilities(node: &Path) -> Option<Value> {
     if !node.starts_with("/dev/input") {
         return None;
@@ -400,7 +424,10 @@ impl Backend for Linux {
             }
             "consumer_open"=>{
                 if s.nodes.is_empty(){return Err("no owned node observed".into());}
-                for node in &s.nodes{s.consumers.push(OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(node).map_err(|e|e.to_string())?);}
+                let series = matches!(&s.controller, Controller::XboxSeries(_));
+                for node in &s.nodes {
+                    s.consumers.push(open_consumer(node, series).map_err(|e|e.to_string())?);
+                }
                 Ok(json!({"consumer":"harness evdev/hidraw","nodes_opened":s.consumers.len()}))
             }
             "first_neutral"=>Err("no validated consumer neutral-report oracle for this family; API commit is not consumer delivery".into()),
