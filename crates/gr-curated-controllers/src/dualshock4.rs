@@ -19,7 +19,7 @@ use gr_realization_api::{
     ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
     NativeDeviceIdentity, NativeDummyHcdRealization, NativeEvdevRealization, NativeHidRealization,
     NativeHidReportKey, ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent,
-    RealizationSelection, RealizationSessionId, RealizationTarget,
+    RealizationSelection, RealizationSessionId, RealizationTarget, RealizationTargetSet,
 };
 use std::collections::BTreeMap;
 
@@ -208,7 +208,44 @@ impl DualShock4State {
     pub const fn face_pressed(&self, button: gr_controller_contract::FaceButton) -> bool {
         self.face[common::face_index(button)]
     }
-    fn set_native(&mut self, control: DualShock4Control, pressed: bool) {
+    /// Set both sticks in the family's native units.
+    pub fn set_sticks(
+        &mut self,
+        left: (DualShock4Axis, DualShock4Axis),
+        right: (DualShock4Axis, DualShock4Axis),
+    ) {
+        self.left = left;
+        self.right = right;
+    }
+    /// Set both triggers in the family's native units.
+    pub fn set_triggers(&mut self, left: DualShock4Trigger, right: DualShock4Trigger) {
+        self.triggers = (left, right);
+    }
+    /// Set or clear an independent touch slot.
+    pub fn set_touch(
+        &mut self,
+        slot: DualShock4TouchSlot,
+        contact: Option<DualShock4TouchContact>,
+    ) {
+        self.touches[slot.index()] = contact;
+    }
+    /// Set the motion sample in native units.
+    pub fn set_motion(&mut self, motion: DualShock4MotionSample) {
+        self.motion = motion;
+    }
+    /// Set a face button or D-pad direction by spatial position.
+    pub fn set_digital(&mut self, update: DigitalControlUpdate) {
+        match update {
+            DigitalControlUpdate::FaceButton { button, pressed } => {
+                self.face[common::face_index(button)] = pressed;
+            }
+            DigitalControlUpdate::Dpad { direction, pressed } => {
+                self.dpad[common::dpad_index(direction)] = pressed;
+            }
+        }
+    }
+    /// Set the level of a controller-native button.
+    pub fn set_native(&mut self, control: DualShock4Control, pressed: bool) {
         match control {
             DualShock4Control::Cross => self.face[0] = pressed,
             DualShock4Control::Circle => self.face[1] = pressed,
@@ -725,14 +762,7 @@ impl TargetAwareControllerDriver for DualShock4Definition {
         state: &mut Self::State,
         update: DigitalControlUpdate,
     ) -> Result<(), ControlError> {
-        match update {
-            DigitalControlUpdate::FaceButton { button, pressed } => {
-                state.face[common::face_index(button)] = pressed;
-            }
-            DigitalControlUpdate::Dpad { direction, pressed } => {
-                state.dpad[common::dpad_index(direction)] = pressed;
-            }
-        }
+        state.set_digital(update);
         Ok(())
     }
     fn validate_state(
@@ -1073,6 +1103,50 @@ impl DualShock4Controller {
             _ => &USB_SURFACE,
         }
     }
+    /// Replace the complete native input state as one validated edit.
+    /// Call `commit()` to deliver it. Protocol counters are session-owned.
+    ///
+    /// # Errors
+    /// Returns a control error if the session is closed or the snapshot cannot
+    /// be represented by the selected realization.
+    pub fn set_inputs(&mut self, state: DualShock4State) -> Result<(), ControlError> {
+        let target = self.0.selection().target;
+        self.0.update_state(|current| {
+            common::validate_hat(state.dpad)?;
+            // The DS4 evdev tracking ID range also ends at 127.
+            common::validate_touch_ids(
+                state
+                    .touches
+                    .into_iter()
+                    .flatten()
+                    .map(DualShock4TouchContact::id),
+            )?;
+            if state.motion != DualShock4State::default().motion {
+                common::require_input_target(
+                    target,
+                    RealizationTargetSet::new(&[
+                        RealizationTarget::LINUX_UHID_USB,
+                        RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                        RealizationTarget::LINUX_USBIP_USB_AUDIO,
+                    ]),
+                )?;
+            }
+            let mut state = state;
+            state.battery = current.battery;
+            state.sequence = current.sequence;
+            state.sensor_timestamp = current.sensor_timestamp;
+            state.touch_sequence = current.touch_sequence;
+            if state.motion != current.motion {
+                advance_ds4_timing(&mut state);
+            }
+            // Motion already advances the touch packet when a contact is active.
+            if state.touches != current.touches && state.touch_sequence == current.touch_sequence {
+                state.touch_sequence = state.touch_sequence.wrapping_add(1);
+            }
+            *current = state;
+            Ok(())
+        })
+    }
     pub fn set_digital(&mut self, u: DigitalControlUpdate) -> Result<(), ControlError> {
         self.0.apply_digital(u)
     }
@@ -1108,13 +1182,13 @@ impl DualShock4Controller {
         r: DualShock4Trigger,
     ) -> Result<(), ControlError> {
         self.0.update_state(|s| {
-            s.triggers = (l, r);
+            s.set_triggers(l, r);
             Ok(())
         })
     }
     pub fn set_motion(&mut self, m: DualShock4MotionSample) -> Result<(), ControlError> {
         self.0.update_state(|s| {
-            s.motion = m;
+            s.set_motion(m);
             advance_ds4_timing(s);
             Ok(())
         })
@@ -1125,7 +1199,7 @@ impl DualShock4Controller {
         contact: Option<DualShock4TouchContact>,
     ) -> Result<(), ControlError> {
         self.0.update_state(|state| {
-            state.touches[slot.index()] = contact;
+            state.set_touch(slot, contact);
             state.touch_sequence = state.touch_sequence.wrapping_add(1);
             Ok(())
         })
@@ -1485,6 +1559,140 @@ impl crate::registry::ControllerFamily for DualShock4Definition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn whole_state_through_each_report_encoder() {
+        use common::session_tests::{check_snapshot_session, snapshot_session};
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            let (session, io) = snapshot_session(DualShock4Definition, target, [true, true, true]);
+            let mut controller = DualShock4Controller(session);
+            controller
+                .0
+                .update_state(|current| {
+                    current.battery.set_exposed(true);
+                    current
+                        .battery
+                        .set_level(crate::BatteryLevel::new(37).unwrap());
+                    current.sequence = 17;
+                    current.sensor_timestamp = 17;
+                    current.touch_sequence = 17;
+                    Ok(())
+                })
+                .unwrap();
+            let identity = controller.identity();
+            let axis = DualShock4Axis::new;
+            let mut snapshot = DualShock4State {
+                face: [true; 4],
+                dpad: [true, false, false, true],
+                left: (axis(0), axis(255)),
+                right: (axis(255), axis(0)),
+                buttons: [true; 8],
+                triggers: (DualShock4Trigger::new(255), DualShock4Trigger::new(23)),
+                ..Default::default()
+            };
+            let first_id = 127;
+            let first = DualShock4TouchContact::new(first_id, 1919, 941).unwrap();
+            let second = DualShock4TouchContact::new(7, 0, 0).unwrap();
+            snapshot.set_touch(DualShock4TouchSlot::First, Some(first));
+            snapshot.set_touch(DualShock4TouchSlot::Second, Some(second));
+            assert_eq!(snapshot.touch(DualShock4TouchSlot::First), Some(first));
+            assert_eq!(snapshot.touch(DualShock4TouchSlot::Second), Some(second));
+            let motion = DualShock4MotionSample {
+                accelerometer: [i16::MIN, 24, i16::MAX],
+                gyroscope: [50, -60, 70],
+            };
+            if target != RealizationTarget::LINUX_UINPUT {
+                snapshot.set_motion(motion);
+            }
+            let current = controller.state();
+            let motion_changed = snapshot.motion != current.motion;
+            let expected = DualShock4State {
+                battery: current.battery,
+                sequence: current.sequence.wrapping_add(u8::from(motion_changed)),
+                sensor_timestamp: current
+                    .sensor_timestamp
+                    .wrapping_add(u16::from(motion_changed) * 750),
+                touch_sequence: current.touch_sequence.wrapping_add(1),
+                ..snapshot.clone()
+            };
+            let mut bad = snapshot.clone();
+            bad.face[0] = false;
+            let invalid = if target == RealizationTarget::LINUX_UINPUT {
+                bad.set_motion(motion);
+                Some((
+                    bad,
+                    ControlError::UnavailableInRealization {
+                        selected_target: target,
+                        available_in: RealizationTargetSet::new(&[
+                            RealizationTarget::LINUX_UHID_USB,
+                            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                            RealizationTarget::LINUX_USBIP_USB_AUDIO,
+                        ]),
+                    },
+                ))
+            } else {
+                bad.set_touch(
+                    DualShock4TouchSlot::Second,
+                    Some(DualShock4TouchContact::new(128, 0, 0).unwrap()),
+                );
+                Some((
+                    bad,
+                    ControlError::ValueOutOfRange {
+                        control: "touch contact ID",
+                        value: 128,
+                        maximum: 127,
+                    },
+                ))
+            };
+            check_snapshot_session!(
+                controller,
+                io,
+                snapshot,
+                expected,
+                invalid,
+                DualShock4Definition
+                    .encode(controller.0.selection(), controller.state())
+                    .unwrap(),
+                &[(6, 0xf0), (9, 255), (10, 255), (33, 255)]
+            );
+            assert_eq!(controller.identity(), identity);
+        }
+    }
+
+    #[test]
+    fn whole_state_sequences_the_last_touch_release_with_changed_motion() {
+        use common::session_tests::snapshot_session;
+        let (session, _) = snapshot_session(
+            DualShock4Definition,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            [true; 3],
+        );
+        let mut controller = DualShock4Controller(session);
+        let mut snapshot = DualShock4State::default();
+        snapshot.set_touch(
+            DualShock4TouchSlot::First,
+            Some(DualShock4TouchContact::new(7, 10, 20).unwrap()),
+        );
+        controller.set_inputs(snapshot.clone()).unwrap();
+        assert_eq!(controller.state().touch_sequence, 1);
+        assert_eq!(controller.state().sensor_timestamp, 0);
+
+        snapshot.set_touch(DualShock4TouchSlot::First, None);
+        snapshot.motion.gyroscope[0] = 123;
+        controller.set_inputs(snapshot.clone()).unwrap();
+        assert_eq!(controller.state().touch_sequence, 2);
+        assert_eq!(controller.state().sensor_timestamp, 750);
+        assert_eq!(controller.state().touch(DualShock4TouchSlot::First), None);
+
+        let accepted = controller.state().clone();
+        controller.set_inputs(snapshot).unwrap();
+        assert_eq!(controller.state(), &accepted);
+        controller.close();
+    }
 
     #[test]
     fn dualshock4_topology_tracks_target_motion_support() {

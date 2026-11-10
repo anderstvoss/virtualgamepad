@@ -148,6 +148,27 @@ impl<D: HidDriver> ControllerSession<D> {
             feedback: super::feedback::Feedback::default(),
         })
     }
+    #[cfg(test)]
+    pub(super) fn injected_hid(
+        driver: D,
+        runtime: Runtime<D::Hid, HidTransport>,
+        identity: [u8; 6],
+    ) -> Self {
+        Self {
+            selection: gr_realization_api::RealizationSelection {
+                controller: driver.controller_id(),
+                target: gr_realization_api::RealizationTarget::LINUX_UHID_USB,
+            },
+            backend: Backend::Hid { driver, runtime },
+            association: crate::ControllerAssociation::default(),
+            hid_identity: Some(identity),
+            started: Instant::now(),
+            observations: VecDeque::new(),
+            dropped: 0,
+            feedback: super::feedback::Feedback::default(),
+        }
+    }
+
     pub(super) fn with_association(mut self, association: crate::ControllerAssociation) -> Self {
         self.association = association;
         self
