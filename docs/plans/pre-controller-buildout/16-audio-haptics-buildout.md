@@ -87,7 +87,7 @@ Existing ADR-0017/0023 rules remain binding until explicitly changed. Alpha appl
 
 | Gap | Action and evidence restriction |
 | --- | --- |
-| SDL/Steam/Proton association of controller HID with PipeWire/ALSA UAC/node | Source-pin actual discovery and routing code before claiming shape A is auto-discoverable; **unknown** for native consumer association. A4 can still test explicit manual routing. |
+| SDL/Steam/Proton association of controller HID with PipeWire/ALSA UAC/node | **[Pending research #117](https://github.com/anderstvoss/controller-protocol-research/pull/117)** supplies pinned SDL, PipeWire/WirePlumber, systemd, ALSA UCM and Wine consumer evidence; ordinary ALSA USB card identity is source-backed, but **automatic association of an independent UHID + PipeWire sidecar and proprietary Steam client remains unknown**. Do not promote or pin #117 until reviewed/merged; A4 still needs explicit application-routing and live consumer probes. |
 | DualSense Bluetooth in-band audio/haptic PCM | `audio-dualsense-bluetooth-inband-pcm-unknown` explicitly says HID effect control is **not** a proven Bluetooth PCM stream. Requires independent physical/pinned source evidence; out of A5 USB work. |
 | Wii physical speaker volume/rate/pacing, Dolphin conflict | `audio-wii-dolphin-volume-range-discrepancy`, `audio-wii-speaker-physical-acceptance-unknown` and not-run `audio-wii-speaker-dolphin-physical-lab`; preserve uncertainty and separate actual hardware bench. |
 | DS4 Bluetooth audio | `audio-dualshock4-bluetooth-inband-audio-unknown`; separate research, out of scope. |
