@@ -32,7 +32,7 @@ application owner for the original four families.
 
 Choose an exact realization with `CreationOptions::new(target)`. All seven
 families offer `LINUX_UINPUT`. Wii Remote also offers `LINUX_UHID_BLUETOOTH`,
-which uses Bluetooth bus metadata through local UHID. DualSense, DualShock 4,
+which uses Bluetooth bus metadata through local UHID. `DualSense`, `DualShock4`,
 Switch Pro, Xbox 360 and Steam Controller 2026 also offer `LINUX_UHID_USB`.
 Xbox Series selects `LINUX_UINPUT` with `XboxSeriesOptions::default()`. Each realization has its own published restrictions
 and acceptance status. Creation has no automatic fallback.
