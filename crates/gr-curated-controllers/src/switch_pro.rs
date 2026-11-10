@@ -86,7 +86,28 @@ impl Default for SwitchProState {
         }
     }
 }
+
+const fn motion_targets() -> RealizationTargetSet {
+    RealizationTargetSet::new(&[
+        RealizationTarget::LINUX_UHID_USB,
+        RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+    ])
+}
+
 impl SwitchProState {
+    fn replace_inputs(&mut self, mut next: Self) {
+        next.timer = self.timer;
+        next.stream_enabled = self.stream_enabled;
+        next.advance_input_timing(self.motion);
+        *self = next;
+    }
+
+    fn advance_input_timing(&mut self, previous_motion: SwitchProMotionSample) {
+        if self.motion != previous_motion {
+            self.timer = self.timer.wrapping_add(1);
+        }
+    }
+
     #[must_use]
     pub const fn left_stick(&self) -> (SwitchProAxis, SwitchProAxis) {
         self.left
@@ -581,18 +602,23 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
     fn validate_state(
         &self,
         sel: RealizationSelection,
-        _: &Self::State,
+        state: &Self::State,
     ) -> Result<(), ControlError> {
-        if matches!(
+        if !matches!(
             sel.target,
             RealizationTarget::LINUX_UINPUT
                 | RealizationTarget::LINUX_UHID_USB
                 | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
         ) {
-            Ok(())
-        } else {
-            Err(common::unavailable(sel.target))
+            return Err(common::unavailable(sel.target));
         }
+        if sel.target == RealizationTarget::LINUX_UINPUT {
+            common::validate_hat(state.dpad)?;
+        }
+        if state.motion != SwitchProState::default().motion {
+            common::require_input_target(sel.target, motion_targets())?;
+        }
+        Ok(())
     }
     fn encode(
         &self,
@@ -966,27 +992,8 @@ impl SwitchProController {
     /// Returns a control error if the session is closed or the snapshot cannot
     /// be represented by the selected realization.
     pub fn set_inputs(&mut self, state: SwitchProState) -> Result<(), ControlError> {
-        let target = self.0.selection().target;
         self.0.update_state(|current| {
-            if target == RealizationTarget::LINUX_UINPUT {
-                common::validate_hat(state.dpad)?;
-            }
-            if state.motion != SwitchProState::default().motion {
-                common::require_input_target(
-                    target,
-                    RealizationTargetSet::new(&[
-                        RealizationTarget::LINUX_UHID_USB,
-                        RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
-                    ]),
-                )?;
-            }
-            let mut state = state;
-            state.timer = current.timer;
-            state.stream_enabled = current.stream_enabled;
-            if state.motion != current.motion {
-                state.timer = state.timer.wrapping_add(1);
-            }
-            *current = state;
+            current.replace_inputs(state);
             Ok(())
         })
     }
@@ -1020,14 +1027,17 @@ impl SwitchProController {
         })
     }
     pub fn set_motion(&mut self, m: SwitchProMotionSample) -> Result<(), ControlError> {
-        self.0.update_state(|s| {
-            s.set_motion(m);
-            s.timer = s.timer.wrapping_add(1);
+        let target = self.0.selection().target;
+        self.0.update_state(|state| {
+            common::require_input_target(target, motion_targets())?;
+            let previous_motion = state.motion;
+            state.set_motion(m);
+            state.advance_input_timing(previous_motion);
             Ok(())
         })
     }
     /// Release inputs as one accepted edit; call `commit()` to deliver it.
-    /// Identity, battery metadata, protocol clocks and host-owned outputs survive.
+    /// Preserves identity, battery metadata and host outputs. Changed inputs advance clocks.
     pub fn neutralize(&mut self) -> Result<(), ControlError> {
         self.0.neutralize()
     }
@@ -1370,6 +1380,65 @@ mod tests {
     use super::*;
 
     #[test]
+    fn field_edits_and_snapshots_share_validation_and_transitions() {
+        use common::session_tests::assert_input_rejected;
+        use common::session_tests::{check_opposing_dpad, input_validation_session};
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            let is_uinput = target == RealizationTarget::LINUX_UINPUT;
+            let session =
+                input_validation_session(SwitchProDefinition, target, [true, true, false]);
+            let mut controller = SwitchProController(session, fixture_identity());
+            controller.service(&mut |_| {}).unwrap();
+            check_opposing_dpad!(controller, is_uinput);
+            controller.neutralize().unwrap();
+            controller.commit().unwrap();
+            let unavailable = ControlError::UnavailableInRealization {
+                selected_target: target,
+                available_in: motion_targets(),
+            };
+
+            let motion = SwitchProMotionSample {
+                accelerometer: [10, 20, 30],
+                gyroscope: [40, 50, 60],
+            };
+            let mut candidate = controller.state().clone();
+            candidate.set_motion(motion);
+            if is_uinput {
+                assert_input_rejected!(
+                    controller,
+                    candidate,
+                    controller.set_motion(motion),
+                    unavailable.clone()
+                );
+                assert_eq!(
+                    controller.set_motion(controller.state().motion()),
+                    Err(unavailable)
+                );
+                controller.set_inputs(controller.state().clone()).unwrap();
+            } else {
+                let timer = controller.state().timer;
+                controller.set_motion(motion).unwrap();
+                let changed = controller.state().clone();
+                assert_eq!(changed.timer, timer.wrapping_add(1));
+                controller.set_motion(motion).unwrap();
+                controller.set_inputs(candidate).unwrap();
+                assert_eq!(controller.state(), &changed);
+                controller.neutralize().unwrap();
+                assert_eq!(controller.state().timer, timer.wrapping_add(2));
+            }
+            controller.close();
+            controller.close();
+            let accepted = controller.state().clone();
+            assert_eq!(controller.neutralize(), Err(ControlError::Closed));
+            assert_eq!(controller.state(), &accepted);
+        }
+    }
+
+    #[test]
     fn whole_state_through_each_report_encoder() {
         use common::session_tests::{check_snapshot_session, snapshot_session};
         for target in [
@@ -1537,7 +1606,7 @@ mod tests {
 
     #[test]
     fn neutralization_releases_native_inputs_and_preserves_metadata() {
-        let expected = SwitchProState {
+        let mut expected = SwitchProState {
             timer: 77,
             stream_enabled: true,
             ..SwitchProState::default()
@@ -1550,6 +1619,7 @@ mod tests {
         state.right = (SwitchProAxis(200), SwitchProAxis(100));
         state.motion.accelerometer = [100; 3];
         state.motion.gyroscope = [200; 3];
+        expected.timer += 1;
         <SwitchProDefinition as common::HidDriver>::neutralize_state(&mut state);
         assert_eq!(state, expected);
         <SwitchProDefinition as common::HidDriver>::neutralize_state(&mut state);
