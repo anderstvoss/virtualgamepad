@@ -104,6 +104,42 @@ fn matching_nodes(physical_paths: &[String]) -> BTreeSet<PathBuf> {
     }
     result
 }
+fn open_consumer(node: &Path, wait_for_udev: bool) -> std::io::Result<File> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    retry_consumer_open(
+        || {
+            OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NONBLOCK)
+                .open(node)
+        },
+        || {
+            if !wait_for_udev || Instant::now() >= deadline {
+                return false;
+            }
+            // Sysfs enumeration may precede the session's evdev ACL.
+            thread::sleep(Duration::from_millis(1));
+            true
+        },
+    )
+}
+
+fn retry_consumer_open<T>(
+    mut open: impl FnMut() -> std::io::Result<T>,
+    mut wait: impl FnMut() -> bool,
+) -> std::io::Result<T> {
+    loop {
+        match open() {
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound
+                ) && wait() => {}
+            result => return result,
+        }
+    }
+}
+
 fn evdev_capabilities(node: &Path) -> Option<Value> {
     if !node.starts_with("/dev/input") {
         return None;
@@ -210,12 +246,53 @@ fn drive_steam_sample(
         .map_err(|error| error.to_string())?;
     steam.commit().map_err(|error| error.to_string())
 }
+fn xbox_series_sample(sample: i16) -> virtualgamepad::XboxSeriesState {
+    use virtualgamepad::XboxSeriesButton as B;
+    const BUTTONS: [B; 16] = [
+        B::A,
+        B::B,
+        B::X,
+        B::Y,
+        B::LeftShoulder,
+        B::RightShoulder,
+        B::View,
+        B::Menu,
+        B::Guide,
+        B::Share,
+        B::LeftStickPress,
+        B::RightStickPress,
+        B::DpadUp,
+        B::DpadDown,
+        B::DpadLeft,
+        B::DpadRight,
+    ];
+    let mut state = virtualgamepad::XboxSeriesState::default();
+    if let Some(button) = usize::try_from(sample / 4)
+        .ok()
+        .and_then(|index| BUTTONS.get(index))
+    {
+        state.set_button(*button, sample % 4 < 3);
+    }
+    let axis = match sample {
+        8..=12 => i16::MIN,
+        16..=20 => i16::MAX,
+        _ => 0,
+    };
+    state.sticks = [[axis; 2]; 2];
+    if (24..=28).contains(&sample) {
+        state
+            .set_triggers(1023, 1023)
+            .expect("Xbox Series trigger maximum");
+    }
+    state
+}
+
 #[derive(Default)]
-struct SteamScript {
+struct ProbeScript {
     next_ms: Option<u64>,
     sample: i16,
 }
-impl SteamScript {
+impl ProbeScript {
     fn advance(&mut self, now_ms: u64, ready: bool) -> Option<i16> {
         if !ready {
             return None;
@@ -239,11 +316,12 @@ fn wait_child(
     controller: &mut Controller,
     peers: &mut [&mut Session],
     capture: &Path,
-) -> Result<(), String> {
+) -> Result<Option<virtualgamepad::RumblePlayback>, String> {
     let start = Instant::now();
     let deadline = start + Duration::from_secs(30);
-    let mut script = SteamScript::default();
+    let mut script = ProbeScript::default();
     let mut ready = false;
+    let mut xbox_rumble = None;
     loop {
         for peer in peers.iter_mut() {
             peer.service.service(|| peer.controller.service());
@@ -251,7 +329,7 @@ fn wait_child(
         match child.try_wait() {
             Ok(Some(status)) => {
                 return if status.success() {
-                    Ok(())
+                    Ok(xbox_rumble)
                 } else {
                     Err(format!("SDL probe exited {status}"))
                 };
@@ -268,12 +346,28 @@ fn wait_child(
             .service()
             .and_then(|()| match (&mut *controller, sample) {
                 (Controller::Steam(steam), Some(sample)) => drive_steam_sample(steam, sample),
+                (Controller::XboxSeries(series), Some(sample)) if sample <= 64 => {
+                    series
+                        .set_inputs(xbox_series_sample(sample))
+                        .map_err(|error| error.to_string())?;
+                    series.commit().map_err(|error| error.to_string())
+                }
                 _ => Ok(()),
             });
         if let Err(error) = result {
             let _ = child.kill();
             let _ = child.wait();
             return Err(error);
+        }
+        if let Controller::XboxSeries(series) = controller {
+            let playback = series
+                .host_outputs()
+                .ok()
+                .and_then(|outputs| outputs.evdev_rumble)
+                .filter(|playback| {
+                    playback.repetitions > 0 && (playback.strong != 0 || playback.weak != 0)
+                });
+            xbox_rumble = playback.or(xbox_rumble);
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
@@ -327,7 +421,7 @@ impl Backend for Linux {
                         return Ok(json!({"poll_interval_ns":1_000_000,"devices":s.nodes.iter().map(|p| {
                             let driver = bound_driver(p);
                             let mut device = json!({"path":p,"bound_driver":driver,"driver_reason":if driver.is_none(){Some("no bound driver observed")}else{None}});
-                            if let Some(capabilities) = matches!(&s.controller, Controller::Steam(_))
+                            if let Some(capabilities) = matches!(&s.controller, Controller::Steam(_) | Controller::XboxSeries(_))
                                 .then(|| evdev_capabilities(p)).flatten() {
                                 device["evdev_capabilities"] = capabilities;
                             }
@@ -342,7 +436,10 @@ impl Backend for Linux {
             }
             "consumer_open"=>{
                 if s.nodes.is_empty(){return Err("no owned node observed".into());}
-                for node in &s.nodes{s.consumers.push(OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(node).map_err(|e|e.to_string())?);}
+                let series = matches!(&s.controller, Controller::XboxSeries(_));
+                for node in &s.nodes {
+                    s.consumers.push(open_consumer(node, series).map_err(|e|e.to_string())?);
+                }
                 Ok(json!({"consumer":"harness evdev/hidraw","nodes_opened":s.consumers.len()}))
             }
             "first_neutral"=>Err("no validated consumer neutral-report oracle for this family; API commit is not consumer delivery".into()),
@@ -350,13 +447,14 @@ impl Backend for Linux {
                 if !self.sdl{return Err("SDL probe not requested".into());}
                 let steam_hid = matches!(&s.controller, Controller::Steam(c)
                     if c.surface().target() == RealizationId::LINUX_UHID_USB);
+                let series = matches!(&s.controller, Controller::XboxSeries(_));
                 let node=s.nodes.iter().find(|p| p.starts_with("/dev/input") != steam_hid).or_else(||s.nodes.first()).ok_or("no owned node for SDL")?;
                 let path = std::env::temp_dir().join(format!("virtualgamepad-acceptance-{}-{}.json", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
                 let file = OpenOptions::new().write(true).create_new(true).open(&path).map_err(|e|e.to_string())?;
                 let capture = Capture(path);
                 let mut child = Command::new("bash")
                     .arg(self.root.join("scripts/run-sdl3-gamepad-probe.sh"))
-                    .arg(node).arg(if steam_hid { "1800" } else { "100" }).stdout(Stdio::from(file)).stderr(Stdio::null())
+                    .arg(node).arg(if steam_hid || series { "1800" } else { "100" }).stdout(Stdio::from(file)).stderr(Stdio::null())
                     .spawn().map_err(|e|e.to_string())?;
                 let status = wait_child(&mut child, &mut s.controller, peers, &capture.0);
                 let text = fs::read_to_string(&capture.0).map_err(|e|e.to_string())?;
@@ -364,9 +462,15 @@ impl Backend for Linux {
                 if steam_hid && status.is_err() {
                     return Err(format!("SDL probe failed: {}", record["error"]));
                 }
-                status?;
+                let playback = status?;
                 if record["observations"]["opened"]["value"] != true { return Err("SDL did not observe this exact device opened".into()); }
-                Ok(json!({"consumer":"SDL","timestamp_scope":"probe completion upper bound; discovery may occur earlier","observation":record}))
+                let mut result = json!({"consumer":"SDL","timestamp_scope":"probe completion upper bound; discovery may occur earlier","observation":record});
+                if series {
+                    result["accepted_evdev_rumble"] = playback.map_or(Value::Null, |playback| json!({
+                        "strong":playback.strong, "weak":playback.weak, "repetitions":playback.repetitions
+                    }));
+                }
+                Ok(result)
             }
             _=>Err("unknown stage".into()),
         }
@@ -420,7 +524,7 @@ mod tests {
         }
 
         for delay in [0, 350, 1500, 5000] {
-            let mut script = super::SteamScript::default();
+            let mut script = super::ProbeScript::default();
             assert_eq!(script.advance(delay, false), None);
             assert_eq!(script.advance(delay, true), None);
             for sample in 1..=138 {
@@ -433,6 +537,55 @@ mod tests {
         assert!(!super::probe_ready("{\"consumer\":\"SDL\"}\n{partial"));
         assert!(super::probe_ready("{\"record_type\":\"mapping_ready\"}\n"));
     }
+    #[test]
+    fn series_consumer_open_recovers_from_delayed_node_and_acl() {
+        use std::io::ErrorKind::{NotFound, PermissionDenied, Unsupported};
+        let mut results = [Err(NotFound.into()), Err(PermissionDenied.into()), Ok(7)].into_iter();
+        let mut waits = 0;
+        let opened = super::retry_consumer_open(
+            || results.next().unwrap(),
+            || {
+                waits += 1;
+                true
+            },
+        )
+        .unwrap();
+        assert_eq!((opened, waits), (7, 2));
+        assert_eq!(
+            super::retry_consumer_open::<()>(|| Err(PermissionDenied.into()), || false,)
+                .unwrap_err()
+                .kind(),
+            PermissionDenied
+        );
+        assert_eq!(
+            super::retry_consumer_open::<()>(
+                || Err(Unsupported.into()),
+                || panic!("terminal open error"),
+            )
+            .unwrap_err()
+            .kind(),
+            Unsupported
+        );
+    }
+
+    #[test]
+    fn xbox_series_sweep_includes_share_guide_axes_and_neutral() {
+        use virtualgamepad::{XboxSeriesButton as B, XboxSeriesState, XboxSeriesTrigger};
+        assert!(super::xbox_series_sample(32).pressed(B::Guide));
+        assert!(!super::xbox_series_sample(32).pressed(B::Share));
+        assert!(super::xbox_series_sample(36).pressed(B::Share));
+        assert!(!super::xbox_series_sample(36).pressed(B::Guide));
+        assert_eq!(super::xbox_series_sample(8).sticks, [[i16::MIN; 2]; 2]);
+        assert_eq!(super::xbox_series_sample(16).sticks, [[i16::MAX; 2]; 2]);
+        assert_eq!(
+            super::xbox_series_sample(24)
+                .triggers()
+                .map(XboxSeriesTrigger::raw),
+            [1023; 2]
+        );
+        assert_eq!(super::xbox_series_sample(64), XboxSeriesState::default());
+    }
+
     #[test]
     fn every_registry_family_has_a_public_constructor_adapter() {
         let mut mapped = super::MAPPED_IDS.to_vec();
