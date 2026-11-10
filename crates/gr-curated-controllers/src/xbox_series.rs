@@ -1,5 +1,9 @@
 //! Native controls for the standard Xbox Series controller.
 
+// The target contract is built and tested here. The uinput driver uses it in 15b.
+#[allow(dead_code)]
+mod definition;
+
 use gr_controller_contract::ControlError;
 
 /// Xbox Series has no per-controller creation settings on uinput.
@@ -61,7 +65,7 @@ impl XboxSeriesTrigger {
 pub struct XboxSeriesState {
     buttons: [bool; XboxSeriesButton::DpadRight as usize + 1],
     /// Left and right sticks, in signed xpad evdev units with positive Y down.
-    /// See research record `xbox-series-xpad-axis-domains`.
+    /// See `xbox-series-xpad-axis-domains` and `xbox-series-xpad-evdev-shape`.
     pub sticks: [[i16; 2]; 2],
     triggers: [XboxSeriesTrigger; 2],
 }
