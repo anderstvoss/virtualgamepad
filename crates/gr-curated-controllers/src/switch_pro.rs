@@ -20,7 +20,7 @@ use gr_realization_api::{
     ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
     NativeDeviceIdentity, NativeDummyHcdRealization, NativeEvdevRealization, NativeHidRealization,
     ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent, RealizationSelection,
-    RealizationSessionId, RealizationTarget,
+    RealizationSessionId, RealizationTarget, RealizationTargetSet,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,7 +129,32 @@ impl SwitchProState {
     pub const fn face_pressed(&self, button: gr_controller_contract::FaceButton) -> bool {
         self.face[common::face_index(button)]
     }
-    fn set_native(&mut self, c: SwitchProControl, p: bool) {
+    /// Set both sticks in the family's native units.
+    pub fn set_sticks(
+        &mut self,
+        left: (SwitchProAxis, SwitchProAxis),
+        right: (SwitchProAxis, SwitchProAxis),
+    ) {
+        self.left = left;
+        self.right = right;
+    }
+    /// Set the motion sample in native units.
+    pub fn set_motion(&mut self, motion: SwitchProMotionSample) {
+        self.motion = motion;
+    }
+    /// Set a face button or D-pad direction by spatial position.
+    pub fn set_digital(&mut self, update: DigitalControlUpdate) {
+        match update {
+            DigitalControlUpdate::FaceButton { button, pressed } => {
+                self.face[common::face_index(button)] = pressed;
+            }
+            DigitalControlUpdate::Dpad { direction, pressed } => {
+                self.dpad[common::dpad_index(direction)] = pressed;
+            }
+        }
+    }
+    /// Set the level of a controller-native button.
+    pub fn set_native(&mut self, c: SwitchProControl, p: bool) {
         match c {
             SwitchProControl::B => self.face[0] = p,
             SwitchProControl::A => self.face[1] = p,
@@ -550,14 +575,7 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
         s: &mut Self::State,
         u: DigitalControlUpdate,
     ) -> Result<(), ControlError> {
-        match u {
-            DigitalControlUpdate::FaceButton { button, pressed } => {
-                s.face[common::face_index(button)] = pressed;
-            }
-            DigitalControlUpdate::Dpad { direction, pressed } => {
-                s.dpad[common::dpad_index(direction)] = pressed;
-            }
-        }
+        s.set_digital(u);
         Ok(())
     }
     fn validate_state(
@@ -941,6 +959,37 @@ impl SwitchProController {
             _ => &USB_SURFACE,
         }
     }
+    /// Replace the complete native input state as one validated edit.
+    /// Call `commit()` to deliver it. Protocol counters are session-owned.
+    ///
+    /// # Errors
+    /// Returns a control error if the session is closed or the snapshot cannot
+    /// be represented by the selected realization.
+    pub fn set_inputs(&mut self, state: SwitchProState) -> Result<(), ControlError> {
+        let target = self.0.selection().target;
+        self.0.update_state(|current| {
+            if target == RealizationTarget::LINUX_UINPUT {
+                common::validate_hat(state.dpad)?;
+            }
+            if state.motion != SwitchProState::default().motion {
+                common::require_input_target(
+                    target,
+                    RealizationTargetSet::new(&[
+                        RealizationTarget::LINUX_UHID_USB,
+                        RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                    ]),
+                )?;
+            }
+            let mut state = state;
+            state.timer = current.timer;
+            state.stream_enabled = current.stream_enabled;
+            if state.motion != current.motion {
+                state.timer = state.timer.wrapping_add(1);
+            }
+            *current = state;
+            Ok(())
+        })
+    }
     pub fn set_digital(&mut self, u: DigitalControlUpdate) -> Result<(), ControlError> {
         self.0.apply_digital(u)
     }
@@ -972,7 +1021,7 @@ impl SwitchProController {
     }
     pub fn set_motion(&mut self, m: SwitchProMotionSample) -> Result<(), ControlError> {
         self.0.update_state(|s| {
-            s.motion = m;
+            s.set_motion(m);
             s.timer = s.timer.wrapping_add(1);
             Ok(())
         })
@@ -1319,6 +1368,94 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn whole_state_through_each_report_encoder() {
+        use common::session_tests::{check_snapshot_session, snapshot_session};
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            let (session, io) = snapshot_session(SwitchProDefinition, target, [true, true, false]);
+            let mut controller = SwitchProController(session, fixture_identity());
+            controller
+                .0
+                .update_state(|current| {
+                    current.timer = 17;
+                    Ok(())
+                })
+                .unwrap();
+            if target != RealizationTarget::LINUX_UINPUT {
+                let mut bytes = vec![0; 63];
+                bytes[9] = 3;
+                bytes[10] = 0x30;
+                io.lock()
+                    .unwrap()
+                    .events
+                    .push_back(RawReverseEvent::HidOutput {
+                        report_id: Some(1),
+                        bytes,
+                    });
+                controller.service(&mut |_| {}).unwrap();
+                controller.service(&mut |_| {}).unwrap();
+                assert!(controller.stream_enabled());
+            }
+            let identity = controller.identity();
+            let axis = SwitchProAxis::new;
+            let mut snapshot = SwitchProState {
+                face: [true; 4],
+                dpad: [true, false, false, true],
+                left: (axis(i16::MIN), axis(i16::MAX)),
+                right: (axis(i16::MAX), axis(i16::MIN)),
+                buttons: [true; 10],
+                ..Default::default()
+            };
+            let motion = SwitchProMotionSample {
+                accelerometer: [i16::MIN, 24, i16::MAX],
+                gyroscope: [50, -60, 70],
+            };
+            if target != RealizationTarget::LINUX_UINPUT {
+                snapshot.set_motion(motion);
+            }
+            // Switch's USB report exposes opposing directions as separate bits.
+            if target != RealizationTarget::LINUX_UINPUT {
+                snapshot.dpad[1] = true;
+            }
+            let current = controller.state();
+            let motion_changed = snapshot.motion != current.motion;
+            let expected = SwitchProState {
+                timer: current.timer.wrapping_add(u8::from(motion_changed)),
+                stream_enabled: current.stream_enabled,
+                ..snapshot.clone()
+            };
+            let mut bad = snapshot.clone();
+            bad.face[0] = false;
+            bad.dpad[1] = true;
+            let invalid = (target == RealizationTarget::LINUX_UINPUT).then_some((
+                bad,
+                ControlError::UnsupportedControl {
+                    control: "opposing D-pad directions on a hat",
+                },
+            ));
+            check_snapshot_session!(
+                controller,
+                io,
+                snapshot,
+                expected,
+                invalid,
+                SwitchProDefinition
+                    .encode(controller.0.selection(), controller.state())
+                    .unwrap(),
+                &[(0, 255)]
+            );
+            assert_eq!(controller.identity(), identity);
+            assert_eq!(
+                controller.stream_enabled(),
+                target != RealizationTarget::LINUX_UINPUT
+            );
+        }
+    }
 
     fn fixture_identity() -> SwitchProIdentity {
         SwitchProIdentity::from_bytes(common::test_address(1)).unwrap()

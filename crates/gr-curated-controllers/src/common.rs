@@ -49,12 +49,18 @@ pub(crate) fn injected<D: HidDriver>(
     driver: D,
     session: Box<dyn NativeProviderSession>,
 ) -> Result<ControllerSession<D>, ProviderError> {
-    let prepared =
-        prepare_realization(&driver, RealizationTarget::LINUX_UINPUT).map_err(|error| {
-            ProviderError::Open {
-                reason: error.to_string(),
-            }
-        })?;
+    injected_native(driver, RealizationTarget::LINUX_UINPUT, session)
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn injected_native<D: HidDriver>(
+    driver: D,
+    target: RealizationTarget,
+    session: Box<dyn NativeProviderSession>,
+) -> Result<ControllerSession<D>, ProviderError> {
+    let prepared = prepare_realization(&driver, target).map_err(|error| ProviderError::Open {
+        reason: error.to_string(),
+    })?;
     ControllerRuntime::new(
         driver,
         ProviderSessionSink {
@@ -86,6 +92,42 @@ pub(crate) const fn dpad_index(direction: DpadDirection) -> usize {
         DpadDirection::Down => 1,
         DpadDirection::Left => 2,
         DpadDirection::Right => 3,
+    }
+}
+
+pub(crate) fn validate_hat([up, down, left, right]: [bool; 4]) -> Result<(), ControlError> {
+    if (up && down) || (left && right) {
+        return Err(ControlError::UnsupportedControl {
+            control: "opposing D-pad directions on a hat",
+        });
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_touch_ids(ids: impl IntoIterator<Item = u8>) -> Result<(), ControlError> {
+    for id in ids {
+        if id > 127 {
+            return Err(ControlError::ValueOutOfRange {
+                control: "touch contact ID",
+                value: u32::from(id),
+                maximum: 127,
+            });
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn require_input_target(
+    selected_target: RealizationTarget,
+    available_in: gr_realization_api::RealizationTargetSet,
+) -> Result<(), ControlError> {
+    if available_in.contains(selected_target) {
+        Ok(())
+    } else {
+        Err(ControlError::UnavailableInRealization {
+            selected_target,
+            available_in,
+        })
     }
 }
 

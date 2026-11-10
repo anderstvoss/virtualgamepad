@@ -236,7 +236,40 @@ impl DualSenseState {
     pub const fn dpad_pressed(&self, direction: gr_controller_contract::DpadDirection) -> bool {
         self.dpad[common::dpad_index(direction)]
     }
-    fn set_native(&mut self, control: DualSenseControl, pressed: bool) {
+    /// Set both sticks in the family's native units.
+    pub fn set_sticks(
+        &mut self,
+        left: (DualSenseAxis, DualSenseAxis),
+        right: (DualSenseAxis, DualSenseAxis),
+    ) {
+        self.left = left;
+        self.right = right;
+    }
+    /// Set both triggers in the family's native units.
+    pub fn set_triggers(&mut self, left: DualSenseTrigger, right: DualSenseTrigger) {
+        self.triggers = (left, right);
+    }
+    /// Set or clear an independent touch slot.
+    pub fn set_touch(&mut self, slot: TouchSlot, contact: Option<DualSenseTouchContact>) {
+        self.touches[slot.index()] = contact;
+    }
+    /// Set the motion sample in native units.
+    pub fn set_motion(&mut self, motion: MotionSample) {
+        self.motion = motion;
+    }
+    /// Set a face button or D-pad direction by spatial position.
+    pub fn set_digital(&mut self, update: DigitalControlUpdate) {
+        match update {
+            DigitalControlUpdate::FaceButton { button, pressed } => {
+                self.face[common::face_index(button)] = pressed;
+            }
+            DigitalControlUpdate::Dpad { direction, pressed } => {
+                self.dpad[common::dpad_index(direction)] = pressed;
+            }
+        }
+    }
+    /// Set the level of a controller-native button.
+    pub fn set_native(&mut self, control: DualSenseControl, pressed: bool) {
         match control {
             DualSenseControl::Cross => self.face[0] = pressed,
             DualSenseControl::Circle => self.face[1] = pressed,
@@ -460,7 +493,7 @@ static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     event_type: 21,
     event_code: 80,
 }];
-static RESTRICTIONS: [TargetRestriction; 6] = [
+static RESTRICTIONS: [TargetRestriction; 7] = [
     TargetRestriction {
         feature: "touch companion",
         reason: "evdev exposes associated touch contacts separately so udev classifies the primary device as a gamepad; SDL gamepad touch APIs do not consume this companion",
@@ -481,6 +514,10 @@ static RESTRICTIONS: [TargetRestriction; 6] = [
     TargetRestriction {
         feature: "audio",
         reason: "controller reports do not create audio streams; an audio sidecar is required",
+    },
+    TargetRestriction {
+        feature: "microphone mute button",
+        reason: "the evdev gamepad does not expose the controller's native microphone mute button",
     },
 ];
 static HID_RESTRICTIONS: [TargetRestriction; 2] = [
@@ -808,14 +845,7 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
         state: &mut Self::State,
         update: DigitalControlUpdate,
     ) -> Result<(), ControlError> {
-        match update {
-            DigitalControlUpdate::FaceButton { button, pressed } => {
-                state.face[common::face_index(button)] = pressed;
-            }
-            DigitalControlUpdate::Dpad { direction, pressed } => {
-                state.dpad[common::dpad_index(direction)] = pressed;
-            }
-        }
+        state.set_digital(update);
         Ok(())
     }
     fn validate_state(
@@ -1251,6 +1281,41 @@ impl DualSenseController {
     pub fn provider_diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
         self.0.diagnostics()
     }
+    /// Replace the complete native input state as one validated edit.
+    /// Call `commit()` to deliver it. Protocol counters are session-owned.
+    ///
+    /// # Errors
+    /// Returns a control error if the session is closed or the snapshot cannot
+    /// be represented by the selected realization.
+    pub fn set_inputs(&mut self, state: DualSenseState) -> Result<(), ControlError> {
+        let target = self.0.selection().target;
+        self.0.update_state(|current| {
+            common::validate_hat(state.dpad)?;
+            if target != RealizationTarget::LINUX_UINPUT {
+                common::validate_touch_ids(
+                    state
+                        .touches
+                        .into_iter()
+                        .flatten()
+                        .map(DualSenseTouchContact::id),
+                )?;
+            }
+            if state.motion != DualSenseState::default().motion
+                || state.native_pressed(DualSenseControl::MicrophoneMute)
+            {
+                common::require_input_target(target, motion_targets())?;
+            }
+            let mut state = state;
+            state.battery = current.battery;
+            state.input_sequence = current.input_sequence;
+            state.sensor_timestamp = current.sensor_timestamp;
+            if state.motion != current.motion {
+                advance_sensor_timestamp(&mut state);
+            }
+            *current = state;
+            Ok(())
+        })
+    }
     pub fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), ControlError> {
         self.0.apply_digital(update)
     }
@@ -1290,7 +1355,7 @@ impl DualSenseController {
         right: DualSenseTrigger,
     ) -> Result<(), ControlError> {
         self.0.update_state(|state| {
-            state.triggers = (left, right);
+            state.set_triggers(left, right);
             Ok(())
         })
     }
@@ -1300,7 +1365,7 @@ impl DualSenseController {
         contact: Option<DualSenseTouchContact>,
     ) -> Result<(), ControlError> {
         self.0.update_state(|state| {
-            state.touches[slot.index()] = contact;
+            state.set_touch(slot, contact);
             Ok(())
         })
     }
@@ -1312,7 +1377,7 @@ impl DualSenseController {
             });
         }
         self.0.update_state(|state| {
-            state.motion = motion;
+            state.set_motion(motion);
             advance_sensor_timestamp(state);
             Ok(())
         })
@@ -1683,6 +1748,7 @@ impl crate::registry::ControllerFamily for DualSenseDefinition {
         crate::registry::refusal(RESTRICTIONS[3], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(RESTRICTIONS[4], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(RESTRICTIONS[5], &[RealizationTarget::LINUX_UINPUT]),
+        crate::registry::refusal(RESTRICTIONS[6], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(HID_RESTRICTIONS[0], &[RealizationTarget::LINUX_UHID_USB]),
         crate::registry::FamilyOperation {
             name: "UHID physical-device fidelity",
@@ -1747,6 +1813,109 @@ impl crate::registry::ControllerFamily for DualSenseDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn whole_state_through_each_report_encoder() {
+        use common::session_tests::{check_snapshot_session, snapshot_session};
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            let is_uinput = target == RealizationTarget::LINUX_UINPUT;
+            let (session, io) = snapshot_session(DualSenseDefinition, target, [true, true, true]);
+            let mut controller = DualSenseController(session);
+            controller
+                .0
+                .update_state(|current| {
+                    current.battery.set_exposed(true);
+                    current
+                        .battery
+                        .set_level(crate::BatteryLevel::new(37).unwrap());
+                    current.input_sequence = 17;
+                    current.sensor_timestamp = 17;
+                    Ok(())
+                })
+                .unwrap();
+            let identity = controller.identity();
+            let axis = DualSenseAxis::new;
+            let mut snapshot = DualSenseState {
+                face: [true; 4],
+                dpad: [true, false, false, true],
+                left: (axis(0), axis(255)),
+                right: (axis(255), axis(0)),
+                buttons: [true; 9],
+                triggers: (DualSenseTrigger::new(255), DualSenseTrigger::new(23)),
+                ..Default::default()
+            };
+            if is_uinput {
+                snapshot.set_native(DualSenseControl::MicrophoneMute, false);
+            }
+            let first_id = if is_uinput { 255 } else { 127 };
+            let first = DualSenseTouchContact::new(first_id, 1919, 941).unwrap();
+            let second = DualSenseTouchContact::new(7, 0, 0).unwrap();
+            snapshot.set_touch(TouchSlot::First, Some(first));
+            snapshot.set_touch(TouchSlot::Second, Some(second));
+            assert_eq!(snapshot.touch(TouchSlot::First), Some(first));
+            assert_eq!(snapshot.touch(TouchSlot::Second), Some(second));
+            let motion = MotionSample {
+                accelerometer: [i16::MIN, 24, i16::MAX],
+                gyroscope: [50, -60, 70],
+            };
+            if !is_uinput {
+                snapshot.set_motion(motion);
+            }
+            let current = controller.state();
+            let motion_changed = snapshot.motion != current.motion;
+            let expected = DualSenseState {
+                battery: current.battery,
+                input_sequence: current
+                    .input_sequence
+                    .wrapping_add(u8::from(motion_changed)),
+                sensor_timestamp: current
+                    .sensor_timestamp
+                    .wrapping_add(u32::from(motion_changed) * 12_000),
+                ..snapshot.clone()
+            };
+            let mut bad = snapshot.clone();
+            bad.face[0] = false;
+            let invalid = if is_uinput {
+                bad.set_motion(motion);
+                Some((
+                    bad,
+                    ControlError::UnavailableInRealization {
+                        selected_target: target,
+                        available_in: motion_targets(),
+                    },
+                ))
+            } else {
+                bad.set_touch(
+                    TouchSlot::Second,
+                    Some(DualSenseTouchContact::new(128, 0, 0).unwrap()),
+                );
+                Some((
+                    bad,
+                    ControlError::ValueOutOfRange {
+                        control: "touch contact ID",
+                        value: 128,
+                        maximum: 127,
+                    },
+                ))
+            };
+            check_snapshot_session!(
+                controller,
+                io,
+                snapshot,
+                expected,
+                invalid,
+                DualSenseDefinition
+                    .encode(controller.0.selection(), controller.state())
+                    .unwrap(),
+                &[(6, 255), (27, 255), (28, 255), (29, 255), (30, 255)]
+            );
+            assert_eq!(controller.identity(), identity);
+        }
+    }
 
     #[test]
     fn evdev_companions_keep_exact_contacts_and_release_off_the_gamepad() {

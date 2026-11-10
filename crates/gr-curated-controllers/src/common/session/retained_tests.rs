@@ -76,21 +76,8 @@ fn hid<D: HidDriver>(driver: D, numbered: [bool; 3]) -> (ControllerSession<D>, A
         Limits::default(),
     )
     .unwrap();
-    let selection = gr_realization_api::RealizationSelection {
-        controller: driver.controller_id(),
-        target: RealizationTarget::LINUX_UHID_USB,
-    };
     (
-        ControllerSession {
-            backend: Backend::Hid { driver, runtime },
-            association: crate::ControllerAssociation::default(),
-            selection,
-            hid_identity: Some(identity),
-            started: Instant::now(),
-            observations: VecDeque::new(),
-            dropped: 0,
-            feedback: super::super::feedback::Feedback::default(),
-        },
+        ControllerSession::injected_hid(driver, runtime, identity),
         record,
     )
 }
