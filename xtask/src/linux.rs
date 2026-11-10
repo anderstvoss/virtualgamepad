@@ -359,13 +359,15 @@ fn wait_child(
             let _ = child.wait();
             return Err(error);
         }
-        if let Controller::XboxSeries(series) = controller
-            && let Ok(outputs) = series.host_outputs()
-            && let Some(playback) = outputs.evdev_rumble.filter(|playback| {
-                playback.repetitions > 0 && (playback.strong != 0 || playback.weak != 0)
-            })
-        {
-            xbox_rumble = Some(playback);
+        if let Controller::XboxSeries(series) = controller {
+            let playback = series
+                .host_outputs()
+                .ok()
+                .and_then(|outputs| outputs.evdev_rumble)
+                .filter(|playback| {
+                    playback.repetitions > 0 && (playback.strong != 0 || playback.weak != 0)
+                });
+            xbox_rumble = playback.or(xbox_rumble);
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
