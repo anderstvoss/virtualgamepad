@@ -256,8 +256,11 @@ This internal workspace SPI does not expand the ordinary-root API.
 Step 10c (#176 owner comments 6325147128 and 6328169640) forwards
 `host_outputs()` from the curated session through the ordinary family facade.
 Accepted output state and revisions survive observation loss and close; required
-request/reply handling remains controller-owned. USB-worker snapshots remain
-unavailable because the unchanged wire protocol has no recovery query (#203).
+request/reply handling remains controller-owned. Step 21c (#203) adds a
+private worker-control snapshot operation. The USB thread publishes the latest
+typed values before enqueueing optional observations. The application caches
+validated snapshots during service and receives the final state after orderly
+worker shutdown.
 
 `ControllerSurface::output_kinds()` describes the selected realization alongside
 legacy event-code outputs. Registry kinds describe native family capabilities

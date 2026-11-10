@@ -358,7 +358,20 @@ fn native_rumble_is_retained_for_each_family_without_counting_upload_or_retries(
     check!(SwitchProDefinition);
     check!(Xbox360Definition);
 }
-struct Bridge<S>(std::marker::PhantomData<S>);
+struct Bridge<S> {
+    state: std::marker::PhantomData<S>,
+    outputs: Option<crate::usb_personality::outputs::WorkerOutputs>,
+}
+impl<S> Bridge<S> {
+    fn advance(&mut self, color: u8) {
+        if let Some(crate::usb_personality::outputs::WorkerOutputs::DualSense(snapshot)) =
+            &mut self.outputs
+        {
+            snapshot.lightbar_rgb = Some([color, 0, 0]);
+            snapshot.revision += 1;
+        }
+    }
+}
 impl<S: Send> WorkerBridge<S> for Bridge<S> {
     fn update(&mut self, _: &S) -> Result<(), ProviderError> {
         Ok(())
@@ -372,7 +385,15 @@ impl<S: Send> WorkerBridge<S> for Bridge<S> {
     fn dropped_output_events(&self) -> u64 {
         128
     }
+    fn refresh_outputs(&mut self) -> Result<(), ProviderError> {
+        self.advance(1);
+        Ok(())
+    }
+    fn retained_outputs(&self) -> Option<crate::usb_personality::outputs::WorkerOutputs> {
+        self.outputs.clone()
+    }
     fn close(&mut self) -> Result<(), ProviderError> {
+        self.advance(2);
         Ok(())
     }
 }
@@ -380,7 +401,10 @@ impl<S: Send> WorkerBridge<S> for Bridge<S> {
 fn worker_retained_views_are_explicitly_unavailable_before_and_after_close() {
     macro_rules! check {
         ($create:ident) => {{
-            let mut c = crate::$create(Box::new(Bridge(std::marker::PhantomData)));
+            let mut c = crate::$create(Box::new(Bridge {
+                state: std::marker::PhantomData,
+                outputs: None,
+            }));
             assert!(matches!(
                 c.host_outputs(),
                 Err(ControlError::UnavailableInRealization {
@@ -398,6 +422,29 @@ fn worker_retained_views_are_explicitly_unavailable_before_and_after_close() {
     check!(create_dualsense_usb_worker);
     check!(create_dualshock4_usb_worker);
     check!(create_xbox360_usb_worker);
+}
+
+#[test]
+fn worker_getter_reads_typed_snapshots_after_service_and_orderly_close() {
+    use crate::usb_personality::outputs::WorkerOutputs;
+    let mut controller = crate::create_dualsense_usb_worker(Box::new(Bridge {
+        state: std::marker::PhantomData,
+        outputs: Some(WorkerOutputs::DualSense(
+            crate::retained::DualSenseOutputState::default(),
+        )),
+    }));
+    assert_eq!(controller.host_outputs().unwrap().revision, 0);
+    controller
+        .service(&mut |_| panic!("snapshot is not an observation"))
+        .unwrap();
+    let active = controller.host_outputs().unwrap();
+    assert_eq!(active.revision, 1);
+    assert_eq!(active.lightbar_rgb, Some([1, 0, 0]));
+    controller.close();
+    controller.close();
+    let final_snapshot = controller.host_outputs().unwrap();
+    assert_eq!(final_snapshot.revision, 2);
+    assert_eq!(final_snapshot.lightbar_rgb, Some([2, 0, 0]));
 }
 
 #[test]

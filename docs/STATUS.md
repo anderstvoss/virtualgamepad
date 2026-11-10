@@ -69,10 +69,10 @@ Step 10c exposes retained-output snapshots on ordinary handles for in-process
 UHID and uinput under D2 (#176 comments 6325147128 and 6328169640). The API
 snapshot grows from 110 to 122 items with non-exhaustive retained-state and kind
 types; selected output metadata respects realization limits. The original four
-families leave typed native input kinds unused. USB-worker views return
-`UnavailableInRealization` under the owner
-scoping decision; recovery is tracked in #203 and needs separate protocol
-approval. No physical-output acceptance is implied.
+families leave typed native input kinds unused. Step 21c (#203) adds USB/IP
+worker snapshots for DualSense, DualShock 4 and the standard-HID Xbox 360
+fallback, with refresh during service and final recovery at orderly close.
+This describes accepted protocol state.
 
 C3 crate tidy extracts audio implementation into `gr-root-audio`, with stable
 root reexports and root-specific creation error mapping. The wire crate fold
