@@ -3,6 +3,7 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ControllerFamily {
     Xbox360,
+    XboxSeries,
     DualSense,
     DualShock4,
     SwitchPro,
@@ -99,13 +100,14 @@ impl AudioTopology {
                 onboard_microphone_channels: 0,
                 jack: Some(JackConnector::Mm35),
             },
-            ControllerFamily::SwitchPro | ControllerFamily::WiiRemote | ControllerFamily::Steam => {
-                Self {
-                    onboard_speaker_channels: 0,
-                    onboard_microphone_channels: 0,
-                    jack: None,
-                }
-            }
+            ControllerFamily::SwitchPro
+            | ControllerFamily::WiiRemote
+            | ControllerFamily::Steam
+            | ControllerFamily::XboxSeries => Self {
+                onboard_speaker_channels: 0,
+                onboard_microphone_channels: 0,
+                jack: None,
+            },
         }
     }
 }

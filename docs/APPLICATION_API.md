@@ -30,10 +30,11 @@ application owner for the original four families.
 
 ## Selection and identity
 
-Choose an exact realization with `CreationOptions::new(target)`. All six
-families offer `LINUX_UINPUT`. Wii Remote offers `LINUX_UHID_BLUETOOTH`,
-which uses Bluetooth bus metadata through local UHID. The other five families
-offer `LINUX_UHID_USB`. Each realization has its own published restrictions
+Choose an exact realization with `CreationOptions::new(target)`. All seven
+families offer `LINUX_UINPUT`. Wii Remote also offers `LINUX_UHID_BLUETOOTH`,
+which uses Bluetooth bus metadata through local UHID. `DualSense`, `DualShock4`,
+Switch Pro, Xbox 360 and Steam Controller 2026 also offer `LINUX_UHID_USB`.
+Xbox Series selects `LINUX_UINPUT` with `XboxSeriesOptions::default()`. Each realization has its own published restrictions
 and acceptance status. Creation has no automatic fallback.
 
 Use common `CreationOptions` for realization and audio and the matching
@@ -124,7 +125,8 @@ ordinary builds do not enable it.
 Each ordinary family handle now exposes `host_outputs()` under owner D2
 (#176 comments 6325147128 and 6328169640). It returns a typed snapshot
 (`DualSenseOutputState`, `DualShock4OutputState`, `SwitchProOutputState`,
-`Xbox360OutputState`, `WiiRemoteOutputs`, or `SteamController2026Outputs`) of accepted in-process host output values and a revision,
+`Xbox360OutputState`, `WiiRemoteOutputs`, `SteamController2026Outputs`, or
+`XboxSeriesOutputState`) of accepted in-process host output values and a revision,
 independently of the bounded observation queue, including after close. The
 revision advances once per accepted value change; repeated identical values and
 malformed requests do not advance it. Read the snapshot for latest levels and
@@ -286,3 +288,30 @@ Use the same readiness and deadline loop for Wii and Steam. Steam compatibility
 options retain their curated defaults. The opt-in PCM observation payload and
 retained last-packet view follow the existing curated behavior described in
 [ADR-0023](adr/ADR-0023-controller-subsystems.md).
+
+## Xbox Series
+
+```rust,no_run
+use virtualgamepad::{
+    create_xbox_series, CreationOptions, RealizationId, XboxSeriesButton,
+    XboxSeriesOptions,
+};
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let mut series = create_xbox_series(
+    CreationOptions::new(RealizationId::LINUX_UINPUT),
+    XboxSeriesOptions::default(),
+)?;
+series.set_button(XboxSeriesButton::Share, true)?;
+series.commit()?;
+series.service(&mut |event| { /* consume conventional force feedback */ })?;
+let latest = series.host_outputs()?;
+series.close();
+# Ok(()) }
+```
+
+`XboxSeriesState` uses signed xpad evdev coordinates with positive Y down.
+Trigger positions are 10-bit. `set_triggers` on the state validates both
+values. Share and Guide are independent. `XboxSeriesOutputEvent` carries
+conventional force-feedback observations, and the retained state exposes
+the latest accepted strong/weak playback request. The selected surface
+lists the unavailable impulse-trigger motors and other uinput limits.
