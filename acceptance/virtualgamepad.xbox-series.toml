@@ -11,3 +11,107 @@ id = "xpad-evdev-capabilities"
 status = "source-evidence"
 test_id = "provider_capabilities_match_the_xpad_golden_shape_except_documented_limits"
 evidence = ["xbox-series-xpad-evdev-golden", "xbox-series-xpad-evdev-shape"]
+
+[[functions]]
+id = "buttons-and-dpad"
+[functions.cells."linux.uinput"]
+status = "source-evidence"
+test_id = "commits_every_key_and_full_axis_domain_with_xpad_hat_orientation"
+evidence = ["xbox-series-xpad-evdev-shape", "xbox-series-xpad-identity-share"]
+reason = "SDL observed all button transitions including Guide and Share."
+
+[[functions]]
+id = "sticks-and-triggers"
+[functions.cells."linux.uinput"]
+status = "source-evidence"
+test_id = "commits_every_key_and_full_axis_domain_with_xpad_hat_orientation"
+evidence = ["xbox-series-xpad-axis-domains", "xbox-series-xpad-evdev-shape"]
+reason = "SDL observed all six analog axes and the final neutral state."
+
+[[functions]]
+id = "main-rumble"
+[functions.cells."linux.uinput"]
+status = "source-evidence"
+test_id = "completes_each_rumble_request_and_retains_only_playback"
+evidence = ["xbox-series-xpad-trigger-rumble-limitation", "xbox-series-xpad-evdev-shape"]
+reason = "The virtual run observed both SDL magnitudes in the retained controller state."
+
+[[functions]]
+id = "identity-and-enumeration"
+[functions.cells."linux.uinput"]
+status = "source-evidence"
+test_id = "provider_capabilities_match_the_xpad_golden_shape_except_documented_limits"
+evidence = ["xbox-series-xpad-evdev-golden"]
+reason = "One virtual evdev node with the xpad-style input ID and capability set."
+
+[[functions]]
+id = "lifecycle-and-timing"
+[functions.cells."linux.uinput"]
+status = "wip"
+test_id = "creation_rollback_removal_and_shutdown_close_each_session_once"
+evidence = ["xbox-series-xpad-evdev-shape"]
+reason = "C9 measured 50 single and 200 concurrent sessions in docs/XBOX_SERIES.md. First-valid-neutral timing remains unavailable under #166."
+
+[[functions]]
+id = "steam-input"
+[functions.cells."linux.uinput"]
+status = "wip"
+test_id = "xbox_series_steam_manual"
+evidence = []
+reason = "Steam Input is a separate manual consumer check."
+
+[[functions]]
+id = "impulse-trigger-motors"
+[functions.cells."linux.uinput"]
+status = "not-supported"
+test_id = "family_contract_exposes_only_reduced_uinput_and_two_main_motors"
+evidence = ["xbox-series-xpad-trigger-rumble-limitation"]
+reason = "FF_RUMBLE exposes two main-motor amplitudes and no trigger channels."
+
+[[functions]]
+id = "axis-fuzz"
+[functions.cells."linux.uinput"]
+status = "not-supported"
+test_id = "provider_capabilities_match_the_xpad_golden_shape_except_documented_limits"
+evidence = ["xbox-series-xpad-evdev-golden"]
+reason = "The native evdev provider sets fuzz to zero."
+
+[[functions]]
+id = "gain-and-periodic-ff"
+[functions.cells."linux.uinput"]
+status = "not-supported"
+test_id = "completes_each_rumble_request_and_retains_only_playback"
+evidence = ["xbox-series-xpad-ff-memless"]
+reason = "The curated provider accepts conventional rumble effects only."
+
+[[functions]]
+id = "button-triggered-rumble"
+[functions.cells."linux.uinput"]
+status = "not-supported"
+test_id = "completes_each_rumble_request_and_retains_only_playback"
+evidence = ["xbox-series-xpad-evdev-shape"]
+reason = "The shared uinput effect policy refuses automatic button triggering."
+
+[[functions]]
+id = "battery-and-status"
+[functions.cells."linux.uinput"]
+status = "not-supported"
+test_id = "family_contract_exposes_only_reduced_uinput_and_two_main_motors"
+evidence = []
+reason = "The gamepad event node has no battery or device status channel."
+
+[[functions]]
+id = "audio-and-accessories"
+[functions.cells."linux.uinput"]
+status = "not-supported"
+test_id = "xbox_series_converged_constructors_reject_unavailable_targets_and_audio"
+evidence = []
+reason = "The evdev gamepad has no audio sidecar or accessory transport."
+
+[[functions]]
+id = "motion-and-touch"
+[functions.cells."linux.uinput"]
+status = "not-supported"
+test_id = "family_contract_exposes_only_reduced_uinput_and_two_main_motors"
+evidence = []
+reason = "The xpad gamepad target declares no motion or touch controls."
