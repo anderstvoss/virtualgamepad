@@ -11,9 +11,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use virtualgamepad::{
-    ControllerSurfaceInfo, CreationOptions, DigitalControlUpdate, InputTopology, RealizationId,
-};
+use virtualgamepad::{CreationOptions, DigitalControlUpdate, InputTopology, RealizationId};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -31,7 +29,7 @@ impl Drop for Capture {
 }
 
 macro_rules! controllers {
-    ($(($variant:ident,$ty:ident,$create:ident,$id:literal)),+ $(,)?) => {
+    ($(($variant:ident,$ty:ident,$create:ident,$id:literal $(,$common:ident)?)),+ $(,)?) => {
         pub enum Controller { $($variant(virtualgamepad::$ty),)+ Wii(gr_curated_controllers::wii_remote::WiiRemoteController), Steam(gr_curated_controllers::steam_controller_2026::SteamController2026Controller) }
         impl Controller {
             fn create(id:&str,target:RealizationId)->Result<Self,String>{
@@ -44,7 +42,7 @@ macro_rules! controllers {
                 match id { $($id=>virtualgamepad::$create(CreationOptions::new(target), Default::default()).map(Self::$variant).map_err(|e|e.to_string()),)+ _=>Err("unmapped compiled family".into()) }
             }
             fn physical_paths(&self)->Vec<String> { match self { $(Self::$variant(c)=>c.association().components().iter().filter_map(|c|c.requested_physical_path().map(str::to_owned)).collect(),)+ Self::Steam(c)=>c.association().requested_physical_path.iter().cloned().collect(), Self::Wii(c)=>c.association().requested_physical_path.iter().cloned().chain(c.association().companions.iter().filter_map(|c|c.requested_physical_path.clone())).collect() } }
-            fn topology(&self)->&InputTopology { match self { $(Self::$variant(c)=>c.surface().common_surface().input_topology(),)+ Self::Steam(c)=>c.surface().input_topology(), Self::Wii(c)=>c.surface().input_topology() } }
+            fn topology(&self)->&InputTopology { match self { $(Self::$variant(c)=>c.surface()$(.$common())?.input_topology(),)+ Self::Steam(c)=>c.surface().input_topology(), Self::Wii(c)=>c.surface().input_topology() } }
             fn digital(&mut self,update:DigitalControlUpdate)->Result<(),String>{match self {$(Self::$variant(c)=>c.set_digital(update).map_err(|e|e.to_string()),)+ Self::Steam(c)=>c.set_digital(update).map_err(|e|e.to_string()), Self::Wii(c)=>c.set_digital(update).map_err(|e|e.to_string())}}
             fn commit(&mut self)->Result<(),String>{match self {$(Self::$variant(c)=>c.commit().map_err(|e|e.to_string()),)+ Self::Steam(c)=>c.commit().map_err(|e|e.to_string()), Self::Wii(c)=>c.commit().map_err(|e|e.to_string())}}
             fn service(&mut self)->Result<(),String>{match self {$(Self::$variant(c)=>c.service(&mut |_|{}).map_err(|e|e.to_string()),)+ Self::Steam(c)=>c.service(&mut |_|{}).map_err(|e|e.to_string()), Self::Wii(c)=>c.service(&mut |_|{}).map_err(|e|e.to_string())}}
@@ -54,10 +52,11 @@ macro_rules! controllers {
     };
 }
 controllers! {
-    (DualSense,DualSenseController,create_dualsense,"virtualgamepad.dualsense"),
-    (DualShock4,DualShock4Controller,create_dualshock4,"virtualgamepad.dualshock4"),
-    (SwitchPro,SwitchProController,create_switch_pro,"virtualgamepad.switch-pro"),
-    (Xbox360,Xbox360Controller,create_xbox360,"virtualgamepad.xbox360"),
+    (DualSense,DualSenseController,create_dualsense,"virtualgamepad.dualsense",common),
+    (DualShock4,DualShock4Controller,create_dualshock4,"virtualgamepad.dualshock4",common),
+    (SwitchPro,SwitchProController,create_switch_pro,"virtualgamepad.switch-pro",common),
+    (Xbox360,Xbox360Controller,create_xbox360,"virtualgamepad.xbox360",common),
+    (XboxSeries,XboxSeriesController,create_xbox_series,"virtualgamepad.xbox-series"),
 }
 
 pub struct Linux {

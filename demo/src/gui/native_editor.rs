@@ -1437,3 +1437,153 @@ mod registry_tests {
         }
     }
 }
+
+impl InputEditor for super::editor::XboxSeriesEditor {
+    fn current_topology(&self) -> &'static InputTopology {
+        self.surface().common().input_topology()
+    }
+
+    fn stick_value(&self, id: InputControlId) -> Option<(i32, i32)> {
+        let side = match id.as_str() {
+            "left-stick" => 0,
+            "right-stick" => 1,
+            _ => return None,
+        };
+        let [x, y] = self.state().sticks[side];
+        Some((x.into(), y.into()))
+    }
+
+    fn trigger_values(&self) -> Vec<(InputControlId, InputValue)> {
+        use virtualgamepad::XboxSeriesButton as Button;
+        let [left, right] = self.state().triggers();
+        vec![
+            (
+                InputControlId::new("left-shoulder"),
+                InputValue::Button(self.state().pressed(Button::LeftShoulder)),
+            ),
+            (
+                InputControlId::new("left-trigger"),
+                InputValue::Axis(left.raw().into()),
+            ),
+            (
+                InputControlId::new("right-shoulder"),
+                InputValue::Button(self.state().pressed(Button::RightShoulder)),
+            ),
+            (
+                InputControlId::new("right-trigger"),
+                InputValue::Axis(right.raw().into()),
+            ),
+        ]
+    }
+
+    fn apply_events(&mut self, events: Vec<InputEvent>) {
+        self.edit_xbox_series(events);
+    }
+}
+
+pub(super) fn apply_xbox_series_event(
+    state: &mut virtualgamepad::XboxSeriesState,
+    event: InputEvent,
+) -> bool {
+    use virtualgamepad::XboxSeriesButton as Button;
+    match event {
+        InputEvent::Face { button, pressed } => {
+            state.set_digital(DigitalControlUpdate::FaceButton { button, pressed });
+        }
+        InputEvent::Dpad { direction, pressed } => {
+            state.set_digital(DigitalControlUpdate::Dpad { direction, pressed });
+        }
+        InputEvent::Button { id, pressed } => {
+            let button = match id.as_str() {
+                "view" => Button::View,
+                "menu" => Button::Menu,
+                "guide" => Button::Guide,
+                "share" => Button::Share,
+                "left-stick-press" => Button::LeftStickPress,
+                "right-stick-press" => Button::RightStickPress,
+                "left-shoulder" => Button::LeftShoulder,
+                "right-shoulder" => Button::RightShoulder,
+                _ => return false,
+            };
+            state.set_button(button, pressed);
+        }
+        InputEvent::Axis1 { id, value } => {
+            let Ok(value) = u16::try_from(value) else {
+                return false;
+            };
+            let [left, right] = state.triggers().map(virtualgamepad::XboxSeriesTrigger::raw);
+            return match id.as_str() {
+                "left-trigger" => state.set_triggers(value, right).is_ok(),
+                "right-trigger" => state.set_triggers(left, value).is_ok(),
+                _ => false,
+            };
+        }
+        InputEvent::Axis2 { id, x, y } => {
+            let (Ok(x), Ok(y)) = (i16::try_from(x), i16::try_from(y)) else {
+                return false;
+            };
+            let side = match id.as_str() {
+                "left-stick" => 0,
+                "right-stick" => 1,
+                _ => return false,
+            };
+            state.sticks[side] = [x, y];
+        }
+        InputEvent::Touch { .. } | InputEvent::Motion { .. } => return false,
+    }
+    true
+}
+
+#[cfg(test)]
+mod xbox_series_tests {
+    use super::*;
+    use virtualgamepad::{RealizationId, XboxSeriesButton, XboxSeriesState};
+
+    #[test]
+    fn selector_and_editor_expose_series_native_controls() {
+        use super::super::Kind;
+        let kinds = Kind::registered();
+        assert_eq!(kinds.len(), 7);
+        assert!(matches!(kinds.last(), Some(Kind::XboxSeries)));
+        let [target] = (Kind::XboxSeries.entry().realizations)() else {
+            panic!("expected only uinput");
+        };
+        assert_eq!(target.surface.target(), RealizationId::LINUX_UINPUT);
+
+        let mut state = XboxSeriesState::default();
+        assert!(apply_xbox_series_event(
+            &mut state,
+            InputEvent::Button {
+                id: InputControlId::new("share"),
+                pressed: true,
+            }
+        ));
+        assert!(state.pressed(XboxSeriesButton::Share));
+        assert!(!state.pressed(XboxSeriesButton::Guide));
+        for (value, accepted) in [(1023, true), (1024, false), (-1, false)] {
+            assert_eq!(
+                apply_xbox_series_event(
+                    &mut state,
+                    InputEvent::Axis1 {
+                        id: InputControlId::new("right-trigger"),
+                        value,
+                    }
+                ),
+                accepted
+            );
+        }
+        assert_eq!(
+            state.triggers().map(virtualgamepad::XboxSeriesTrigger::raw),
+            [0, 1023]
+        );
+        assert!(apply_xbox_series_event(
+            &mut state,
+            InputEvent::Axis2 {
+                id: InputControlId::new("right-stick"),
+                x: -32768,
+                y: 32767,
+            }
+        ));
+        assert_eq!(state.sticks, [[0, 0], [i16::MIN, i16::MAX]]);
+    }
+}

@@ -130,6 +130,27 @@ pub(crate) fn xbox360(
     })
 }
 
+/// Accepted host feedback for the Xbox Series uinput realization.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum XboxSeriesOutputEvent {
+    ForceFeedback(ForceFeedbackEvent),
+}
+
+pub(crate) fn xbox_series(
+    event: gr_realization_api::RawReverseEvent,
+) -> Result<Option<XboxSeriesOutputEvent>, ControllerError> {
+    use gr_realization_api::RawReverseEvent as E;
+    match event {
+        E::ForceFeedback(event) => Ok(Some(XboxSeriesOutputEvent::ForceFeedback(event))),
+        E::ForceFeedbackUpload { .. }
+        | E::ForceFeedbackErase { .. }
+        | E::HidGetReportRequest { .. }
+        | E::HidSetReportRequest { .. } => Err(request_leaked()),
+        E::Evdev(_) | E::HidLifecycle(_) | E::HidOutput { .. } => Ok(None),
+    }
+}
+
 macro_rules! native_family_output {
     ($(#[$doc:meta])* $event:ident, $convert:ident) => {
         $(#[$doc])*

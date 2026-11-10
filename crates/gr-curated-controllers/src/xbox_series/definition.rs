@@ -1,13 +1,13 @@
-use super::{XboxSeriesButton, XboxSeriesOutputState, XboxSeriesState, XboxSeriesTrigger, evdev};
+use super::{XboxSeriesOutputState, XboxSeriesState, XboxSeriesTrigger, evdev};
 use crate::{
     common,
     registry::{self, ControllerFamily, FamilyOperation, FamilyRealization, FamilySpec},
 };
 use gr_controller_contract::{
     AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, ControlError, ControllerSurface,
-    DigitalControlSurface, DigitalControlUpdate, DpadDirection, DpadHoldBehavior, DpadPresentation,
-    FaceButton, FaceButtonInput, InputAxisRange, InputControlId, InputTopology, MotorRole,
-    OutputKind, RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
+    DigitalControlSurface, DigitalControlUpdate, DpadHoldBehavior, DpadPresentation, FaceButton,
+    FaceButtonInput, InputAxisRange, InputControlId, InputTopology, MotorRole, OutputKind,
+    RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
     RealizationValidationStatus, TargetAwareControllerDriver, TargetRestriction, TriggerInput,
     TriggerInputKind,
     construction::{
@@ -21,7 +21,7 @@ use gr_realization_api::{
 };
 
 #[derive(Default)]
-pub(super) struct XboxSeriesDefinition {
+pub(crate) struct XboxSeriesDefinition {
     #[cfg(test)]
     pub(super) provider: Option<std::sync::Arc<dyn gr_realization_api::NativeProviderFactory>>,
 }
@@ -318,28 +318,7 @@ impl TargetAwareControllerDriver for XboxSeriesDefinition {
         state: &mut XboxSeriesState,
         update: DigitalControlUpdate,
     ) -> Result<(), ControlError> {
-        use XboxSeriesButton as Button;
-        let (button, pressed) = match update {
-            DigitalControlUpdate::FaceButton { button, pressed } => (
-                match button {
-                    FaceButton::South => Button::A,
-                    FaceButton::East => Button::B,
-                    FaceButton::West => Button::X,
-                    FaceButton::North => Button::Y,
-                },
-                pressed,
-            ),
-            DigitalControlUpdate::Dpad { direction, pressed } => (
-                match direction {
-                    DpadDirection::Up => Button::DpadUp,
-                    DpadDirection::Down => Button::DpadDown,
-                    DpadDirection::Left => Button::DpadLeft,
-                    DpadDirection::Right => Button::DpadRight,
-                },
-                pressed,
-            ),
-        };
-        state.set_button(button, pressed);
+        state.set_digital(update);
         Ok(())
     }
 

@@ -5,7 +5,8 @@ mod definition;
 mod evdev;
 pub use controller::{XboxSeriesController, XboxSeriesOutputState, create_xbox_series};
 
-use gr_controller_contract::ControlError;
+pub(crate) use definition::XboxSeriesDefinition;
+use gr_controller_contract::{ControlError, DigitalControlUpdate, DpadDirection, FaceButton};
 
 /// Xbox Series has no per-controller creation settings on uinput.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -79,6 +80,32 @@ impl XboxSeriesState {
 
     pub fn set_button(&mut self, button: XboxSeriesButton, pressed: bool) {
         self.buttons[button as usize] = pressed;
+    }
+
+    /// Apply a face or directional button edit in its spatial position.
+    pub fn set_digital(&mut self, update: DigitalControlUpdate) {
+        use XboxSeriesButton as Button;
+        let (button, pressed) = match update {
+            DigitalControlUpdate::FaceButton { button, pressed } => (
+                match button {
+                    FaceButton::South => Button::A,
+                    FaceButton::East => Button::B,
+                    FaceButton::West => Button::X,
+                    FaceButton::North => Button::Y,
+                },
+                pressed,
+            ),
+            DigitalControlUpdate::Dpad { direction, pressed } => (
+                match direction {
+                    DpadDirection::Up => Button::DpadUp,
+                    DpadDirection::Down => Button::DpadDown,
+                    DpadDirection::Left => Button::DpadLeft,
+                    DpadDirection::Right => Button::DpadRight,
+                },
+                pressed,
+            ),
+        };
+        self.set_button(button, pressed);
     }
 
     /// Left and right trigger positions in native units.

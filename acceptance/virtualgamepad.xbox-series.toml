@@ -1,0 +1,13 @@
+schema_version = 1
+controller = "virtualgamepad.xbox-series"
+research_revision = "e1a059125d8c435d1575638360ab787a14136f19"
+realizations = ["linux.uinput"]
+persistent_resources = []
+refused_operations = ["impulse triggers and extra motors", "axis fuzz", "gain and periodic force feedback", "automatic force-feedback trigger", "battery and device status", "headset audio and accessories"]
+
+[[functions]]
+id = "xpad-evdev-capabilities"
+[functions.cells."linux.uinput"]
+status = "source-evidence"
+test_id = "provider_capabilities_match_the_xpad_golden_shape_except_documented_limits"
+evidence = ["xbox-series-xpad-evdev-golden", "xbox-series-xpad-evdev-shape"]

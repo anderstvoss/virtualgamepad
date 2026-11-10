@@ -18,15 +18,17 @@ pub(super) enum Kind {
     SwitchPro,
     WiiRemote,
     Steam,
+    XboxSeries,
 }
 impl Kind {
-    pub(super) const ALL: [Self; 6] = [
+    pub(super) const ALL: [Self; 7] = [
         Self::Xbox360,
         Self::DualSense,
         Self::DualShock4,
         Self::SwitchPro,
         Self::WiiRemote,
         Self::Steam,
+        Self::XboxSeries,
     ];
     pub(super) const fn label(self) -> &'static str {
         match self {
@@ -36,6 +38,7 @@ impl Kind {
             Self::SwitchPro => "Switch Pro Controller",
             Self::WiiRemote => "Wii Remote",
             Self::Steam => "Steam Controller 2026",
+            Self::XboxSeries => "Xbox Series",
         }
     }
 
@@ -47,6 +50,7 @@ impl Kind {
             Self::SwitchPro => "SWITCHPRO",
             Self::WiiRemote => "WII",
             Self::Steam => "STEAM2026",
+            Self::XboxSeries => "XBSERIES",
         }
     }
 
@@ -58,11 +62,13 @@ impl Kind {
             Self::SwitchPro => audio_topology::ControllerFamily::SwitchPro,
             Self::WiiRemote => audio_topology::ControllerFamily::WiiRemote,
             Self::Steam => audio_topology::ControllerFamily::Steam,
+            Self::XboxSeries => audio_topology::ControllerFamily::XboxSeries,
         }
     }
 }
 pub(super) enum Controller {
     Xbox(Xbox360Controller),
+    XboxSeries(virtualgamepad::XboxSeriesController),
     DualSense(DualSenseController),
     DualShock4(DualShock4Controller),
     SwitchPro(SwitchProController),
@@ -90,6 +96,7 @@ impl Kind {
             Self::SwitchPro => "virtualgamepad.switch-pro",
             Self::WiiRemote => "virtualgamepad.wii-remote",
             Self::Steam => "virtualgamepad.steam-controller-2026",
+            Self::XboxSeries => "virtualgamepad.xbox-series",
         })
     }
     pub(super) fn entry(self) -> &'static gr_curated_controllers::registry::FamilyEntry {
@@ -144,6 +151,11 @@ impl Kind {
                     })?;
                 Ok(Controller::Steam(inner))
             }
+            Self::XboxSeries => virtualgamepad::create_xbox_series(
+                creation,
+                virtualgamepad::XboxSeriesOptions::default(),
+            )
+            .map(Controller::XboxSeries),
             Self::Xbox360 => create_xbox360(creation, virtualgamepad::Xbox360Options::default())
                 .map(Controller::Xbox),
             Self::DualSense => {
@@ -177,7 +189,7 @@ impl ServicedController for Controller {
             Self::Xbox(c) => c.audio(),
             Self::DualSense(c) => c.audio(),
             Self::DualShock4(c) => c.audio(),
-            Self::SwitchPro(_) | Self::WiiRemote(_) | Self::Steam(_) => None,
+            Self::SwitchPro(_) | Self::WiiRemote(_) | Self::Steam(_) | Self::XboxSeries(_) => None,
         }
     }
     fn backend_healthy(&mut self) -> bool {
@@ -187,6 +199,7 @@ impl ServicedController for Controller {
     fn neutralize(&mut self) -> Result<(), String> {
         match self {
             Self::Xbox(c) => c.neutralize(),
+            Self::XboxSeries(c) => c.neutralize(),
             Self::DualSense(c) => c.neutralize(),
             Self::DualShock4(c) => c.neutralize(),
             Self::SwitchPro(c) => c.neutralize(),
@@ -226,6 +239,7 @@ impl Controller {
     pub(super) fn retained_error(&mut self) -> Option<String> {
         let diagnostics = match self {
             Self::Xbox(c) => c.diagnostics(),
+            Self::XboxSeries(c) => c.diagnostics(),
             Self::DualSense(c) => c.diagnostics(),
             Self::DualShock4(c) => c.diagnostics(),
             Self::SwitchPro(c) => c.diagnostics(),
@@ -237,6 +251,7 @@ impl Controller {
     pub(super) fn backend_healthy(&mut self) -> bool {
         let status = match self {
             Self::Xbox(controller) => controller.diagnostics().status(),
+            Self::XboxSeries(controller) => controller.diagnostics().status(),
             Self::DualSense(controller) => controller.diagnostics().status(),
             Self::DualShock4(controller) => controller.diagnostics().status(),
             Self::SwitchPro(controller) => controller.diagnostics().status(),
@@ -251,6 +266,7 @@ impl Controller {
     pub(super) fn next_service_in(&self) -> Option<Duration> {
         match self {
             Self::Xbox(controller) => controller.next_service_in(),
+            Self::XboxSeries(controller) => controller.next_service_in(),
             Self::DualSense(controller) => controller.next_service_in(),
             Self::DualShock4(controller) => controller.next_service_in(),
             Self::SwitchPro(controller) => controller.next_service_in(),
@@ -291,6 +307,7 @@ impl Controller {
     pub(super) fn commit(&mut self) -> Result<(), String> {
         let result = match self {
             Self::Xbox(controller) => controller.commit(),
+            Self::XboxSeries(controller) => controller.commit(),
             Self::DualSense(controller) => controller.commit(),
             Self::DualShock4(controller) => controller.commit(),
             Self::SwitchPro(controller) => controller.commit(),
@@ -302,6 +319,7 @@ impl Controller {
     pub(super) fn close(&mut self) {
         match self {
             Self::Xbox(controller) => controller.close(),
+            Self::XboxSeries(controller) => controller.close(),
             Self::DualSense(controller) => controller.close(),
             Self::DualShock4(controller) => controller.close(),
             Self::SwitchPro(controller) => controller.close(),
@@ -312,6 +330,7 @@ impl Controller {
     pub(super) fn is_dirty(&self) -> bool {
         match self {
             Self::Xbox(controller) => controller.is_dirty(),
+            Self::XboxSeries(controller) => controller.is_dirty(),
             Self::DualSense(controller) => controller.is_dirty(),
             Self::DualShock4(controller) => controller.is_dirty(),
             Self::SwitchPro(controller) => controller.is_dirty(),
@@ -331,6 +350,14 @@ impl Controller {
                         indicators.apply_force_feedback(event);
                     }
                     log.push(format!("Xbox 360: {event:?}"));
+                })
+                .map_err(|error| error.to_string()),
+            Self::XboxSeries(controller) => controller
+                .service(&mut |event| {
+                    if let virtualgamepad::XboxSeriesOutputEvent::ForceFeedback(feedback) = event {
+                        indicators.apply_force_feedback(feedback);
+                    }
+                    log.push(format!("Xbox Series: {event:?}"));
                 })
                 .map_err(|error| error.to_string()),
             Self::DualSense(controller) => controller
@@ -422,6 +449,7 @@ impl ControllerView {
     pub(super) fn surface(&self) -> &dyn ControllerSurfaceInfo {
         match self {
             Self::Xbox(controller) => controller.surface(),
+            Self::XboxSeries(controller) => controller.surface(),
             Self::DualSense(controller) => controller.surface(),
             Self::DualShock4(controller) => controller.surface(),
             Self::SwitchPro(controller) => controller.surface(),
@@ -433,6 +461,7 @@ impl ControllerView {
     pub(super) fn input_editor(&mut self) -> &mut dyn native_editor::InputEditor {
         match self {
             Self::Xbox(c) => c,
+            Self::XboxSeries(c) => c,
             Self::DualSense(c) => c,
             Self::DualShock4(c) => c,
             Self::SwitchPro(c) => c,
@@ -458,9 +487,11 @@ impl ControllerView {
         match self {
             Self::Xbox(controller) => controller.state().battery(),
             Self::DualSense(controller) => controller.state().battery(),
-            Self::DualShock4(_) | Self::SwitchPro(_) | Self::WiiRemote(_) | Self::Steam(_) => {
-                BatteryState::default()
-            }
+            Self::DualShock4(_)
+            | Self::SwitchPro(_)
+            | Self::WiiRemote(_)
+            | Self::Steam(_)
+            | Self::XboxSeries(_) => BatteryState::default(),
         }
     }
     pub(super) const fn supports_battery_emulation(&self) -> bool {
@@ -470,18 +501,22 @@ impl ControllerView {
         match self {
             Self::Xbox(controller) => controller.set_battery_exposed(exposed),
             Self::DualSense(controller) => controller.set_battery_exposed(exposed),
-            Self::DualShock4(_) | Self::SwitchPro(_) | Self::WiiRemote(_) | Self::Steam(_) => {
-                Ok(())
-            }
+            Self::DualShock4(_)
+            | Self::SwitchPro(_)
+            | Self::WiiRemote(_)
+            | Self::Steam(_)
+            | Self::XboxSeries(_) => Ok(()),
         }
     }
     pub(super) fn set_battery_level(&mut self, level: BatteryLevel) -> Result<(), String> {
         match self {
             Self::Xbox(controller) => controller.set_battery_level(level),
             Self::DualSense(controller) => controller.set_battery_level(level),
-            Self::DualShock4(_) | Self::SwitchPro(_) | Self::WiiRemote(_) | Self::Steam(_) => {
-                Ok(())
-            }
+            Self::DualShock4(_)
+            | Self::SwitchPro(_)
+            | Self::WiiRemote(_)
+            | Self::Steam(_)
+            | Self::XboxSeries(_) => Ok(()),
         }
     }
 }

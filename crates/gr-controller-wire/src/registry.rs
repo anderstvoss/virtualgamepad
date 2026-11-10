@@ -139,6 +139,7 @@ macro_rules! compiled_families {
             (dualshock4, DualShock4Definition, DUALSHOCK4, [DualShock4]),
             (switch_pro, SwitchProDefinition, SWITCH_PRO, []),
             (xbox360, Xbox360Definition, XBOX360, [Xbox360]),
+            (xbox_series, XboxSeriesDefinition, XBOX_SERIES, []),
             (wii_remote, WiiRemoteDefinition, WII_REMOTE, []),
             (steam_controller_2026, SteamController2026Definition, STEAM_CONTROLLER_2026, []),
         }

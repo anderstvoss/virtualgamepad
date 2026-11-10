@@ -132,3 +132,18 @@ The curated `xbox_series` module adds
 `LINUX_UINPUT`. The handle provides native edits, lifecycle servicing and
 retained conventional rumble playback. Its surface explains the limits of
 uinput force feedback and device metadata.
+
+## C9 step 15c · Xbox Series at the ordinary root
+
+The ordinary root adds `create_xbox_series(CreationOptions, XboxSeriesOptions)`,
+`XboxSeriesController`, `XboxSeriesOutputEvent` and the re-exported family types
+`XboxSeriesOptions`, `XboxSeriesButton`, `XboxSeriesState`,
+`XboxSeriesTrigger` and `XboxSeriesOutputState`. The root constructor handles
+the internal session and association. It refuses audio and any target other
+than `LINUX_UINPUT`. The typed service callback carries force-feedback
+observations and `host_outputs()` retains the most recent playback request.
+
+The curated state adds `XboxSeriesState::set_digital` for spatial face and
+D-pad edits. The compiled registry adds Xbox Series with no USB worker,
+audio subsystem or creation toggles. Existing family signatures and the
+separate Wii and Steam snapshots are unchanged.
