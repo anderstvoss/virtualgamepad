@@ -23,6 +23,7 @@ Each numbered file is a self-contained agent brief. To dispatch one, give an age
 | 12 | [Windows CI downloads](12-windows-ci-downloads.md) | #150 | Fixes | D8 |
 | 13 | [Wii Remote package](13-wii-remote-package.md) (checkpoint C5) | #158 | Controller | C1, D6, D7; C2 for extensions and EEPROM |
 | 14 | [Steam Controller 2026, wired](14-steam-controller-wired-package.md) (checkpoint C6) | #159 | Controller | C1, step 16 = UHID accepted, 11c |
+| 16 | [Audio and haptics buildout](16-audio-haptics-buildout.md) (new checkpoint proposed) | #116, #126, #135, #143, #145 | Audio | S0 option 3 **decided** ([#347](https://github.com/anderstvoss/virtualgamepad/pull/347)); #344 shared stream design/authorization for S1/S2; S1 D7 speaker gate; A0 before live gates; #203 worker recovery separate |
 
 ## Order
 
