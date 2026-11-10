@@ -45,9 +45,10 @@ impl Feedback {
     pub(super) fn service(
         &mut self,
         sink: &mut ProviderSessionSink,
+        retry_replies: bool,
         callback: &mut dyn FnMut(RawReverseEvent),
     ) -> Result<(), ProviderError> {
-        let result = self.service_inner(sink, callback);
+        let result = self.service_inner(sink, retry_replies, callback);
         if result.is_err() {
             self.clear();
             sink.close();
@@ -57,9 +58,10 @@ impl Feedback {
     fn service_inner(
         &mut self,
         sink: &mut ProviderSessionSink,
+        retry_replies: bool,
         callback: &mut dyn FnMut(RawReverseEvent),
     ) -> Result<(), ProviderError> {
-        if !self.flush(sink, callback)? {
+        if !self.flush(sink, retry_replies, callback)? {
             return Ok(());
         }
         if self.events.is_empty() {
@@ -154,7 +156,7 @@ impl Feedback {
                 }
                 event => callback(event),
             }
-            if !self.flush(sink, callback)? {
+            if !self.flush(sink, retry_replies, callback)? {
                 return Ok(());
             }
         }
@@ -163,6 +165,7 @@ impl Feedback {
     fn flush(
         &mut self,
         sink: &mut ProviderSessionSink,
+        retry_replies: bool,
         callback: &mut dyn FnMut(RawReverseEvent),
     ) -> Result<bool, ProviderError> {
         let Some((reply, observation)) = &self.pending else {
@@ -170,6 +173,11 @@ impl Feedback {
         };
         match sink.reply(reply.clone()) {
             Ok(()) => {}
+            Err(ProviderError::WouldBlock) if !retry_replies => {
+                return Err(ProviderError::Write {
+                    reason: "evdev completion blocked and the session must close".into(),
+                });
+            }
             Err(ProviderError::WouldBlock) if self.retries < RETRIES => {
                 self.retries += 1;
                 return Ok(false);

@@ -1,22 +1,30 @@
-use super::XboxSeriesTrigger;
+use super::{XboxSeriesButton, XboxSeriesOutputState, XboxSeriesState, XboxSeriesTrigger, evdev};
 use crate::{
     common,
     registry::{self, ControllerFamily, FamilyOperation, FamilyRealization, FamilySpec},
 };
 use gr_controller_contract::{
-    AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, ControllerSurface,
-    DigitalControlSurface, DpadHoldBehavior, DpadPresentation, FaceButton, FaceButtonInput,
-    InputAxisRange, InputControlId, InputTopology, MotorRole, OutputKind,
-    RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
-    RealizationValidationStatus, TargetRestriction, TriggerInput, TriggerInputKind,
+    AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, ControlError, ControllerSurface,
+    DigitalControlSurface, DigitalControlUpdate, DpadDirection, DpadHoldBehavior, DpadPresentation,
+    FaceButton, FaceButtonInput, InputAxisRange, InputControlId, InputTopology, MotorRole,
+    OutputKind, RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
+    RealizationValidationStatus, TargetAwareControllerDriver, TargetRestriction, TriggerInput,
+    TriggerInputKind,
     construction::{
         ControllerSurfaceSpec, DpadClusterSpec, FaceButtonClusterSpec, InputTopologySpec,
         StickInputSpec, TriggerStackSpec,
     },
 };
-use gr_realization_api::{ControllerId, ProviderRequirements, RealizationTarget};
+use gr_realization_api::{
+    ControllerId, ProviderFrame, ProviderRequirements, RealizationSelection, RealizationSessionId,
+    RealizationTarget,
+};
 
-pub(super) struct XboxSeriesDefinition;
+#[derive(Default)]
+pub(super) struct XboxSeriesDefinition {
+    #[cfg(test)]
+    pub(super) provider: Option<std::sync::Arc<dyn gr_realization_api::NativeProviderFactory>>,
+}
 
 // Research xbox-series-xpad-evdev-shape and xbox-series-xpad-evdev-golden.
 pub(super) const DIGITAL: [DigitalControlSurface; 12] = [
@@ -294,6 +302,95 @@ impl RealizationControllerDefinition for XboxSeriesDefinition {
 
     fn realization_manifest(&self) -> RealizationManifest {
         Self::manifest()
+    }
+}
+
+impl TargetAwareControllerDriver for XboxSeriesDefinition {
+    type State = XboxSeriesState;
+    type Frame = ProviderFrame;
+
+    fn neutral_state(&self) -> XboxSeriesState {
+        XboxSeriesState::default()
+    }
+
+    fn apply_digital(
+        &self,
+        state: &mut XboxSeriesState,
+        update: DigitalControlUpdate,
+    ) -> Result<(), ControlError> {
+        use XboxSeriesButton as Button;
+        let (button, pressed) = match update {
+            DigitalControlUpdate::FaceButton { button, pressed } => (
+                match button {
+                    FaceButton::South => Button::A,
+                    FaceButton::East => Button::B,
+                    FaceButton::West => Button::X,
+                    FaceButton::North => Button::Y,
+                },
+                pressed,
+            ),
+            DigitalControlUpdate::Dpad { direction, pressed } => (
+                match direction {
+                    DpadDirection::Up => Button::DpadUp,
+                    DpadDirection::Down => Button::DpadDown,
+                    DpadDirection::Left => Button::DpadLeft,
+                    DpadDirection::Right => Button::DpadRight,
+                },
+                pressed,
+            ),
+        };
+        state.set_button(button, pressed);
+        Ok(())
+    }
+
+    fn validate_state(
+        &self,
+        selection: RealizationSelection,
+        _: &XboxSeriesState,
+    ) -> Result<(), ControlError> {
+        if selection.target != UINPUT {
+            return Err(common::unavailable(selection.target));
+        }
+        Ok(())
+    }
+
+    fn encode(
+        &self,
+        selection: RealizationSelection,
+        state: &XboxSeriesState,
+    ) -> Result<ProviderFrame, ControlError> {
+        self.validate_state(selection, state)?;
+        Ok(evdev::frame(state))
+    }
+}
+
+impl common::HidDriver for XboxSeriesDefinition {
+    type Hid = common::SnapshotProtocol<XboxSeriesState, XboxSeriesOutputState>;
+    const RETRY_NATIVE_REPLIES: bool = false;
+
+    fn neutralize_state(state: &mut XboxSeriesState) {
+        state.neutralize();
+    }
+
+    #[cfg(test)]
+    fn open_native(
+        &self,
+        request: gr_realization_api::ProviderOpenRequest,
+        _: &mut crate::ControllerAssociation,
+    ) -> Result<Box<dyn gr_realization_api::NativeProviderSession>, gr_realization_api::ProviderError>
+    {
+        if let Some(provider) = &self.provider {
+            provider.open(request)
+        } else {
+            gr_realization_api::NativeProviderFactory::open(
+                &gr_provider_linux_uinput::LinuxUinputProvider,
+                request,
+            )
+        }
+    }
+
+    fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
+        unreachable!("the Xbox Series manifest only admits uinput")
     }
 }
 
