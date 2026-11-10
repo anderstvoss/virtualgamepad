@@ -114,3 +114,36 @@ Wii attachment change.
 
 The Wii and Steam supporting snapshots are unchanged. No existing ordinary-root
 declaration is removed or renamed in this step.
+
+## C9 step 15a · Xbox Series native types
+
+The curated crate adds `xbox_series::{XboxSeriesOptions, XboxSeriesState,
+XboxSeriesButton, XboxSeriesTrigger}`. State uses signed stick coordinates in
+the xpad evdev orientation (positive Y down), independent Guide and Share
+buttons, and validated trigger positions from 0 through 1023. Use
+`XboxSeriesState::set_triggers(left, right)` to validate both trigger positions
+before replacing either one. The options value has no settings for uinput.
+
+## C9 step 15b · Xbox Series curated uinput controller
+
+The curated `xbox_series` module adds
+`create_xbox_series(CreationOptions, XboxSeriesOptions)` and the
+`XboxSeriesController` and `XboxSeriesOutputState` types. Select
+`LINUX_UINPUT`. The handle provides native edits, lifecycle servicing and
+retained conventional rumble playback. Its surface explains the limits of
+uinput force feedback and device metadata.
+
+## C9 step 15c · Xbox Series at the ordinary root
+
+The ordinary root adds `create_xbox_series(CreationOptions, XboxSeriesOptions)`,
+`XboxSeriesController`, `XboxSeriesOutputEvent` and the re-exported family types
+`XboxSeriesOptions`, `XboxSeriesButton`, `XboxSeriesState`,
+`XboxSeriesTrigger` and `XboxSeriesOutputState`. The root constructor handles
+the internal session and association. It refuses audio and any target other
+than `LINUX_UINPUT`. The typed service callback carries force-feedback
+observations and `host_outputs()` retains the most recent playback request.
+
+The curated state adds `XboxSeriesState::set_digital` for spatial face and
+D-pad edits. The compiled registry adds Xbox Series with no USB worker,
+audio subsystem or creation toggles. Existing family signatures and the
+separate Wii and Steam snapshots are unchanged.

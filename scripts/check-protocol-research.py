@@ -101,6 +101,7 @@ def check(root, write=False, verify_remote=False):
                                 ('wii-c5-read-invalid-address', 22),
                                 ('wii-c5-functional-descriptor', 191),
                                 ('wii-c5-evdev-golden', None),
+                                ('xbox-series-xpad-evdev-golden', None),
                                 ('steam-c6-neutral-42', 54),
                                 ('steam-c6-neutral-45', 46),
                                 ('steam-c6-neutral-47', 46),
@@ -157,8 +158,10 @@ def check(root, write=False, verify_remote=False):
         if expected_size is None:
             extension = '.json'
             shape = json.loads(data)
-            counts = [sum(c['source_index'] == i for c in shape['controls']) for i in range(6)]
-            if not shape['manifest']['synthetic'] or counts != [12, 3, 8, 7, 21, 3]:
+            expected = [26] if name == 'xbox-series-xpad-evdev-golden' else [12, 3, 8, 7, 21, 3]
+            counts = [sum(c['source_index'] == i for c in shape['controls'])
+                      for i in range(len(shape['manifest']['sources']))]
+            if not shape['manifest']['synthetic'] or counts != expected or sum(counts) != len(shape['controls']):
                 raise ValueError('unexpected consumer shape: ' + name)
         elif len(bytes.fromhex(data.decode().strip())) != expected_size:
             raise ValueError('unexpected fixture size: ' + name)

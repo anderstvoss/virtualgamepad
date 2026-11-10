@@ -120,6 +120,15 @@ pub const STEAM_CONTROLLER_2026: FamilySpec = FamilySpec {
     dummy_hcd_report_length: None,
     usb_profile: None,
 };
+/// Xbox Series uses local evdev only and has no worker or USB transport.
+pub const XBOX_SERIES: FamilySpec = FamilySpec {
+    id: ControllerId::new("virtualgamepad.xbox-series"),
+    worker_name: "xbox-series",
+    broker_tag: None,
+    dummy_hcd_tag: None,
+    dummy_hcd_report_length: None,
+    usb_profile: None,
+};
 /// One source list for metadata and typed implementation dispatch. The callback
 /// expands only at compile time; this is not a runtime registration interface.
 #[macro_export]
@@ -130,6 +139,7 @@ macro_rules! compiled_families {
             (dualshock4, DualShock4Definition, DUALSHOCK4, [DualShock4]),
             (switch_pro, SwitchProDefinition, SWITCH_PRO, []),
             (xbox360, Xbox360Definition, XBOX360, [Xbox360]),
+            (xbox_series, XboxSeriesDefinition, XBOX_SERIES, []),
             (wii_remote, WiiRemoteDefinition, WII_REMOTE, []),
             (steam_controller_2026, SteamController2026Definition, STEAM_CONTROLLER_2026, []),
         }

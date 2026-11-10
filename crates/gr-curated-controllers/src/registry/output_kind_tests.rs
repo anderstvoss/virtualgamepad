@@ -31,7 +31,7 @@ fn declared_family_and_selected_output_kinds_match_implemented_paths() {
             "virtualgamepad.dualshock4" => &[rumble, OutputKind::Led { kind: LedKind::Rgb }],
             "virtualgamepad.switch-pro" => &[rumble, OutputKind::PlayerIndicator { count: 4 }],
             "virtualgamepad.steam-controller-2026" => &[rumble],
-            "virtualgamepad.xbox360" => &[evdev],
+            "virtualgamepad.xbox360" | "virtualgamepad.xbox-series" => &[evdev],
             "virtualgamepad.wii-remote" => &[
                 OutputKind::Rumble {
                     motors: &[MotorRole::Strong],
@@ -78,5 +78,5 @@ fn declared_family_and_selected_output_kinds_match_implemented_paths() {
             )));
         }
     }
-    assert_eq!(checked, 6);
+    assert_eq!(checked, 7);
 }
