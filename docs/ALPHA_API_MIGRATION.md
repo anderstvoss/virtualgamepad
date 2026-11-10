@@ -114,3 +114,12 @@ Wii attachment change.
 
 The Wii and Steam supporting snapshots are unchanged. No existing ordinary-root
 declaration is removed or renamed in this step.
+
+## C9 step 15a · Xbox Series native types
+
+The curated crate adds `xbox_series::{XboxSeriesOptions, XboxSeriesState,
+XboxSeriesButton, XboxSeriesTrigger}`. State uses signed stick coordinates in
+the xpad evdev orientation (positive Y down), independent Guide and Share
+buttons, and validated trigger positions from 0 through 1023. Use
+`XboxSeriesState::set_triggers(left, right)` to validate both trigger positions
+before replacing either one. The options value has no settings for uinput.
