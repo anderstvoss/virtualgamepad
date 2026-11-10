@@ -137,6 +137,7 @@ pub enum XboxSeriesOutputEvent {
     ForceFeedback(ForceFeedbackEvent),
 }
 
+#[allow(clippy::needless_pass_by_value)] // Family adapters consume each observation.
 pub(crate) fn xbox_series(
     event: gr_realization_api::RawReverseEvent,
 ) -> Result<Option<XboxSeriesOutputEvent>, ControllerError> {
