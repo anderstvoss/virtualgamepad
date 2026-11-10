@@ -1,8 +1,9 @@
 //! Native controls for the standard Xbox Series controller.
 
-// The target contract is built and tested here. The uinput driver uses it in 15b.
-#[allow(dead_code)]
+mod controller;
 mod definition;
+mod evdev;
+pub use controller::{XboxSeriesController, XboxSeriesOutputState, create_xbox_series};
 
 use gr_controller_contract::ControlError;
 
@@ -142,3 +143,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod realization_tests;

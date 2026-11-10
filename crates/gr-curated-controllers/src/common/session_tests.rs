@@ -117,7 +117,7 @@ pub(crate) struct Record {
     pub(crate) events: VecDeque<RawReverseEvent>,
     pub(crate) sent: Vec<ProviderFrame>,
     attempts: Vec<ProviderFrame>,
-    fail: VecDeque<ProviderError>,
+    pub(crate) fail: VecDeque<ProviderError>,
     closed: bool,
     pub(crate) destroys: usize,
     burst: usize,

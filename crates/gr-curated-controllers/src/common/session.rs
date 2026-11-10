@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 pub(crate) trait HidDriver: TargetAwareControllerDriver<Frame = ProviderFrame> {
     type Hid: Protocol<State = Self::State, Output = RawReverseEvent> + Send;
+    const RETRY_NATIVE_REPLIES: bool = true;
     fn neutralize_state(state: &mut Self::State);
     fn open_native(
         &self,
@@ -436,13 +437,14 @@ impl<D: HidDriver> ControllerSession<D> {
         if let Backend::Native(r) = &mut self.backend {
             if self.selection.target == gr_realization_api::RealizationTarget::LINUX_UINPUT {
                 let result = r.with_sink(|sink| {
-                    self.feedback.service(sink, &mut |event| {
-                        if self.observations.len() == 32 {
-                            self.observations.pop_front();
-                            self.dropped = self.dropped.saturating_add(1);
-                        }
-                        self.observations.push_back(event);
-                    })
+                    self.feedback
+                        .service(sink, D::RETRY_NATIVE_REPLIES, &mut |event| {
+                            if self.observations.len() == 32 {
+                                self.observations.pop_front();
+                                self.dropped = self.dropped.saturating_add(1);
+                            }
+                            self.observations.push_back(event);
+                        })
                 });
                 if result.is_err() {
                     r.close();

@@ -123,3 +123,12 @@ the xpad evdev orientation (positive Y down), independent Guide and Share
 buttons, and validated trigger positions from 0 through 1023. Use
 `XboxSeriesState::set_triggers(left, right)` to validate both trigger positions
 before replacing either one. The options value has no settings for uinput.
+
+## C9 step 15b · Xbox Series curated uinput controller
+
+The curated `xbox_series` module adds
+`create_xbox_series(CreationOptions, XboxSeriesOptions)` and the
+`XboxSeriesController` and `XboxSeriesOutputState` types. Select
+`LINUX_UINPUT`. The handle provides native edits, lifecycle servicing and
+retained conventional rumble playback. Its surface explains the limits of
+uinput force feedback and device metadata.
