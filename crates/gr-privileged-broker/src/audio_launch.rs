@@ -273,40 +273,61 @@ mod tests {
         assert!(error.to_string().contains("CAP_SETUID"));
         assert!(required_capabilities("CapBnd:\t00000000002000c0\n").is_err());
     }
+    const CAPABILITY_FIELDS: [&str; 4] = ["CapInh:", "CapPrm:", "CapEff:", "CapAmb:"];
+
     #[test]
-    fn worker_exec_has_no_effective_permitted_or_inheritable_capabilities() {
-        let image = File::open("/usr/bin/cat").unwrap();
+    fn report_exec_capabilities() {
+        let status = std::fs::read_to_string("/proc/self/status").unwrap();
+        // Start a new line after the test harness's progress text.
+        println!();
+        for key in CAPABILITY_FIELDS {
+            let line = status.lines().find(|line| line.starts_with(key)).unwrap();
+            println!("{line}");
+        }
+    }
+
+    fn exec_capability_probe(clear_caps: bool) -> String {
+        let image = File::open(std::env::current_exe().unwrap()).unwrap();
         let args = [
-            CString::new("cat").unwrap(),
-            CString::new("/proc/self/status").unwrap(),
-        ];
+            "broker-capability-probe",
+            "--exact",
+            "audio_launch::tests::report_exec_capabilities",
+            "--nocapture",
+        ]
+        .map(|arg| CString::new(arg).unwrap());
         let mut command = Command::new("/nonexistent-not-used");
         // SAFETY: only capability dropping and descriptor execution occur after fork.
+        // The captured File keeps the descriptor alive through exec.
         unsafe {
             command.pre_exec(move || {
-                clear_capabilities()?;
+                if clear_caps {
+                    clear_capabilities()?;
+                }
                 exec_image(image.as_raw_fd(), &args, &[])
             });
         }
         let output = command.output().unwrap();
-        assert!(output.status.success());
-        let status = String::from_utf8(output.stdout).unwrap();
-        for key in ["CapInh:", "CapPrm:", "CapEff:", "CapAmb:"] {
+        assert!(
+            output.status.success(),
+            "descriptor exec exited with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap()
+    }
+
+    #[test]
+    fn worker_exec_has_no_effective_permitted_or_inheritable_capabilities() {
+        let status = exec_capability_probe(true);
+        for key in CAPABILITY_FIELDS {
             let line = status.lines().find(|line| line.starts_with(key)).unwrap();
             assert_eq!(line.split_whitespace().nth(1), Some("0000000000000000"));
         }
     }
     #[test]
     fn executes_verified_descriptor_without_resolving_command_path() {
-        let image = File::open("/usr/bin/true").unwrap();
-        let args = [CString::new("verified-worker").unwrap()];
-        let mut command = Command::new("/nonexistent-not-used");
-        // SAFETY: closure only calls the bounded async-signal-safe helper;
-        // captured File keeps the descriptor alive through exec.
-        unsafe {
-            command.pre_exec(move || exec_image(image.as_raw_fd(), &args, &[]));
-        }
-        assert!(command.status().unwrap().success());
+        let status = exec_capability_probe(false);
+        assert!(status.lines().any(|line| line.starts_with("CapEff:")));
     }
     #[test]
     fn profiles_are_compiled_and_unprivileged_ids_are_required_before_resources() {
