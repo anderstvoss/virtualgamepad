@@ -1,12 +1,14 @@
+use crate::output_control;
 use gr_audio_contract::{AudioExposure, queue::pcm_queue};
 use gr_curated_controllers::{
     audio,
     usb_personality::{
-        self,
+        self, WorkerProtocol,
+        outputs::WorkerOutputs,
         state::{NativeState, Transactions},
     },
 };
-use gr_hid::{Protocol, Reply, Report, ReportType, RequestKind};
+use gr_hid::{Reply, Report, ReportType, RequestKind};
 use gr_realization_api::RawReverseEvent;
 use gr_usbip::{
     pcm_ipc::{Direction, Format, Inbound, Outbound},
@@ -18,7 +20,7 @@ use std::{
     net::Shutdown,
     os::unix::net::UnixStream,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
@@ -46,7 +48,7 @@ struct Update {
     sequence: u64,
     bytes: Vec<u8>,
 }
-struct Handler<P: Protocol, F> {
+struct Handler<P: WorkerProtocol, F> {
     protocol: P,
     state: Transactions,
     extract: F,
@@ -55,14 +57,19 @@ struct Handler<P: Protocol, F> {
     acknowledgements: mpsc::SyncSender<(u64, bool)>,
     events: mpsc::SyncSender<RawReverseEvent>,
     lost: Arc<AtomicU64>,
+    outputs: Arc<Mutex<WorkerOutputs>>,
 }
 impl<P, F> Handler<P, F>
 where
-    P: Protocol<Output = RawReverseEvent>,
+    P: WorkerProtocol<Output = RawReverseEvent>,
     F: Fn(&NativeState) -> Option<P::State>,
 {
     fn event(&self, event: Option<RawReverseEvent>) {
         if let Some(event) = event {
+            // The personality has accepted the request and applied its retained
+            // fields. Publish them before attempting the lossy observation.
+            *self.outputs.lock().expect("retained output lock poisoned") =
+                self.protocol.retained_outputs();
             if self.events.try_send(event).is_err() {
                 self.lost.fetch_add(1, Ordering::Relaxed);
             }
@@ -71,7 +78,7 @@ where
 }
 impl<P, F> HidHandler for Handler<P, F>
 where
-    P: Protocol<Output = RawReverseEvent>,
+    P: WorkerProtocol<Output = RawReverseEvent>,
     F: Fn(&NativeState) -> Option<P::State>,
 {
     fn service(&mut self, _: u64) -> io::Result<()> {
@@ -225,7 +232,7 @@ fn run_typed<P, F>(
     channels: Channels,
 ) -> io::Result<()>
 where
-    P: Protocol<Output = RawReverseEvent> + Send + 'static,
+    P: WorkerProtocol<Output = RawReverseEvent> + Send + 'static,
     P::State: Send,
     F: Fn(&NativeState) -> Option<P::State> + Send + 'static,
 {
@@ -251,6 +258,7 @@ where
     let lost = Arc::new(AtomicU64::new(0));
     let counters = Arc::new(Counters::default());
     let pcm_lateness = Arc::new(AtomicU64::new(0));
+    let outputs = Arc::new(Mutex::new(protocol.retained_outputs()));
     let handler = Handler {
         protocol,
         state: Transactions::new(setup.generation, neutral)
@@ -261,6 +269,7 @@ where
         acknowledgements,
         events,
         lost: lost.clone(),
+        outputs: outputs.clone(),
     };
     let worker = Worker::new(
         channels.usb,
@@ -318,9 +327,11 @@ where
             lost: &lost,
             usb: &counters,
             pcm_lateness: &pcm_lateness,
+            outputs: &outputs,
         },
     );
-    finish(&control, setup.generation, result, threads.close())
+    let cleanup = threads.close();
+    finish(&control, setup.generation, result, cleanup, &outputs)
 }
 fn run_pcm(
     outbound: &mut Outbound,
@@ -351,11 +362,17 @@ fn pcm_lateness_us(interval: Duration) -> u64 {
         .unwrap_or(u64::MAX)
         .saturating_sub(500)
 }
+enum CloseReply {
+    Legacy,
+    Snapshot,
+}
+
 fn finish(
     control: &UnixStream,
     generation: u64,
-    result: io::Result<()>,
+    result: io::Result<CloseReply>,
     cleanup: io::Result<()>,
+    outputs: &Mutex<WorkerOutputs>,
 ) -> io::Result<()> {
     // A close acknowledgement certifies both processing threads have stopped.
     // Worker failures take precedence over the EOF used to wake this reader.
@@ -364,19 +381,26 @@ fn finish(
             "worker: {worker}; control: {control}"
         ))),
         (Err(error), _) | (_, Err(error)) => Err(error),
-        _ => Ok(()),
+        (Ok(reply), Ok(())) => Ok(reply),
     };
-    let acknowledgement = if let Err(problem) = &outcome {
-        let reason = problem.to_string();
-        let mut end = reason.len().min(192);
-        while !reason.is_char_boundary(end) {
-            end -= 1;
+    let acknowledgement = match &outcome {
+        Err(problem) => {
+            let reason = problem.to_string();
+            let mut end = reason.len().min(192);
+            while !reason.is_char_boundary(end) {
+                end -= 1;
+            }
+            let mut payload = generation.to_le_bytes().to_vec();
+            payload.extend_from_slice(&reason.as_bytes()[..end]);
+            gr_privileged_broker::write_message(&mut &*control, 0x81, &payload)
         }
-        let mut payload = generation.to_le_bytes().to_vec();
-        payload.extend_from_slice(&reason.as_bytes()[..end]);
-        gr_privileged_broker::write_message(&mut &*control, 0x81, &payload)
-    } else {
-        gr_privileged_broker::write_message(&mut &*control, 4, &generation.to_le_bytes())
+        Ok(CloseReply::Legacy) => {
+            gr_privileged_broker::write_message(&mut &*control, 4, &generation.to_le_bytes())
+        }
+        Ok(CloseReply::Snapshot) => {
+            let response = output_response(generation, output_control::FINAL, outputs);
+            gr_privileged_broker::write_message(&mut &*control, output_control::TAG, &response)
+        }
     };
     let _ = control.shutdown(Shutdown::Both);
     outcome.and(acknowledgement)
@@ -385,6 +409,35 @@ struct ControlStats<'a> {
     lost: &'a AtomicU64,
     usb: &'a Counters,
     pcm_lateness: &'a AtomicU64,
+    outputs: &'a Mutex<WorkerOutputs>,
+}
+
+impl ControlStats<'_> {
+    fn diagnostics(&self, generation: u64) -> Vec<u8> {
+        let mut response = generation.to_le_bytes().to_vec();
+        for counter in [
+            self.lost,
+            &self.usb.completed_transfers,
+            &self.usb.microphone_silence_frames,
+            &self.usb.stalled_transfers,
+            &self.usb.playback_frames,
+            &self.usb.capture_frames,
+            &self.usb.abandoned_capture_frames,
+            &self.usb.maximum_audio_lateness_us,
+            &self.usb.microphone_queue_dropped_frames,
+        ] {
+            response.extend(counter.load(Ordering::Relaxed).to_le_bytes());
+        }
+        response
+    }
+}
+
+fn output_response(generation: u64, mode: u8, outputs: &Mutex<WorkerOutputs>) -> Vec<u8> {
+    let snapshot = outputs
+        .lock()
+        .expect("retained output lock poisoned")
+        .clone();
+    output_control::response(generation, mode, &snapshot)
 }
 fn control_loop(
     socket: &UnixStream,
@@ -393,7 +446,7 @@ fn control_loop(
     acknowledgements: &mpsc::Receiver<(u64, bool)>,
     events: &mpsc::Receiver<RawReverseEvent>,
     stats: &ControlStats<'_>,
-) -> io::Result<()> {
+) -> io::Result<CloseReply> {
     use gr_privileged_broker::{socket_wire::read_frame, write_message};
     let mut socket = socket;
     let mut ready = vec![1];
@@ -438,21 +491,7 @@ fn control_loop(
                 write_message(&mut socket, 2, &response)?;
             }
             3 if body.len() == 8 => {
-                let mut response = generation.to_le_bytes().to_vec();
-                for counter in [
-                    stats.lost,
-                    &stats.usb.completed_transfers,
-                    &stats.usb.microphone_silence_frames,
-                    &stats.usb.stalled_transfers,
-                    &stats.usb.playback_frames,
-                    &stats.usb.capture_frames,
-                    &stats.usb.abandoned_capture_frames,
-                    &stats.usb.maximum_audio_lateness_us,
-                    &stats.usb.microphone_queue_dropped_frames,
-                ] {
-                    response.extend(counter.load(Ordering::Relaxed).to_le_bytes());
-                }
-                write_message(&mut socket, 3, &response)?;
+                write_message(&mut socket, 3, &stats.diagnostics(generation))?;
             }
             5 if body.len() == 8 => {
                 let mut response = generation.to_le_bytes().to_vec();
@@ -477,9 +516,21 @@ fn control_loop(
                 response.extend(silence.to_le_bytes());
                 write_message(&mut socket, 7, &response)?;
             }
-            4 if body.len() == 8 => {
-                return Ok(());
-            }
+            4 if body.len() == 8 => return Ok(CloseReply::Legacy),
+            output_control::TAG => match &body[8..] {
+                [output_control::VERSION, output_control::LIVE] => {
+                    let response = output_response(generation, output_control::LIVE, stats.outputs);
+                    write_message(&mut socket, output_control::TAG, &response)?;
+                }
+                [output_control::VERSION, output_control::FINAL] => {
+                    return Ok(CloseReply::Snapshot);
+                }
+                _ => {
+                    return Err(io::Error::other(
+                        "invalid worker retained-output operation version or mode",
+                    ));
+                }
+            },
             _ => return Err(io::Error::other("unknown worker control operation")),
         }
     }
@@ -496,7 +547,7 @@ mod tests {
         b.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         (a, b)
     }
-    fn check_output_policy<P: Protocol<Output = RawReverseEvent>>(
+    fn check_output_policy<P: WorkerProtocol<Output = RawReverseEvent>>(
         protocol: P,
         state: NativeState,
         numbered: bool,
@@ -507,6 +558,7 @@ mod tests {
         let (acknowledgements, _) = mpsc::sync_channel(1);
         let (events, observed) = mpsc::sync_channel(8);
         let mut handler = Handler {
+            outputs: Arc::new(Mutex::new(protocol.retained_outputs())),
             protocol,
             state: Transactions::new(7, state).unwrap(),
             extract: |_: &NativeState| None::<P::State>,
@@ -609,13 +661,25 @@ mod tests {
     }
     #[test]
     fn cleanup_failure_never_acknowledges_success() {
-        let (control, mut client) = pair();
-        assert!(finish(&control, 9, Ok(()), Err(io::Error::other("cleanup failed"))).is_err());
-        let (tag, body) = read_message(&mut client).unwrap();
-        assert_eq!(tag, 0x81);
-        assert_eq!(&body[..8], &9_u64.to_le_bytes());
-        assert_eq!(&body[8..], b"cleanup failed");
-        assert_eq!(client.read(&mut [0]).unwrap(), 0);
+        for mode in [CloseReply::Legacy, CloseReply::Snapshot] {
+            let (control, mut client) = pair();
+            let outputs = Mutex::new(usb_personality::xbox360().retained_outputs());
+            assert!(
+                finish(
+                    &control,
+                    9,
+                    Ok(mode),
+                    Err(io::Error::other("cleanup failed")),
+                    &outputs
+                )
+                .is_err()
+            );
+            let (tag, body) = read_message(&mut client).unwrap();
+            assert_eq!(tag, 0x81);
+            assert_eq!(&body[..8], &9_u64.to_le_bytes());
+            assert_eq!(&body[8..], b"cleanup failed");
+            assert_eq!(client.read(&mut [0]).unwrap(), 0);
+        }
     }
     #[test]
     fn worker_failure_wakes_control_reader_but_keeps_failure_reply_writable() {
@@ -776,3 +840,6 @@ mod tests {
         assert_eq!(samples.read(&mut [0]).unwrap(), 0);
     }
 }
+
+#[cfg(test)]
+mod retained_tests;

@@ -35,18 +35,6 @@ impl DualSenseUsbProtocol {
     }
 }
 impl<R: crate::retained::OutputState> DualSenseUsbProtocol<R> {
-    /// Worker factories reuse acceptance but opt out of snapshot bookkeeping.
-    pub(crate) fn without_retention(self) -> DualSenseUsbProtocol<()> {
-        DualSenseUsbProtocol {
-            retained: (),
-            features: self.features,
-            sequence: self.sequence,
-            next_input: self.next_input,
-            active: self.active,
-            numbering_valid: self.numbering_valid,
-            last_input: self.last_input,
-        }
-    }
     fn accept_output(report: &Report) -> Result<(), ReplyError> {
         if report.kind != ReportType::Output || report.id() != Some(2) {
             return Err(ReplyError::Unsupported);

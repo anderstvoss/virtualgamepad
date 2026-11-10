@@ -248,7 +248,7 @@ fn wii_output_snapshots_update_four_leds_and_rumble_without_sony_rows() {
     assert!(
         labels
             .iter()
-            .any(|(text, _)| text == "Not exposed on Evdev / uinput")
+            .any(|(text, _)| text == "Not exposed on linux.uinput")
     );
     assert!(labels.iter().any(|(text, _)| text == "Rumble"));
     assert!(!labels.iter().any(|(text, _)| text.starts_with("Player 1")));
@@ -773,6 +773,25 @@ fn wii_recreation_retains_target_revision_and_compat_despite_sidebar_changes() {
             assert!(validate_wii_recreation(Kind::WiiRemote, options.wii_revision).is_ok());
             let other = recreation_options(Kind::SwitchPro, &saved, sidebar);
             assert!(creation_targets(Kind::SwitchPro).contains(&other.target));
+        }
+    }
+}
+
+#[test]
+fn every_registered_realization_is_named_by_its_exact_id() {
+    for kind in Kind::registered() {
+        for original_target in creation_targets(kind) {
+            let mut target = original_target;
+            let labels = render(|ui| {
+                draw_target_selector(ui, &mut target, kind, 400.0);
+            });
+            assert_eq!(target, original_target);
+            assert!(
+                labels.iter().any(|(label, _)| label == target.as_str()),
+                "{}: expected {}, got {labels:?}",
+                kind.label(),
+                target
+            );
         }
     }
 }

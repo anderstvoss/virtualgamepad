@@ -661,8 +661,6 @@ static USB_SURFACE: DualShock4Surface = DualShock4Surface {
     }
     .build(),
 };
-static RETAINED_WORKER: [TargetRestriction; 2] =
-    [RESTRICTIONS[0], crate::retained::WORKER_RESTRICTION];
 static USBIP_SURFACE: DualShock4Surface = DualShock4Surface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
@@ -671,7 +669,7 @@ static USBIP_SURFACE: DualShock4Surface = DualShock4Surface {
         axes: &AXES,
         outputs: &HID_OUTPUTS,
         output_kinds: NATIVE_OUTPUT_KINDS,
-        restrictions: &RETAINED_WORKER,
+        restrictions: &RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
@@ -1031,8 +1029,8 @@ impl DualShock4Controller {
         self.0.hid_identity().map(DualShock4Identity)
     }
 
-    /// Latest accepted host values and revision, retained after close. USB
-    /// workers are unavailable: their lossy event channel has no recovery query.
+    /// Latest accepted host values and revision, retained after close.
+    /// USB worker snapshots refresh during service and orderly close.
     pub fn host_outputs(&self) -> Result<crate::retained::DualShock4OutputState, ControlError> {
         self.0.retained_outputs()
     }
@@ -1448,13 +1446,6 @@ impl crate::registry::ControllerFamily for DualShock4Definition {
             ..crate::registry::refusal(
                 RETAINED_DUMMY[1],
                 &[RealizationTarget::LINUX_DUMMY_HCD_USB_HID],
-            )
-        },
-        crate::registry::FamilyOperation {
-            name: "USB/IP retained host outputs",
-            ..crate::registry::refusal(
-                RETAINED_WORKER[1],
-                &[RealizationTarget::LINUX_USBIP_USB_AUDIO],
             )
         },
     ];

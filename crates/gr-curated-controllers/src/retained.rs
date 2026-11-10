@@ -1,5 +1,6 @@
 //! Retained accepted host requests, not proof of motor, LED or audio delivery.
 //! Typed snapshots are also exposed by the ordinary application handles.
+use crate::usb_personality::outputs::WorkerOutputs;
 use gr_hid::{ReplyError, Report};
 
 /// Latest accepted conventional evdev playback request. Zero repetitions stops
@@ -68,6 +69,9 @@ pub struct Xbox360OutputState {
 pub(crate) trait OutputState: Clone + Default {
     fn apply(&mut self, report: &Report) -> Result<(), ReplyError>;
     fn from_native(playback: NativePlayback) -> Self;
+    fn from_worker(_: WorkerOutputs) -> Option<Self> {
+        None
+    }
 }
 pub(crate) trait RetainedProtocol: gr_hid::Protocol {
     type Outputs: OutputState;
@@ -101,7 +105,18 @@ macro_rules! native_view {
         }
     };
 }
+macro_rules! worker_view {
+    ($family:ident) => {
+        fn from_worker(outputs: WorkerOutputs) -> Option<Self> {
+            match outputs {
+                WorkerOutputs::$family(state) => Some(state),
+                _ => None,
+            }
+        }
+    };
+}
 impl OutputState for DualSenseOutputState {
+    worker_view!(DualSense);
     fn apply(&mut self, report: &Report) -> Result<(), ReplyError> {
         // Called only after the personality has accepted the exact report shape.
         let b = report.payload();
@@ -149,6 +164,7 @@ impl OutputState for DualSenseOutputState {
     native_view!(DualSenseOutputState);
 }
 impl OutputState for DualShock4OutputState {
+    worker_view!(DualShock4);
     fn apply(&mut self, report: &Report) -> Result<(), ReplyError> {
         let b = report.payload();
         let mut next = self.clone();
@@ -183,6 +199,7 @@ impl OutputState for SwitchProOutputState {
     native_view!(SwitchProOutputState);
 }
 impl OutputState for Xbox360OutputState {
+    worker_view!(Xbox360);
     fn apply(&mut self, _: &Report) -> Result<(), ReplyError> {
         Ok(())
     }
@@ -194,11 +211,6 @@ impl OutputState for Xbox360OutputState {
     }
 }
 
-pub(crate) const WORKER_RESTRICTION: gr_controller_contract::TargetRestriction =
-    gr_controller_contract::TargetRestriction {
-        feature: "retained host outputs",
-        reason: "USB worker observations can drop and the unchanged IPC has no retained-state/revision query",
-    };
 pub(crate) const DUMMY_RESTRICTION: gr_controller_contract::TargetRestriction =
     gr_controller_contract::TargetRestriction {
         feature: "retained host outputs",

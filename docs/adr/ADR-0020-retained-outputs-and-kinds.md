@@ -49,8 +49,11 @@ accepted-change revision and malformed-output regressions. The owner granted
 D2 for step 10c in [#176](https://github.com/anderstvoss/virtualgamepad/issues/176#issuecomment-6325147128)
 and [confirmed the scope](https://github.com/anderstvoss/virtualgamepad/issues/176#issuecomment-6328169640).
 The root exposes `host_outputs()` on typed handles and the reviewed typed input
-and output descriptors. USB worker snapshots remain unavailable because the
-worker's lossy event channel has no retained-state query.
+and output descriptors. Step 21c (#203) extends the same getters to USB/IP
+workers. A private versioned operation queries the worker's controller-owned
+retained state independently of the lossy observation channel. Orderly close
+captures a final snapshot after the USB thread stops. If the worker exits first,
+the getter keeps the last validated snapshot and diagnostics report the failure.
 
 C7 extends the ordinary-root typed handles to Wii Remote and Steam Controller
 2026. The root delegates their snapshots to the curated controllers. The

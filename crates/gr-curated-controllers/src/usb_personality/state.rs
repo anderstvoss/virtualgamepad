@@ -61,8 +61,14 @@ pub(crate) trait StateCodec: Sized {
     fn decode_payload(reader: &mut Reader<'_>) -> Result<Self, StateError>;
 }
 pub(crate) struct Reader<'a>(&'a [u8]);
-impl Reader<'_> {
-    fn take<const N: usize>(&mut self) -> Result<[u8; N], StateError> {
+impl<'a> Reader<'a> {
+    pub(super) const fn new(bytes: &'a [u8]) -> Self {
+        Self(bytes)
+    }
+    pub(super) const fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    pub(super) fn take<const N: usize>(&mut self) -> Result<[u8; N], StateError> {
         let bytes = self.0.get(..N).ok_or(StateError::Malformed)?;
         let result = bytes.try_into().map_err(|_| StateError::Malformed)?;
         self.0 = &self.0[N..];
