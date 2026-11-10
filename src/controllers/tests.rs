@@ -2368,3 +2368,36 @@ fn promoted_families_reject_undeclared_realizations_and_associated_audio() {
         assert!(matches!(result, Err(ControllerError::Unsupported { .. })));
     }
 }
+
+#[test]
+fn xbox_series_converged_constructors_reject_unavailable_targets_and_audio() {
+    use gr_curated_controllers::xbox_series::create_xbox_series as curated;
+    for target in [
+        RealizationId::LINUX_UHID_USB,
+        RealizationId::LINUX_UHID_BLUETOOTH,
+        RealizationId::LINUX_DUMMY_HCD_USB_HID,
+        RealizationId::LINUX_USBIP_USB_AUDIO,
+    ] {
+        let options = XboxSeriesOptions::default();
+        assert!(matches!(
+            create_xbox_series(CreationOptions::new(target), options),
+            Err(ControllerError::Unsupported { .. })
+        ));
+        assert!(matches!(
+            curated(
+                gr_curated_controllers::CreationOptions {
+                    target,
+                    session: gr_curated_controllers::RealizationSessionId(7),
+                },
+                options,
+            ),
+            Err(gr_realization_api::ProviderError::Unsupported { .. })
+        ));
+    }
+    let audio = CreationOptions::new(RealizationId::LINUX_UINPUT)
+        .with_audio(crate::AudioOptions::new(crate::AudioExposure::Emulated));
+    assert!(matches!(
+        create_xbox_series(audio, XboxSeriesOptions::default()),
+        Err(ControllerError::Unsupported { .. })
+    ));
+}

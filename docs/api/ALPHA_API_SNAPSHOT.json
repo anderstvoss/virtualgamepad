@@ -929,6 +929,39 @@
             "impl UnwindSafe for Xbox360OutputEvent"
           ]
         },
+        "enum.XboxSeriesButton.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum XboxSeriesButton { Show 16 variants A, B, X, Y, LeftShoulder, RightShoulder, View, Menu, Guide, Share, LeftStickPress, RightStickPress, DpadUp, DpadDown, DpadLeft, DpadRight, }"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesButton",
+            "impl Copy for XboxSeriesButton",
+            "impl Debug for XboxSeriesButton",
+            "impl Eq for XboxSeriesButton",
+            "impl PartialEq for XboxSeriesButton",
+            "impl RefUnwindSafe for XboxSeriesButton",
+            "impl Send for XboxSeriesButton",
+            "impl Sync for XboxSeriesButton",
+            "impl Unpin for XboxSeriesButton",
+            "impl UnwindSafe for XboxSeriesButton"
+          ]
+        },
+        "enum.XboxSeriesOutputEvent.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), }"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesOutputEvent",
+            "impl Debug for XboxSeriesOutputEvent",
+            "impl Eq for XboxSeriesOutputEvent",
+            "impl PartialEq for XboxSeriesOutputEvent",
+            "impl RefUnwindSafe for XboxSeriesOutputEvent",
+            "impl Send for XboxSeriesOutputEvent",
+            "impl Sync for XboxSeriesOutputEvent",
+            "impl Unpin for XboxSeriesOutputEvent",
+            "impl UnwindSafe for XboxSeriesOutputEvent"
+          ]
+        },
         "fn.create_dualsense.html": {
           "declarations": [
             "pub fn create_dualsense( options: CreationOptions, family: DualSenseOptions, ) -> Result<DualSenseController, ControllerError>"
@@ -962,6 +995,12 @@
         "fn.create_xbox360.html": {
           "declarations": [
             "pub fn create_xbox360( options: CreationOptions, family: Xbox360Options, ) -> Result<Xbox360Controller, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.create_xbox_series.html": {
+          "declarations": [
+            "pub fn create_xbox_series( options: CreationOptions, family: XboxSeriesOptions, ) -> Result<XboxSeriesController, ControllerError>"
           ],
           "traits": []
         },
@@ -2939,6 +2978,114 @@
             "impl Sync for Xbox360Trigger",
             "impl Unpin for Xbox360Trigger",
             "impl UnwindSafe for Xbox360Trigger"
+          ]
+        },
+        "struct.XboxSeriesController.html": {
+          "declarations": [
+            "pub struct XboxSeriesController { /* private fields */ }",
+            "pub fn state(&self) -> &XboxSeriesState",
+            "pub fn host_outputs(&self) -> Result<XboxSeriesOutputState, ControlError>",
+            "pub fn surface(&self) -> &'static ControllerSurface",
+            "pub fn wants_write(&self) -> bool",
+            "pub fn next_service_in(&self) -> Option<Duration>",
+            "pub fn dropped_output_events(&self) -> u64",
+            "pub fn is_dirty(&self) -> bool",
+            "pub fn is_closed(&self) -> bool",
+            "pub fn neutralize(&mut self) -> Result<(), ControlError>",
+            "pub fn commit(&mut self) -> Result<(), CommitError>",
+            "pub fn close(&mut self)",
+            "pub fn readiness(&self) -> Option<ServiceReadiness<'_>>",
+            "pub fn association(&self) -> &ControllerAssociation",
+            "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
+            "pub fn service( &mut self, callback: &mut dyn FnMut(XboxSeriesOutputEvent), ) -> Result<(), ControllerError>",
+            "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: XboxSeriesState) -> Result<(), ControlError>",
+            "pub fn set_button( &mut self, button: XboxSeriesButton, pressed: bool, ) -> Result<(), ControlError>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for XboxSeriesController",
+            "impl !Sync for XboxSeriesController",
+            "impl !UnwindSafe for XboxSeriesController",
+            "impl Send for XboxSeriesController",
+            "impl Unpin for XboxSeriesController"
+          ]
+        },
+        "struct.XboxSeriesOptions.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct XboxSeriesOptions {}"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesOptions",
+            "impl Copy for XboxSeriesOptions",
+            "impl Debug for XboxSeriesOptions",
+            "impl Default for XboxSeriesOptions",
+            "impl Eq for XboxSeriesOptions",
+            "impl PartialEq for XboxSeriesOptions",
+            "impl RefUnwindSafe for XboxSeriesOptions",
+            "impl Send for XboxSeriesOptions",
+            "impl Sync for XboxSeriesOptions",
+            "impl Unpin for XboxSeriesOptions",
+            "impl UnwindSafe for XboxSeriesOptions"
+          ]
+        },
+        "struct.XboxSeriesOutputState.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct XboxSeriesOutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, }"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesOutputState",
+            "impl Debug for XboxSeriesOutputState",
+            "impl Default for XboxSeriesOutputState",
+            "impl Eq for XboxSeriesOutputState",
+            "impl PartialEq for XboxSeriesOutputState",
+            "impl RefUnwindSafe for XboxSeriesOutputState",
+            "impl Send for XboxSeriesOutputState",
+            "impl Sync for XboxSeriesOutputState",
+            "impl Unpin for XboxSeriesOutputState",
+            "impl UnwindSafe for XboxSeriesOutputState"
+          ]
+        },
+        "struct.XboxSeriesState.html": {
+          "declarations": [
+            "pub struct XboxSeriesState { pub sticks: [[i16; 2]; 2], /* private fields */ }",
+            "pub const fn pressed(&self, button: XboxSeriesButton) -> bool",
+            "pub fn set_button(&mut self, button: XboxSeriesButton, pressed: bool)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub const fn triggers(&self) -> [XboxSeriesTrigger; 2]",
+            "pub fn set_triggers( &mut self, left: u16, right: u16, ) -> Result<(), ControlError>",
+            "pub fn neutralize(&mut self)"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesState",
+            "impl Debug for XboxSeriesState",
+            "impl Default for XboxSeriesState",
+            "impl Eq for XboxSeriesState",
+            "impl PartialEq for XboxSeriesState",
+            "impl RefUnwindSafe for XboxSeriesState",
+            "impl Send for XboxSeriesState",
+            "impl Sync for XboxSeriesState",
+            "impl Unpin for XboxSeriesState",
+            "impl UnwindSafe for XboxSeriesState"
+          ]
+        },
+        "struct.XboxSeriesTrigger.html": {
+          "declarations": [
+            "pub struct XboxSeriesTrigger(/* private fields */);",
+            "pub fn new(raw: u16) -> Result<XboxSeriesTrigger, ControlError>",
+            "pub const fn raw(self) -> u16"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesTrigger",
+            "impl Copy for XboxSeriesTrigger",
+            "impl Debug for XboxSeriesTrigger",
+            "impl Default for XboxSeriesTrigger",
+            "impl Eq for XboxSeriesTrigger",
+            "impl PartialEq for XboxSeriesTrigger",
+            "impl RefUnwindSafe for XboxSeriesTrigger",
+            "impl Send for XboxSeriesTrigger",
+            "impl Sync for XboxSeriesTrigger",
+            "impl Unpin for XboxSeriesTrigger",
+            "impl UnwindSafe for XboxSeriesTrigger"
           ]
         },
         "trait.ControllerSurfaceInfo.html": {
@@ -3884,6 +4031,39 @@
             "impl UnwindSafe for Xbox360OutputEvent"
           ]
         },
+        "enum.XboxSeriesButton.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum XboxSeriesButton { Show 16 variants A, B, X, Y, LeftShoulder, RightShoulder, View, Menu, Guide, Share, LeftStickPress, RightStickPress, DpadUp, DpadDown, DpadLeft, DpadRight, }"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesButton",
+            "impl Copy for XboxSeriesButton",
+            "impl Debug for XboxSeriesButton",
+            "impl Eq for XboxSeriesButton",
+            "impl PartialEq for XboxSeriesButton",
+            "impl RefUnwindSafe for XboxSeriesButton",
+            "impl Send for XboxSeriesButton",
+            "impl Sync for XboxSeriesButton",
+            "impl Unpin for XboxSeriesButton",
+            "impl UnwindSafe for XboxSeriesButton"
+          ]
+        },
+        "enum.XboxSeriesOutputEvent.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), }"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesOutputEvent",
+            "impl Debug for XboxSeriesOutputEvent",
+            "impl Eq for XboxSeriesOutputEvent",
+            "impl PartialEq for XboxSeriesOutputEvent",
+            "impl RefUnwindSafe for XboxSeriesOutputEvent",
+            "impl Send for XboxSeriesOutputEvent",
+            "impl Sync for XboxSeriesOutputEvent",
+            "impl Unpin for XboxSeriesOutputEvent",
+            "impl UnwindSafe for XboxSeriesOutputEvent"
+          ]
+        },
         "fn.create_dualsense.html": {
           "declarations": [
             "pub fn create_dualsense( options: CreationOptions, family: DualSenseOptions, ) -> Result<DualSenseController, ControllerError>"
@@ -3917,6 +4097,12 @@
         "fn.create_xbox360.html": {
           "declarations": [
             "pub fn create_xbox360( options: CreationOptions, family: Xbox360Options, ) -> Result<Xbox360Controller, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.create_xbox_series.html": {
+          "declarations": [
+            "pub fn create_xbox_series( options: CreationOptions, family: XboxSeriesOptions, ) -> Result<XboxSeriesController, ControllerError>"
           ],
           "traits": []
         },
@@ -5894,6 +6080,114 @@
             "impl Sync for Xbox360Trigger",
             "impl Unpin for Xbox360Trigger",
             "impl UnwindSafe for Xbox360Trigger"
+          ]
+        },
+        "struct.XboxSeriesController.html": {
+          "declarations": [
+            "pub struct XboxSeriesController { /* private fields */ }",
+            "pub fn state(&self) -> &XboxSeriesState",
+            "pub fn host_outputs(&self) -> Result<XboxSeriesOutputState, ControlError>",
+            "pub fn surface(&self) -> &'static ControllerSurface",
+            "pub fn wants_write(&self) -> bool",
+            "pub fn next_service_in(&self) -> Option<Duration>",
+            "pub fn dropped_output_events(&self) -> u64",
+            "pub fn is_dirty(&self) -> bool",
+            "pub fn is_closed(&self) -> bool",
+            "pub fn neutralize(&mut self) -> Result<(), ControlError>",
+            "pub fn commit(&mut self) -> Result<(), CommitError>",
+            "pub fn close(&mut self)",
+            "pub fn readiness(&self) -> Option<ServiceReadiness<'_>>",
+            "pub fn association(&self) -> &ControllerAssociation",
+            "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
+            "pub fn service( &mut self, callback: &mut dyn FnMut(XboxSeriesOutputEvent), ) -> Result<(), ControllerError>",
+            "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: XboxSeriesState) -> Result<(), ControlError>",
+            "pub fn set_button( &mut self, button: XboxSeriesButton, pressed: bool, ) -> Result<(), ControlError>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for XboxSeriesController",
+            "impl !Sync for XboxSeriesController",
+            "impl !UnwindSafe for XboxSeriesController",
+            "impl Send for XboxSeriesController",
+            "impl Unpin for XboxSeriesController"
+          ]
+        },
+        "struct.XboxSeriesOptions.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct XboxSeriesOptions {}"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesOptions",
+            "impl Copy for XboxSeriesOptions",
+            "impl Debug for XboxSeriesOptions",
+            "impl Default for XboxSeriesOptions",
+            "impl Eq for XboxSeriesOptions",
+            "impl PartialEq for XboxSeriesOptions",
+            "impl RefUnwindSafe for XboxSeriesOptions",
+            "impl Send for XboxSeriesOptions",
+            "impl Sync for XboxSeriesOptions",
+            "impl Unpin for XboxSeriesOptions",
+            "impl UnwindSafe for XboxSeriesOptions"
+          ]
+        },
+        "struct.XboxSeriesOutputState.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct XboxSeriesOutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, }"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesOutputState",
+            "impl Debug for XboxSeriesOutputState",
+            "impl Default for XboxSeriesOutputState",
+            "impl Eq for XboxSeriesOutputState",
+            "impl PartialEq for XboxSeriesOutputState",
+            "impl RefUnwindSafe for XboxSeriesOutputState",
+            "impl Send for XboxSeriesOutputState",
+            "impl Sync for XboxSeriesOutputState",
+            "impl Unpin for XboxSeriesOutputState",
+            "impl UnwindSafe for XboxSeriesOutputState"
+          ]
+        },
+        "struct.XboxSeriesState.html": {
+          "declarations": [
+            "pub struct XboxSeriesState { pub sticks: [[i16; 2]; 2], /* private fields */ }",
+            "pub const fn pressed(&self, button: XboxSeriesButton) -> bool",
+            "pub fn set_button(&mut self, button: XboxSeriesButton, pressed: bool)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub const fn triggers(&self) -> [XboxSeriesTrigger; 2]",
+            "pub fn set_triggers( &mut self, left: u16, right: u16, ) -> Result<(), ControlError>",
+            "pub fn neutralize(&mut self)"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesState",
+            "impl Debug for XboxSeriesState",
+            "impl Default for XboxSeriesState",
+            "impl Eq for XboxSeriesState",
+            "impl PartialEq for XboxSeriesState",
+            "impl RefUnwindSafe for XboxSeriesState",
+            "impl Send for XboxSeriesState",
+            "impl Sync for XboxSeriesState",
+            "impl Unpin for XboxSeriesState",
+            "impl UnwindSafe for XboxSeriesState"
+          ]
+        },
+        "struct.XboxSeriesTrigger.html": {
+          "declarations": [
+            "pub struct XboxSeriesTrigger(/* private fields */);",
+            "pub fn new(raw: u16) -> Result<XboxSeriesTrigger, ControlError>",
+            "pub const fn raw(self) -> u16"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesTrigger",
+            "impl Copy for XboxSeriesTrigger",
+            "impl Debug for XboxSeriesTrigger",
+            "impl Default for XboxSeriesTrigger",
+            "impl Eq for XboxSeriesTrigger",
+            "impl PartialEq for XboxSeriesTrigger",
+            "impl RefUnwindSafe for XboxSeriesTrigger",
+            "impl Send for XboxSeriesTrigger",
+            "impl Sync for XboxSeriesTrigger",
+            "impl Unpin for XboxSeriesTrigger",
+            "impl UnwindSafe for XboxSeriesTrigger"
           ]
         },
         "trait.ControllerSurfaceInfo.html": {

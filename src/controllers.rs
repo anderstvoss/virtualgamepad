@@ -13,7 +13,8 @@ use crate::{
     SwitchProMotionSample, SwitchProOutputEvent, SwitchProState, SwitchProSurface, TouchSlot,
     WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton, WiiRemoteOutputEvent,
     WiiRemoteOutputs, WiiRemoteState, WiiResourceDisposition, Xbox360Axis, Xbox360Control,
-    Xbox360OutputEvent, Xbox360State, Xbox360Surface, Xbox360Trigger,
+    Xbox360OutputEvent, Xbox360State, Xbox360Surface, Xbox360Trigger, XboxSeriesButton,
+    XboxSeriesOutputEvent, XboxSeriesOutputState, XboxSeriesState,
 };
 // The family adapter owns only static dispatch; protocol semantics stay curated.
 trait Family {
@@ -216,6 +217,11 @@ family!(
     steam_controller_2026, SteamController2026Controller, create_steam_controller_2026,
     SteamController2026Options, SteamController2026Identity;
     SteamController2026OutputEvent, steam_controller_2026, audio = false;
+    diagnostics
+);
+family!(
+    xbox_series, XboxSeriesController, create_xbox_series, XboxSeriesOptions;
+    XboxSeriesOutputEvent, xbox_series, audio = false;
     diagnostics
 );
 macro_rules! shared {
@@ -830,6 +836,51 @@ pub fn create_steam_controller_2026(
         None,
     )?;
     Ok(SteamController2026Controller { controller })
+}
+
+/// One active Xbox Series virtual controller.
+pub struct XboxSeriesController {
+    controller: Controller<gr_curated_controllers::xbox_series::XboxSeriesController>,
+}
+
+impl XboxSeriesController {
+    shared!(state, XboxSeriesState);
+    shared!(host_outputs, XboxSeriesOutputState);
+    shared!(surface, crate::ControllerSurface);
+    shared!(wants_write);
+    shared!(next_service_in);
+    shared!(dropped_output_events);
+    shared!(is_dirty);
+    shared!(is_closed);
+    shared!(neutralize);
+    shared!(commit);
+    shared!(close);
+    shared!(readiness);
+    shared!(association);
+    shared!(diagnostics);
+    shared!(service, XboxSeriesOutputEvent);
+    edits! {
+        fn set_digital(update: DigitalControlUpdate);
+        fn set_inputs(state: XboxSeriesState);
+        fn set_button(button: XboxSeriesButton, pressed: bool);
+    }
+}
+
+/// Create an Xbox Series controller with the selected uinput realization.
+///
+/// # Errors
+/// Returns unsupported-selection, host-prerequisite, or creation errors.
+pub fn create_xbox_series(
+    options: CreationOptions,
+    family: XboxSeriesOptions,
+) -> Result<XboxSeriesController, ControllerError> {
+    let controller = Controller::open(
+        ControllerId::new("virtualgamepad.xbox-series"),
+        options.internal_without_audio()?,
+        family,
+        None,
+    )?;
+    Ok(XboxSeriesController { controller })
 }
 
 fn sony_identity<T>(

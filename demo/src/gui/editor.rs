@@ -125,6 +125,7 @@ impl virtualgamepad::ControllerSurfaceInfo for Surface {
         self.0
     }
 }
+pub(super) type XboxSeriesEditor = Editor<virtualgamepad::XboxSeriesState, Surface>;
 pub(super) type Xbox360Editor = Editor<Xbox360State, Surface>;
 pub(super) type DualSenseEditor = Editor<DualSenseState, Surface>;
 pub(super) type DualShock4Editor = Editor<DualShock4State, Surface>;
@@ -135,6 +136,7 @@ pub(super) type SteamEditor =
     Editor<gr_curated_controllers::steam_controller_2026::SteamController2026State, Surface>;
 pub(super) enum ControllerView {
     Xbox(Xbox360Editor),
+    XboxSeries(XboxSeriesEditor),
     DualSense(DualSenseEditor),
     DualShock4(DualShock4Editor),
     SwitchPro(SwitchProEditor),
@@ -173,6 +175,12 @@ impl Controller {
         }
         match self {
             Self::Xbox(c) => view!(c, Xbox),
+            Self::XboxSeries(c) => ControllerView::XboxSeries(Editor::new(
+                c.state().clone(),
+                c.surface(),
+                Some(c.diagnostics()),
+                Some(c.association().clone()),
+            )),
             Self::DualSense(c) => view!(c, DualSense),
             Self::DualShock4(c) => view!(c, DualShock4),
             Self::SwitchPro(c) => view!(c, SwitchPro),
@@ -357,6 +365,12 @@ pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
         .expect("compiled uinput surface")
         .surface;
     match kind {
+        super::Kind::XboxSeries => ControllerView::XboxSeries(Editor::new(
+            virtualgamepad::XboxSeriesState::default(),
+            surface,
+            None,
+            None,
+        )),
         super::Kind::Xbox360 => {
             ControllerView::Xbox(Editor::new(Xbox360State::default(), surface, None, None))
         }
@@ -413,6 +427,7 @@ impl ControllerView {
     pub(super) fn association(&self) -> Option<&virtualgamepad::ControllerAssociation> {
         match self {
             Self::Xbox(c) => c.association.as_ref(),
+            Self::XboxSeries(c) => c.association.as_ref(),
             Self::DualSense(c) => c.association.as_ref(),
             Self::DualShock4(c) => c.association.as_ref(),
             Self::SwitchPro(c) => c.association.as_ref(),
@@ -423,6 +438,7 @@ impl ControllerView {
     pub(super) fn lab_details(&self) -> String {
         match self {
             Self::Xbox(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
+            Self::XboxSeries(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
             Self::DualSense(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
             Self::DualShock4(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
             Self::SwitchPro(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
@@ -434,6 +450,7 @@ impl ControllerView {
         let edit = super::release_inputs();
         match self {
             Self::Xbox(c) => c.queue(edit),
+            Self::XboxSeries(c) => c.queue(edit),
             Self::DualSense(c) => c.queue(edit),
             Self::DualShock4(c) => c.queue(edit),
             Self::SwitchPro(c) => c.queue(edit),
@@ -445,6 +462,7 @@ impl ControllerView {
     pub(super) fn take_edits(&mut self) -> Result<EditBatch, String> {
         match self {
             Self::Xbox(c) => c.take_edits(),
+            Self::XboxSeries(c) => c.take_edits(),
             Self::DualSense(c) => c.take_edits(),
             Self::DualShock4(c) => c.take_edits(),
             Self::SwitchPro(c) => c.take_edits(),
@@ -453,6 +471,34 @@ impl ControllerView {
         }
     }
 }
+impl XboxSeriesEditor {
+    pub(super) fn edit_xbox_series(&mut self, events: Vec<super::InputEvent>) {
+        let mut next = self.state.clone();
+        for event in events {
+            if !super::native_editor::apply_xbox_series_event(&mut next, &event) {
+                return;
+            }
+        }
+        if next == self.state {
+            return;
+        }
+        let queued = next.clone();
+        if self
+            .queue(Box::new(move |controller| {
+                let Controller::XboxSeries(controller) = controller else {
+                    return Err("edit family mismatch".into());
+                };
+                controller
+                    .set_inputs(queued)
+                    .map_err(|error| error.to_string())
+            }))
+            .is_ok()
+        {
+            self.state = next;
+        }
+    }
+}
+
 impl Xbox360Editor {
     pub(super) fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), String> {
         self.queue(Box::new(move |controller| {

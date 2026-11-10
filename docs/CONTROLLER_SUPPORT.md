@@ -8,7 +8,7 @@ Sustained audio continuity and latency are not validated in alpha; occasional au
 All support entries remain **WIP**; bounded alpha acceptance does not promote
 these cells. WIP includes implemented work under assessment and work not yet
 started. It does not
-promise that every combination will ship. The Steam/Xbox Series rows are planned workflow exercises. Wii Remote has a
+promise that every combination will ship. Xbox Series has a reduced uinput package with bounded host evidence. Wii Remote has a
 WIP supporting package and an explicit per-feature matrix; no whole-controller
 support promotion is inferred.
 
@@ -19,7 +19,7 @@ support promotion is inferred.
 | Switch Pro | WIP | WIP | Unavailable² | WIP | WIP |
 | Xbox 360 | WIP | WIP | Unavailable² | WIP | WIP |
 | Steam Controller (2026) + Puck | WIP | WIP | WIP | WIP | WIP |
-| Xbox Series | WIP | WIP | WIP | WIP | WIP |
+| Xbox Series | WIP⁴ | N/A⁴ | N/A⁴ | No evidence⁴ | Deferred⁴ |
 | Wii Remote | WIP | Unavailable³ | Unavailable³ | WIP | Deferred³ |
 
 ¹ `linux.uhid.bluetooth` is a local UHID node with Bluetooth bus5 metadata,
@@ -71,6 +71,11 @@ and its [38-row feature matrix](../acceptance/virtualgamepad.wii-remote.toml).
 Source-backed code and bounded virtual-host observations do not promote missing
 physical, SDL HIDAPI or Dolphin acceptance cells.
 
+
+⁴ Xbox Series has [xpad-style uinput evidence](XBOX_SERIES.md#c9-linux-and-sdl-acceptance)
+and a [per-function manifest](../acceptance/virtualgamepad.xbox-series.toml).
+Wired GIP uses a different USB protocol and stays with #168. Bluetooth-bus
+UHID needs a report map and qualified consumer path. Actual Bluetooth is #164.
 
 ## Audio evidence axes
 

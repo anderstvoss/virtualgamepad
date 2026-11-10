@@ -94,6 +94,9 @@ pub use gr_curated_controllers::wii_remote::{
     WiiMotionPlusState, WiiNunchukState, WiiRemoteButton, WiiRemoteOutputs, WiiRemoteRevision,
     WiiRemoteState, WiiResourceDisposition,
 };
+pub use gr_curated_controllers::xbox_series::{
+    XboxSeriesButton, XboxSeriesOutputState, XboxSeriesState, XboxSeriesTrigger,
+};
 pub use gr_curated_controllers::{
     BatteryLevel, BatteryState, DualSenseAudioPath, DualSenseAxis, DualSenseControl,
     DualSenseFeature, DualSenseHidOutput, DualSenseState, DualSenseSurface, DualSenseTouchContact,

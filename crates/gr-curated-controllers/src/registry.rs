@@ -178,6 +178,9 @@ mod tests {
             (SteamController2026Definition, $module:ident) => {
                 crate::$module::SteamController2026Definition::default()
             };
+            (XboxSeriesDefinition, $module:ident) => {
+                crate::$module::XboxSeriesDefinition::default()
+            };
             ($name:ident, $module:ident) => {
                 crate::$module::$name
             };

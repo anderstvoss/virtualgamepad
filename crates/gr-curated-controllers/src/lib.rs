@@ -42,6 +42,7 @@ pub mod switch_pro;
 pub mod usb_personality;
 pub mod wii_remote;
 pub mod xbox360;
+pub mod xbox_series;
 
 use gr_controller_contract::ControlError;
 pub use gr_realization_api::RealizationSessionId;
