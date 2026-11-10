@@ -79,5 +79,10 @@ FIFO. Its retained view exposes the last decoded packet through
 `SteamController2026StreamOutputs::last_packet`, `SteamController2026Haptic::Stream`
 represents decoded PCM, and raw reverse observations can carry host PCM writes.
 The latest packet is diagnostic state; the retained haptic slots do not hold a
-stream history. An open question for Anders is whether a future typed stream API
-should replace the retained packet and the PCM payloads in raw observations.
+stream history.
+
+[Owner decision (2026-11-10)](https://github.com/anderstvoss/virtualgamepad/issues/322#issuecomment-6774052277):
+keep this compatibility surface for now. A typed, bounded stream API is designed
+separately under [#344](https://github.com/anderstvoss/virtualgamepad/issues/344).
+The retained packet and the PCM payloads in raw observations are removed only in
+the change that ships that typed API, so applications always have a migration path.
