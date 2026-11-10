@@ -3,6 +3,7 @@ use super::{
     CommitError, ControlError, ControllerRuntime, LinuxUhidProvider, ProviderError, ProviderFrame,
     ProviderOpenRequest, ProviderSessionSink, RawReverseEvent, TargetAwareControllerDriver,
 };
+use crate::usb_personality::outputs::WorkerOutputs;
 use gr_hid::{Limits, Protocol, Runtime};
 use gr_provider_linux_uhid::HidTransport;
 use std::collections::VecDeque;
@@ -50,6 +51,14 @@ pub trait WorkerBridge<S>: Send {
     /// Cumulative worker-side output loss, retained after closure.
     fn dropped_output_events(&self) -> u64;
     fn close(&mut self) -> Result<(), ProviderError>;
+    /// Refresh the latest validated snapshot independently of observations.
+    fn refresh_outputs(&mut self) -> Result<(), ProviderError> {
+        Ok(())
+    }
+    /// Snapshot cached by the bridge, including after cleanup.
+    fn retained_outputs(&self) -> Option<WorkerOutputs> {
+        None
+    }
 }
 enum Backend<D: HidDriver> {
     Native(ControllerRuntime<D, ProviderSessionSink>),
@@ -421,18 +430,20 @@ impl<D: HidDriver> ControllerSession<D> {
             if *closed {
                 return Err(ProviderError::Closed);
             }
-            for _ in 0..32 {
-                match bridge.output() {
-                    Ok(Some(event)) => callback(event),
-                    Ok(None) => return Ok(()),
-                    Err(error) => {
-                        *closed = true;
-                        let _ = bridge.close();
-                        return Err(error);
-                    }
+            let result = (|| {
+                for _ in 0..32 {
+                    let Some(event) = bridge.output()? else {
+                        break;
+                    };
+                    callback(event);
                 }
+                bridge.refresh_outputs()
+            })();
+            if result.is_err() {
+                *closed = true;
+                let _ = bridge.close();
             }
-            return Ok(());
+            return result;
         }
         if let Backend::Native(r) = &mut self.backend {
             if self.selection.target == gr_realization_api::RealizationTarget::LINUX_UINPUT {
@@ -528,25 +539,27 @@ impl<D: HidDriver> ControllerSession<D> {
         D::Hid: crate::retained::RetainedProtocol,
     {
         use crate::retained::{OutputState, RetainedProtocol};
-        match &self.backend {
-            Backend::Hid { runtime, .. } => Ok(runtime.protocol().retained().clone()),
+        let outputs = match &self.backend {
+            Backend::Hid { runtime, .. } => Some(runtime.protocol().retained().clone()),
             Backend::Native(_)
                 if self.selection.target == gr_realization_api::RealizationTarget::LINUX_UINPUT =>
             {
-                Ok(<D::Hid as RetainedProtocol>::Outputs::from_native(
+                Some(<D::Hid as RetainedProtocol>::Outputs::from_native(
                     self.feedback.playback,
                 ))
             }
-            Backend::Native(_) | Backend::Worker { .. } => {
-                Err(ControlError::UnavailableInRealization {
-                    selected_target: self.selection.target,
-                    available_in: gr_realization_api::RealizationTargetSet::new(&[
-                        gr_realization_api::RealizationTarget::LINUX_UINPUT,
-                        gr_realization_api::RealizationTarget::LINUX_UHID_USB,
-                    ]),
-                })
-            }
-        }
+            Backend::Worker { bridge, .. } => bridge
+                .retained_outputs()
+                .and_then(<D::Hid as RetainedProtocol>::Outputs::from_worker),
+            Backend::Native(_) => None,
+        };
+        outputs.ok_or(ControlError::UnavailableInRealization {
+            selected_target: self.selection.target,
+            available_in: gr_realization_api::RealizationTargetSet::new(&[
+                gr_realization_api::RealizationTarget::LINUX_UINPUT,
+                gr_realization_api::RealizationTarget::LINUX_UHID_USB,
+            ]),
+        })
     }
     pub(crate) fn dropped_observations(&self) -> u64 {
         self.dropped.saturating_add(match &self.backend {

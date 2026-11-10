@@ -5,27 +5,51 @@ use crate::{common::HidDriver, dualsense, dualshock4, xbox360};
 use gr_hid::Protocol;
 use gr_realization_api::{RawReverseEvent, RealizationSessionId};
 
+pub mod outputs;
+use crate::retained::RetainedProtocol;
+use outputs::WorkerOutputs;
+
+/// Controller protocol used by the installed USB worker.
+pub trait WorkerProtocol: Protocol {
+    fn retained_outputs(&self) -> WorkerOutputs;
+}
+
+macro_rules! retained_protocol {
+    ($protocol:ty, $family:ident) => {
+        impl WorkerProtocol for $protocol {
+            fn retained_outputs(&self) -> WorkerOutputs {
+                WorkerOutputs::$family(self.retained().clone())
+            }
+        }
+    };
+}
+retained_protocol!(dualsense::DualSenseUsbProtocol, DualSense);
+retained_protocol!(
+    crate::common::SnapshotProtocol<dualshock4::DualShock4State, crate::retained::DualShock4OutputState>,
+    DualShock4
+);
+retained_protocol!(
+    crate::common::SnapshotProtocol<xbox360::Xbox360State, crate::retained::Xbox360OutputState>,
+    Xbox360
+);
+
 #[must_use]
 pub fn dualsense(
     identity: [u8; 6],
-) -> impl Protocol<State = dualsense::DualSenseState, Output = RawReverseEvent> {
-    dualsense::DualSenseDefinition
-        .hid_protocol(RealizationSessionId(0), identity)
-        .without_retention()
+) -> impl WorkerProtocol<State = dualsense::DualSenseState, Output = RawReverseEvent> {
+    dualsense::DualSenseDefinition.hid_protocol(RealizationSessionId(0), identity)
 }
+
 #[must_use]
 pub fn dualshock4(
     identity: [u8; 6],
-) -> impl Protocol<State = dualshock4::DualShock4State, Output = RawReverseEvent> {
-    dualshock4::DualShock4Definition
-        .hid_protocol(RealizationSessionId(0), identity)
-        .without_retention()
+) -> impl WorkerProtocol<State = dualshock4::DualShock4State, Output = RawReverseEvent> {
+    dualshock4::DualShock4Definition.hid_protocol(RealizationSessionId(0), identity)
 }
+
 #[must_use]
-pub fn xbox360() -> impl Protocol<State = xbox360::Xbox360State, Output = RawReverseEvent> {
-    xbox360::Xbox360Definition
-        .hid_protocol(RealizationSessionId(0), [0; 6])
-        .without_retention()
+pub fn xbox360() -> impl WorkerProtocol<State = xbox360::Xbox360State, Output = RawReverseEvent> {
+    xbox360::Xbox360Definition.hid_protocol(RealizationSessionId(0), [0; 6])
 }
 
 #[cfg(test)]
