@@ -1483,10 +1483,10 @@ impl InputEditor for super::editor::XboxSeriesEditor {
 
 pub(super) fn apply_xbox_series_event(
     state: &mut virtualgamepad::XboxSeriesState,
-    event: InputEvent,
+    event: &InputEvent,
 ) -> bool {
     use virtualgamepad::XboxSeriesButton as Button;
-    match event {
+    match *event {
         InputEvent::Face { button, pressed } => {
             state.set_digital(DigitalControlUpdate::FaceButton { button, pressed });
         }
@@ -1553,7 +1553,7 @@ mod xbox_series_tests {
         let mut state = XboxSeriesState::default();
         assert!(apply_xbox_series_event(
             &mut state,
-            InputEvent::Button {
+            &InputEvent::Button {
                 id: InputControlId::new("share"),
                 pressed: true,
             }
@@ -1564,7 +1564,7 @@ mod xbox_series_tests {
             assert_eq!(
                 apply_xbox_series_event(
                     &mut state,
-                    InputEvent::Axis1 {
+                    &InputEvent::Axis1 {
                         id: InputControlId::new("right-trigger"),
                         value,
                     }
@@ -1578,7 +1578,7 @@ mod xbox_series_tests {
         );
         assert!(apply_xbox_series_event(
             &mut state,
-            InputEvent::Axis2 {
+            &InputEvent::Axis2 {
                 id: InputControlId::new("right-stick"),
                 x: -32768,
                 y: 32767,

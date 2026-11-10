@@ -475,7 +475,7 @@ impl XboxSeriesEditor {
     pub(super) fn edit_xbox_series(&mut self, events: Vec<super::InputEvent>) {
         let mut next = self.state.clone();
         for event in events {
-            if !super::native_editor::apply_xbox_series_event(&mut next, event) {
+            if !super::native_editor::apply_xbox_series_event(&mut next, &event) {
                 return;
             }
         }
