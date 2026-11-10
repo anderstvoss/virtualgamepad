@@ -126,20 +126,22 @@ Each ordinary family handle now exposes `host_outputs()` under owner D2
 (#176 comments 6325147128 and 6328169640). It returns a typed snapshot
 (`DualSenseOutputState`, `DualShock4OutputState`, `SwitchProOutputState`,
 `Xbox360OutputState`, `WiiRemoteOutputs`, `SteamController2026Outputs`, or
-`XboxSeriesOutputState`) of accepted in-process host output values and a revision,
+`XboxSeriesOutputState`) of accepted host output values and a revision,
 independently of the bounded observation queue, including after close. The
 revision advances once per accepted value change; repeated identical values and
 malformed requests do not advance it. Read the snapshot for latest levels and
 use events for edges and diagnostics. These values do not prove physical delivery.
 The same views remain available through the experimental curated handles.
-On UHID, Xbox 360 retains no supported host outputs (an empty snapshot at revision
-zero). The `evdev_rumble` field on the original four retained state types is
-`None` on UHID because evdev playback belongs to the uinput realization. USB-worker retained views explicitly return
-`UnavailableInRealization`: their lossy observation channel has no recovery query.
+The standard-HID Xbox 360 presentation exposes an empty snapshot at revision
+zero on UHID and USB/IP. The `evdev_rumble` field on the original four retained
+state types is populated only by uinput. USB/IP workers refresh the snapshot
+during `service()` and capture the final values on orderly close. If a worker
+fails, `host_outputs()` returns the last validated snapshot and controller
+diagnostics record the failure. USB/IP creation requires an installed worker
+with retained-output operation v1.
 
-Ordinary-root `surface().restrictions()` also exposes the retained-host-outputs
-restriction on USB/IP and `dummy_hcd` surfaces. This is visible restriction metadata,
-independent of whether an application reads the new ordinary-root snapshot.
+Ordinary-root `surface().restrictions()` lists the retained-host-outputs
+restriction on `dummy_hcd`.
 
 Under owner decision D5 (#176 comment 6325079527), `dummy_hcd` stays in the tree
 as experimental and not recommended because it needs root and host provisioning.

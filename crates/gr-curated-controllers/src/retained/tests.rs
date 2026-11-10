@@ -166,41 +166,45 @@ fn rejected_revision_overflow_does_not_partially_replace_a_snapshot() {
 }
 
 #[test]
-fn unavailable_snapshot_realizations_explain_the_limitation_in_their_surface() {
+fn retained_snapshot_restrictions_match_usb_protocol_ownership() {
+    use gr_realization_api::RealizationTarget;
+    let mut workers = 0;
     for family in crate::registry::FAMILIES {
         for realization in (family.realizations)() {
-            if matches!(
-                realization.surface.target(),
-                gr_realization_api::RealizationTarget::LINUX_USBIP_USB_AUDIO
-                    | gr_realization_api::RealizationTarget::LINUX_DUMMY_HCD_USB_HID
-            ) {
-                assert!(
-                    realization
-                        .surface
-                        .restrictions()
-                        .iter()
-                        .any(|r| r.feature == "retained host outputs" && !r.reason.is_empty())
-                );
+            let target = realization.surface.target();
+            let unavailable = realization
+                .surface
+                .restrictions()
+                .iter()
+                .any(|r| r.feature == "retained host outputs" && !r.reason.is_empty());
+            if target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID {
+                assert!(unavailable);
+            }
+            if target == RealizationTarget::LINUX_USBIP_USB_AUDIO {
+                workers += 1;
+                assert!(!unavailable, "{} USB/IP", family.id.as_str());
+                assert!(!family.refused_operations.iter().any(|operation| {
+                    operation.targets.contains(&target)
+                        && operation.name.contains("retained host outputs")
+                }));
             }
         }
     }
+    assert_eq!(workers, 3);
 }
 
 #[test]
-fn worker_personalities_keep_their_acceptance_policy_without_retention() {
-    let mut ds = crate::dualsense::DualSenseDefinition
-        .hid_protocol(RealizationSessionId(7), [2; 6])
-        .without_retention();
-    let mut ds4 = crate::dualshock4::DualShock4Definition
-        .hid_protocol(RealizationSessionId(7), [2; 6])
-        .without_retention();
+fn worker_personalities_keep_their_acceptance_policy_with_retention() {
+    use crate::usb_personality::{self, WorkerProtocol};
+    let mut ds = usb_personality::dualsense([2; 6]);
+    let mut ds4 = usb_personality::dualshock4([2; 6]);
     let mut b = vec![0; 47];
     b[1] = 4;
     b[44] = 9;
     assert_eq!(set(&mut ds, Some(2), b), Reply::Set(Ok(())));
     assert_eq!(set(&mut ds4, Some(5), vec![0; 31]), Reply::Set(Ok(())));
-    assert_eq!(*ds.retained(), ());
-    assert_eq!(*ds4.retained(), ());
+    assert_eq!(ds.retained_outputs().revision(), 1);
+    assert_eq!(ds4.retained_outputs().revision(), 0);
     assert_eq!(
         set(&mut ds, Some(2), vec![0; 46]),
         Reply::Set(Err(ReplyError::Invalid))

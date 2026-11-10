@@ -518,12 +518,6 @@ static DUMMY_HCD_SURFACE: Xbox360Surface = Xbox360Surface {
     }
     .build(),
 };
-static RETAINED_WORKER: [TargetRestriction; 4] = [
-    USBIP_RESTRICTIONS[0],
-    USBIP_RESTRICTIONS[1],
-    USBIP_RESTRICTIONS[2],
-    crate::retained::WORKER_RESTRICTION,
-];
 static USBIP_SURFACE: Xbox360Surface = Xbox360Surface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
@@ -532,7 +526,7 @@ static USBIP_SURFACE: Xbox360Surface = Xbox360Surface {
         axes: &AXES,
         outputs: &HID_OUTPUTS,
         output_kinds: NATIVE_OUTPUT_KINDS,
-        restrictions: &RETAINED_WORKER,
+        restrictions: &USBIP_RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
     }
     .build(),
@@ -731,8 +725,8 @@ pub enum Xbox360OutputEvent {
 }
 pub struct Xbox360Controller(common::ControllerSession<Xbox360Definition>);
 impl Xbox360Controller {
-    /// Latest accepted host values and revision, retained after close. USB
-    /// workers are unavailable: their lossy event channel has no recovery query.
+    /// Latest accepted host values and revision, retained after close.
+    /// USB worker snapshots refresh during service and orderly close.
     pub fn host_outputs(&self) -> Result<crate::retained::Xbox360OutputState, ControlError> {
         self.0.retained_outputs()
     }
@@ -1103,14 +1097,7 @@ impl crate::registry::ControllerFamily for Xbox360Definition {
         crate::registry::FamilyOperation {
             name: "USB/IP XInput/xpad protocol",
             ..crate::registry::refusal(
-                RETAINED_WORKER[2],
-                &[RealizationTarget::LINUX_USBIP_USB_AUDIO],
-            )
-        },
-        crate::registry::FamilyOperation {
-            name: "USB/IP retained host outputs",
-            ..crate::registry::refusal(
-                RETAINED_WORKER[3],
+                USBIP_RESTRICTIONS[2],
                 &[RealizationTarget::LINUX_USBIP_USB_AUDIO],
             )
         },

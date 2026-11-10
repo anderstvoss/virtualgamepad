@@ -4,7 +4,7 @@ use crate::{AudioAccess, AudioError, AudioOptions, ControllerError};
 use gr_audio_worker::{client::Control, client_pcm::SampleStreams};
 use gr_curated_controllers::{
     DualSenseState, DualShock4State, WorkerBridge, Xbox360State,
-    usb_personality::state::NativeState,
+    usb_personality::{outputs::WorkerOutputs, state::NativeState},
 };
 use gr_privileged_broker::{audio_client::Client, audio_launch::Profile};
 use gr_realization_api::{ProviderDiagnostics, ProviderError, ProviderState, RawReverseEvent};
@@ -87,14 +87,36 @@ impl<S: Send> WorkerBridge<S> for Session<S> {
             &mut self.retained,
         )
     }
+    fn refresh_outputs(&mut self) -> Result<(), ProviderError> {
+        self.control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .refresh_outputs()
+            .map_err(|error| {
+                let reason = error.to_string();
+                self.retained.state = ProviderState::Failed;
+                self.retained.last_error = Some(reason.clone());
+                ProviderError::Read { reason }
+            })
+    }
+    fn retained_outputs(&self) -> Option<WorkerOutputs> {
+        self.control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retained_outputs()
+            .cloned()
+    }
     fn diagnostics(&mut self) -> ProviderDiagnostics {
         if self.retained.state == ProviderState::Open {
-            match self
+            let mut control = self
                 .control
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .diagnostics()
-            {
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let result = match control.terminal_error() {
+                Some(reason) => Err(io::Error::other(reason)),
+                None => control.diagnostics(),
+            };
+            match result {
                 Ok(counters) => {
                     self.dropped_outputs = counters[0];
                     self.microphone_silence
@@ -115,11 +137,20 @@ impl<S: Send> WorkerBridge<S> for Session<S> {
         if self.retained.state == ProviderState::Closed {
             return Ok(());
         }
-        let control = self
-            .control
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .close();
+        let control = {
+            let mut control = self
+                .control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // The PCM owner can close the shared control first. Preserve its
+            // initiating failure in controller diagnostics as well.
+            if let Some(reason) = control.terminal_error() {
+                if self.retained.state != ProviderState::Failed {
+                    self.retained.last_error = Some(reason.to_owned());
+                }
+            }
+            control.close()
+        };
         let broker = self.broker.close();
         finish_close(&mut self.retained, control, broker)
     }
@@ -535,6 +566,9 @@ pub(crate) fn open<S: Send + 'static>(
         control.microphone_host_frames().map_err(|error| ControllerError::Open {
         reason: format!("installed audio worker lacks host-frame progress: {error}; reinstall the matching broker and worker"),
     })?;
+        control.refresh_outputs().map_err(|error| ControllerError::Open {
+            reason: format!("installed audio worker did not provide retained outputs v1: {error}; reinstall the matching broker and worker"),
+        })?;
         let control = Arc::new(Mutex::new(control));
         let microphone_silence = Arc::new(AtomicU64::new(0));
         let streams = SampleStreams::new(id, broker.generation(), playback, microphone)
