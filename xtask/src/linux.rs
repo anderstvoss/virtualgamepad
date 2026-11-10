@@ -106,23 +106,35 @@ fn matching_nodes(physical_paths: &[String]) -> BTreeSet<PathBuf> {
 }
 fn open_consumer(node: &Path, wait_for_udev: bool) -> std::io::Result<File> {
     let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        match OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NONBLOCK)
-            .open(node)
-        {
-            Err(error)
-                if wait_for_udev
-                    && Instant::now() < deadline
-                    && matches!(
-                        error.kind(),
-                        std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound
-                    ) =>
-            {
-                // Sysfs enumeration may precede the session's evdev ACL.
-                thread::sleep(Duration::from_millis(1));
+    retry_consumer_open(
+        || {
+            OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NONBLOCK)
+                .open(node)
+        },
+        || {
+            if !wait_for_udev || Instant::now() >= deadline {
+                return false;
             }
+            // Sysfs enumeration may precede the session's evdev ACL.
+            thread::sleep(Duration::from_millis(1));
+            true
+        },
+    )
+}
+
+fn retry_consumer_open<T>(
+    mut open: impl FnMut() -> std::io::Result<T>,
+    mut wait: impl FnMut() -> bool,
+) -> std::io::Result<T> {
+    loop {
+        match open() {
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound
+                ) && wait() => {}
             result => return result,
         }
     }
@@ -347,15 +359,13 @@ fn wait_child(
             let _ = child.wait();
             return Err(error);
         }
-        if let Controller::XboxSeries(series) = controller {
-            if let Ok(outputs) = series.host_outputs() {
-                if let Some(playback) = outputs
-                    .evdev_rumble
-                    .filter(|playback| playback.repetitions > 0)
-                {
-                    xbox_rumble = Some(playback);
-                }
-            }
+        if let Controller::XboxSeries(series) = controller
+            && let Ok(outputs) = series.host_outputs()
+            && let Some(playback) = outputs.evdev_rumble.filter(|playback| {
+                playback.repetitions > 0 && (playback.strong != 0 || playback.weak != 0)
+            })
+        {
+            xbox_rumble = Some(playback);
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
@@ -525,6 +535,37 @@ mod tests {
         assert!(!super::probe_ready("{\"consumer\":\"SDL\"}\n{partial"));
         assert!(super::probe_ready("{\"record_type\":\"mapping_ready\"}\n"));
     }
+    #[test]
+    fn series_consumer_open_recovers_from_delayed_node_and_acl() {
+        use std::io::ErrorKind::{NotFound, PermissionDenied, Unsupported};
+        let mut results = [Err(NotFound.into()), Err(PermissionDenied.into()), Ok(7)].into_iter();
+        let mut waits = 0;
+        let opened = super::retry_consumer_open(
+            || results.next().unwrap(),
+            || {
+                waits += 1;
+                true
+            },
+        )
+        .unwrap();
+        assert_eq!((opened, waits), (7, 2));
+        assert_eq!(
+            super::retry_consumer_open::<()>(|| Err(PermissionDenied.into()), || false,)
+                .unwrap_err()
+                .kind(),
+            PermissionDenied
+        );
+        assert_eq!(
+            super::retry_consumer_open::<()>(
+                || Err(Unsupported.into()),
+                || panic!("terminal open error"),
+            )
+            .unwrap_err()
+            .kind(),
+            Unsupported
+        );
+    }
+
     #[test]
     fn xbox_series_sweep_includes_share_guide_axes_and_neutral() {
         use virtualgamepad::{XboxSeriesButton as B, XboxSeriesState, XboxSeriesTrigger};
