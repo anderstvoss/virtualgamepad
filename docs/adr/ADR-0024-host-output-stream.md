@@ -1,6 +1,6 @@
 # ADR-0024: Controller-owned typed, bounded, loss-aware host-output stream
 
-Status: Proposed. Design only for [#344](https://github.com/anderstvoss/virtualgamepad/issues/344); no implementation, API removal, acceptance promotion or worker-wire approval is granted by this record.
+Status: Accepted (2026-11-11, [owner decision on #344](https://github.com/anderstvoss/virtualgamepad/issues/344#issuecomment-6787989110)). Implementation is authorized for in-process realizations as separate PRs; USB/IP stream access stays refused. No broker/IPC wire change is approved.
 
 ## Context
 
@@ -136,12 +136,14 @@ This is design only. Implementation changes the alpha family/root API and snapsh
 - **Unbounded per-reader queues, generic PCM/UAC or provider-owned decoding:** rejected by finite-resource requirements, native ownership and ADR-0023.
 - **Include USB/IP IPC in this PR or piggyback on #203:** rejected; owner approval for ordered worker-stream wire semantics is absent.
 
-## Open questions for Anders
+## Owner decisions (2026-11-11)
 
-1. **Adopt this design and authorize a separate implementation PR?** This ADR is Proposed; neither #344 nor S0 automatically approves implementation.
-2. **USB/IP scope:** approve a *new versioned worker-stream wire operation* in a later scoped PR, or retain an explicit USB/IP refusal until there is a concrete consumer? #203's operation-8 approval does not cover it.
-3. **Resource/API specifics:** should the later implementation choose reviewed finite per-family default record/byte caps and a bounded maximum read batch (recommended), with any public tuning limited to validation at creation? Exact sizes and signatures need benchmarks rather than being falsely presented here as hardware limits.
-4. **Diagnostic exposure:** retain the proposed optional typed rejection/feedback-scheduled records in the same ordered journal, or make accepted-command records the sole public entries and expose diagnostics through existing native status/observation surfaces? In either case, they must never be counted as accepted commands or gate required replies.
-5. **Mirror disposition after gap:** this ADR invalidates the continuity claim and leaves stop/degraded continuation to the application. Does Anders want a separately specified fail-closed mirror policy outside VirtualGamepad?
+Anders answered the open questions in the [owner decision on #344](https://github.com/anderstvoss/virtualgamepad/issues/344#issuecomment-6787989110):
 
-No broker/IPC wire, #203 change, new hardware claim or public API is approved by accepting this *docs* PR.
+1. **Adopted.** Separate implementation PRs are authorized under the current alpha API policy (snapshots and `docs/ALPHA_API_MIGRATION.md` updated per PR).
+2. **USB/IP stream stays refused** for now. No new worker-stream wire operation is approved; revisit only when a concrete consumer exists. #203 operation 8 stays limited to retained snapshots.
+3. **Fixed per-family caps.** Implementation picks reviewed, finite per-family record and byte caps and a bounded maximum read batch. Any public setting is limited to validation at creation.
+4. **Typed diagnostics stay in the journal.** Rejection, lifecycle and feedback-scheduled records share the ordered journal as separately tagged entries and are never counted as accepted commands.
+5. **No fail-closed mirror policy in VirtualGamepad.** After a gap the application decides whether to stop, resynchronize or continue degraded.
+
+Accepting this ADR approves no broker/IPC wire change, no #203 change and no hardware claim. Public API changes land in the separate implementation PRs.
