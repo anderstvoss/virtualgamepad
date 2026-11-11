@@ -613,19 +613,19 @@ impl TargetAwareControllerDriver for Xbox360Definition {
     fn validate_state(
         &self,
         selection: RealizationSelection,
-        _: &Self::State,
+        state: &Self::State,
     ) -> Result<(), ControlError> {
-        if matches!(
+        if !matches!(
             selection.target,
             RealizationTarget::LINUX_UINPUT
                 | RealizationTarget::LINUX_UHID_USB
                 | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
                 | RealizationTarget::LINUX_USBIP_USB_AUDIO
         ) {
-            Ok(())
-        } else {
-            Err(common::unavailable(selection.target))
+            return Err(common::unavailable(selection.target));
         }
+        common::validate_hat(state.dpad)?;
+        Ok(())
     }
     fn encode(
         &self,
@@ -795,7 +795,6 @@ impl Xbox360Controller {
     /// be represented by the selected realization.
     pub fn set_inputs(&mut self, state: Xbox360State) -> Result<(), ControlError> {
         self.0.update_state(|current| {
-            common::validate_hat(state.dpad)?;
             let mut state = state;
             state.battery = current.battery;
             *current = state;
@@ -1171,6 +1170,30 @@ impl crate::registry::ControllerFamily for Xbox360Definition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn field_edits_and_snapshots_share_validation_and_transitions() {
+        use common::session_tests::{check_opposing_dpad, input_validation_session};
+
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            RealizationTarget::LINUX_USBIP_USB_AUDIO,
+        ] {
+            let session = input_validation_session(Xbox360Definition, target, [false; 3]);
+            let mut controller = Xbox360Controller(session);
+            controller.service(&mut |_| {}).unwrap();
+            check_opposing_dpad!(controller, true);
+            controller.neutralize().unwrap();
+            controller.commit().unwrap();
+            controller.close();
+            controller.close();
+            let accepted = controller.state().clone();
+            assert_eq!(controller.neutralize(), Err(ControlError::Closed));
+            assert_eq!(controller.state(), &accepted);
+        }
+    }
 
     #[test]
     fn whole_state_through_each_report_encoder() {

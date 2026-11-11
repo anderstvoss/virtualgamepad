@@ -198,5 +198,36 @@ them as a hat. Switch Pro USB reports carry separate directional bits. On
 uinput, nonzero DualSense, DualShock 4 and Switch Pro motion and an active
 DualSense microphone mute button return `UnavailableInRealization`. DualShock
 4 touch IDs and DualSense USB touch IDs are limited to `0..=127`. DualSense
-uinput touch IDs use `0..=255`. The per-field DualSense mute setter still
-accepts the button level on uinput. That target emits no event for the button.
+uinput touch IDs use `0..=255`.
+
+## VG-1b/a · Final-state validation and input clocks
+
+The root API snapshot adds two methods,
+`DualSenseController::refresh_motion() -> Result<(), CommitError>` and
+`DualShock4Controller::refresh_motion() -> Result<(), CommitError>`. The curated
+handles expose the same methods. The Wii and Steam snapshots have zero
+additions, removals or signature changes.
+
+- The existing setters and whole-state replacements share final-state
+  validation. `set_digital` rejects opposing directions on hat targets.
+  Switch Pro USB continues to accept independent directions.
+- `set_touch` enforces the same contact ID bounds as `set_inputs`. Setting
+  the DualSense microphone mute button to pressed on uinput returns
+  `UnavailableInRealization` because that target has no mute event.
+- The three motion setters return `UnavailableInRealization` on uinput.
+  A snapshot with neutral motion is valid there.
+- An accepted motion change advances the DualSense sensor timestamp by
+  12,000, the DS4 timestamp by 750, or the Switch Pro state timer by 1.
+  This includes a return to neutral via `neutralize()`. Repeating the
+  same motion value leaves these counters at their current positions.
+- DS4 advances the touch sequence once when contacts change, including the
+  last release. A simultaneous motion change cannot add a second touch
+  increment. Repeating the same contact edit leaves the sequence in place.
+
+- `refresh_motion()` explicitly advances the Sony motion clock and sequence
+  even when the motion values are equal, then commits the current input.
+  DS4 also advances the touch sequence when a contact is active.
+  The demo uses this operation for periodic motion samples. Uinput refuses
+  this operation because it has no motion presentation. The method returns
+  `CommitError`, matching Switch Pro's refresh operation. After backpressure,
+  retry with `commit()` to deliver the accepted sample at its current clock.

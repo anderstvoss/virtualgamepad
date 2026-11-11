@@ -16,6 +16,15 @@ fn assert_axis_values(frame: &ProviderFrame, axes: &[(u16, i32)]) {
 }
 
 macro_rules! root_snapshot_case {
+    (@refresh_motion $controller:ident, xbox360) => {};
+    (@refresh_motion $controller:ident, switch_pro) => {};
+    (@refresh_motion $controller:ident, $sony:ident) => {
+        let before = $controller.state().clone();
+        let dirty = $controller.is_dirty();
+        assert!($controller.refresh_motion().is_err());
+        assert_eq!($controller.state(), &before);
+        assert_eq!($controller.is_dirty(), dirty);
+    };
     (@assert_state dualshock4, $actual:ident, $candidate:ident) => {
         // DS4 advances its private touch sequence when it accepts the contacts.
         assert_eq!($actual.left_stick(), $candidate.left_stick());
@@ -72,6 +81,7 @@ macro_rules! root_snapshot_case {
             $extra_invalid.push(opposing);
 
             controller.commit().unwrap();
+            root_snapshot_case!(@refresh_motion controller, $module);
             let neutral = controller.state().clone();
             let neutral_frame = record.lock().unwrap().sent[0].clone();
             for invalid in &$extra_invalid {
@@ -277,3 +287,75 @@ root_snapshot_case!(
         snapshot.set_native(Xbox360Control::Guide, true);
     }
 );
+
+#[test]
+fn root_sony_refresh_commits_a_new_motion_sample() {
+    struct Bridge<S> {
+        samples: Arc<Mutex<Vec<S>>>,
+        provider: Fake,
+    }
+    impl<S: Clone + Send> gr_curated_controllers::WorkerBridge<S> for Bridge<S> {
+        fn update(&mut self, state: &S) -> Result<(), ProviderError> {
+            self.samples.lock().unwrap().push(state.clone());
+            Ok(())
+        }
+        fn output(&mut self) -> Result<Option<RawReverseEvent>, ProviderError> {
+            Ok(None)
+        }
+        fn diagnostics(&mut self) -> ProviderDiagnostics {
+            self.provider.diagnostics()
+        }
+        fn dropped_output_events(&self) -> u64 {
+            0
+        }
+        fn close(&mut self) -> Result<(), ProviderError> {
+            self.provider.close()
+        }
+    }
+    macro_rules! check {
+        ($create:ident, $handle:ident, $id:literal) => {{
+            let samples = Arc::new(Mutex::new(Vec::new()));
+            let io = Arc::new(Mutex::new(Record::default()));
+            let inner = gr_curated_controllers::$create(Box::new(Bridge {
+                samples: samples.clone(),
+                provider: Fake(io.clone()),
+            }));
+            let association = ControllerAssociation::single(
+                ControllerId::new($id),
+                gr_curated_controllers::CreationOptions {
+                    target: RealizationId::LINUX_USBIP_USB_AUDIO,
+                    session: RealizationSessionId(7),
+                },
+                inner.association(),
+                inner.surface().common(),
+            );
+            let mut controller = $handle::from_parts(association, inner, None, None);
+            controller.commit().unwrap();
+            let previous = controller.state().clone();
+            let motion = previous.motion();
+            controller.set_motion(motion).unwrap();
+            assert_eq!(controller.state(), &previous);
+            controller.refresh_motion().unwrap();
+            let refreshed = controller.state().clone();
+            assert_ne!(refreshed, previous);
+            assert_eq!(refreshed.motion(), motion);
+            assert_eq!(*samples.lock().unwrap(), vec![previous, refreshed.clone()]);
+            assert!(!controller.is_dirty());
+            controller.close();
+            controller.close();
+            assert!(controller.refresh_motion().is_err());
+            assert_eq!(controller.state(), &refreshed);
+            assert_eq!(io.lock().unwrap().closes, 1);
+        }};
+    }
+    check!(
+        create_dualsense_usb_worker,
+        DualSenseController,
+        "virtualgamepad.dualsense"
+    );
+    check!(
+        create_dualshock4_usb_worker,
+        DualShock4Controller,
+        "virtualgamepad.dualshock4"
+    );
+}

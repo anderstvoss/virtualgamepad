@@ -307,6 +307,18 @@ macro_rules! shared {
             self.controller.inner.neutralize()
         }
     };
+    (refresh_motion) => {
+        /// Advance the motion sample clock and commit the current input levels.
+        /// Retry a failed delivery with `commit()` to retain this sample's clock.
+        ///
+        /// # Errors
+        /// Returns a commit error for an unavailable motion target, closed session,
+        /// or delivery failure.
+        pub fn refresh_motion(&mut self) -> Result<(), CommitError> {
+            self.controller.reap_audio_failure();
+            self.controller.inner.refresh_motion()
+        }
+    };
     (commit) => {
         /// Accept/send edited semantic state. Failed delivery remains dirty and retryable; a commit is not a one-report promise.
         ///
@@ -426,6 +438,7 @@ impl DualSenseController {
         self.controller.inner.feature_available(feature)
     }
     shared!(neutralize);
+    shared!(refresh_motion);
     shared!(commit);
     shared!(close);
     shared!(readiness);
@@ -511,6 +524,7 @@ impl DualShock4Controller {
     edits! { fn set_motion(m: DualShock4MotionSample); }
     edits! { fn set_touch( slot: DualShock4TouchSlot, contact: Option<DualShock4TouchContact>); }
     shared!(neutralize);
+    shared!(refresh_motion);
     shared!(commit);
     shared!(close);
     shared!(readiness);

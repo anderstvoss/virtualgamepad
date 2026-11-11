@@ -149,11 +149,7 @@ impl Protocol for SwitchUsbProtocol {
 }
 impl common::HidDriver for SwitchProDefinition {
     fn neutralize_state(state: &mut Self::State) {
-        *state = Self::State {
-            timer: state.timer,
-            stream_enabled: state.stream_enabled,
-            ..Self::State::default()
-        };
+        state.replace_inputs(Self::State::default());
     }
 
     type Hid = SwitchUsbProtocol;

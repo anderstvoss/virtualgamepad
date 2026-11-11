@@ -116,7 +116,7 @@ fn usb_worker_retries_one_accepted_snapshot_and_closes_once() {
 pub(crate) struct Record {
     pub(crate) events: VecDeque<RawReverseEvent>,
     pub(crate) sent: Vec<ProviderFrame>,
-    attempts: Vec<ProviderFrame>,
+    pub(crate) attempts: Vec<ProviderFrame>,
     pub(crate) fail: VecDeque<ProviderError>,
     closed: bool,
     pub(crate) destroys: usize,
@@ -1462,6 +1462,88 @@ pub(crate) fn snapshot_session<D: HidDriver>(
     }
 }
 
+pub(crate) fn input_validation_session<D: HidDriver>(
+    driver: D,
+    target: RealizationTarget,
+    numbered: [bool; 3],
+) -> ControllerSession<D>
+where
+    D::State: Default,
+{
+    if target == RealizationTarget::LINUX_USBIP_USB_AUDIO {
+        let selection = gr_realization_api::RealizationSelection {
+            controller: driver.controller_id(),
+            target,
+        };
+        let bridge = FakeWorker(Arc::new(Mutex::new(WorkerRecord::default())));
+        ControllerSession::worker(driver, selection, Box::new(bridge))
+    } else {
+        snapshot_session(driver, target, numbered).0
+    }
+}
+
+macro_rules! assert_input_rejected {
+    ($controller:ident, $candidate:expr, $setter:expr, $error:expr) => {{
+        let previous = $controller.state().clone();
+        let dirty = $controller.is_dirty();
+        let error = $error;
+        assert_eq!($setter, Err(error.clone()));
+        assert_eq!($controller.state(), &previous);
+        assert_eq!($controller.is_dirty(), dirty);
+        assert_eq!($controller.set_inputs($candidate), Err(error));
+        assert_eq!($controller.state(), &previous);
+        assert_eq!($controller.is_dirty(), dirty);
+    }};
+}
+pub(crate) use assert_input_rejected;
+
+macro_rules! check_opposing_dpad {
+    ($controller:ident, $hat:expr) => {{
+        use gr_controller_contract::DpadDirection::{Down, Left, Right, Up};
+        for (first, opposite) in [(Up, Down), (Left, Right)] {
+            $controller.neutralize().unwrap();
+            $controller
+                .set_digital(DigitalControlUpdate::Dpad {
+                    direction: first,
+                    pressed: true,
+                })
+                .unwrap();
+            let update = DigitalControlUpdate::Dpad {
+                direction: opposite,
+                pressed: true,
+            };
+            let mut candidate = $controller.state().clone();
+            candidate.set_digital(update);
+            if $hat {
+                let error = ControlError::UnsupportedControl {
+                    control: "opposing D-pad directions on a hat",
+                };
+                assert!($controller.is_dirty());
+                crate::common::session_tests::assert_input_rejected!(
+                    $controller,
+                    candidate.clone(),
+                    $controller.set_digital(update),
+                    error.clone()
+                );
+                $controller.commit().unwrap();
+                assert!(!$controller.is_dirty());
+                crate::common::session_tests::assert_input_rejected!(
+                    $controller,
+                    candidate,
+                    $controller.set_digital(update),
+                    error
+                );
+            } else {
+                $controller.set_digital(update).unwrap();
+                assert_eq!($controller.state(), &candidate);
+                $controller.set_inputs(candidate.clone()).unwrap();
+                assert_eq!($controller.state(), &candidate);
+            }
+        }
+    }};
+}
+pub(crate) use check_opposing_dpad;
+
 pub(crate) fn assert_snapshot_report(
     actual: &ProviderFrame,
     expected: &ProviderFrame,
@@ -1487,6 +1569,59 @@ pub(crate) fn assert_snapshot_report(
         assert_eq!(actual, expected);
     }
 }
+
+macro_rules! check_motion_refresh {
+    ($controller:ident, $io:ident, $expected:ident, $advance:expr,
+     $encoded:expr, $clock_masks:expr) => {{
+        let motion = $controller.state().motion();
+        let before = $controller.state().clone();
+        $controller.set_motion(motion).unwrap();
+        assert_eq!($controller.state(), &before);
+        $controller.commit().unwrap();
+        assert!(!$controller.is_dirty());
+
+        let mut $expected = $controller.state().clone();
+        ($advance)(&mut $expected);
+        $controller.refresh_motion().unwrap();
+        assert_eq!($controller.state(), &$expected);
+        assert!(!$controller.is_dirty());
+        crate::common::session_tests::assert_snapshot_report(
+            $io.lock().unwrap().sent.last().unwrap(),
+            &$encoded,
+            $clock_masks,
+        );
+
+        ($advance)(&mut $expected);
+        $io.lock()
+            .unwrap()
+            .fail
+            .push_back(ProviderError::WouldBlock);
+        assert!($controller.refresh_motion().is_err());
+        assert_eq!($controller.state(), &$expected);
+        assert!($controller.is_dirty());
+        let failed_attempt = $io.lock().unwrap().attempts.len() - 1;
+
+        $controller.set_motion(motion).unwrap();
+        assert_eq!($controller.state(), &$expected);
+        $controller.commit().unwrap();
+        assert_eq!($controller.state(), &$expected);
+        assert!(!$controller.is_dirty());
+        {
+            let record = $io.lock().unwrap();
+            assert_eq!(
+                record.attempts[failed_attempt],
+                record.attempts[failed_attempt + 1]
+            );
+        }
+
+        $controller.close();
+        $controller.close();
+        assert!($controller.refresh_motion().is_err());
+        assert_eq!($controller.state(), &$expected);
+        assert_eq!($io.lock().unwrap().destroys, 1);
+    }};
+}
+pub(crate) use check_motion_refresh;
 
 macro_rules! check_snapshot_session {
     ($controller:ident, $io:ident, $snapshot:ident, $expected:ident, $invalid:expr,
@@ -1514,6 +1649,7 @@ macro_rules! check_snapshot_session {
             .push_back(ProviderError::WouldBlock);
         assert!($controller.commit().is_err());
         assert!($controller.is_dirty());
+        let failed_attempt = $io.lock().unwrap().attempts.len() - 1;
         if let Some((candidate, error)) = invalid {
             assert_eq!($controller.set_inputs(candidate), Err(error));
             assert_eq!($controller.state(), &$expected);
@@ -1521,6 +1657,13 @@ macro_rules! check_snapshot_session {
         }
         $controller.commit().unwrap();
         assert!(!$controller.is_dirty());
+        {
+            let record = $io.lock().unwrap();
+            assert_eq!(
+                record.attempts[failed_attempt],
+                record.attempts[failed_attempt + 1]
+            );
+        }
         super::common::session_tests::assert_snapshot_report(
             $io.lock().unwrap().sent.last().unwrap(),
             &$encoded,
@@ -1621,4 +1764,46 @@ fn usb_workers_receive_only_accepted_whole_states() {
     check!(create_dualsense_usb_worker);
     check!(create_dualshock4_usb_worker);
     check!(create_xbox360_usb_worker);
+}
+
+#[test]
+fn usb_workers_refresh_motion_explicitly_and_retry_one_sample() {
+    macro_rules! check {
+        ($create:ident) => {{
+            let record = Arc::new(Mutex::new(WorkerRecord::default()));
+            let mut controller = crate::$create(Box::new(FakeWorker(record.clone())));
+            controller.commit().unwrap();
+            let motion = controller.state().motion();
+            let before = controller.state().clone();
+            controller.set_motion(motion).unwrap();
+            assert_eq!(controller.state(), &before);
+            controller.refresh_motion().unwrap();
+            let refreshed = controller.state().clone();
+            assert_ne!(refreshed, before);
+            assert_eq!(refreshed.motion(), motion);
+            assert_eq!(record.lock().unwrap().attempts.last(), Some(&refreshed));
+            assert!(!controller.is_dirty());
+
+            record.lock().unwrap().fail_once = true;
+            assert!(controller.refresh_motion().is_err());
+            let pending = controller.state().clone();
+            assert_ne!(pending, refreshed);
+            assert!(controller.is_dirty());
+            controller.set_motion(motion).unwrap();
+            controller.commit().unwrap();
+            assert_eq!(controller.state(), &pending);
+            let record_guard = record.lock().unwrap();
+            let attempts = &record_guard.attempts;
+            assert_eq!(attempts[attempts.len() - 2], pending);
+            assert_eq!(attempts.last(), Some(&pending));
+            drop(record_guard);
+            controller.close();
+            controller.close();
+            assert!(controller.refresh_motion().is_err());
+            assert_eq!(controller.state(), &pending);
+            assert_eq!(record.lock().unwrap().closes, 1);
+        }};
+    }
+    check!(create_dualsense_usb_worker);
+    check!(create_dualshock4_usb_worker);
 }

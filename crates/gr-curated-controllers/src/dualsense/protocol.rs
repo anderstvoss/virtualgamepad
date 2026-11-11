@@ -155,12 +155,7 @@ impl common::HidDriver for DualSenseDefinition {
         crate::sony_evdev::open_native(request, association)
     }
     fn neutralize_state(state: &mut Self::State) {
-        *state = Self::State {
-            battery: state.battery,
-            input_sequence: state.input_sequence,
-            sensor_timestamp: state.sensor_timestamp,
-            ..Self::State::default()
-        };
+        state.replace_inputs(Self::State::default());
     }
 
     type Hid = DualSenseUsbProtocol;
