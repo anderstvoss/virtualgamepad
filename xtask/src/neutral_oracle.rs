@@ -70,6 +70,35 @@ pub struct NeutralReference {
     pub expected: InputReport,
 }
 
+const DS: &str = include_str!("../../tests/fixtures/protocol-research/ds-neutral.hex");
+const WII_30: &str =
+    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-30.hex");
+const WII_31: &str =
+    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-31.hex");
+const WII_32: &str =
+    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-32.hex");
+const WII_33: &str =
+    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-33.hex");
+const WII_34: &str =
+    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-34.hex");
+const WII_35: &str =
+    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-35.hex");
+const WII_36: &str =
+    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-36.hex");
+const WII_37: &str =
+    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-37.hex");
+const WII_3D: &str =
+    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-3d.hex");
+const WII_3E: &str =
+    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-3e.hex");
+const WII_3F: &str =
+    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-3f.hex");
+const STEAM_42: &str =
+    include_str!("../../tests/fixtures/protocol-research/steam-c6-neutral-42.hex");
+const STEAM_45: &str =
+    include_str!("../../tests/fixtures/protocol-research/steam-c6-neutral-45.hex");
+const STEAM_47: &str =
+    include_str!("../../tests/fixtures/protocol-research/steam-c6-neutral-47.hex");
 impl NeutralReference {
     /// The seven curated families' neutral input states, shared with encoders.
     #[must_use]
@@ -123,35 +152,6 @@ impl NeutralReference {
     /// IDs and mutable counters need a family decoder and must remain unavailable.
     #[must_use]
     pub fn fixture(family: &str, report_id: u8) -> Option<Self> {
-        const DS: &str = include_str!("../../tests/fixtures/protocol-research/ds-neutral.hex");
-        const WII_30: &str =
-            include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-30.hex");
-        const WII_31: &str =
-            include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-31.hex");
-        const WII_32: &str =
-            include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-32.hex");
-        const WII_33: &str =
-            include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-33.hex");
-        const WII_34: &str =
-            include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-34.hex");
-        const WII_35: &str =
-            include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-35.hex");
-        const WII_36: &str =
-            include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-36.hex");
-        const WII_37: &str =
-            include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-37.hex");
-        const WII_3D: &str =
-            include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-3d.hex");
-        const WII_3E: &str =
-            include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-3e.hex");
-        const WII_3F: &str =
-            include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-3f.hex");
-        const STEAM_42: &str =
-            include_str!("../../tests/fixtures/protocol-research/steam-c6-neutral-42.hex");
-        const STEAM_45: &str =
-            include_str!("../../tests/fixtures/protocol-research/steam-c6-neutral-45.hex");
-        const STEAM_47: &str =
-            include_str!("../../tests/fixtures/protocol-research/steam-c6-neutral-47.hex");
         let (family, source, hex) = match (family, report_id) {
             ("virtualgamepad.dualsense", 0x01) => (
                 "virtualgamepad.dualsense",
@@ -381,7 +381,7 @@ fn select_outcome(
     wrong_device: bool,
     other_open_error: Option<String>,
     first_non_neutral: bool,
-    valid_neutral: bool,
+    timeline: &Timeline,
     unavailable: Option<String>,
 ) -> Outcome {
     if out_of_order {
@@ -396,7 +396,7 @@ fn select_outcome(
         Outcome::ConsumerOpenError { error }
     } else if first_non_neutral {
         Outcome::NonNeutralFirst
-    } else if valid_neutral {
+    } else if timeline.first_valid_neutral_ns.is_some() {
         Outcome::ValidNeutral
     } else if let Some(reason) = unavailable {
         Outcome::Unavailable { reason }
@@ -511,7 +511,7 @@ pub fn evaluate(
         wrong_device,
         other_open_error,
         first_non_neutral,
-        timeline.first_valid_neutral_ns.is_some(),
+        &timeline,
         unavailable,
     );
     OracleResult {
