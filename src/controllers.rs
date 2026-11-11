@@ -4,8 +4,8 @@ use crate::audio::AudioLifecycle;
 use crate::{
     BatteryLevel, CommitError, ControlError, ControllerAssociation, ControllerDiagnostics,
     ControllerError, ControllerId, CreationOptions, DigitalControlUpdate, DualSenseAxis,
-    DualSenseControl, DualSenseFeature, DualSenseOutputEvent, DualSenseState, DualSenseSurface,
-    DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
+    DualSenseControl, DualSenseFeature, DualSenseInputs, DualSenseOutputEvent, DualSenseStatus,
+    DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
     DualShock4MotionSample, DualShock4OutputEvent, DualShock4State, DualShock4Surface,
     DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
     ServiceReadiness, SteamController2026Button, SteamController2026OutputEvent,
@@ -432,9 +432,18 @@ impl DualSenseController {
     shared!(wants_write);
     shared!(next_service_in);
     shared!(dropped_output_events);
-    shared!(state, DualSenseState);
-    shared!(edit_inputs, DualSenseState);
-    shared!(set_inputs, DualSenseState);
+    /// Borrow accepted native input levels.
+    #[must_use]
+    pub fn inputs(&self) -> &DualSenseInputs {
+        self.controller.inner.inputs()
+    }
+    /// Read accepted battery metadata and controller-owned motion clocks.
+    #[must_use]
+    pub fn status(&self) -> DualSenseStatus {
+        self.controller.inner.status()
+    }
+    shared!(edit_inputs, DualSenseInputs);
+    shared!(set_inputs, DualSenseInputs);
     shared!(host_outputs, crate::DualSenseOutputState);
     shared!(surface, DualSenseSurface);
     shared!(is_dirty);

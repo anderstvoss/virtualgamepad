@@ -335,3 +335,39 @@ missing power-supply endpoint.
 The in-repo live probe uses the typed accessor. Revision and attachment remain
 managed by live topology and `attach`, and EEPROM and host outputs retain their
 separate ownership.
+
+## VG-1b/d · DualSense input-only values
+
+The ordinary root and curated DualSense handle now use `DualSenseInputs` for
+caller-owned native levels. The public combined `DualSenseState` type is removed.
+Its input getters and native editing helpers live on `DualSenseInputs`;
+battery is read through `DualSenseStatus`.
+
+| Previous API | Current API |
+| --- | --- |
+| `DualSenseState` | `DualSenseInputs` |
+| `controller.state()` | `controller.inputs()` |
+| `controller.state().battery()` | `controller.status().battery()` |
+| `set_inputs(DualSenseState)` | `set_inputs(DualSenseInputs)` |
+| `edit_inputs(FnOnce(&mut DualSenseState) -> Result<(), ControlError>)` | `edit_inputs(FnOnce(&mut DualSenseInputs) -> Result<(), ControlError>)` |
+
+The root snapshot removes one type and adds two types, `DualSenseInputs` and
+`DualSenseStatus`, in each feature view. The handle removes `state()`, adds
+`inputs() -> &DualSenseInputs` and `status() -> DualSenseStatus`, and changes the
+two input mutation signatures above. The fourteen input getters/mutators from
+the old state live on the new input type. Status adds `battery()`,
+`input_sequence()` and `sensor_timestamp()` read accessors. Both new value types
+support defaults, clone and equality; status is also copyable. The Wii and Steam
+supporting snapshots have zero changes.
+
+Battery setters remain handle operations. The accepted motion clock advances
+on changed motion and explicit `refresh_motion()`. Replacing input values,
+including with defaults, preserves battery and derives clock transitions from
+the accepted input change. Identity and host outputs retain their existing
+accessors.
+
+Supporting worker/runtime code uses `DualSenseSessionState`, containing separate
+input and status values. The in-repo worker, root-audio adapter, demo and tests
+are migrated together. The worker envelope and HID report bytes are pinned
+against the pre-split synthetic payload; their encodings retain the existing
+format and version.

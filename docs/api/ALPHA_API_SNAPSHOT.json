@@ -1426,9 +1426,10 @@
             "pub fn wants_write(&self) -> bool",
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
-            "pub fn state(&self) -> &DualSenseState",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut DualSenseState) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: DualSenseState) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &DualSenseInputs",
+            "pub fn status(&self) -> DualSenseStatus",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut DualSenseInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: DualSenseInputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<DualSenseOutputState, ControlError>",
             "pub fn surface(&self) -> &'static DualSenseSurface",
             "pub fn is_dirty(&self) -> bool",
@@ -1481,6 +1482,37 @@
             "impl UnwindSafe for DualSenseIdentity"
           ]
         },
+        "struct.DualSenseInputs.html": {
+          "declarations": [
+            "pub struct DualSenseInputs { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (DualSenseAxis, DualSenseAxis)",
+            "pub const fn right_stick(&self) -> (DualSenseAxis, DualSenseAxis)",
+            "pub const fn triggers(&self) -> (DualSenseTrigger, DualSenseTrigger)",
+            "pub const fn touch(&self, slot: TouchSlot) -> Option<DualSenseTouchContact>",
+            "pub const fn motion(&self) -> MotionSample",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub const fn native_pressed(&self, control: DualSenseControl) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub fn set_sticks( &mut self, left: (DualSenseAxis, DualSenseAxis), right: (DualSenseAxis, DualSenseAxis), )",
+            "pub fn set_triggers(&mut self, left: DualSenseTrigger, right: DualSenseTrigger)",
+            "pub fn set_touch( &mut self, slot: TouchSlot, contact: Option<DualSenseTouchContact>, )",
+            "pub fn set_motion(&mut self, motion: MotionSample)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, control: DualSenseControl, pressed: bool)"
+          ],
+          "traits": [
+            "impl Clone for DualSenseInputs",
+            "impl Debug for DualSenseInputs",
+            "impl Default for DualSenseInputs",
+            "impl Eq for DualSenseInputs",
+            "impl PartialEq for DualSenseInputs",
+            "impl RefUnwindSafe for DualSenseInputs",
+            "impl Send for DualSenseInputs",
+            "impl Sync for DualSenseInputs",
+            "impl Unpin for DualSenseInputs",
+            "impl UnwindSafe for DualSenseInputs"
+          ]
+        },
         "struct.DualSenseOptions.html": {
           "declarations": [
             "#[non_exhaustive]pub struct DualSenseOptions { /* private fields */ }",
@@ -1516,36 +1548,25 @@
             "impl UnwindSafe for DualSenseOutputState"
           ]
         },
-        "struct.DualSenseState.html": {
+        "struct.DualSenseStatus.html": {
           "declarations": [
-            "pub struct DualSenseState { /* private fields */ }",
-            "pub const fn left_stick(&self) -> (DualSenseAxis, DualSenseAxis)",
-            "pub const fn right_stick(&self) -> (DualSenseAxis, DualSenseAxis)",
-            "pub const fn triggers(&self) -> (DualSenseTrigger, DualSenseTrigger)",
-            "pub const fn touch(&self, slot: TouchSlot) -> Option<DualSenseTouchContact>",
-            "pub const fn motion(&self) -> MotionSample",
-            "pub const fn battery(&self) -> BatteryState",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
-            "pub const fn native_pressed(&self, control: DualSenseControl) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub fn set_sticks( &mut self, left: (DualSenseAxis, DualSenseAxis), right: (DualSenseAxis, DualSenseAxis), )",
-            "pub fn set_triggers(&mut self, left: DualSenseTrigger, right: DualSenseTrigger)",
-            "pub fn set_touch( &mut self, slot: TouchSlot, contact: Option<DualSenseTouchContact>, )",
-            "pub fn set_motion(&mut self, motion: MotionSample)",
-            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
-            "pub fn set_native(&mut self, control: DualSenseControl, pressed: bool)"
+            "pub struct DualSenseStatus { /* private fields */ }",
+            "pub const fn battery(self) -> BatteryState",
+            "pub const fn input_sequence(self) -> u8",
+            "pub const fn sensor_timestamp(self) -> u32"
           ],
           "traits": [
-            "impl Clone for DualSenseState",
-            "impl Debug for DualSenseState",
-            "impl Default for DualSenseState",
-            "impl Eq for DualSenseState",
-            "impl PartialEq for DualSenseState",
-            "impl RefUnwindSafe for DualSenseState",
-            "impl Send for DualSenseState",
-            "impl Sync for DualSenseState",
-            "impl Unpin for DualSenseState",
-            "impl UnwindSafe for DualSenseState"
+            "impl Clone for DualSenseStatus",
+            "impl Copy for DualSenseStatus",
+            "impl Debug for DualSenseStatus",
+            "impl Default for DualSenseStatus",
+            "impl Eq for DualSenseStatus",
+            "impl PartialEq for DualSenseStatus",
+            "impl RefUnwindSafe for DualSenseStatus",
+            "impl Send for DualSenseStatus",
+            "impl Sync for DualSenseStatus",
+            "impl Unpin for DualSenseStatus",
+            "impl UnwindSafe for DualSenseStatus"
           ]
         },
         "struct.DualSenseSurface.html": {
@@ -4580,9 +4601,10 @@
             "pub fn wants_write(&self) -> bool",
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
-            "pub fn state(&self) -> &DualSenseState",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut DualSenseState) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: DualSenseState) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &DualSenseInputs",
+            "pub fn status(&self) -> DualSenseStatus",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut DualSenseInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: DualSenseInputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<DualSenseOutputState, ControlError>",
             "pub fn surface(&self) -> &'static DualSenseSurface",
             "pub fn is_dirty(&self) -> bool",
@@ -4635,6 +4657,37 @@
             "impl UnwindSafe for DualSenseIdentity"
           ]
         },
+        "struct.DualSenseInputs.html": {
+          "declarations": [
+            "pub struct DualSenseInputs { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (DualSenseAxis, DualSenseAxis)",
+            "pub const fn right_stick(&self) -> (DualSenseAxis, DualSenseAxis)",
+            "pub const fn triggers(&self) -> (DualSenseTrigger, DualSenseTrigger)",
+            "pub const fn touch(&self, slot: TouchSlot) -> Option<DualSenseTouchContact>",
+            "pub const fn motion(&self) -> MotionSample",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub const fn native_pressed(&self, control: DualSenseControl) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub fn set_sticks( &mut self, left: (DualSenseAxis, DualSenseAxis), right: (DualSenseAxis, DualSenseAxis), )",
+            "pub fn set_triggers(&mut self, left: DualSenseTrigger, right: DualSenseTrigger)",
+            "pub fn set_touch( &mut self, slot: TouchSlot, contact: Option<DualSenseTouchContact>, )",
+            "pub fn set_motion(&mut self, motion: MotionSample)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, control: DualSenseControl, pressed: bool)"
+          ],
+          "traits": [
+            "impl Clone for DualSenseInputs",
+            "impl Debug for DualSenseInputs",
+            "impl Default for DualSenseInputs",
+            "impl Eq for DualSenseInputs",
+            "impl PartialEq for DualSenseInputs",
+            "impl RefUnwindSafe for DualSenseInputs",
+            "impl Send for DualSenseInputs",
+            "impl Sync for DualSenseInputs",
+            "impl Unpin for DualSenseInputs",
+            "impl UnwindSafe for DualSenseInputs"
+          ]
+        },
         "struct.DualSenseOptions.html": {
           "declarations": [
             "#[non_exhaustive]pub struct DualSenseOptions { /* private fields */ }",
@@ -4670,36 +4723,25 @@
             "impl UnwindSafe for DualSenseOutputState"
           ]
         },
-        "struct.DualSenseState.html": {
+        "struct.DualSenseStatus.html": {
           "declarations": [
-            "pub struct DualSenseState { /* private fields */ }",
-            "pub const fn left_stick(&self) -> (DualSenseAxis, DualSenseAxis)",
-            "pub const fn right_stick(&self) -> (DualSenseAxis, DualSenseAxis)",
-            "pub const fn triggers(&self) -> (DualSenseTrigger, DualSenseTrigger)",
-            "pub const fn touch(&self, slot: TouchSlot) -> Option<DualSenseTouchContact>",
-            "pub const fn motion(&self) -> MotionSample",
-            "pub const fn battery(&self) -> BatteryState",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
-            "pub const fn native_pressed(&self, control: DualSenseControl) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub fn set_sticks( &mut self, left: (DualSenseAxis, DualSenseAxis), right: (DualSenseAxis, DualSenseAxis), )",
-            "pub fn set_triggers(&mut self, left: DualSenseTrigger, right: DualSenseTrigger)",
-            "pub fn set_touch( &mut self, slot: TouchSlot, contact: Option<DualSenseTouchContact>, )",
-            "pub fn set_motion(&mut self, motion: MotionSample)",
-            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
-            "pub fn set_native(&mut self, control: DualSenseControl, pressed: bool)"
+            "pub struct DualSenseStatus { /* private fields */ }",
+            "pub const fn battery(self) -> BatteryState",
+            "pub const fn input_sequence(self) -> u8",
+            "pub const fn sensor_timestamp(self) -> u32"
           ],
           "traits": [
-            "impl Clone for DualSenseState",
-            "impl Debug for DualSenseState",
-            "impl Default for DualSenseState",
-            "impl Eq for DualSenseState",
-            "impl PartialEq for DualSenseState",
-            "impl RefUnwindSafe for DualSenseState",
-            "impl Send for DualSenseState",
-            "impl Sync for DualSenseState",
-            "impl Unpin for DualSenseState",
-            "impl UnwindSafe for DualSenseState"
+            "impl Clone for DualSenseStatus",
+            "impl Copy for DualSenseStatus",
+            "impl Debug for DualSenseStatus",
+            "impl Default for DualSenseStatus",
+            "impl Eq for DualSenseStatus",
+            "impl PartialEq for DualSenseStatus",
+            "impl RefUnwindSafe for DualSenseStatus",
+            "impl Send for DualSenseStatus",
+            "impl Sync for DualSenseStatus",
+            "impl Unpin for DualSenseStatus",
+            "impl UnwindSafe for DualSenseStatus"
           ]
         },
         "struct.DualSenseSurface.html": {

@@ -275,7 +275,7 @@ mod tests {
         assert!(
             control
                 .update(&NativeState::DualSense(
-                    gr_curated_controllers::DualSenseState::default()
+                    gr_curated_controllers::DualSenseSessionState::default()
                 ))
                 .is_err()
         );

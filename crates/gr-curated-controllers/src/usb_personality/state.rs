@@ -1,5 +1,5 @@
 //! Versioned, bounded native-state snapshots. Not application API or HID reports.
-use crate::{DualSenseState, DualShock4State, Xbox360State};
+use crate::{DualSenseSessionState, DualShock4State, Xbox360State};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StateError {
@@ -11,7 +11,7 @@ pub enum StateError {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeState {
-    DualSense(DualSenseState),
+    DualSense(DualSenseSessionState),
     DualShock4(DualShock4State),
     Xbox360(Xbox360State),
 }
@@ -44,7 +44,7 @@ impl NativeState {
             return Err(StateError::Family);
         }
         let state = match family {
-            1 => Self::DualSense(DualSenseState::decode_payload(&mut reader)?),
+            1 => Self::DualSense(DualSenseSessionState::decode_payload(&mut reader)?),
             2 => Self::DualShock4(DualShock4State::decode_payload(&mut reader)?),
             3 => Self::Xbox360(Xbox360State::decode_payload(&mut reader)?),
             _ => return Err(StateError::Family),
@@ -163,7 +163,7 @@ mod tests {
     use super::*;
     fn states() -> [NativeState; 3] {
         [
-            NativeState::DualSense(DualSenseState::default()),
+            NativeState::DualSense(DualSenseSessionState::default()),
             NativeState::DualShock4(DualShock4State::default()),
             NativeState::Xbox360(Xbox360State::default()),
         ]
