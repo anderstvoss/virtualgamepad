@@ -11,6 +11,31 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+macro_rules! accepted_inputs {
+    ($controller:ident, dualsense) => {
+        $controller.inputs()
+    };
+    ($controller:ident, $module:ident) => {
+        $controller.state()
+    };
+}
+macro_rules! accepted_clock {
+    ($controller:ident, dualsense) => {
+        $controller.status()
+    };
+    ($controller:ident, $module:ident) => {
+        $controller.state().clone()
+    };
+}
+macro_rules! sample_inputs {
+    ($sample:expr, dualsense) => {
+        $sample.inputs()
+    };
+    ($sample:expr, $module:ident) => {
+        $sample
+    };
+}
+
 #[derive(Default)]
 struct Record {
     events: VecDeque<RawReverseEvent>,
@@ -122,13 +147,13 @@ fn native_face_labels_preserve_spatial_encoding_and_readback() {
                 );
                 for button in [South, East, West, North] {
                     assert_eq!(
-                        native_controller.state().face_pressed(button),
+                        accepted_inputs!(native_controller, $module).face_pressed(button),
                         button == spatial
                     );
                 }
-                assert!(native_controller.state().native_pressed(native));
+                assert!(accepted_inputs!(native_controller, $module).native_pressed(native));
                 native_controller.neutralize().unwrap();
-                assert!(!native_controller.state().native_pressed(native));
+                assert!(!accepted_inputs!(native_controller, $module).native_pressed(native));
             }
         };
     }
@@ -185,12 +210,12 @@ macro_rules! consumer_case {
             assert_eq!(controller.association().components()[0].role(), "primary");
             assert!(matches!(controller.readiness(), Some(ServiceReadiness::Poll)));
             controller.set_native($control::$button, true).unwrap();
-            assert!(controller.state().native_pressed($control::$button));
-            let accepted = controller.state().clone();
+            assert!(accepted_inputs!(controller, $module).native_pressed($control::$button));
+            let accepted = accepted_inputs!(controller, $module).clone();
             record.lock().unwrap().fail_write = true;
             assert!(controller.commit().is_err());
             assert!(controller.is_dirty());
-            assert_eq!(controller.state(), &accepted);
+            assert_eq!(accepted_inputs!(controller, $module), &accepted);
             controller.commit().unwrap();
             assert!(!controller.is_dirty());
             let request = RawReverseEvent::ForceFeedbackUpload { request_id: 17, effect: effect() };
@@ -209,7 +234,7 @@ macro_rules! consumer_case {
             controller.service(&mut |_| {}).unwrap();
             assert_eq!(record.lock().unwrap().sent.last(), Some(&ProviderFrame::ForceFeedbackUploadReply { request_id: 19, status: -95 }));
             controller.neutralize().unwrap();
-            assert!(!controller.state().native_pressed($control::$button));
+            assert!(!accepted_inputs!(controller, $module).native_pressed($control::$button));
             controller.commit().unwrap();
             record.lock().unwrap().fail_close = true;
             controller.close();

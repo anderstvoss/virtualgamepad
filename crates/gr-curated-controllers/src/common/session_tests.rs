@@ -12,6 +12,52 @@ use gr_realization_api::{
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+pub(crate) trait InputFixture: Clone {
+    type Inputs: Clone;
+    fn test_inputs(&self) -> &Self::Inputs;
+    fn test_inputs_mut(&mut self) -> &mut Self::Inputs;
+    fn test_into_inputs(self) -> Self::Inputs;
+}
+pub(crate) trait ControllerFixture {
+    type State: InputFixture;
+    fn test_state(&self) -> &Self::State;
+}
+macro_rules! input_fixture {
+    ($($state:ty),* $(,)?) => {$(
+        impl InputFixture for $state {
+            type Inputs = Self;
+            fn test_inputs(&self) -> &Self { self }
+            fn test_inputs_mut(&mut self) -> &mut Self { self }
+            fn test_into_inputs(self) -> Self { self }
+        }
+    )*};
+}
+input_fixture!(
+    crate::DualSenseInputs,
+    crate::DualShock4State,
+    crate::SwitchProState,
+    crate::Xbox360State,
+    crate::wii_remote::WiiRemoteState,
+    crate::steam_controller_2026::SteamController2026State,
+    crate::xbox_series::XboxSeriesState,
+);
+macro_rules! controller_fixture {
+    ($($handle:ty => $state:ty),* $(,)?) => {$(
+        impl ControllerFixture for $handle {
+            type State = $state;
+            fn test_state(&self) -> &Self::State { self.state() }
+        }
+    )*};
+}
+controller_fixture!(
+    crate::DualShock4Controller => crate::DualShock4State,
+    crate::SwitchProController => crate::SwitchProState,
+    crate::Xbox360Controller => crate::Xbox360State,
+    crate::wii_remote::WiiRemoteController => crate::wii_remote::WiiRemoteState,
+    crate::steam_controller_2026::SteamController2026Controller => crate::steam_controller_2026::SteamController2026State,
+    crate::xbox_series::XboxSeriesController => crate::xbox_series::XboxSeriesState,
+);
+
 #[derive(Default)]
 struct WorkerRecord<S> {
     attempts: Vec<S>,
@@ -1484,14 +1530,19 @@ where
 
 macro_rules! assert_input_rejected {
     ($controller:ident, $candidate:expr, $setter:expr, $error:expr) => {{
-        let previous = $controller.state().clone();
+        use crate::common::session_tests::{ControllerFixture as _, InputFixture as _};
+
+        let previous = $controller.test_state().clone();
         let dirty = $controller.is_dirty();
         let error = $error;
         assert_eq!($setter, Err(error.clone()));
-        assert_eq!($controller.state(), &previous);
+        assert_eq!($controller.test_state(), &previous);
         assert_eq!($controller.is_dirty(), dirty);
-        assert_eq!($controller.set_inputs($candidate), Err(error));
-        assert_eq!($controller.state(), &previous);
+        assert_eq!(
+            $controller.set_inputs($candidate.test_into_inputs()),
+            Err(error)
+        );
+        assert_eq!($controller.test_state(), &previous);
         assert_eq!($controller.is_dirty(), dirty);
     }};
 }
@@ -1499,6 +1550,8 @@ pub(crate) use assert_input_rejected;
 
 macro_rules! check_opposing_dpad {
     ($controller:ident, $hat:expr) => {{
+        use crate::common::session_tests::{ControllerFixture as _, InputFixture as _};
+
         use gr_controller_contract::DpadDirection::{Down, Left, Right, Up};
         for (first, opposite) in [(Up, Down), (Left, Right)] {
             $controller.neutralize().unwrap();
@@ -1512,8 +1565,8 @@ macro_rules! check_opposing_dpad {
                 direction: opposite,
                 pressed: true,
             };
-            let mut candidate = $controller.state().clone();
-            candidate.set_digital(update);
+            let mut candidate = $controller.test_state().clone();
+            candidate.test_inputs_mut().set_digital(update);
             if $hat {
                 let error = ControlError::UnsupportedControl {
                     control: "opposing D-pad directions on a hat",
@@ -1535,9 +1588,11 @@ macro_rules! check_opposing_dpad {
                 );
             } else {
                 $controller.set_digital(update).unwrap();
-                assert_eq!($controller.state(), &candidate);
-                $controller.set_inputs(candidate.clone()).unwrap();
-                assert_eq!($controller.state(), &candidate);
+                assert_eq!($controller.test_state(), &candidate);
+                $controller
+                    .set_inputs(candidate.clone().test_into_inputs())
+                    .unwrap();
+                assert_eq!($controller.test_state(), &candidate);
             }
         }
     }};
@@ -1573,8 +1628,10 @@ pub(crate) fn assert_snapshot_report(
 macro_rules! check_motion_refresh {
     ($controller:ident, $io:ident, $expected:ident, $advance:expr,
      $encoded:expr, $clock_masks:expr) => {{
-        let motion = $controller.state().motion();
-        let before = $controller.state().clone();
+        use crate::common::session_tests::{ControllerFixture as _, InputFixture as _};
+
+        let motion = $controller.test_state().test_inputs().motion();
+        let before = $controller.test_state().clone();
         $controller.set_motion(motion).unwrap();
         $controller
             .edit_inputs(|state| {
@@ -1582,14 +1639,14 @@ macro_rules! check_motion_refresh {
                 Ok(())
             })
             .unwrap();
-        assert_eq!($controller.state(), &before);
+        assert_eq!($controller.test_state(), &before);
         $controller.commit().unwrap();
         assert!(!$controller.is_dirty());
 
-        let mut $expected = $controller.state().clone();
+        let mut $expected = $controller.test_state().clone();
         ($advance)(&mut $expected);
         $controller.refresh_motion().unwrap();
-        assert_eq!($controller.state(), &$expected);
+        assert_eq!($controller.test_state(), &$expected);
         assert!(!$controller.is_dirty());
         crate::common::session_tests::assert_snapshot_report(
             $io.lock().unwrap().sent.last().unwrap(),
@@ -1603,14 +1660,14 @@ macro_rules! check_motion_refresh {
             .fail
             .push_back(ProviderError::WouldBlock);
         assert!($controller.refresh_motion().is_err());
-        assert_eq!($controller.state(), &$expected);
+        assert_eq!($controller.test_state(), &$expected);
         assert!($controller.is_dirty());
         let failed_attempt = $io.lock().unwrap().attempts.len() - 1;
 
         $controller.set_motion(motion).unwrap();
-        assert_eq!($controller.state(), &$expected);
+        assert_eq!($controller.test_state(), &$expected);
         $controller.commit().unwrap();
-        assert_eq!($controller.state(), &$expected);
+        assert_eq!($controller.test_state(), &$expected);
         assert!(!$controller.is_dirty());
         {
             let record = $io.lock().unwrap();
@@ -1623,7 +1680,7 @@ macro_rules! check_motion_refresh {
         $controller.close();
         $controller.close();
         assert!($controller.refresh_motion().is_err());
-        assert_eq!($controller.state(), &$expected);
+        assert_eq!($controller.test_state(), &$expected);
         assert_eq!($io.lock().unwrap().destroys, 1);
     }};
 }
@@ -1631,16 +1688,20 @@ pub(crate) use check_motion_refresh;
 
 macro_rules! check_input_transactions {
     ($controller:ident, $change:expr, $invalid:expr, $report_count:expr) => {{
+        use crate::common::session_tests::{ControllerFixture as _, InputFixture as _};
+
         let change = $change;
         let invalid = $invalid;
         $controller.commit().unwrap();
-        let clean = $controller.state().clone();
+        let clean = $controller.test_state().clone();
         let outputs = $controller.host_outputs();
         let reports = $report_count;
         $controller.edit_inputs(|_| Ok(())).unwrap();
-        $controller.set_inputs(clean.clone()).unwrap();
+        $controller
+            .set_inputs(clean.clone().test_into_inputs())
+            .unwrap();
         assert!(!$controller.is_dirty());
-        assert_eq!($controller.state(), &clean);
+        assert_eq!($controller.test_state(), &clean);
         let error = ControlError::UnsupportedControl {
             control: "synthetic late edit failure",
         };
@@ -1655,7 +1716,7 @@ macro_rules! check_input_transactions {
                     .unwrap();
                 assert_eq!(calls, 1);
             }
-            let accepted = $controller.state().clone();
+            let accepted = $controller.test_state().clone();
             assert_eq!($controller.is_dirty(), dirty);
             assert_eq!(
                 $controller.edit_inputs(|candidate| {
@@ -1664,7 +1725,7 @@ macro_rules! check_input_transactions {
                 }),
                 Err(error.clone()),
             );
-            assert_eq!($controller.state(), &accepted);
+            assert_eq!($controller.test_state(), &accepted);
             assert_eq!($controller.is_dirty(), dirty);
             assert!(
                 $controller
@@ -1674,34 +1735,36 @@ macro_rules! check_input_transactions {
                     })
                     .is_err()
             );
-            assert_eq!($controller.state(), &accepted);
+            assert_eq!($controller.test_state(), &accepted);
             assert_eq!($controller.is_dirty(), dirty);
             $controller.edit_inputs(|_| Ok(())).unwrap();
-            $controller.set_inputs(accepted.clone()).unwrap();
+            $controller
+                .set_inputs(accepted.clone().test_into_inputs())
+                .unwrap();
             assert_eq!($controller.is_dirty(), dirty);
-            assert_eq!($controller.state(), &accepted);
+            assert_eq!($controller.test_state(), &accepted);
         }
         assert_eq!($report_count, reports);
-        let accepted = $controller.state().clone();
+        let accepted = $controller.test_state().clone();
         assert_ne!(accepted, clean);
         assert_eq!($controller.host_outputs(), outputs);
         $controller.commit().unwrap();
         assert!(!$controller.is_dirty());
         $controller.edit_inputs(change).unwrap();
-        assert_eq!($controller.state(), &accepted);
+        assert_eq!($controller.test_state(), &accepted);
         assert!(!$controller.is_dirty());
         $controller.neutralize().unwrap();
         $controller.commit().unwrap();
         $controller.neutralize().unwrap();
         assert!(!$controller.is_dirty());
-        let neutral = $controller.state().clone();
+        let neutral = $controller.test_state().clone();
         $controller.close();
         $controller.close();
         assert_eq!(
             $controller.edit_inputs(|_| panic!("closed edit executed")),
             Err(ControlError::Closed),
         );
-        assert_eq!($controller.state(), &neutral);
+        assert_eq!($controller.test_state(), &neutral);
     }};
 }
 pub(crate) use check_input_transactions;
@@ -1709,21 +1772,25 @@ pub(crate) use check_input_transactions;
 macro_rules! check_snapshot_session {
     ($controller:ident, $io:ident, $snapshot:ident, $expected:ident, $invalid:expr,
      $encoded:expr, $clock_masks:expr) => {{
+        use crate::common::session_tests::{ControllerFixture as _, InputFixture as _};
+
         $controller.service(&mut |_| {}).unwrap();
         $controller.commit().unwrap();
-        let before = $controller.state().clone();
+        let before = $controller.test_state().clone();
         let invalid = $invalid;
         if let Some((candidate, error)) = &invalid {
             assert_eq!(
-                $controller.set_inputs(candidate.clone()),
+                $controller.set_inputs(candidate.clone().test_into_inputs()),
                 Err(error.clone())
             );
-            assert_eq!($controller.state(), &before);
+            assert_eq!($controller.test_state(), &before);
             assert!(!$controller.is_dirty());
         }
         let reports = $io.lock().unwrap().sent.len();
-        $controller.set_inputs($snapshot.clone()).unwrap();
-        assert_eq!($controller.state(), &$expected);
+        $controller
+            .set_inputs($snapshot.clone().test_into_inputs())
+            .unwrap();
+        assert_eq!($controller.test_state(), &$expected);
         assert!($controller.is_dirty());
         assert_eq!($io.lock().unwrap().sent.len(), reports);
         $io.lock()
@@ -1734,8 +1801,11 @@ macro_rules! check_snapshot_session {
         assert!($controller.is_dirty());
         let failed_attempt = $io.lock().unwrap().attempts.len() - 1;
         if let Some((candidate, error)) = invalid {
-            assert_eq!($controller.set_inputs(candidate), Err(error));
-            assert_eq!($controller.state(), &$expected);
+            assert_eq!(
+                $controller.set_inputs(candidate.test_into_inputs()),
+                Err(error)
+            );
+            assert_eq!($controller.test_state(), &$expected);
             assert!($controller.is_dirty());
         }
         $controller.commit().unwrap();
@@ -1752,40 +1822,54 @@ macro_rules! check_snapshot_session {
             &$encoded,
             $clock_masks,
         );
-        $controller.set_inputs($snapshot.clone()).unwrap();
-        assert_eq!($controller.state(), &$expected);
+        $controller
+            .set_inputs($snapshot.clone().test_into_inputs())
+            .unwrap();
+        assert_eq!($controller.test_state(), &$expected);
         assert!(!$controller.is_dirty());
         $controller.commit().unwrap();
         $controller.neutralize().unwrap();
         $controller.commit().unwrap();
-        $controller.set_inputs($snapshot).unwrap();
+        $controller
+            .set_inputs($snapshot.test_into_inputs())
+            .unwrap();
         $controller.commit().unwrap();
         super::common::session_tests::assert_snapshot_report(
             $io.lock().unwrap().sent.last().unwrap(),
             &$encoded,
             $clock_masks,
         );
-        let mut accepted = $controller.state().clone();
+        let mut accepted = $controller.test_state().clone();
         if $controller.0.selection().target == RealizationTarget::LINUX_UHID_USB {
-            accepted.set_digital(gr_controller_contract::DigitalControlUpdate::FaceButton {
-                button: gr_controller_contract::FaceButton::North,
-                pressed: !accepted.face_pressed(gr_controller_contract::FaceButton::North),
-            });
-            $controller.set_inputs(accepted.clone()).unwrap();
+            let pressed = !accepted
+                .test_inputs()
+                .face_pressed(gr_controller_contract::FaceButton::North);
+            accepted.test_inputs_mut().set_digital(
+                gr_controller_contract::DigitalControlUpdate::FaceButton {
+                    button: gr_controller_contract::FaceButton::North,
+                    pressed,
+                },
+            );
+            $controller
+                .set_inputs(accepted.clone().test_into_inputs())
+                .unwrap();
             $io.lock().unwrap().fail.push_back(ProviderError::Write {
                 reason: "synthetic terminal HID write".into(),
             });
             assert!($controller.commit().is_err());
             assert!(!$controller.is_dirty());
             assert_eq!(
-                $controller.set_inputs(before.clone()),
+                $controller.set_inputs(before.clone().test_into_inputs()),
                 Err(ControlError::Closed)
             );
         }
         $controller.close();
         $controller.close();
-        assert_eq!($controller.set_inputs(before), Err(ControlError::Closed));
-        assert_eq!($controller.state(), &accepted);
+        assert_eq!(
+            $controller.set_inputs(before.test_into_inputs()),
+            Err(ControlError::Closed)
+        );
+        assert_eq!($controller.test_state(), &accepted);
         assert_eq!($io.lock().unwrap().destroys, 1);
     }};
 }
@@ -1799,30 +1883,43 @@ fn usb_workers_receive_only_accepted_whole_states() {
             let record = Arc::new(Mutex::new(WorkerRecord::default()));
             let mut controller = crate::$create(Box::new(FakeWorker(record.clone())));
             controller.commit().unwrap();
-            let neutral = controller.state().clone();
+            let neutral = controller.test_state().clone();
             let mut snapshot = neutral.clone();
-            snapshot.set_digital(DigitalControlUpdate::FaceButton {
-                button: FaceButton::South,
-                pressed: true,
-            });
-            snapshot.set_digital(DigitalControlUpdate::Dpad {
-                direction: DpadDirection::Up,
-                pressed: true,
-            });
+            let pressed = !snapshot.test_inputs().face_pressed(FaceButton::North);
+            snapshot
+                .test_inputs_mut()
+                .set_digital(DigitalControlUpdate::FaceButton {
+                    button: FaceButton::South,
+                    pressed: true,
+                });
+            snapshot
+                .test_inputs_mut()
+                .set_digital(DigitalControlUpdate::Dpad {
+                    direction: DpadDirection::Up,
+                    pressed: true,
+                });
             let mut invalid = snapshot.clone();
-            invalid.set_digital(DigitalControlUpdate::Dpad {
-                direction: DpadDirection::Down,
-                pressed: true,
-            });
-            assert!(controller.set_inputs(invalid.clone()).is_err());
-            assert_eq!(controller.state(), &neutral);
+            invalid
+                .test_inputs_mut()
+                .set_digital(DigitalControlUpdate::Dpad {
+                    direction: DpadDirection::Down,
+                    pressed: true,
+                });
+            assert!(
+                controller
+                    .set_inputs(invalid.clone().test_into_inputs())
+                    .is_err()
+            );
+            assert_eq!(controller.test_state(), &neutral);
             assert!(!controller.is_dirty());
 
-            controller.set_inputs(snapshot.clone()).unwrap();
+            controller
+                .set_inputs(snapshot.clone().test_into_inputs())
+                .unwrap();
             record.lock().unwrap().fail_once = true;
             assert!(controller.commit().is_err());
-            assert!(controller.set_inputs(invalid).is_err());
-            assert_eq!(controller.state(), &snapshot);
+            assert!(controller.set_inputs(invalid.test_into_inputs()).is_err());
+            assert_eq!(controller.test_state(), &snapshot);
             assert!(controller.is_dirty());
             controller.commit().unwrap();
             assert!(!controller.is_dirty());
@@ -1833,20 +1930,29 @@ fn usb_workers_receive_only_accepted_whole_states() {
 
             controller.neutralize().unwrap();
             controller.commit().unwrap();
-            controller.set_inputs(snapshot.clone()).unwrap();
+            controller
+                .set_inputs(snapshot.clone().test_into_inputs())
+                .unwrap();
             controller.commit().unwrap();
             assert_eq!(record.lock().unwrap().attempts.last(), Some(&snapshot));
 
-            snapshot.set_digital(DigitalControlUpdate::FaceButton {
-                button: FaceButton::North,
-                pressed: !snapshot.face_pressed(FaceButton::North),
-            });
-            controller.set_inputs(snapshot.clone()).unwrap();
+            snapshot
+                .test_inputs_mut()
+                .set_digital(DigitalControlUpdate::FaceButton {
+                    button: FaceButton::North,
+                    pressed,
+                });
+            controller
+                .set_inputs(snapshot.clone().test_into_inputs())
+                .unwrap();
             record.lock().unwrap().fail_output = true;
             assert!(controller.service(&mut |_| {}).is_err());
             assert!(controller.commit().is_err());
-            assert_eq!(controller.set_inputs(neutral), Err(ControlError::Closed));
-            assert_eq!(controller.state(), &snapshot);
+            assert_eq!(
+                controller.set_inputs(neutral.test_into_inputs()),
+                Err(ControlError::Closed)
+            );
+            assert_eq!(controller.test_state(), &snapshot);
             assert!(controller.is_dirty());
             controller.close();
             assert_eq!(record.lock().unwrap().closes, 1);
@@ -1864,25 +1970,25 @@ fn usb_workers_refresh_motion_explicitly_and_retry_one_sample() {
             let record = Arc::new(Mutex::new(WorkerRecord::default()));
             let mut controller = crate::$create(Box::new(FakeWorker(record.clone())));
             controller.commit().unwrap();
-            let motion = controller.state().motion();
-            let before = controller.state().clone();
+            let motion = controller.test_state().test_inputs().motion();
+            let before = controller.test_state().clone();
             controller.set_motion(motion).unwrap();
-            assert_eq!(controller.state(), &before);
+            assert_eq!(controller.test_state(), &before);
             controller.refresh_motion().unwrap();
-            let refreshed = controller.state().clone();
+            let refreshed = controller.test_state().clone();
             assert_ne!(refreshed, before);
-            assert_eq!(refreshed.motion(), motion);
+            assert_eq!(refreshed.test_inputs().motion(), motion);
             assert_eq!(record.lock().unwrap().attempts.last(), Some(&refreshed));
             assert!(!controller.is_dirty());
 
             record.lock().unwrap().fail_once = true;
             assert!(controller.refresh_motion().is_err());
-            let pending = controller.state().clone();
+            let pending = controller.test_state().clone();
             assert_ne!(pending, refreshed);
             assert!(controller.is_dirty());
             controller.set_motion(motion).unwrap();
             controller.commit().unwrap();
-            assert_eq!(controller.state(), &pending);
+            assert_eq!(controller.test_state(), &pending);
             let record_guard = record.lock().unwrap();
             let attempts = &record_guard.attempts;
             assert_eq!(attempts[attempts.len() - 2], pending);
@@ -1891,7 +1997,7 @@ fn usb_workers_refresh_motion_explicitly_and_retry_one_sample() {
             controller.close();
             controller.close();
             assert!(controller.refresh_motion().is_err());
-            assert_eq!(controller.state(), &pending);
+            assert_eq!(controller.test_state(), &pending);
             assert_eq!(record.lock().unwrap().closes, 1);
         }};
     }
@@ -1930,7 +2036,7 @@ fn worker_input_transactions_preserve_clean_dirty_and_closed_boundaries() {
             assert_eq!(record.lock().unwrap().closes, 1);
         }};
     }
-    check!(create_dualsense_usb_worker, crate::DualSenseState);
+    check!(create_dualsense_usb_worker, crate::DualSenseInputs);
     check!(create_dualshock4_usb_worker, crate::DualShock4State);
     check!(create_xbox360_usb_worker, crate::Xbox360State);
 }

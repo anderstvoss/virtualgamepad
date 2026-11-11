@@ -21,7 +21,7 @@ pub use gr_controller_runtime::{ControllerRuntime, FrameSink};
 pub use gr_curated_controllers::{
     BatteryLevel, BatteryState, ControllerAssociation, CreationOptions, DualSenseAxis,
     DualSenseControl, DualSenseController, DualSenseFeature, DualSenseHidOutput, DualSenseIdentity,
-    DualSenseOptions, DualSenseOutputEvent, DualSenseState, DualSenseSurface,
+    DualSenseOptions, DualSenseOutputEvent, DualSenseSessionState, DualSenseSurface,
     DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
     DualShock4Controller, DualShock4HidOutput, DualShock4Identity, DualShock4MotionSample,
     DualShock4Options, DualShock4OutputEvent, DualShock4State, DualShock4Surface,
