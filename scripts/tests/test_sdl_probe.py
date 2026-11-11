@@ -136,6 +136,7 @@ class ProbeIntegration(unittest.TestCase):
             self.assertEqual(submissions, [dict(record_type='trigger_rumble_submission',
                                                side=side, accepted=accepted)
                                           for side in ('left', 'right')])
+            self.assertIn('\"record_type\":\"mapping_ready\"', result.stdout)
             self.assertIn('trigger_call=16384,0,60', result.stderr)
             self.assertIn('trigger_call=0,32768,60', result.stderr)
             self.assertTrue(record['consumer_closed'])

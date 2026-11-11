@@ -157,7 +157,7 @@ int main(int argc, char **argv) {
         // Poll the initial neutral stream before the harness applies a transition.
         // Sony HIDAPI drivers compare against a zero-filled previous packet;
         // applying Up (hat 0) before neutral (hat 8) has arrived loses that edge.
-        if ((control_script || strcmp(profile, "diagnostic") == 0) && !mapping_ready && probe_control_ready(SDL_GetTicks() - started, neutral)) {
+        if ((control_script || gamepad_script || strcmp(profile, "diagnostic") == 0) && !mapping_ready && probe_control_ready(SDL_GetTicks() - started, neutral)) {
             puts("{\"schema_version\":2,\"record_type\":\"mapping_ready\",\"neutral_settle_ms\":100}");
             fflush(stdout);
             mapping_ready = true;
