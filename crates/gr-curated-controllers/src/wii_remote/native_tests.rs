@@ -478,3 +478,61 @@ fn native_input_transactions_preserve_attachment_and_skip_unchanged_companion_fr
         factory.0.lock().unwrap().frames.len()
     );
 }
+
+#[test]
+fn native_battery_metadata_is_separate_from_inputs_and_live_attachment() {
+    let factory = Factory::default();
+    let mut controller = create(&factory);
+    let battery = WiiRemoteBattery::new(0xc0);
+    let state = controller.state().clone();
+    let outputs = controller.host_outputs().unwrap();
+    controller.set_battery(battery).unwrap();
+    assert_eq!(controller.state(), &state);
+    assert!(factory.0.lock().unwrap().frames.is_empty());
+    controller
+        .attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+        .unwrap();
+    controller.commit().unwrap();
+    let input = controller.state().clone();
+    controller.set_battery(WiiRemoteBattery::new(31)).unwrap();
+    controller.set_inputs(input).unwrap();
+    controller.set_accelerometer([100, 200, 300]).unwrap();
+    controller.neutralize().unwrap();
+    assert_eq!(controller.battery().raw(), 31);
+    assert!(matches!(
+        controller.state().extension(),
+        WiiExtension::Nunchuk(_)
+    ));
+    let before = controller.state().clone();
+    let dirty = controller.is_dirty();
+    assert!(
+        controller
+            .edit_inputs(|state| { state.set_attachment(WiiExtension::None, false) })
+            .is_err()
+    );
+    assert_eq!(controller.state(), &before);
+    assert_eq!(controller.is_dirty(), dirty);
+    assert_eq!(controller.battery().raw(), 31);
+    assert_eq!(controller.host_outputs().unwrap(), outputs);
+    assert!(!controller.resource_dirty());
+    assert!(
+        controller
+            .surface()
+            .restrictions()
+            .iter()
+            .any(|restriction| {
+                restriction.feature == "LEDs and battery"
+                    && restriction.reason.contains("power_supply")
+            })
+    );
+    controller.close();
+    controller.close();
+    assert_eq!(controller.set_battery(battery), Err(ControlError::Closed));
+    assert_eq!(controller.battery().raw(), 31);
+    let record = factory.0.lock().unwrap();
+    let mut closed = record.closed.clone();
+    closed.sort_unstable();
+    closed.dedup();
+    assert_eq!(closed.len(), record.requests.len());
+    assert_eq!(closed.len(), record.closed.len());
+}

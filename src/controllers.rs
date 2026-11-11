@@ -747,6 +747,12 @@ impl WiiRemoteController {
         self.controller.inner.identity()
     }
 
+    /// Current raw battery metadata, retained after close.
+    #[must_use]
+    pub const fn battery(&self) -> crate::WiiRemoteBattery {
+        self.controller.inner.battery()
+    }
+
     /// Topology for the current attachment combination.
     #[must_use]
     pub fn current_topology(&self) -> &'static crate::InputTopology {
@@ -815,7 +821,7 @@ impl WiiRemoteController {
         fn set_button(button: WiiRemoteButton, pressed: bool);
         fn set_accelerometer(values: [u16; 3]);
         fn set_ir(points: [Option<WiiIrPoint>; 4]);
-        fn set_battery_raw(value: u8);
+        fn set_battery(battery: crate::WiiRemoteBattery);
         fn set_extension(value: WiiExtension);
         fn set_motion_plus(gyroscope: [u16; 3], slow: [bool; 3]);
     }

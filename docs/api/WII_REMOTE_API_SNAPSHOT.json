@@ -214,6 +214,26 @@
         "impl UnwindSafe for WiiNunchukState"
       ]
     },
+    "struct.WiiRemoteBattery.html": {
+      "declarations": [
+        "pub struct WiiRemoteBattery(/* private fields */);",
+        "pub const fn new(raw: u8) -> Self",
+        "pub const fn raw(self) -> u8"
+      ],
+      "traits": [
+        "impl Clone for WiiRemoteBattery",
+        "impl Copy for WiiRemoteBattery",
+        "impl Debug for WiiRemoteBattery",
+        "impl Default for WiiRemoteBattery",
+        "impl Eq for WiiRemoteBattery",
+        "impl PartialEq for WiiRemoteBattery",
+        "impl RefUnwindSafe for WiiRemoteBattery",
+        "impl Send for WiiRemoteBattery",
+        "impl Sync for WiiRemoteBattery",
+        "impl Unpin for WiiRemoteBattery",
+        "impl UnwindSafe for WiiRemoteBattery"
+      ]
+    },
     "struct.WiiRemoteController.html": {
       "declarations": [
         "pub struct WiiRemoteController { /* private fields */ }",
@@ -232,7 +252,8 @@
         "pub fn set_button( &mut self, button: WiiRemoteButton, pressed: bool, ) -> Result<(), ControlError>",
         "pub fn set_accelerometer( &mut self, values: [u16; 3], ) -> Result<(), ControlError>",
         "pub fn set_ir( &mut self, points: [Option<WiiIrPoint>; 4], ) -> Result<(), ControlError>",
-        "pub fn set_battery_raw(&mut self, value: u8) -> Result<(), ControlError>",
+        "pub const fn battery(&self) -> WiiRemoteBattery",
+        "pub fn set_battery( &mut self, battery: WiiRemoteBattery, ) -> Result<(), ControlError>",
         "pub fn set_extension(&mut self, value: WiiExtension) -> Result<(), ControlError>",
         "pub fn set_motion_plus( &mut self, gyroscope: [u16; 3], slow: [bool; 3], ) -> Result<(), ControlError>",
         "pub fn host_outputs(&self) -> Result<WiiRemoteOutputs, ControlError>",
@@ -358,9 +379,7 @@
         "pub fn set_attachment( &mut self, extension: WiiExtension, motion_plus: bool, ) -> Result<(), ControlError>",
         "pub fn set_extension_values( &mut self, value: WiiExtension, ) -> Result<(), ControlError>",
         "pub fn set_motion_plus_values( &mut self, gyroscope: [u16; 3], slow: [bool; 3], ) -> Result<(), ControlError>",
-        "pub const fn motion_plus(&self) -> &WiiMotionPlusState",
-        "pub const fn battery_raw(&self) -> u8",
-        "pub fn set_battery_raw(&mut self, battery: u8)"
+        "pub const fn motion_plus(&self) -> &WiiMotionPlusState"
       ],
       "traits": [
         "impl Clone for WiiRemoteState",

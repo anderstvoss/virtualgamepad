@@ -299,3 +299,39 @@ Pad contact-gated position and independent clicks remain available on reduced
 uinput. The demo uses raw-zero motion for reduced sessions and its existing
 synthetic stationary pose for wired UHID. Xtask samples include IMU, capacitance
 and pressure only for wired UHID.
+
+
+## VG-1b/c2 · Wii battery metadata
+
+The root and Wii supporting snapshots each add `WiiRemoteBattery`, with
+`new(raw: u8) -> Self` and `raw(self) -> u8`, plus these handle methods.
+
+- `WiiRemoteController::battery(&self) -> WiiRemoteBattery`
+- `WiiRemoteController::set_battery(&mut self, battery: WiiRemoteBattery) -> Result<(), ControlError>`
+
+Each snapshot removes three methods.
+
+- `WiiRemoteState::battery_raw`
+- `WiiRemoteState::set_battery_raw`
+- `WiiRemoteController::set_battery_raw`
+
+The root delta applies to both feature views. The Steam snapshot has zero
+additions, removals or changed declarations.
+
+Replace `controller.set_battery_raw(raw)` with
+`controller.set_battery(WiiRemoteBattery::new(raw))`. Read the byte through
+`controller.battery().raw()`. Battery is absent from `WiiRemoteState`;
+`set_inputs` and `edit_inputs` own input levels. The native raw domain is
+`0..=255`, with the existing default of zero and low-battery status threshold
+below `0x20`. There is no inferred percentage conversion.
+
+Accepted battery updates are metadata transactions. Future Wii status reports
+carry the accepted byte, while queued reports retain their existing bytes.
+Input replacement, neutralization and attachment changes preserve battery.
+Closed handles retain the last accepted metadata and reject updates. Uinput
+retains the typed metadata locally; its published restriction identifies the
+missing power-supply endpoint.
+
+The in-repo live probe uses the typed accessor. Revision and attachment remain
+managed by live topology and `attach`, and EEPROM and host outputs retain their
+separate ownership.
