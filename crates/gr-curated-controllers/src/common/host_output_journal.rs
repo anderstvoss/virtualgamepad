@@ -358,7 +358,7 @@ impl<C: JournalPayload, D: JournalPayload> HostOutputJournal<C, D> {
         }
     }
 
-    /// At most max_read_batch references; a missing interval is reported in
+    /// At most `max_read_batch` references; a missing interval is reported in
     /// its own result, before the first later stored entry. Reads do not pop.
     pub(crate) fn read(
         &self,
