@@ -71,28 +71,17 @@ pub struct NeutralReference {
 }
 
 const DS: &str = include_str!("../../tests/fixtures/protocol-research/ds-neutral.hex");
-const WII_30: &str =
-    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-30.hex");
-const WII_31: &str =
-    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-31.hex");
-const WII_32: &str =
-    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-32.hex");
-const WII_33: &str =
-    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-33.hex");
-const WII_34: &str =
-    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-34.hex");
-const WII_35: &str =
-    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-35.hex");
-const WII_36: &str =
-    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-36.hex");
-const WII_37: &str =
-    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-37.hex");
-const WII_3D: &str =
-    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-3d.hex");
-const WII_3E: &str =
-    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-3e.hex");
-const WII_3F: &str =
-    include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-3f.hex");
+const WII_30: &str = include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-30.hex");
+const WII_31: &str = include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-31.hex");
+const WII_32: &str = include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-32.hex");
+const WII_33: &str = include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-33.hex");
+const WII_34: &str = include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-34.hex");
+const WII_35: &str = include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-35.hex");
+const WII_36: &str = include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-36.hex");
+const WII_37: &str = include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-37.hex");
+const WII_3D: &str = include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-3d.hex");
+const WII_3E: &str = include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-3e.hex");
+const WII_3F: &str = include_str!("../../tests/fixtures/protocol-research/wii-c5-neutral-3f.hex");
 const STEAM_42: &str =
     include_str!("../../tests/fixtures/protocol-research/steam-c6-neutral-42.hex");
 const STEAM_45: &str =
