@@ -1,4 +1,5 @@
 mod feedback;
+pub(crate) mod host_output_journal;
 #[allow(dead_code)] // Opt-in typed resource seam; first production consumer is Wii.
 pub(crate) mod resources;
 mod snapshot;
