@@ -312,6 +312,9 @@ struct XboxProbeFeedback {
     bluetooth: Option<virtualgamepad::XboxSeriesBluetoothRumble>,
     reports: Vec<Value>,
 }
+fn series_nodes_ready(nodes: &BTreeSet<PathBuf>, bluetooth: bool) -> bool {
+    probe_node(nodes, false).is_some() && (!bluetooth || probe_node(nodes, true).is_some())
+}
 fn probe_node(nodes: &BTreeSet<PathBuf>, hidraw: bool) -> Option<&PathBuf> {
     nodes
         .iter()
@@ -445,7 +448,11 @@ impl Backend for Linux {
                     let nodes=matching_nodes(&s.physical_paths);
                     let steam_hid = matches!(&s.controller, Controller::Steam(c)
                         if c.surface().target() == RealizationId::LINUX_UHID_USB);
-                    if stage=="node_present" && !nodes.is_empty()
+                    let series_ready = match &s.controller {
+                        Controller::XboxSeries(c) => series_nodes_ready(&nodes, c.surface().target() == RealizationId::LINUX_UHID_BLUETOOTH),
+                        _ => true,
+                    };
+                    if stage=="node_present" && !nodes.is_empty() && series_ready
                         && (!steam_hid || nodes.iter().any(|p| !p.starts_with("/dev/input"))) {
                         s.nodes=nodes;
                         return Ok(json!({"poll_interval_ns":1_000_000,"devices":s.nodes.iter().map(|p| {
@@ -566,6 +573,22 @@ impl Backend for Linux {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn series_enumeration_waits_for_input_after_hidraw_and_both_for_bluetooth() {
+        use std::{collections::BTreeSet, path::PathBuf};
+        let input = PathBuf::from("/dev/input/event999");
+        let raw = PathBuf::from("/dev/hidraw999");
+        for (nodes, uinput, bluetooth) in [
+            (BTreeSet::new(), false, false),
+            (BTreeSet::from([raw.clone()]), false, false),
+            (BTreeSet::from([input.clone()]), true, false),
+            (BTreeSet::from([input, raw]), true, true),
+        ] {
+            assert_eq!(super::series_nodes_ready(&nodes, false), uinput);
+            assert_eq!(super::series_nodes_ready(&nodes, true), bluetooth);
+        }
+    }
+
     #[test]
     fn requested_probe_backend_never_falls_back_to_the_other_node_type() {
         use std::{collections::BTreeSet, path::PathBuf};
