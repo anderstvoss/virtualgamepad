@@ -1,7 +1,7 @@
 # Alpha 2 release notes — DRAFT (not a release declaration)
 
 > Prepared against `main` at
-> [`77ec6e39457ddf123ef732ac0e28237307e05f8c`](https://github.com/anderstvoss/virtualgamepad/commit/77ec6e39457ddf123ef732ac0e28237307e05f8c).
+> [`eaff3d77c2b73dd3668d5b37d54c7927f94251d0`](https://github.com/anderstvoss/virtualgamepad/commit/eaff3d77c2b73dd3668d5b37d54c7927f94251d0).
 > **Not final:** VG-1b c2–e, the #304 research record, release-commit
 > qualification and maintainer authorization remain outstanding. Preserve
 > [Alpha 1's published notes](../ALPHA_RELEASE_NOTES.md); do not replace them.

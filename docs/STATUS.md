@@ -38,7 +38,7 @@ an API freeze do not promote a cell.
 
 **Alpha 2 — preparation, not yet released.** The five checkpoint merges and
 follow-up work below are verified on `main` as of
-[`77ec6e3`](https://github.com/anderstvoss/virtualgamepad/commit/77ec6e39457ddf123ef732ac0e28237307e05f8c).
+[`eaff3d7`](https://github.com/anderstvoss/virtualgamepad/commit/eaff3d77c2b73dd3668d5b37d54c7927f94251d0).
 The [Alpha 2 release-notes draft](release/ALPHA_2_RELEASE_NOTES_DRAFT.md)
 and [release checklist](release/ALPHA_2_CHECKLIST.md) are provisional;
 they do not authorize a tag or publication. All cells in the
@@ -76,7 +76,7 @@ Follow-on core changes on `main`:
   step b [#363](https://github.com/anderstvoss/virtualgamepad/pull/363) ·
   `5bea7a097f66c9526fae45ea32b5a8a936029580` (transactional edits);
   step c1 [#364](https://github.com/anderstvoss/virtualgamepad/pull/364) ·
-  `77ec6e39457ddf123ef732ac0e28237307e05f8c` (Steam
+  `eaff3d77c2b73dd3668d5b37d54c7927f94251d0` (Steam
   reduced-uinput refusals). Steps c2, d and e are not complete on
   this baseline. **TODO(VG-1b e):** after the local agent's final ledger lands,
   refresh the Alpha 2 API-delta summary and remove this placeholder.
@@ -88,8 +88,11 @@ closes only after **VG-1b steps a–e** and the Steam #304 kernel observations
 are recorded in research (currently
 [research PR #122](https://github.com/anderstvoss/controller-protocol-research/pull/122),
 open at this baseline). [VG-2 #344](https://github.com/anderstvoss/virtualgamepad/issues/344)
-and [ADR-0024 PR #354](https://github.com/anderstvoss/virtualgamepad/pull/354)
-belong to the separate audio track; they are **not an Alpha 2 gate**.
+and [Accepted ADR-0024](adr/ADR-0024-host-output-stream.md) (merged via
+[#354](https://github.com/anderstvoss/virtualgamepad/pull/354) as
+`eaff3d77c2b73dd3668d5b37d54c7927f94251d0`) belong to the separate
+audio track; the design is accepted but its stream implementation is not
+landed, and neither is **an Alpha 2 gate**.
 
 New-controller work after Alpha 2 is tracked separately:
 [DualSense Edge #170](https://github.com/anderstvoss/virtualgamepad/issues/170),

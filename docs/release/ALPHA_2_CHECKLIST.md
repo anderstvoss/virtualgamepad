@@ -2,7 +2,7 @@
 
 > This is a **maintainer gate**, not evidence of a passed release.
 > Draft source: `main` at
-> [`77ec6e39457ddf123ef732ac0e28237307e05f8c`](https://github.com/anderstvoss/virtualgamepad/commit/77ec6e39457ddf123ef732ac0e28237307e05f8c).
+> [`eaff3d77c2b73dd3668d5b37d54c7927f94251d0`](https://github.com/anderstvoss/virtualgamepad/commit/eaff3d77c2b73dd3668d5b37d54c7927f94251d0).
 > Modelled on [Alpha 1's release review](../history/alpha-1/ALPHA_FINAL_REVIEW.md)
 > and [remediation disposition](../history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
 > The eventual **release commit**, not this docs branch/PR head, owns final evidence.
