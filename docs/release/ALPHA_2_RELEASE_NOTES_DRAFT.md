@@ -162,4 +162,3 @@ administrator-run installation process.
    match the #350 worker-control protocol; use the existing signed-off
    host setup procedures. Review the final
    [Alpha 2 checklist](ALPHA_2_CHECKLIST.md) for qualification.
-

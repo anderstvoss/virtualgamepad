@@ -113,4 +113,3 @@
   outside-tree consumer JSON and lockfile with the release evidence, and
   cross-check release notes, CHANGELOG and support claims. Do not mistake
   PR-head CI or an earlier candidate for the tagged revision.
-
