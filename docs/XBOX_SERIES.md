@@ -7,7 +7,7 @@ the same two-argument shape with its supporting `CreationOptions`.
 | Realization | Scope |
 | --- | --- |
 | `linux.uinput` | One gamepad with the Linux xpad evdev layout. It exposes A/B/X/Y, bumpers, View/Menu/Guide/Share, stick clicks, the D-pad hat, four signed stick axes and two 10-bit triggers. Conventional force feedback carries strong and weak main-motor playback. |
-| `linux.uhid.bluetooth` | Local Bluetooth-bus HID for the measured `045e:0b13` report map. Exposes all standard controls, including separate Guide and Share, and retains four-channel rumble commands. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
+| `linux.uhid.bluetooth` | Local Bluetooth-bus HID for the measured `045e:0b13` report map. Qualified with SDL 3.4.18 over evdev and hidraw on stock `microsoft`: all standard controls, separate Guide/Share, final neutral, main rumble and independent virtual trigger-command reception. Physical trigger actuation and Steam Input remain unverified. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
 | USB-bus UHID and `dummy_hcd` USB HID | Inapplicable to the wired GIP controller. GIP and USB/IP feasibility stay with [#168](https://github.com/anderstvoss/virtualgamepad/issues/168). |
 
 The xpad [consumer ledger](https://github.com/anderstvoss/controller-protocol-research/blob/eba02ad610e264a2518a699394255cc7f1d670dd/docs/ledgers/xbox-series-l0.md)
@@ -141,3 +141,29 @@ commands. This qualifies a bounded virtual HIDAPI command path. Physical
 trigger actuation and exact-candidate acceptance after rebase remain open.
 The dev setup and failed competing-driver attempt are retained in the
 checkpoint handoff.
+
+## Bluetooth-bus UHID candidate qualification
+
+See [the exact-candidate checkpoint](XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate)
+for the research pin, tested commit, kernel, consumer versions, binding,
+20-session concurrency check and 250-session timing results. The concurrent
+Bluetooth open tail exceeded the C9 uinput budget; no Bluetooth timing budget
+is qualified. First-valid-neutral remains open under #166.
+
+For dev-only HIDAPI acceptance, use the installed input-lab policy and
+xpadneo wrapper described in [deployment](DEPLOYMENT_AND_VALIDATION.md),
+then run the ordinary product acceptance path:
+
+```sh
+VIRTUALGAMEPAD_INPUT_LAB=1 VIRTUALGAMEPAD_XBOX_HIDAPI=1 \
+cargo run --locked -p xtask -- acceptance \
+  --controller virtualgamepad.xbox-series --realization linux.uhid.bluetooth \
+  --cycles 1 --concurrency 1 --sdl --out /tmp/series-hidapi.json
+```
+
+This mode requires the stock `microsoft` binding before and after SDL and
+checks independently received left-only/right-only reports. It uses the
+owned hidraw path with HIDAPI enabled. The generic probe's SDL 3.2 backend
+classifier remains unknown on SDL 3.4.18; exact path selection, input and
+reverse reports are recorded independently. It does not verify a physical
+motor. Leave this mode unset for the evdev consumer run.

@@ -1,10 +1,9 @@
 # Xbox Series buildout checkpoint
 
-November 10, 2026 Pacific time. The buildout checkout starts at upstream
-`c5d8340` (after C9). The original checkout had overlapping edits and was
-preserved. Driver lab code and test evidence were transferred into this
-checkout. The original upstream research pin remains the base for local
-corpus changes.
+Historical physical and scratch observations below were collected on
+November 10–11, 2026 Pacific time. Research #125 merged as
+`eba02ad610e264a2518a699394255cc7f1d670dd`; the product pins that commit.
+The rebased product results are recorded separately at the end.
 
 ## Verified on Linux
 
@@ -115,3 +114,67 @@ The installed driver-lab guard also needed to accept xpadneo's rewritten
 input identity `028e` when the original immutable HID device name still
 identifies bus 5, vendor 045e, product 0b13. A regression test preserves the
 single-reference bound-device restriction with that identity rewrite.
+
+## Rebased product candidate
+
+Tested commit: `888cce49f789dce8c1c8251dbd537ebd0d4105cd`, based on
+product main `b41c82d`, including #353, #363, #364 and #366. Research pin:
+`eba02ad610e264a2518a699394255cc7f1d670dd` (merged #125, including the
+tracking thread's descriptor-link pin). Old unpublished corpus records
+were preserved locally outside the committed submodule tree.
+
+All runs used Linux `7.3.0-1-mainline`, SDL 3.4.18
+(`SDL-release-3.4.18-0-g829a65d76`). Bluetooth runs bound to stock
+`microsoft`; uinput has no hardware driver binding. Input-lab policy and
+the dev xpadneo rule wrapper were installed. These are host-local results.
+
+| Run | Result |
+| --- | --- |
+| Bluetooth evdev, one session | Exact owned event path, HIDAPI disabled, button down/up `0xffff`, axes `0x3f`, separate Guide/Share, final neutral, close/reopen; retained main rumble 25/50. |
+| Bluetooth HIDAPI, one session | Exact owned hidraw path, HIDAPI enabled, same control masks and final neutral, close/reopen; `microsoft` verified before and after. Both trigger API calls accepted and independent reports received. |
+| Uinput regression, one session | Same control masks and final neutral, close/reopen; retained strong 16384, weak 32768, repetition 1. |
+| Bluetooth concurrent lifecycle | Five cycles of four controllers: 20 consumer opens and owned-node removals, zero service errors. |
+| Bluetooth timing | 50 single-controller sessions plus 50 four-controller cycles (200 sessions), zero service errors; no missing open/removal samples. |
+| Physical/virtual coexistence | Awaiting a connected physical pad for this exact candidate; earlier pre-rebase coexistence is historical only. |
+
+All five run groups returned descriptor/thread/input/hidraw resource counts
+to baseline. The timing harness observes an evdev open and owned-node
+removal; it does not infer first-valid-neutral. That oracle remains #166.
+SDL was installed at the version above; timing arms did not launch SDL.
+
+| Concurrent | Temperature | Sessions | Create to evdev open p50 / p99 / max (ms) | Close to node gone p50 / p99 / max (ms) |
+| --- | --- | ---: | ---: | ---: |
+| 1 | Cold | 1 | 87.09 / 87.09 / 87.09 | 30.13 / 30.13 / 30.13 |
+| 1 | Warm | 49 | 78.21 / 91.74 / 91.74 | 34.30 / 41.10 / 41.10 |
+| 4 | Cold | 4 | 72.63 / 79.67 / 79.67 | 31.19 / 36.53 / 36.53 |
+| 4 | Warm | 196 | 192.40 / 564.38 / 1312.67 | 36.58 / 85.49 / 91.02 |
+
+The warm concurrent open tail exceeds the C9 uinput 100 ms provisional
+budget. Bluetooth has no qualified budget. These runs included concurrent
+validation load; its contribution was not isolated. This remains a timing
+limitation for review, rather than a passing latency-budget claim.
+
+Numbered HIDAPI reports received by the product (report ID followed by
+payload) included:
+
+- Main: `03 0f 00 00 19 32 ff 00 eb`.
+- Left-only trigger: `03 0f 19 00 19 32 ff 00 eb`.
+- Right-only trigger: `03 0f 00 32 19 32 ff 00 eb`.
+- Stop: `03 0f 00 00 00 00 ff 00 eb`.
+
+The SDL calls used left `0x4000`/right zero, then left zero/right `0x8000`,
+with 200 ms API durations and separated submissions. The trigger probe now
+waits beyond consumer startup: an earlier immediate short call was accepted
+by SDL but did not yield an observed independent left report. Acceptance
+requires both controller-side reports, not API return values alone.
+Magnitudes are logical 0–100 (`SDL magnitude / 655`); duration/delay fields
+are 10 ms ticks, repeat is a raw count. Physical trigger actuation and Steam
+Input remain owner-observed checks. No battery, LED or audio report exists
+in this Bluetooth map. Radio/pairing stays #164; GIP/audio stays #168.
+
+Required Rust fmt/check/clippy/test, fresh default/all-feature API comparison,
+Ruff, the 237-test Python suite, Gitleaks and research fixture regeneration
+passed. The ordinary API adds the retained Bluetooth rumble type and field,
+HID lifecycle/output variants and two trigger motor roles. The input-only
+Series migration should migrate both realizations after rebasing on this
+work; no open Series migration PR was found at this checkpoint.

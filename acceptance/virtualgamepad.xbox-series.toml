@@ -30,7 +30,7 @@ reason = "SDL observed all button transitions including Guide and Share."
 status = "virtual-live"
 test_id = "physical_input_shape_keeps_controls_independent_and_endpoints_exact"
 evidence = []
-live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#integrated-bluetooth-uhid-acceptance"
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
 reason = "Integrated SDL observed all 16 button press and release bits, including Guide and Share, and final neutral."
 
 [[functions]]
@@ -45,7 +45,7 @@ reason = "SDL observed all six analog axes and the final neutral state."
 status = "virtual-live"
 test_id = "physical_input_shape_keeps_controls_independent_and_endpoints_exact"
 evidence = []
-live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#integrated-bluetooth-uhid-acceptance"
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
 reason = "Integrated SDL observed all six analog axes and final neutral."
 
 [[functions]]
@@ -60,7 +60,7 @@ reason = "The virtual run observed both SDL magnitudes in the retained controlle
 status = "virtual-live"
 test_id = "host_requests_reply_for_each_report_class_and_keep_valid_rumble"
 evidence = []
-live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#integrated-bluetooth-uhid-acceptance"
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
 reason = "Integrated SDL produced native output 0x03 and the controller retained both main motor amplitudes."
 
 [[functions]]
@@ -75,7 +75,7 @@ reason = "One virtual evdev node with the xpad-style input ID and capability set
 status = "virtual-live"
 test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
 evidence = []
-live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#integrated-bluetooth-uhid-acceptance"
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
 reason = "Integrated Linux observed the 045e:0b13 Bluetooth-bus identity and microsoft binding."
 
 [[functions]]
@@ -90,8 +90,8 @@ reason = "C9 measured 50 single and 200 concurrent sessions in docs/XBOX_SERIES.
 status = "virtual-live"
 test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
 evidence = []
-live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#integrated-bluetooth-uhid-acceptance"
-reason = "Observed integrated SDL and 20 concurrent-arm opens and removals; first-valid-neutral timing remains open."
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
+reason = "Exact-candidate 20-session concurrent lifecycle and 250-session timing completed without service errors; concurrent open tail reached 1.31 s, no Bluetooth budget is qualified, and first-valid-neutral remains open."
 
 [[functions]]
 id = "steam-input"
@@ -116,10 +116,11 @@ evidence = ["xbox-series-xpad-trigger-rumble-limitation"]
 reason = "FF_RUMBLE exposes two main-motor amplitudes and no trigger channels."
 
 [functions.cells."linux.uhid.bluetooth"]
-status = "wip"
+status = "virtual-live"
 test_id = "host_requests_reply_for_each_report_class_and_keep_valid_rumble"
 evidence = []
-reason = "The codec preserves both trigger amplitudes; independent physical actuation and direct consumer submission remain unverified."
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
+reason = "Exact-candidate SDL HIDAPI independently submitted left-only and right-only commands received by the product on microsoft. Physical actuation remains unverified."
 
 [[functions]]
 id = "axis-fuzz"
