@@ -21,7 +21,6 @@ pub(crate) struct SnapshotProtocol<S: Clone, R: OutputState = ()> {
     valid: bool,
     last: Option<Report>,
     retained: R,
-    refresh_on_open: bool,
 }
 impl<S: Clone, R: OutputState> SnapshotProtocol<S, R> {
     pub(crate) fn new(
@@ -45,14 +44,7 @@ impl<S: Clone, R: OutputState> SnapshotProtocol<S, R> {
             valid: true,
             last: None,
             retained: R::default(),
-            refresh_on_open: false,
         }
-    }
-}
-impl<S: Clone, R: OutputState> SnapshotProtocol<S, R> {
-    pub(crate) fn refresh_on_open(mut self) -> Self {
-        self.refresh_on_open = true;
-        self
     }
 }
 impl<S: Clone, R: OutputState> Protocol for SnapshotProtocol<S, R> {
@@ -146,9 +138,6 @@ impl<S: Clone, R: OutputState> Protocol for SnapshotProtocol<S, R> {
             Lifecycle::Stop => {
                 self.active = false;
                 self.next = None;
-            }
-            Lifecycle::Open if self.refresh_on_open && self.active => {
-                self.next = Some(now);
             }
             Lifecycle::Open | Lifecycle::Close => {}
         }
