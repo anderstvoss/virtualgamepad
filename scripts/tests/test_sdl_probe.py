@@ -24,11 +24,11 @@ class ProbeIntegration(unittest.TestCase):
     def tearDownClass(cls):
         cls.directory.cleanup()
 
-    def run_probe(self, scenario, *options, evidence=None):
+    def run_probe(self, scenario, *options, evidence=None, duration=300):
         env = {key: value for key, value in os.environ.items() if not key.startswith(('PROBE_', 'SDL_'))}
         env.update(PROBE_SCENARIO=scenario)
         env.update(evidence or {})
-        result = subprocess.run([str(self.binary), env.get('PROBE_PATH', 'synthetic-device'), '300', *options], env=env, capture_output=True, text=True)
+        result = subprocess.run([str(self.binary), env.get('PROBE_PATH', 'synthetic-device'), str(duration), *options], env=env, capture_output=True, text=True)
         records = [json.loads(line) for line in result.stdout.splitlines()]
         record = records[-1]
         COMPARE.normalize(record)
@@ -130,14 +130,14 @@ class ProbeIntegration(unittest.TestCase):
 
     def test_trigger_script_submits_each_side_independently_and_closes(self):
         for scenario, accepted in [('normal', True), ('trigger-fail', False)]:
-            result, record = self.run_probe(scenario, '--gamepad-trigger-rumble-script', '--reopen')
+            result, record = self.run_probe(scenario, '--gamepad-trigger-rumble-script', '--reopen', duration=1200)
             submissions = [json.loads(line) for line in result.stdout.splitlines()
                            if 'trigger_rumble_submission' in line]
             self.assertEqual(submissions, [dict(record_type='trigger_rumble_submission',
                                                side=side, accepted=accepted)
                                           for side in ('left', 'right')])
             self.assertIn('\"record_type\":\"mapping_ready\"', result.stdout)
-            self.assertIn('trigger_call=16384,0,60', result.stderr)
-            self.assertIn('trigger_call=0,32768,60', result.stderr)
+            self.assertIn('trigger_call=16384,0,200', result.stderr)
+            self.assertIn('trigger_call=0,32768,200', result.stderr)
             self.assertTrue(record['consumer_closed'])
             self.assertTrue(record['observations']['reclosed']['value'])

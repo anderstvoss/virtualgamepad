@@ -24,7 +24,7 @@ int main(int argc, char **argv) {
     bool require_script = strcmp(profile, "--dualsense-script") == 0;
     bool motion_script = strcmp(profile, "--motion-gamepad-script") == 0;
     bool trigger_script = strcmp(profile, "--gamepad-trigger-rumble-script") == 0;
-    bool trigger_left = false, trigger_right = false, trigger_right_sent = false;
+    bool trigger_left = false, trigger_right = false, trigger_left_sent = false, trigger_right_sent = false;
     bool rumble_script = trigger_script || strcmp(profile, "--gamepad-rumble-script") == 0;
     bool gamepad_script = rumble_script || (strcmp(profile, "--gamepad-script") == 0);
     bool require_motion = require_script || motion_script || (strcmp(profile, "--require-motion") == 0);
@@ -97,16 +97,17 @@ int main(int argc, char **argv) {
     mapping = SDL_GetGamepadMapping(gamepad);
     if (!control_script) rumble = SDL_RumbleGamepad(gamepad, 0x4000, 0x8000, (Uint32)duration);
     if (!control_script) led = SDL_SetGamepadLED(gamepad, 32, 64, 128);
-    if (trigger_script) {
-        trigger_left = SDL_RumbleGamepadTriggers(gamepad, 0x4000, 0, 60);
-        printf("{\"record_type\":\"trigger_rumble_submission\",\"side\":\"left\",\"accepted\":%s}\n", trigger_left ? "true" : "false");
-        fflush(stdout);
-    }
     started = SDL_GetTicks();
     connected = true;
     while (SDL_GetTicks() - started < duration) {
-        if (trigger_script && !trigger_right_sent && SDL_GetTicks() - started >= 100) {
-            trigger_right = SDL_RumbleGamepadTriggers(gamepad, 0, 0x8000, 60);
+        if (trigger_script && !trigger_left_sent && SDL_GetTicks() - started >= 100) {
+            trigger_left = SDL_RumbleGamepadTriggers(gamepad, 0x4000, 0, 200);
+            trigger_left_sent = true;
+            printf("{\"record_type\":\"trigger_rumble_submission\",\"side\":\"left\",\"accepted\":%s}\n", trigger_left ? "true" : "false");
+            fflush(stdout);
+        }
+        if (trigger_script && !trigger_right_sent && SDL_GetTicks() - started >= 600) {
+            trigger_right = SDL_RumbleGamepadTriggers(gamepad, 0, 0x8000, 200);
             trigger_right_sent = true;
             printf("{\"record_type\":\"trigger_rumble_submission\",\"side\":\"right\",\"accepted\":%s}\n", trigger_right ? "true" : "false");
             fflush(stdout);
