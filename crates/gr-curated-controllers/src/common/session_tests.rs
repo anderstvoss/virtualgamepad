@@ -1570,6 +1570,59 @@ pub(crate) fn assert_snapshot_report(
     }
 }
 
+macro_rules! check_motion_refresh {
+    ($controller:ident, $io:ident, $expected:ident, $advance:expr,
+     $encoded:expr, $clock_masks:expr) => {{
+        let motion = $controller.state().motion();
+        let before = $controller.state().clone();
+        $controller.set_motion(motion).unwrap();
+        assert_eq!($controller.state(), &before);
+        $controller.commit().unwrap();
+        assert!(!$controller.is_dirty());
+
+        let mut $expected = $controller.state().clone();
+        ($advance)(&mut $expected);
+        $controller.refresh_motion().unwrap();
+        assert_eq!($controller.state(), &$expected);
+        assert!(!$controller.is_dirty());
+        crate::common::session_tests::assert_snapshot_report(
+            $io.lock().unwrap().sent.last().unwrap(),
+            &$encoded,
+            $clock_masks,
+        );
+
+        ($advance)(&mut $expected);
+        $io.lock()
+            .unwrap()
+            .fail
+            .push_back(ProviderError::WouldBlock);
+        assert!($controller.refresh_motion().is_err());
+        assert_eq!($controller.state(), &$expected);
+        assert!($controller.is_dirty());
+        let failed_attempt = $io.lock().unwrap().attempts.len() - 1;
+
+        $controller.set_motion(motion).unwrap();
+        assert_eq!($controller.state(), &$expected);
+        $controller.commit().unwrap();
+        assert_eq!($controller.state(), &$expected);
+        assert!(!$controller.is_dirty());
+        {
+            let record = $io.lock().unwrap();
+            assert_eq!(
+                record.attempts[failed_attempt],
+                record.attempts[failed_attempt + 1]
+            );
+        }
+
+        $controller.close();
+        $controller.close();
+        assert!($controller.refresh_motion().is_err());
+        assert_eq!($controller.state(), &$expected);
+        assert_eq!($io.lock().unwrap().destroys, 1);
+    }};
+}
+pub(crate) use check_motion_refresh;
+
 macro_rules! check_snapshot_session {
     ($controller:ident, $io:ident, $snapshot:ident, $expected:ident, $invalid:expr,
      $encoded:expr, $clock_masks:expr) => {{
@@ -1711,4 +1764,46 @@ fn usb_workers_receive_only_accepted_whole_states() {
     check!(create_dualsense_usb_worker);
     check!(create_dualshock4_usb_worker);
     check!(create_xbox360_usb_worker);
+}
+
+#[test]
+fn usb_workers_refresh_motion_explicitly_and_retry_one_sample() {
+    macro_rules! check {
+        ($create:ident) => {{
+            let record = Arc::new(Mutex::new(WorkerRecord::default()));
+            let mut controller = crate::$create(Box::new(FakeWorker(record.clone())));
+            controller.commit().unwrap();
+            let motion = controller.state().motion();
+            let before = controller.state().clone();
+            controller.set_motion(motion).unwrap();
+            assert_eq!(controller.state(), &before);
+            controller.refresh_motion().unwrap();
+            let refreshed = controller.state().clone();
+            assert_ne!(refreshed, before);
+            assert_eq!(refreshed.motion(), motion);
+            assert_eq!(record.lock().unwrap().attempts.last(), Some(&refreshed));
+            assert!(!controller.is_dirty());
+
+            record.lock().unwrap().fail_once = true;
+            assert!(controller.refresh_motion().is_err());
+            let pending = controller.state().clone();
+            assert_ne!(pending, refreshed);
+            assert!(controller.is_dirty());
+            controller.set_motion(motion).unwrap();
+            controller.commit().unwrap();
+            assert_eq!(controller.state(), &pending);
+            let record_guard = record.lock().unwrap();
+            let attempts = &record_guard.attempts;
+            assert_eq!(attempts[attempts.len() - 2], pending);
+            assert_eq!(attempts.last(), Some(&pending));
+            drop(record_guard);
+            controller.close();
+            controller.close();
+            assert!(controller.refresh_motion().is_err());
+            assert_eq!(controller.state(), &pending);
+            assert_eq!(record.lock().unwrap().closes, 1);
+        }};
+    }
+    check!(create_dualsense_usb_worker);
+    check!(create_dualshock4_usb_worker);
 }

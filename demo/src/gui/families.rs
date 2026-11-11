@@ -283,17 +283,15 @@ impl Controller {
                 if dualsense_motion_target(controller.surface().common().target()) =>
             {
                 controller
-                    .set_motion(controller.state().motion())
-                    .map_err(|error| error.to_string())?;
-                controller.commit().map_err(|error| error.to_string())
+                    .refresh_motion()
+                    .map_err(|error| error.to_string())
             }
             Self::DualShock4(controller)
                 if motion_refresh_target(controller.surface().common().target()) =>
             {
                 controller
-                    .set_motion(controller.state().motion())
-                    .map_err(|error| error.to_string())?;
-                controller.commit().map_err(|error| error.to_string())
+                    .refresh_motion()
+                    .map_err(|error| error.to_string())
             }
             Self::SwitchPro(controller)
                 if motion_refresh_target(controller.surface().common().target()) =>

@@ -1235,6 +1235,25 @@ impl DualShock4Controller {
     pub fn provider_diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
         self.0.diagnostics()
     }
+    /// Advance the motion sample clock and commit the current input levels.
+    /// Retry a failed delivery with `commit()` to retain this sample's clock.
+    ///
+    /// # Errors
+    /// Returns a commit error for an unavailable motion target, closed session,
+    /// or delivery failure.
+    pub fn refresh_motion(&mut self) -> Result<(), CommitError> {
+        let target = self.0.selection().target;
+        self.0
+            .update_state(|state| {
+                common::require_input_target(target, motion_targets())?;
+                advance_ds4_timing(state);
+                Ok(())
+            })
+            .map_err(|error| CommitError::Backend {
+                reason: error.to_string(),
+            })?;
+        self.0.commit()
+    }
     pub fn commit(&mut self) -> Result<(), CommitError> {
         self.0.commit()
     }
@@ -1567,6 +1586,79 @@ impl crate::registry::ControllerFamily for DualShock4Definition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_motion_refresh_advances_and_retries_unchanged_samples() {
+        use common::session_tests::{check_motion_refresh, snapshot_session};
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            let (session, io) = snapshot_session(DualShock4Definition, target, [true; 3]);
+            let mut controller = DualShock4Controller(session);
+            controller.service(&mut |_| {}).unwrap();
+            controller.commit().unwrap();
+            if target == RealizationTarget::LINUX_UINPUT {
+                for dirty in [false, true] {
+                    if dirty {
+                        controller.set_inputs(controller.state().clone()).unwrap();
+                    }
+                    let before = controller.state().clone();
+                    let sent = io.lock().unwrap().sent.len();
+                    assert!(controller.refresh_motion().is_err());
+                    assert_eq!(controller.state(), &before);
+                    assert_eq!(controller.is_dirty(), dirty);
+                    assert_eq!(io.lock().unwrap().sent.len(), sent);
+                }
+                controller.close();
+                controller.close();
+                continue;
+            }
+            controller
+                .set_motion(DualShock4MotionSample {
+                    accelerometer: [10, 20, 30],
+                    gyroscope: [40, 50, 60],
+                })
+                .unwrap();
+            controller
+                .set_native(DualShock4Control::Cross, true)
+                .unwrap();
+            controller
+                .set_touch(
+                    DualShock4TouchSlot::First,
+                    Some(DualShock4TouchContact::new(7, 100, 200).unwrap()),
+                )
+                .unwrap();
+            controller
+                .0
+                .update_state(|state| {
+                    state.sensor_timestamp = u16::MAX - 750;
+                    state.sequence = u8::MAX;
+                    state.touch_sequence = u8::MAX;
+                    Ok(())
+                })
+                .unwrap();
+            check_motion_refresh!(
+                controller,
+                io,
+                expected,
+                |state: &mut DualShock4State| {
+                    state.sensor_timestamp = state.sensor_timestamp.wrapping_add(750);
+                    state.sequence = state.sequence.wrapping_add(1);
+                    state.touch_sequence = state.touch_sequence.wrapping_add(1);
+                },
+                DualShock4Definition
+                    .encode(controller.0.selection(), &expected)
+                    .unwrap(),
+                if target == RealizationTarget::LINUX_UHID_USB {
+                    &[(6, 0xf0), (9, 255), (10, 255), (33, 255)]
+                } else {
+                    &[]
+                }
+            );
+        }
+    }
 
     #[test]
     fn field_edits_and_snapshots_share_validation_and_transitions() {

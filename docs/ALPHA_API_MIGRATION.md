@@ -202,8 +202,11 @@ uinput touch IDs use `0..=255`.
 
 ## VG-1b/a · Final-state validation and input clocks
 
-The root, Wii and Steam API signature snapshots each have zero additions,
-removals or signature changes.
+The root API snapshot adds two methods,
+`DualSenseController::refresh_motion() -> Result<(), CommitError>` and
+`DualShock4Controller::refresh_motion() -> Result<(), CommitError>`. The curated
+handles expose the same methods. The Wii and Steam snapshots have zero
+additions, removals or signature changes.
 
 - The existing setters and whole-state replacements share final-state
   validation. `set_digital` rejects opposing directions on hat targets.
@@ -220,3 +223,11 @@ removals or signature changes.
 - DS4 advances the touch sequence once when contacts change, including the
   last release. A simultaneous motion change cannot add a second touch
   increment. Repeating the same contact edit leaves the sequence in place.
+
+- `refresh_motion()` explicitly advances the Sony motion clock and sequence
+  even when the motion values are equal, then commits the current input.
+  DS4 also advances the touch sequence when a contact is active.
+  The demo uses this operation for periodic motion samples. Uinput refuses
+  this operation because it has no motion presentation. The method returns
+  `CommitError`, matching Switch Pro's refresh operation. After backpressure,
+  retry with `commit()` to deliver the accepted sample at its current clock.
