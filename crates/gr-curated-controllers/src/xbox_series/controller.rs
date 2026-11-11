@@ -45,8 +45,22 @@ pub fn create_xbox_series(
     options: CreationOptions,
     _: XboxSeriesOptions,
 ) -> Result<XboxSeriesController, ProviderError> {
+    require_target(options.target)?;
     common::require_linux_platform(options.target)?;
     create(options, XboxSeriesDefinition::default())
+}
+
+fn require_target(target: RealizationTarget) -> Result<(), ProviderError> {
+    if matches!(
+        target,
+        RealizationTarget::LINUX_UINPUT | RealizationTarget::LINUX_UHID_BLUETOOTH
+    ) {
+        Ok(())
+    } else {
+        Err(ProviderError::Unsupported {
+            reason: common::unavailable(target).to_string(),
+        })
+    }
 }
 
 pub(super) fn create(
@@ -182,5 +196,32 @@ impl XboxSeriesController {
 
     pub fn close(&mut self) {
         self.0.close();
+    }
+}
+
+#[cfg(test)]
+mod target_validation_tests {
+    use super::*;
+
+    #[test]
+    fn realization_rejection_precedes_host_platform_preflight() {
+        for target in [
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            RealizationTarget::LINUX_USBIP_USB_AUDIO,
+        ] {
+            assert!(matches!(
+                create_xbox_series(
+                    CreationOptions {
+                        target,
+                        session: gr_realization_api::RealizationSessionId(7)
+                    },
+                    XboxSeriesOptions::default()
+                ),
+                Err(ProviderError::Unsupported { .. })
+            ));
+        }
+        assert!(require_target(RealizationTarget::LINUX_UINPUT).is_ok());
+        assert!(require_target(RealizationTarget::LINUX_UHID_BLUETOOTH).is_ok());
     }
 }
