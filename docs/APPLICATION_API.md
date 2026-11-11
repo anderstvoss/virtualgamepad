@@ -77,7 +77,7 @@ motion/touch types and output vocabulary. Native and spatial button readback
 describe accepted state, not host/SDL visibility. DS4 Cross and Switch B both map
 to spatial South; selecting by label is an explicit application choice.
 
-DualSense exposes caller-owned levels through `DualSenseInputs` and
+`DualSense` exposes caller-owned levels through `DualSenseInputs` and
 `controller.inputs()`. Use `set_inputs(DualSenseInputs)` for replacement or
 `edit_inputs` for a fallible grouped edit. Read battery and accepted motion clocks
 through `controller.status()`. Battery updates use the handle setters, and
