@@ -135,7 +135,7 @@ the dev xpadneo rule wrapper were installed. These are host-local results.
 | Uinput regression, one session | Same control masks and final neutral, close/reopen; retained strong 16384, weak 32768, repetition 1. |
 | Bluetooth concurrent lifecycle | Five cycles of four controllers: 20 consumer opens and owned-node removals, zero service errors. |
 | Bluetooth timing | 50 single-controller sessions plus 50 four-controller cycles (200 sessions), zero service errors; no missing open/removal samples. |
-| Physical/virtual coexistence | Awaiting a connected physical pad for this exact candidate; earlier pre-rebase coexistence is historical only. |
+| Physical/virtual coexistence | Passed on `e3c2152667956c92180e3b513b0ffa14bc39b4a1` (documentation-only successor). Both evdev and HIDAPI saw two joysticks and exactly one owned match. Physical xpadneo and virtual microsoft bindings remained distinct; all four physical input nodes kept their identities throughout virtual creation, use and removal. |
 
 All five run groups returned descriptor/thread/input/hidraw resource counts
 to baseline. The timing harness observes an evdev open and owned-node
@@ -178,3 +178,48 @@ passed. The ordinary API adds the retained Bluetooth rumble type and field,
 HID lifecycle/output variants and two trigger motor roles. The input-only
 Series migration should migrate both realizations after rebasing on this
 work; no open Series migration PR was found at this checkpoint.
+
+### Connected physical reference follow-up
+
+The owner connected the physical pad after draft #369 opened. On candidate
+`e3c2152667956c92180e3b513b0ffa14bc39b4a1`, Linux `7.3.0-1-mainline` and
+SDL 3.4.18, both product evdev and HIDAPI sweeps passed while the physical
+reference remained bound to xpadneo v0.10.5. The virtual controller bound to
+stock `microsoft` before and after. A concurrent observer sampled physical
+binding and all four physical input-node identities through each run;
+none disappeared or changed. SDL enumerated two joysticks, matched only the
+owned virtual path, and observed all control masks and final neutral.
+Virtual cleanup removed its owned nodes while the physical nodes survived.
+Before/after resource counts matched for both runs. No physical rumble
+commands were sent and no physical trigger-actuation claim is added.
+
+### Portable constructor validation and final repeat
+
+CI on macOS exposed a constructor-order regression: unavailable targets
+returned platform-preflight errors before target rejection. The constructor
+now rejects unsupported realizations first, preserving the prior contract,
+with a platform-independent regression test. Runtime candidate
+`63c35dcec6e5b850186e28b725dd6187e6a797e5` repeats the required 250 timing
+sessions, 20-session concurrency check, uinput controls/16384–32768 rumble,
+and both Bluetooth SDL paths with the connected physical reference.
+All timing samples and owned cleanup completed without service errors;
+resource counts returned to baseline. Coexistence passed with physical
+xpadneo and virtual microsoft, two enumerated joysticks and one exact match.
+
+| Concurrent | Temperature | Sessions | Create to evdev open p50 / p99 / max (ms) | Close to node gone p50 / p99 / max (ms) |
+| --- | --- | ---: | ---: | ---: |
+| 1 | Cold | 1 | 90.03 / 90.03 / 90.03 | 35.22 / 35.22 / 35.22 |
+| 1 | Warm | 49 | 121.27 / 167.92 / 167.92 | 32.26 / 42.88 / 42.88 |
+| 4 | Cold | 4 | 101.07 / 124.41 / 124.41 | 30.51 / 43.77 / 43.77 |
+| 4 | Warm | 196 | 191.87 / 584.42 / 898.16 | 35.43 / 83.03 / 90.66 |
+
+Concurrent validation load was again present. These measurements supersede
+the earlier runtime candidate for the final repeat and still do not qualify
+a Bluetooth timing budget. One evdev SDL sweep immediately after timing
+exited unsuccessfully; the runner recorded no detailed probe observation
+on that failure. A complete repeat of both paths passed on the same commit.
+The intermittent consumer failure remains unexplained; the successful
+repeat does not erase it. Physical nodes and binding survived both attempts.
+
+The corrected candidate passed required Rust fmt/check/clippy/test and the
+fresh API comparison. The additional pin-workflow suite passed all 15 tests.
