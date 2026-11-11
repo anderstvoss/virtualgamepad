@@ -141,3 +141,15 @@ class ProbeIntegration(unittest.TestCase):
             self.assertIn('trigger_call=0,32768,200', result.stderr)
             self.assertTrue(record['consumer_closed'])
             self.assertTrue(record['observations']['reclosed']['value'])
+
+    def test_failure_records_step_last_event_and_missing_expectations(self):
+        for scenario, options, step in [('init-fail', (), 'initialization'),
+                                        ('normal', ('--gamepad-rumble-script',), 'controls-and-output')]:
+            result, record = self.run_probe(scenario, *options)
+            self.assertEqual(result.returncode, 1)
+            detail = record['failure_detail']
+            self.assertEqual(detail['step'], step)
+            self.assertEqual(set(detail['last_event']), {'type', 'code', 'value'})
+            self.assertIn('down_missing', detail['expected_event'])
+            self.assertIn('axis_endpoints_missing', detail['expected_event'])
+            self.assertNotIn('path', json.dumps(detail))

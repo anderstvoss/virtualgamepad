@@ -2,7 +2,7 @@
 use crate::Backend;
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
@@ -59,6 +59,8 @@ pub struct Session {
     nodes: BTreeSet<PathBuf>,
     consumers: Vec<File>,
     service: crate::PeerService,
+    created: Instant,
+    phases: BTreeMap<&'static str, u64>,
 }
 
 fn matching_nodes(physical_paths: &[String]) -> BTreeSet<PathBuf> {
@@ -95,13 +97,26 @@ fn matching_nodes(physical_paths: &[String]) -> BTreeSet<PathBuf> {
     result
 }
 fn open_consumer(node: &Path, wait_for_udev: bool) -> std::io::Result<File> {
+    open_consumer_diagnostics(node, wait_for_udev).map(|(file, _)| file)
+}
+fn open_consumer_diagnostics(node: &Path, wait_for_udev: bool) -> std::io::Result<(File, Value)> {
+    let mut attempts = 0u64;
+    let mut permission_denied = 0u64;
     let deadline = Instant::now() + Duration::from_secs(2);
     retry_consumer_open(
         || {
-            OpenOptions::new()
+            attempts += 1;
+            let result = OpenOptions::new()
                 .read(true)
                 .custom_flags(libc::O_NONBLOCK)
-                .open(node)
+                .open(node);
+            if result
+                .as_ref()
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::PermissionDenied)
+            {
+                permission_denied += 1;
+            }
+            result
         },
         || {
             if !wait_for_udev || Instant::now() >= deadline {
@@ -112,6 +127,12 @@ fn open_consumer(node: &Path, wait_for_udev: bool) -> std::io::Result<File> {
             true
         },
     )
+    .map(|file| {
+        (
+            file,
+            json!({"attempts": attempts, "permission_denied": permission_denied}),
+        )
+    })
 }
 
 fn retry_consumer_open<T>(
@@ -336,6 +357,18 @@ fn xbox_hidapi() -> bool {
     std::env::var("VIRTUALGAMEPAD_XBOX_HIDAPI").as_deref() == Ok("1")
 }
 
+fn elapsed_ns(start: Instant) -> u64 {
+    u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX)
+}
+fn sdl_failure_diagnostic(record: &Value, elapsed: u64, node_present: bool) -> String {
+    json!({"failure":"SDL sweep failed", "step":record["failure_detail"]["step"],
+        "last_event":record["failure_detail"]["last_event"],
+        "expected_event":record["failure_detail"]["expected_event"],
+        "elapsed_since_creation_ns":elapsed,"node_present":node_present,
+        "control_masks":record["observations"]["controls"]})
+    .to_string()
+}
+
 fn wait_child(
     child: &mut Child,
     controller: &mut Controller,
@@ -436,7 +469,9 @@ impl Backend for Linux {
             })
             .ok_or("undeclared realization")?
             .target;
+        let created = Instant::now();
         let controller = Controller::create(family, target)?;
+        let phases = BTreeMap::from([("provider_create_returned_ns", elapsed_ns(created))]);
         let physical_paths = controller.physical_paths();
         Ok(Session {
             controller,
@@ -444,6 +479,8 @@ impl Backend for Linux {
             nodes: BTreeSet::new(),
             consumers: Vec::new(),
             service: crate::PeerService::default(),
+            created,
+            phases,
         })
     }
     fn observe(
@@ -458,6 +495,11 @@ impl Backend for Linux {
                 loop {
                     for peer in peers.iter_mut() { peer.service.service(|| peer.controller.service()); }
                     let nodes=matching_nodes(&s.physical_paths);
+                    if stage == "node_present" {
+                        if probe_node(&nodes, true).is_some() { s.phases.entry("hidraw_appearance_ns").or_insert_with(|| elapsed_ns(s.created)); }
+                        if probe_node(&nodes, false).is_some() { s.phases.entry("input_appearance_ns").or_insert_with(|| elapsed_ns(s.created)); }
+                        if nodes.iter().any(|node| bound_driver(node).is_some()) { s.phases.entry("hid_bind_observed_ns").or_insert_with(|| elapsed_ns(s.created)); }
+                    }
                     let steam_hid = matches!(&s.controller, Controller::Steam(c)
                         if c.surface().target() == RealizationId::LINUX_UHID_USB);
                     let series_ready = match &s.controller {
@@ -467,7 +509,7 @@ impl Backend for Linux {
                     if stage=="node_present" && !nodes.is_empty() && series_ready
                         && (!steam_hid || nodes.iter().any(|p| !p.starts_with("/dev/input"))) {
                         s.nodes=nodes;
-                        return Ok(json!({"poll_interval_ns":1_000_000,"devices":s.nodes.iter().map(|p| {
+                        return Ok(json!({"poll_interval_ns":1_000_000,"phases_since_create_ns":s.phases,"devices":s.nodes.iter().map(|p| {
                             let driver = bound_driver(p);
                             let mut device = json!({"path":p,"bound_driver":driver,"driver_reason":if driver.is_none(){Some("no bound driver observed")}else{None}});
                             if let Some(capabilities) = matches!(&s.controller, Controller::Steam(_) | Controller::XboxSeries(_))
@@ -488,12 +530,17 @@ impl Backend for Linux {
                 let series = matches!(&s.controller, Controller::XboxSeries(_));
                 let series_bt = matches!(&s.controller, Controller::XboxSeries(c)
                     if c.surface().target() == RealizationId::LINUX_UHID_BLUETOOTH);
+                let mut access = Vec::new();
+                s.phases.insert("consumer_open_attempt_ns", elapsed_ns(s.created));
                 for node in s.nodes.iter().filter(|node| !series_bt || node.starts_with("/dev/input")) {
-                    s.consumers.push(open_consumer(node, series).map_err(|e|e.to_string())?);
+                    let (file, diagnostic) = open_consumer_diagnostics(node, series).map_err(|e|e.to_string())?;
+                    access.push(diagnostic);
+                    s.phases.entry("consumer_first_open_ns").or_insert_with(|| elapsed_ns(s.created));
+                    s.consumers.push(file);
                 }
                 if s.consumers.is_empty() { return Err("no owned consumer node opened".into()); }
                 let consumer = if series_bt { "harness evdev" } else { "harness evdev/hidraw" };
-                Ok(json!({"consumer":consumer,"nodes_opened":s.consumers.len()}))
+                Ok(json!({"consumer":consumer,"nodes_opened":s.consumers.len(),"access":access,"phases_since_create_ns":s.phases}))
             }
             "first_neutral"=>Err("no validated consumer neutral-report oracle for this family; API commit is not consumer delivery".into()),
             "sdl_ready"=>{
@@ -523,12 +570,12 @@ impl Backend for Linux {
                     .spawn().map_err(|e|e.to_string())?;
                 let status = wait_child(&mut child, &mut s.controller, peers, &capture.0);
                 let text = fs::read_to_string(&capture.0).map_err(|e|e.to_string())?;
-                let record = text.lines().filter_map(|line|serde_json::from_str::<Value>(line).ok()).find(|r|r["consumer"]=="SDL").ok_or("SDL probe emitted no observation")?;
+                let record = text.lines().filter_map(|line|serde_json::from_str::<Value>(line).ok()).find(|r|r["consumer"]=="SDL").unwrap_or_else(||json!({"failure_detail":{"step":"probe-process/no-final-record","last_event":null,"expected_event":"SDL final observation"}}));
                 if steam_hid && status.is_err() {
                     return Err(format!("SDL probe failed: {}", record["error"]));
                 }
-                let feedback = status?;
-                if record["observations"]["opened"]["value"] != true { return Err("SDL did not observe this exact device opened".into()); }
+                let feedback = status.map_err(|_| sdl_failure_diagnostic(&record, elapsed_ns(s.created), node.exists()))?;
+                if record["observations"]["opened"]["value"] != true { return Err(sdl_failure_diagnostic(&record, elapsed_ns(s.created), node.exists())); }
                 let mut result = json!({"consumer":"SDL","timestamp_scope":"probe completion upper bound; discovery may occur earlier","observation":record});
                 if series {
                     if series_hidapi && !independent_trigger_reports(&feedback.reports) {
@@ -589,6 +636,21 @@ impl Backend for Linux {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn failed_probe_keeps_actionable_diagnostics_without_device_identifiers() {
+        let record = serde_json::json!({"path":"private", "guid":"private", "failure_detail":{
+            "step":"controls", "last_event":{"type":4,"code":2,"value":0},
+            "expected_event":{"down_missing":8,"up_missing":0,"axis_missing":0}}});
+        let result = super::sdl_failure_diagnostic(&record, 123, true);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["step"], "controls");
+        assert_eq!(parsed["last_event"]["code"], 2);
+        assert_eq!(parsed["expected_event"]["down_missing"], 8);
+        assert_eq!(parsed["elapsed_since_creation_ns"], 123);
+        assert_eq!(parsed["node_present"], true);
+        assert!(!result.contains("private"));
+    }
+
+    #[test]
     fn trigger_acceptance_requires_both_exact_independent_reports() {
         use serde_json::json;
         let left = json!({"report_id":3,"bytes":[15,25,0,25,50,255,0,235]});
@@ -615,7 +677,10 @@ mod tests {
 
     #[test]
     fn series_enumeration_waits_for_input_after_hidraw_and_both_for_bluetooth() {
-        use std::{collections::BTreeSet, path::PathBuf};
+        use std::{
+            collections::{BTreeMap, BTreeSet},
+            path::PathBuf,
+        };
         let input = PathBuf::from("/dev/input/event999");
         let raw = PathBuf::from("/dev/hidraw999");
         for (nodes, uinput, bluetooth) in [
@@ -631,7 +696,10 @@ mod tests {
 
     #[test]
     fn requested_probe_backend_never_falls_back_to_the_other_node_type() {
-        use std::{collections::BTreeSet, path::PathBuf};
+        use std::{
+            collections::{BTreeMap, BTreeSet},
+            path::PathBuf,
+        };
         let input = PathBuf::from("/dev/input/event999");
         let raw = PathBuf::from("/dev/hidraw999");
         for nodes in [
