@@ -25,7 +25,9 @@ pub(crate) struct StreamEpoch(NonZeroU64);
 impl StreamEpoch {
     fn fresh() -> Result<Self, JournalCreateError> {
         NEXT_EPOCH
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| value.checked_add(1))
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value.checked_add(1)
+            })
             .ok()
             .and_then(NonZeroU64::new)
             .map(Self)
@@ -299,7 +301,9 @@ impl<C: JournalPayload, D: JournalPayload> HostOutputJournal<C, D> {
         let sequence = self.next_sequence;
         let Some(next_sequence) = sequence.checked_add(1) else {
             self.close(StreamCloseReason::SequenceExhausted);
-            return Err(AppendError::Closed(self.terminal.expect("closed on exhaustion")));
+            return Err(AppendError::Closed(
+                self.terminal.expect("closed on exhaustion"),
+            ));
         };
         self.next_sequence = next_sequence;
         let position = HostOutputPosition {

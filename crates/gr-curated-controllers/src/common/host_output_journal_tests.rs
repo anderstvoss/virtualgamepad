@@ -68,12 +68,19 @@ fn identity_is_monotonic_for_distinct_equal_commands_and_diagnostics_do_not_coun
     );
     let read = journal.read(journal.start_cursor(), 2).unwrap();
     assert_eq!(read.records.len(), 2);
-    assert!(matches!(&read.records[0].kind, HostOutputKind::Accepted(value) if value.as_slice() == [0x86, 0x10]));
-    assert!(matches!(&read.records[1].kind, HostOutputKind::Diagnostic(Diagnostic::Rejected(0x10))));
+    assert!(
+        matches!(&read.records[0].kind, HostOutputKind::Accepted(value) if value.as_slice() == [0x86, 0x10])
+    );
+    assert!(matches!(
+        &read.records[1].kind,
+        HostOutputKind::Diagnostic(Diagnostic::Rejected(0x10))
+    ));
     assert!(read.gap.is_none());
     let remainder = journal.read(read.next_cursor, 2).unwrap();
     assert_eq!(remainder.records.len(), 1);
-    assert!(matches!(&remainder.records[0].kind, HostOutputKind::Accepted(value) if value.as_slice() == [0x86, 0x10]));
+    assert!(
+        matches!(&remainder.records[0].kind, HostOutputKind::Accepted(value) if value.as_slice() == [0x86, 0x10])
+    );
     assert_eq!(remainder.records[0].retained_revision_after, Some(3));
     assert_eq!(remainder.records[0].position.sequence, 3);
     assert_eq!(journal.counters().accepted_commands, 2);
@@ -107,7 +114,8 @@ fn record_and_byte_pressure_give_exact_gaps_and_bounded_replay() {
     assert_eq!(gap.next_cursor.next_sequence, 4);
     let replay = journal.read(gap.next_cursor, 2).unwrap();
     assert_eq!(
-        replay.records
+        replay
+            .records
             .iter()
             .map(|r| r.position.sequence)
             .collect::<Vec<_>>(),
@@ -298,7 +306,11 @@ fn lifecycle_epoch_recreation_close_and_drain_after_close() {
     assert_eq!(terminal.high_water, Some(1));
     assert!(terminal.potentially_incomplete);
     assert_eq!(
-        journal.read(journal.start_cursor(), 2).unwrap().records.len(),
+        journal
+            .read(journal.start_cursor(), 2)
+            .unwrap()
+            .records
+            .len(),
         1
     );
     assert!(matches!(
@@ -390,16 +402,17 @@ fn config_rejects_unusable_budgets_and_sequence_space_never_wraps() {
         journal.terminal().unwrap().reason,
         StreamCloseReason::SequenceExhausted
     );
-    assert_eq!(
-        journal.terminal().unwrap().high_water,
-        Some(u64::MAX - 1)
-    );
+    assert_eq!(journal.terminal().unwrap().high_water, Some(u64::MAX - 1));
     assert!(matches!(
         journal.append(HostOutputKind::Accepted(vec![0]), None),
         Err(AppendError::Closed(_))
     ));
     assert_eq!(
-        journal.read(journal.tail_cursor(), 1).unwrap().records.len(),
+        journal
+            .read(journal.tail_cursor(), 1)
+            .unwrap()
+            .records
+            .len(),
         0
     );
 }
