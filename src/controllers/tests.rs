@@ -2374,7 +2374,6 @@ fn xbox_series_converged_constructors_reject_unavailable_targets_and_audio() {
     use gr_curated_controllers::xbox_series::create_xbox_series as curated;
     for target in [
         RealizationId::LINUX_UHID_USB,
-        RealizationId::LINUX_UHID_BLUETOOTH,
         RealizationId::LINUX_DUMMY_HCD_USB_HID,
         RealizationId::LINUX_USBIP_USB_AUDIO,
     ] {
@@ -2394,12 +2393,17 @@ fn xbox_series_converged_constructors_reject_unavailable_targets_and_audio() {
             Err(gr_realization_api::ProviderError::Unsupported { .. })
         ));
     }
-    let audio = CreationOptions::new(RealizationId::LINUX_UINPUT)
-        .with_audio(crate::AudioOptions::new(crate::AudioExposure::Emulated));
-    assert!(matches!(
-        create_xbox_series(audio, XboxSeriesOptions::default()),
-        Err(ControllerError::Unsupported { .. })
-    ));
+    for target in [
+        RealizationId::LINUX_UINPUT,
+        RealizationId::LINUX_UHID_BLUETOOTH,
+    ] {
+        let audio = CreationOptions::new(target)
+            .with_audio(crate::AudioOptions::new(crate::AudioExposure::Emulated));
+        assert!(matches!(
+            create_xbox_series(audio, XboxSeriesOptions::default()),
+            Err(ControllerError::Unsupported { .. })
+        ));
+    }
 }
 
 mod input_snapshots;

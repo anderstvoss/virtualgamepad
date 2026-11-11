@@ -30,9 +30,10 @@ validated.
   resources are opened.
 
 No cell is promoted beyond WIP yet; see the [support matrix](docs/CONTROLLER_SUPPORT.md)
-for the status definitions. The ordinary root includes all six families,
+for the status definitions. The ordinary root includes all seven families,
 including [Wii Remote](docs/WII_REMOTE.md) with uinput and Bluetooth-bus UHID,
-and Steam Controller 2026 with uinput and wired UHID. Xbox Series remains planned.
+Steam Controller 2026 with uinput and wired UHID, and Xbox Series with uinput
+and Bluetooth-bus UHID.
 
 ## Usage
 

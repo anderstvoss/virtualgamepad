@@ -7,10 +7,10 @@ the same two-argument shape with its supporting `CreationOptions`.
 | Realization | Scope |
 | --- | --- |
 | `linux.uinput` | One gamepad with the Linux xpad evdev layout. It exposes A/B/X/Y, bumpers, View/Menu/Guide/Share, stick clicks, the D-pad hat, four signed stick axes and two 10-bit triggers. Conventional force feedback carries strong and weak main-motor playback. |
-| `linux.uhid.bluetooth` | **No evidence** for a Series report map with a qualified consumer path. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
+| `linux.uhid.bluetooth` | Local Bluetooth-bus HID for the measured `045e:0b13` report map. Exposes all standard controls, including separate Guide and Share, and retains four-channel rumble commands. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
 | USB-bus UHID and `dummy_hcd` USB HID | Inapplicable to the wired GIP controller. GIP and USB/IP feasibility stay with [#168](https://github.com/anderstvoss/virtualgamepad/issues/168). |
 
-The xpad [consumer ledger](https://github.com/anderstvoss/controller-protocol-research/blob/e1a059125d8c435d1575638360ab787a14136f19/docs/ledgers/xbox-series-l0.md)
+The xpad [consumer ledger](https://github.com/anderstvoss/controller-protocol-research/blob/eba02ad610e264a2518a699394255cc7f1d670dd/docs/ledgers/xbox-series-l0.md)
 covers the gamepad name, input ID, event codes, ranges and force-feedback
 capabilities. The chosen input ID version is an observed Linux evdev value.
 The provider sets stick flat to 128 and fuzz to zero. The stock xpad shape
@@ -112,3 +112,32 @@ that Steam stops listing it. Record the Steam build and observed result with
 
 The [Alpha 2 host audit](ALPHA_2_HOST_AUDIT.md) covers the Series creator and
 consumer permissions. Owner sign-off remains on [#258](https://github.com/anderstvoss/virtualgamepad/issues/258).
+
+## Bluetooth UHID and wired audio checkpoint
+
+See the [checkpoint findings and reproduction commands](XBOX_SERIES_CHECKPOINT.md)
+for the physical Bluetooth report map, the local UHID consumer run, and the
+physical Linux headset results through xone. Select
+`RealizationId::LINUX_UHID_BLUETOOTH` with the same Xbox Series constructor.
+The measured map carries input and rumble. Battery, LED and headset audio
+have no report in this map. Native headset audio is tracked with USB GIP
+feasibility in [#168](https://github.com/anderstvoss/virtualgamepad/issues/168).
+
+## Native rumble units
+
+Bluetooth HID report 0x03 carries magnitudes in its descriptor's logical
+0 through 100 range. SDL's Xbox HIDAPI conversion divides a 16-bit API
+magnitude by 655, so 16384 and 32768 become 25 and 50. Uinput retains the
+16-bit evdev values. These are transport-specific units for the same API
+request. `MotorRole::LeftTrigger` and `RightTrigger` identify the two
+trigger channels separately from strong and weak main motors. Retained
+duration/delay fields are 10 ms descriptor ticks; repeat is a raw count.
+
+The evdev qualification covers controls and main rumble. Independent
+trigger-motor actuation remains unverified. The original evdev runs could not exercise hidraw HIDAPI because access was
+denied. A later dev-only raw-path probe with the stock microsoft driver
+passed all controls and observed separate left-only and right-only trigger
+commands. This qualifies a bounded virtual HIDAPI command path. Physical
+trigger actuation and exact-candidate acceptance after rebase remain open.
+The dev setup and failed competing-driver attempt are retained in the
+checkpoint handoff.

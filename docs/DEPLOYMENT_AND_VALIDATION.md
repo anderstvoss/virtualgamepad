@@ -267,3 +267,65 @@ it creates no controller. Exact-revision Git consumption remains a release gate.
 Generate the current working inventory with strict all-feature root rustdoc and
 `python3 scripts/generate-api-inventory.py`. Linux audio builds require their
 existing PipeWire/SPA/ALSA headers and libclang; local build paths stay out of the repo.
+
+## Xbox Series driver lab
+
+This opt-in systemd helper lets one local account switch one attached wired
+Xbox Series controller (`045e:0b12`) between stock `xpad` and the installed
+`xone-wired` driver. An administrator runs the one-time install from a normal
+host terminal in the repository:
+
+```sh
+sudo /usr/bin/python3 -I scripts/xbox-driver-lab.py install "$(id -un)"
+```
+
+Then the selected user can run these commands without sudo:
+
+```sh
+python3 scripts/xbox-driver-lab.py status
+python3 scripts/xbox-driver-lab.py xone
+python3 scripts/xbox-driver-lab.py xpad
+```
+
+Switching loads the needed modules and rebinds the selected USB interface.
+Close controller and audio clients before switching and rediscover the nodes
+afterward. `load-xone`, `load-xpad`, `unload-xone`, and `unload-xpad` are
+available for explicit module tests. An unload leaves the reference unbound
+if it used that driver and refuses if that driver owns another USB device.
+The xone unload removes the wired transport module; its shared GIP modules
+can stay loaded. The helper uses the installed modprobe policy.
+
+For Bluetooth driver tests, `load-xpadneo` loads the installed
+`hid_xpadneo` module and `unload-xpadneo` removes it. These operations
+work with the USB controller disconnected. Removal permits one connected
+Bluetooth Series `045e:0b13` HID device and refuses additional or other
+HID devices bound to xpadneo. Module loading may select xpadneo on the
+next Bluetooth reconnect. A controller already bound to Microsoft's HID
+driver may need reconnecting to change its binding. USB xone/xpad switching
+and Bluetooth xpadneo selection exercise their respective transports.
+
+To update an existing trusted root-owned helper, an administrator runs:
+
+```sh
+sudo /usr/bin/python3 -I scripts/xbox-driver-lab.py install "$(id -un)" --replace
+```
+
+The update atomically replaces trusted installation files and keeps the
+socket restricted to the selected account. The xpadneo module commands use
+the existing module-loading capability. No additional sysfs write grant is
+needed.
+
+
+To revoke access, an administrator can run
+`sudo systemctl disable --now virtualgamepad-xbox-driver-lab.socket`.
+
+For development of the Xbox HIDAPI path, opt-in virtual Xbox nodes also
+use the validated input-lab label. The updated lab-seat helper and 71 rule
+grant access through the existing UHID group and active-seat hidraw tag.
+The vendor xpadneo 60 rule can force a rebind during enumeration. Generate
+a dev-only local wrapper with `scripts/prepare-xbox-bt-lab.py` and install
+it as the local `60-xpadneo.rules` override. Its guard skips the vendor
+rules only for the exact Bluetooth Xbox identity and helper-validated
+virtual label. Physical-device rules are retained. Unload xpadneo before
+a stock-driver run and record the actual bound driver after enumeration
+settles. This remains opt-in test setup.

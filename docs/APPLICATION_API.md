@@ -34,7 +34,8 @@ Choose an exact realization with `CreationOptions::new(target)`. All seven
 families offer `LINUX_UINPUT`. Wii Remote also offers `LINUX_UHID_BLUETOOTH`,
 which uses Bluetooth bus metadata through local UHID. `DualSense`, `DualShock4`,
 Switch Pro, Xbox 360 and Steam Controller 2026 also offer `LINUX_UHID_USB`.
-Xbox Series selects `LINUX_UINPUT` with `XboxSeriesOptions::default()`. Each realization has its own published restrictions
+Xbox Series selects `LINUX_UINPUT` or `LINUX_UHID_BLUETOOTH` with
+`XboxSeriesOptions::default()`. Each realization has its own published restrictions
 and acceptance status. Creation has no automatic fallback.
 
 Use common `CreationOptions` for realization and audio and the matching
@@ -314,6 +315,7 @@ series.close();
 `XboxSeriesState` uses signed xpad evdev coordinates with positive Y down.
 Trigger positions are 10-bit. `set_triggers` on the state validates both
 values. Share and Guide are independent. `XboxSeriesOutputEvent` carries
-conventional force-feedback observations, and the retained state exposes
-the latest accepted strong/weak playback request. The selected surface
-lists the unavailable impulse-trigger motors and other uinput limits.
+conventional force feedback on uinput and native HID output on Bluetooth-bus
+UHID. `host_outputs()` retains the latest two-motor evdev playback or
+four-channel Bluetooth command, including trigger amplitudes and timing bytes.
+The selected surface lists the realization's limitations.

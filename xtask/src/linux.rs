@@ -311,12 +311,19 @@ fn wait_child(
     controller: &mut Controller,
     peers: &mut [&mut Session],
     capture: &Path,
-) -> Result<Option<virtualgamepad::RumblePlayback>, String> {
+) -> Result<
+    (
+        Option<virtualgamepad::RumblePlayback>,
+        Option<virtualgamepad::XboxSeriesBluetoothRumble>,
+    ),
+    String,
+> {
     let start = Instant::now();
     let deadline = start + Duration::from_secs(30);
     let mut script = ProbeScript::default();
     let mut ready = false;
     let mut xbox_rumble = None;
+    let mut xbox_bluetooth_rumble = None;
     loop {
         for peer in peers.iter_mut() {
             peer.service.service(|| peer.controller.service());
@@ -324,7 +331,7 @@ fn wait_child(
         match child.try_wait() {
             Ok(Some(status)) => {
                 return if status.success() {
-                    Ok(xbox_rumble)
+                    Ok((xbox_rumble, xbox_bluetooth_rumble))
                 } else {
                     Err(format!("SDL probe exited {status}"))
                 };
@@ -355,14 +362,16 @@ fn wait_child(
             return Err(error);
         }
         if let Controller::XboxSeries(series) = controller {
-            let playback = series
-                .host_outputs()
-                .ok()
-                .and_then(|outputs| outputs.evdev_rumble)
-                .filter(|playback| {
+            if let Ok(outputs) = series.host_outputs() {
+                let playback = outputs.evdev_rumble.filter(|playback| {
                     playback.repetitions > 0 && (playback.strong != 0 || playback.weak != 0)
                 });
-            xbox_rumble = playback.or(xbox_rumble);
+                xbox_rumble = playback.or(xbox_rumble);
+                let bluetooth = outputs
+                    .bluetooth_rumble
+                    .filter(|playback| playback.strong != 0 || playback.weak != 0);
+                xbox_bluetooth_rumble = bluetooth.or(xbox_bluetooth_rumble);
+            }
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
@@ -437,10 +446,14 @@ impl Backend for Linux {
             "consumer_open"=>{
                 if s.nodes.is_empty(){return Err("no owned node observed".into());}
                 let series = matches!(&s.controller, Controller::XboxSeries(_));
-                for node in &s.nodes {
+                let series_bt = matches!(&s.controller, Controller::XboxSeries(c)
+                    if c.surface().target() == RealizationId::LINUX_UHID_BLUETOOTH);
+                for node in s.nodes.iter().filter(|node| !series_bt || node.starts_with("/dev/input")) {
                     s.consumers.push(open_consumer(node, series).map_err(|e|e.to_string())?);
                 }
-                Ok(json!({"consumer":"harness evdev/hidraw","nodes_opened":s.consumers.len()}))
+                if s.consumers.is_empty() { return Err("no owned consumer node opened".into()); }
+                let consumer = if series_bt { "harness evdev" } else { "harness evdev/hidraw" };
+                Ok(json!({"consumer":consumer,"nodes_opened":s.consumers.len()}))
             }
             "first_neutral"=>Err("no validated consumer neutral-report oracle for this family; API commit is not consumer delivery".into()),
             "sdl_ready"=>{
@@ -462,12 +475,16 @@ impl Backend for Linux {
                 if steam_hid && status.is_err() {
                     return Err(format!("SDL probe failed: {}", record["error"]));
                 }
-                let playback = status?;
+                let (playback, bluetooth_playback) = status?;
                 if record["observations"]["opened"]["value"] != true { return Err("SDL did not observe this exact device opened".into()); }
                 let mut result = json!({"consumer":"SDL","timestamp_scope":"probe completion upper bound; discovery may occur earlier","observation":record});
                 if series {
                     result["accepted_evdev_rumble"] = playback.map_or(Value::Null, |playback| json!({
                         "strong":playback.strong, "weak":playback.weak, "repetitions":playback.repetitions
+                    }));
+                    result["accepted_bluetooth_rumble"] = bluetooth_playback.map_or(Value::Null, |effect| json!({
+                        "mask":effect.motor_mask, "strong":effect.strong, "weak":effect.weak,
+                        "left_trigger":effect.left_trigger, "right_trigger":effect.right_trigger
                     }));
                 }
                 Ok(result)

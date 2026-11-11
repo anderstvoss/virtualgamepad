@@ -563,7 +563,7 @@
         },
         "enum.MotorRole.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum MotorRole { Left, Right, Strong, Weak, }"
+            "#[non_exhaustive]pub enum MotorRole { Left, Right, Strong, Weak, LeftTrigger, RightTrigger, }"
           ],
           "traits": [
             "impl Clone for MotorRole",
@@ -948,7 +948,7 @@
         },
         "enum.XboxSeriesOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), }"
+            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), HostLifecycle(HostLifecycle), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
           ],
           "traits": [
             "impl Clone for XboxSeriesOutputEvent",
@@ -3031,6 +3031,23 @@
             "impl UnwindSafe for Xbox360Trigger"
           ]
         },
+        "struct.XboxSeriesBluetoothRumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesBluetoothRumble",
+            "impl Copy for XboxSeriesBluetoothRumble",
+            "impl Debug for XboxSeriesBluetoothRumble",
+            "impl Eq for XboxSeriesBluetoothRumble",
+            "impl PartialEq for XboxSeriesBluetoothRumble",
+            "impl RefUnwindSafe for XboxSeriesBluetoothRumble",
+            "impl Send for XboxSeriesBluetoothRumble",
+            "impl Sync for XboxSeriesBluetoothRumble",
+            "impl Unpin for XboxSeriesBluetoothRumble",
+            "impl UnwindSafe for XboxSeriesBluetoothRumble"
+          ]
+        },
         "struct.XboxSeriesController.html": {
           "declarations": [
             "pub struct XboxSeriesController { /* private fields */ }",
@@ -3082,7 +3099,7 @@
         },
         "struct.XboxSeriesOutputState.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesOutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, }"
+            "#[non_exhaustive]pub struct XboxSeriesOutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, pub bluetooth_rumble: Option<XboxSeriesBluetoothRumble>, }"
           ],
           "traits": [
             "impl Clone for XboxSeriesOutputState",
@@ -3717,7 +3734,7 @@
         },
         "enum.MotorRole.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum MotorRole { Left, Right, Strong, Weak, }"
+            "#[non_exhaustive]pub enum MotorRole { Left, Right, Strong, Weak, LeftTrigger, RightTrigger, }"
           ],
           "traits": [
             "impl Clone for MotorRole",
@@ -4102,7 +4119,7 @@
         },
         "enum.XboxSeriesOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), }"
+            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), HostLifecycle(HostLifecycle), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
           ],
           "traits": [
             "impl Clone for XboxSeriesOutputEvent",
@@ -6185,6 +6202,23 @@
             "impl UnwindSafe for Xbox360Trigger"
           ]
         },
+        "struct.XboxSeriesBluetoothRumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesBluetoothRumble",
+            "impl Copy for XboxSeriesBluetoothRumble",
+            "impl Debug for XboxSeriesBluetoothRumble",
+            "impl Eq for XboxSeriesBluetoothRumble",
+            "impl PartialEq for XboxSeriesBluetoothRumble",
+            "impl RefUnwindSafe for XboxSeriesBluetoothRumble",
+            "impl Send for XboxSeriesBluetoothRumble",
+            "impl Sync for XboxSeriesBluetoothRumble",
+            "impl Unpin for XboxSeriesBluetoothRumble",
+            "impl UnwindSafe for XboxSeriesBluetoothRumble"
+          ]
+        },
         "struct.XboxSeriesController.html": {
           "declarations": [
             "pub struct XboxSeriesController { /* private fields */ }",
@@ -6236,7 +6270,7 @@
         },
         "struct.XboxSeriesOutputState.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesOutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, }"
+            "#[non_exhaustive]pub struct XboxSeriesOutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, pub bluetooth_rumble: Option<XboxSeriesBluetoothRumble>, }"
           ],
           "traits": [
             "impl Clone for XboxSeriesOutputState",
