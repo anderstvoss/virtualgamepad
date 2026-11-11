@@ -265,6 +265,21 @@ pub struct WiiMotionPlusState {
     pub slow: [bool; 3],
 }
 
+/// Wii status-report battery byte, managed separately from input levels.
+/// The native byte has no inferred percentage or factory calibration.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WiiRemoteBattery(u8);
+impl WiiRemoteBattery {
+    #[must_use]
+    pub const fn new(raw: u8) -> Self {
+        Self(raw)
+    }
+    #[must_use]
+    pub const fn raw(self) -> u8 {
+        self.0
+    }
+}
+
 /// Application-owned semantic inputs. Host-owned LEDs and rumble are separate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WiiRemoteState {
@@ -274,7 +289,6 @@ pub struct WiiRemoteState {
     ir: [Option<WiiIrPoint>; 4],
     extension: WiiExtension,
     motion_plus: WiiMotionPlusState,
-    battery: u8,
 }
 impl Default for WiiRemoteState {
     fn default() -> Self {
@@ -300,10 +314,9 @@ impl WiiRemoteState {
                 gyroscope: [8192; 3],
                 slow: [false; 3],
             },
-            battery: 0,
         }
     }
-    /// Clear inputs while preserving attachment, revision and battery metadata.
+    /// Clear inputs while preserving attachment and revision.
     pub fn neutralize(&mut self) {
         self.buttons = [false; 11];
         self.accelerometer = [0; 3];
@@ -405,13 +418,6 @@ impl WiiRemoteState {
     #[must_use]
     pub const fn motion_plus(&self) -> &WiiMotionPlusState {
         &self.motion_plus
-    }
-    #[must_use]
-    pub const fn battery_raw(&self) -> u8 {
-        self.battery
-    }
-    pub fn set_battery_raw(&mut self, battery: u8) {
-        self.battery = battery;
     }
 }
 

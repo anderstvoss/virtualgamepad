@@ -19,10 +19,10 @@ macro_rules! root_snapshot_case {
     (@refresh_motion $controller:ident, xbox360) => {};
     (@refresh_motion $controller:ident, switch_pro) => {};
     (@refresh_motion $controller:ident, $sony:ident) => {
-        let before = $controller.state().clone();
+        let before = accepted_inputs!($controller, $sony).clone();
         let dirty = $controller.is_dirty();
         assert!($controller.refresh_motion().is_err());
-        assert_eq!($controller.state(), &before);
+        assert_eq!(accepted_inputs!($controller, $sony), &before);
         assert_eq!($controller.is_dirty(), dirty);
     };
     (@assert_state dualshock4, $actual:ident, $candidate:ident) => {
@@ -64,7 +64,7 @@ macro_rules! root_snapshot_case {
                 );
                 let mut controller = $controller::from_parts(association, inner, $($part),*);
                 controller.commit().unwrap();
-                let clean = controller.state().clone();
+                let clean = accepted_inputs!(controller, $module).clone();
                 let mut $snapshot = clean.clone();
                 let mut $extra_invalid: Vec<$state> = Vec::new();
                 $snapshot.set_digital(DigitalControlUpdate::FaceButton {
@@ -81,19 +81,19 @@ macro_rules! root_snapshot_case {
                             Ok(())
                         }).unwrap();
                     }
-                    let accepted = controller.state().clone();
+                    let accepted = accepted_inputs!(controller, $module).clone();
                     assert_eq!(controller.edit_inputs(|candidate| {
                         *candidate = clean.clone();
                         Err(error.clone())
                     }), Err(error.clone()));
-                    assert_eq!(controller.state(), &accepted);
+                    assert_eq!(accepted_inputs!(controller, $module), &accepted);
                     assert_eq!(controller.is_dirty(), dirty);
                     for invalid in &$extra_invalid {
                         assert!(controller.edit_inputs(|candidate| {
                             *candidate = invalid.clone();
                             Ok(())
                         }).is_err());
-                        assert_eq!(controller.state(), &accepted);
+                        assert_eq!(accepted_inputs!(controller, $module), &accepted);
                         assert_eq!(controller.is_dirty(), dirty);
                     }
                     controller.edit_inputs(|_| Ok(())).unwrap();
@@ -101,14 +101,14 @@ macro_rules! root_snapshot_case {
                 }
                 assert_eq!(record.lock().unwrap().sent.len(), 1);
                 controller.commit().unwrap();
-                let accepted = controller.state().clone();
+                let accepted = accepted_inputs!(controller, $module).clone();
                 controller.edit_inputs(|_| Ok(())).unwrap();
                 controller.set_inputs(accepted.clone()).unwrap();
                 assert!(!controller.is_dirty());
                 controller.close();
                 controller.close();
                 assert_eq!(controller.edit_inputs(|_| panic!("closed root edit executed")), Err(ControlError::Closed));
-                assert_eq!(controller.state(), &accepted);
+                assert_eq!(accepted_inputs!(controller, $module), &accepted);
                 assert_eq!(record.lock().unwrap().closes, 1);
             }
         }
@@ -125,7 +125,7 @@ macro_rules! root_snapshot_case {
             let mut controller = $controller::from_parts(association, inner, $($part),*);
             let creation = controller.association().creation();
             let outputs = controller.host_outputs().unwrap();
-            let mut $snapshot = controller.state().clone();
+            let mut $snapshot = accepted_inputs!(controller, $module).clone();
             let mut $extra_invalid: Vec<$state> = Vec::new();
             $snapshot.set_digital(DigitalControlUpdate::FaceButton {
                 button: FaceButton::South, pressed: true,
@@ -142,16 +142,16 @@ macro_rules! root_snapshot_case {
 
             controller.commit().unwrap();
             root_snapshot_case!(@refresh_motion controller, $module);
-            let neutral = controller.state().clone();
+            let neutral = accepted_inputs!(controller, $module).clone();
             let neutral_frame = record.lock().unwrap().sent[0].clone();
             for invalid in &$extra_invalid {
                 assert!(controller.set_inputs(invalid.clone()).is_err());
-                assert_eq!(controller.state(), &neutral);
+                assert_eq!(accepted_inputs!(controller, $module), &neutral);
                 assert!(!controller.is_dirty());
             }
 
             controller.set_inputs($snapshot.clone()).unwrap();
-            let accepted = controller.state().clone();
+            let accepted = accepted_inputs!(controller, $module).clone();
             root_snapshot_case!(@assert_state $module, accepted, $snapshot);
             assert!(controller.is_dirty());
             assert_eq!(record.lock().unwrap().sent.len(), 1);
@@ -162,7 +162,7 @@ macro_rules! root_snapshot_case {
                     button: FaceButton::South, pressed: false,
                 });
                 assert!(controller.set_inputs(invalid).is_err());
-                assert_eq!(controller.state(), &accepted);
+                assert_eq!(accepted_inputs!(controller, $module), &accepted);
                 assert!(controller.is_dirty());
             }
             controller.commit().unwrap();
@@ -172,7 +172,7 @@ macro_rules! root_snapshot_case {
             assert_axis_values(&populated_frame, $axes);
 
             controller.set_inputs($snapshot.clone()).unwrap();
-            assert_eq!(controller.state(), &accepted);
+            assert_eq!(accepted_inputs!(controller, $module), &accepted);
             assert!(!controller.is_dirty());
             controller.commit().unwrap();
             assert_eq!(record.lock().unwrap().sent.last(), Some(&populated_frame));
@@ -194,9 +194,9 @@ macro_rules! root_snapshot_case {
             controller.set_inputs($snapshot).unwrap();
             controller.set_digital(DigitalControlUpdate::FaceButton {
                 button: FaceButton::North,
-                pressed: !controller.state().face_pressed(FaceButton::North),
+                pressed: !accepted_inputs!(controller, $module).face_pressed(FaceButton::North),
             }).unwrap();
-            let before_close = controller.state().clone();
+            let before_close = accepted_inputs!(controller, $module).clone();
             record.lock().unwrap().events.push_back(RawReverseEvent::HidGetReportRequest {
                 request_id: 17, report_id: 1, report_type: 0,
             });
@@ -204,7 +204,7 @@ macro_rules! root_snapshot_case {
             assert!(controller.commit().is_err());
             assert_eq!(controller.set_inputs(neutral), Err(ControlError::Closed));
             assert_eq!(controller.edit_inputs(|_| panic!("closed root edit executed")), Err(ControlError::Closed));
-            assert_eq!(controller.state(), &before_close);
+            assert_eq!(accepted_inputs!(controller, $module), &before_close);
             assert!(controller.is_dirty());
             controller.close();
             controller.close();
@@ -234,7 +234,7 @@ root_snapshot_case!(
     dualsense_whole_state,
     dualsense,
     DualSenseController,
-    DualSenseState,
+    DualSenseInputs,
     "virtualgamepad.dualsense",
     BYTE_AXES,
     [None, None],
@@ -382,7 +382,7 @@ fn root_sony_refresh_commits_a_new_motion_sample() {
         }
     }
     macro_rules! check {
-        ($create:ident, $handle:ident, $id:literal) => {{
+        ($create:ident, $handle:ident, $module:ident, $id:literal) => {{
             let samples = Arc::new(Mutex::new(Vec::new()));
             let io = Arc::new(Mutex::new(Record::default()));
             let inner = gr_curated_controllers::$create(Box::new(Bridge {
@@ -400,31 +400,39 @@ fn root_sony_refresh_commits_a_new_motion_sample() {
             );
             let mut controller = $handle::from_parts(association, inner, None, None);
             controller.commit().unwrap();
-            let previous = controller.state().clone();
+            let previous = accepted_inputs!(controller, $module).clone();
+            let clock = accepted_clock!(controller, $module);
             let motion = previous.motion();
             controller.set_motion(motion).unwrap();
-            assert_eq!(controller.state(), &previous);
+            assert_eq!(accepted_inputs!(controller, $module), &previous);
             controller.refresh_motion().unwrap();
-            let refreshed = controller.state().clone();
-            assert_ne!(refreshed, previous);
+            let refreshed = accepted_inputs!(controller, $module).clone();
+            assert_ne!(accepted_clock!(controller, $module), clock);
             assert_eq!(refreshed.motion(), motion);
-            assert_eq!(*samples.lock().unwrap(), vec![previous, refreshed.clone()]);
+            {
+                let samples = samples.lock().unwrap();
+                assert_eq!(samples.len(), 2);
+                assert_eq!(sample_inputs!(&samples[0], $module), &previous);
+                assert_eq!(sample_inputs!(&samples[1], $module), &refreshed);
+            }
             assert!(!controller.is_dirty());
             controller.close();
             controller.close();
             assert!(controller.refresh_motion().is_err());
-            assert_eq!(controller.state(), &refreshed);
+            assert_eq!(accepted_inputs!(controller, $module), &refreshed);
             assert_eq!(io.lock().unwrap().closes, 1);
         }};
     }
     check!(
         create_dualsense_usb_worker,
         DualSenseController,
+        dualsense,
         "virtualgamepad.dualsense"
     );
     check!(
         create_dualshock4_usb_worker,
         DualShock4Controller,
+        dualshock4,
         "virtualgamepad.dualshock4"
     );
 }

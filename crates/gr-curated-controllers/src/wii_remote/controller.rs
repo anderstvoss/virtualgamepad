@@ -7,6 +7,7 @@ use gr_realization_api::{ProviderError, RawReverseEvent, RealizationTarget};
 
 pub struct WiiRemoteController {
     identity: WiiRemoteIdentity,
+    battery: super::WiiRemoteBattery,
     pub(super) live: common::topology::LiveTopology<super::codec::WiiProtocol>,
     pub(super) session: Box<Storage>,
     pub(super) native: Option<super::native::Nodes>,
@@ -106,6 +107,7 @@ pub(super) fn create(
     };
     Ok(WiiRemoteController {
         identity,
+        battery: super::WiiRemoteBattery::default(),
         session: Box::new(storage),
         live,
         native,
@@ -267,11 +269,32 @@ impl WiiRemoteController {
             Ok(())
         })
     }
-    pub fn set_battery_raw(&mut self, value: u8) -> Result<(), ControlError> {
-        self.edit_inputs(|s| {
-            s.set_battery_raw(value);
-            Ok(())
-        })
+    /// Current raw battery metadata, retained after close.
+    #[must_use]
+    pub const fn battery(&self) -> super::WiiRemoteBattery {
+        self.battery
+    }
+    /// Update native battery metadata. Call `commit()` to service pending work.
+    /// Future status reports carry this value; accepted queued reports retain
+    /// their original bytes.
+    pub fn set_battery(&mut self, battery: super::WiiRemoteBattery) -> Result<(), ControlError> {
+        if self.session.is_closed() {
+            return Err(ControlError::Closed);
+        }
+        if battery == self.battery {
+            return Ok(());
+        }
+        self.live.change(
+            &mut self.session,
+            self.live.current_topology(),
+            |_| Ok(()),
+            |protocol| {
+                protocol.battery = battery;
+                Ok(())
+            },
+        )?;
+        self.battery = battery;
+        Ok(())
     }
     pub fn set_extension(&mut self, value: super::WiiExtension) -> Result<(), ControlError> {
         self.edit_inputs(|state| {
