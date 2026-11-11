@@ -429,3 +429,20 @@ fn a_blocked_reply_closes_the_session_in_the_same_service_cycle() {
     assert!(!controller.wants_write());
     assert_eq!(factory.record.lock().unwrap().destroys, 1);
 }
+
+#[test]
+fn native_input_transactions_roll_back_late_trigger_errors() {
+    use crate::common::session_tests::check_input_transactions;
+    use gr_controller_contract::ControlError;
+    let factory = Arc::new(Factory::default());
+    let mut controller = create(&factory).unwrap();
+    check_input_transactions!(
+        controller,
+        |state: &mut XboxSeriesState| {
+            state.set_button(XboxSeriesButton::A, true);
+            state.set_triggers(123, 987)
+        },
+        |state: &mut XboxSeriesState| state.set_triggers(12, 1024),
+        factory.record.lock().unwrap().sent.len()
+    );
+}

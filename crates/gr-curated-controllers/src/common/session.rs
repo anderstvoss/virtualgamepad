@@ -9,10 +9,17 @@ use gr_provider_linux_uhid::HidTransport;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-pub(crate) trait HidDriver: TargetAwareControllerDriver<Frame = ProviderFrame> {
+pub(crate) trait HidDriver:
+    TargetAwareControllerDriver<Frame = ProviderFrame, State: PartialEq>
+{
     type Hid: Protocol<State = Self::State, Output = RawReverseEvent> + Send;
     const RETRY_NATIVE_REPLIES: bool = true;
     fn neutralize_state(state: &mut Self::State);
+    fn validate_input_edit(_: &Self::State, _: &Self::State) -> Result<(), ControlError> {
+        Ok(())
+    }
+    fn transition_inputs(_: &Self::State, _: &mut Self::State) {}
+
     fn open_native(
         &self,
         request: ProviderOpenRequest,
@@ -287,10 +294,56 @@ impl<D: HidDriver> ControllerSession<D> {
         Ok(())
     }
     pub(crate) fn neutralize(&mut self) -> Result<(), ControlError> {
-        self.update_state(|state| {
+        self.edit_inputs(|state| {
             D::neutralize_state(state);
             Ok(())
         })
+    }
+    pub(crate) fn edit_inputs(
+        &mut self,
+        edit: impl FnOnce(&mut D::State) -> Result<(), ControlError>,
+    ) -> Result<(), ControlError> {
+        self.edit_inputs_with_driver(|_, state| edit(state))
+    }
+    fn edit_inputs_with_driver(
+        &mut self,
+        edit: impl FnOnce(&D, &mut D::State) -> Result<(), ControlError>,
+    ) -> Result<(), ControlError> {
+        let apply = |driver: &D, previous: &D::State, next: &mut D::State| {
+            edit(driver, next)?;
+            D::validate_input_edit(previous, next)
+        };
+        match &mut self.backend {
+            Backend::Native(runtime) => runtime.edit_state(apply, D::transition_inputs),
+            Backend::Hid { driver, runtime } => runtime.edit_state(
+                |previous, next| {
+                    apply(driver, previous, next)?;
+                    driver.validate_state(self.selection, next)
+                },
+                D::transition_inputs,
+                |_| ControlError::Closed,
+            ),
+            Backend::Worker {
+                driver,
+                state,
+                dirty,
+                closed,
+                ..
+            } => {
+                if *closed {
+                    return Err(ControlError::Closed);
+                }
+                let mut next = state.clone();
+                apply(driver, state, &mut next)?;
+                driver.validate_state(self.selection, &next)?;
+                D::transition_inputs(state, &mut next);
+                if next != *state {
+                    *state = next;
+                    *dirty = true;
+                }
+                Ok(())
+            }
+        }
     }
     pub(crate) fn update_state(
         &mut self,
@@ -335,40 +388,7 @@ impl<D: HidDriver> ControllerSession<D> {
         &mut self,
         update: gr_controller_contract::DigitalControlUpdate,
     ) -> Result<(), ControlError> {
-        match &mut self.backend {
-            Backend::Native(r) => r.apply_digital(update),
-            Backend::Hid { driver, runtime } => {
-                if runtime.is_closed() {
-                    return Err(ControlError::Closed);
-                }
-                let mut state = runtime.state().clone();
-                driver.apply_digital(&mut state, update)?;
-                driver.validate_state(self.selection, &state)?;
-                runtime
-                    .update(|s| {
-                        *s = state;
-                        Ok(())
-                    })
-                    .map_err(|_| ControlError::Closed)
-            }
-            Backend::Worker {
-                driver,
-                state,
-                dirty,
-                closed,
-                ..
-            } => {
-                if *closed {
-                    return Err(ControlError::Closed);
-                }
-                let mut next = state.clone();
-                driver.apply_digital(&mut next, update)?;
-                driver.validate_state(self.selection, &next)?;
-                *state = next;
-                *dirty = true;
-                Ok(())
-            }
-        }
+        self.edit_inputs_with_driver(|driver, state| driver.apply_digital(state, update))
     }
     pub(crate) fn now(&self) -> u64 {
         u64::try_from(self.started.elapsed().as_micros()).unwrap_or(u64::MAX)

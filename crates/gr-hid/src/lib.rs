@@ -252,6 +252,30 @@ impl<P: Protocol, T: Transport> Runtime<P, T> {
         self.dirty = true;
         Ok(())
     }
+    /// Edit one isolated input candidate while retaining existing queued bytes.
+    /// Validation precedes transitions. An unchanged edit adds no dirty work.
+    pub fn edit_state<E>(
+        &mut self,
+        edit: impl FnOnce(&P::State, &mut P::State) -> Result<(), E>,
+        transition: impl FnOnce(&P::State, &mut P::State),
+        error: impl Fn(Error) -> E,
+    ) -> Result<(), E>
+    where
+        P::State: PartialEq,
+    {
+        if self.closed {
+            return Err(error(Error::Closed));
+        }
+        let mut candidate = self.state.clone();
+        edit(&self.state, &mut candidate)?;
+        self.protocol.validate(&candidate).map_err(error)?;
+        transition(&self.state, &mut candidate);
+        if candidate != self.state {
+            self.state = candidate;
+            self.dirty = true;
+        }
+        Ok(())
+    }
     /// Transactionally edit controller-owned protocol configuration/topology.
     /// The closure must perform no external I/O and clones must isolate mutable
     /// protocol resources, just as for input generation. Validate controller-owned

@@ -77,6 +77,7 @@
         "pub fn is_dirty(&self) -> bool",
         "pub fn dropped_output_events(&self) -> u64",
         "pub fn state(&self) -> &SteamController2026State",
+        "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SteamController2026State) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
         "pub fn set_inputs( &mut self, state: SteamController2026State, ) -> Result<(), ControlError>",
         "pub fn set_button( &mut self, button: SteamController2026Button, pressed: bool, ) -> Result<(), ControlError>",
         "pub fn neutralize(&mut self) -> Result<(), ControlError>",

@@ -82,8 +82,21 @@ impl XboxSeriesController {
         self.0.apply_digital(update)
     }
 
+    /// Edit an isolated native input candidate as one transaction.
+    /// Only the final candidate is validated. Rejection preserves accepted input,
+    /// clocks, dirty work and queued reports. An unchanged edit adds no dirty work.
+    /// Keep external side effects outside the closure. Call `commit()` to deliver.
+    ///
+    /// # Errors
+    /// Returns the closure's error, a validation error, or `ControlError::Closed`.
+    pub fn edit_inputs(
+        &mut self,
+        edit: impl FnOnce(&mut XboxSeriesState) -> Result<(), ControlError>,
+    ) -> Result<(), ControlError> {
+        self.0.edit_inputs(edit)
+    }
     pub fn set_inputs(&mut self, state: XboxSeriesState) -> Result<(), ControlError> {
-        self.0.update_state(|current| {
+        self.edit_inputs(|current| {
             *current = state;
             Ok(())
         })
@@ -94,7 +107,7 @@ impl XboxSeriesController {
         button: XboxSeriesButton,
         pressed: bool,
     ) -> Result<(), ControlError> {
-        self.0.update_state(|state| {
+        self.edit_inputs(|state| {
             state.set_button(button, pressed);
             Ok(())
         })

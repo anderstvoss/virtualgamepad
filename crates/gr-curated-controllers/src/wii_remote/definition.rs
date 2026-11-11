@@ -230,6 +230,19 @@ impl TargetAwareControllerDriver for WiiRemoteDefinition {
     }
 }
 impl common::HidDriver for WiiRemoteDefinition {
+    fn validate_input_edit(previous: &Self::State, next: &Self::State) -> Result<(), ControlError> {
+        if next.revision() != previous.revision()
+            || next.motion_plus().attached != previous.motion_plus().attached
+            || std::mem::discriminant(next.extension())
+                != std::mem::discriminant(previous.extension())
+        {
+            return Err(ControlError::UnsupportedControl {
+                control: "native input edit cannot change Wii identity or attachment",
+            });
+        }
+        Ok(())
+    }
+
     type Hid = super::codec::WiiProtocol;
     fn neutralize_state(state: &mut Self::State) {
         state.neutralize();
@@ -377,6 +390,10 @@ impl TargetAwareControllerDriver for Configured {
     }
 }
 impl common::HidDriver for Configured {
+    fn validate_input_edit(previous: &Self::State, next: &Self::State) -> Result<(), ControlError> {
+        WiiRemoteDefinition::validate_input_edit(previous, next)
+    }
+
     type Hid = super::codec::WiiProtocol;
     fn neutralize_state(state: &mut Self::State) {
         WiiRemoteDefinition::neutralize_state(state);

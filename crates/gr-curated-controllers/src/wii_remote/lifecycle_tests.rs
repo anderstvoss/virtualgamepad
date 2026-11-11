@@ -1009,3 +1009,24 @@ fn dropping_an_unresolved_wii_closes_once_and_recreation_uses_only_explicit_impo
             .is_empty()
     );
 }
+
+#[test]
+fn hid_input_transactions_preserve_live_attachment_and_resources() {
+    use crate::common::session_tests::check_input_transactions;
+    let (mut controller, fake) = create(WiiEepromImage::default());
+    let generation = controller.topology_generation();
+    let resource_dirty = controller.resource_dirty();
+    check_input_transactions!(
+        controller,
+        |state: &mut WiiRemoteState| {
+            state.set_button(WiiRemoteButton::A, true);
+            state.set_accelerometer([500, 600, 700])
+        },
+        |state: &mut WiiRemoteState| {
+            state.set_attachment(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+        },
+        fake.0.lock().unwrap().sent.len()
+    );
+    assert_eq!(controller.topology_generation(), generation);
+    assert_eq!(controller.resource_dirty(), resource_dirty);
+}

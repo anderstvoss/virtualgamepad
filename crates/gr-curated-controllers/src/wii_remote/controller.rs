@@ -228,18 +228,22 @@ impl WiiRemoteController {
     pub fn is_closed(&self) -> bool {
         self.session.is_closed()
     }
+    /// Edit an isolated native input candidate as one transaction.
+    /// Only the final candidate is validated. Rejection preserves accepted input,
+    /// clocks, dirty work and queued reports. An unchanged edit adds no dirty work.
+    /// Keep external side effects outside the closure. Call `commit()` to deliver.
+    ///
+    /// # Errors
+    /// Returns the closure's error, a validation error, or `ControlError::Closed`.
+    pub fn edit_inputs(
+        &mut self,
+        edit: impl FnOnce(&mut WiiRemoteState) -> Result<(), ControlError>,
+    ) -> Result<(), ControlError> {
+        self.session.edit_inputs(edit)
+    }
     /// Apply this family's native input snapshot without changing attachment or identity.
     pub fn set_inputs(&mut self, state: WiiRemoteState) -> Result<(), ControlError> {
-        if state.revision() != self.state().revision()
-            || state.motion_plus().attached != self.state().motion_plus().attached
-            || std::mem::discriminant(state.extension())
-                != std::mem::discriminant(self.state().extension())
-        {
-            return Err(ControlError::UnsupportedControl {
-                control: "native input edit cannot change Wii identity or attachment",
-            });
-        }
-        self.session.update_state(|current| {
+        self.edit_inputs(|current| {
             *current = state;
             Ok(())
         })
@@ -249,35 +253,35 @@ impl WiiRemoteController {
         button: WiiRemoteButton,
         pressed: bool,
     ) -> Result<(), ControlError> {
-        self.session.update_state(|state| {
+        self.edit_inputs(|state| {
             state.set_button(button, pressed);
             Ok(())
         })
     }
     pub fn set_accelerometer(&mut self, values: [u16; 3]) -> Result<(), ControlError> {
-        self.session.update_state(|s| s.set_accelerometer(values))
+        self.edit_inputs(|s| s.set_accelerometer(values))
     }
     pub fn set_ir(&mut self, points: [Option<super::WiiIrPoint>; 4]) -> Result<(), ControlError> {
-        self.session.update_state(|s| {
+        self.edit_inputs(|s| {
             s.set_ir(points);
             Ok(())
         })
     }
     pub fn set_battery_raw(&mut self, value: u8) -> Result<(), ControlError> {
-        self.session.update_state(|s| {
+        self.edit_inputs(|s| {
             s.set_battery_raw(value);
             Ok(())
         })
     }
     pub fn set_extension(&mut self, value: super::WiiExtension) -> Result<(), ControlError> {
-        if std::mem::discriminant(&value) != std::mem::discriminant(self.state().extension()) {
-            return Err(ControlError::UnsupportedControl {
-                control: "use attach to change extension kind",
-            });
-        }
-        super::extensions::validate(&value)?;
-        self.session.update_state(|s| {
-            s.extension = value;
+        self.edit_inputs(|state| {
+            if std::mem::discriminant(&value) != std::mem::discriminant(state.extension()) {
+                return Err(ControlError::UnsupportedControl {
+                    control: "use attach to change extension kind",
+                });
+            }
+            super::extensions::validate(&value)?;
+            state.extension = value;
             Ok(())
         })
     }
@@ -286,14 +290,14 @@ impl WiiRemoteController {
         gyroscope: [u16; 3],
         slow: [bool; 3],
     ) -> Result<(), ControlError> {
-        if !self.state().motion_plus.attached || gyroscope.iter().any(|v| *v > 16383) {
-            return Err(ControlError::UnsupportedControl {
-                control: "MotionPlus absent or raw value outside fourteen bits",
-            });
-        }
-        self.session.update_state(|s| {
-            s.motion_plus.gyroscope = gyroscope;
-            s.motion_plus.slow = slow;
+        self.edit_inputs(|state| {
+            if !state.motion_plus.attached || gyroscope.iter().any(|v| *v > 16383) {
+                return Err(ControlError::UnsupportedControl {
+                    control: "MotionPlus absent or raw value outside fourteen bits",
+                });
+            }
+            state.motion_plus.gyroscope = gyroscope;
+            state.motion_plus.slow = slow;
             Ok(())
         })
     }

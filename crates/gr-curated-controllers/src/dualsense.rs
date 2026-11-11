@@ -185,12 +185,11 @@ impl Default for DualSenseState {
 }
 
 impl DualSenseState {
-    fn replace_inputs(&mut self, mut next: Self) {
-        next.battery = self.battery;
-        next.input_sequence = self.input_sequence;
-        next.sensor_timestamp = self.sensor_timestamp;
-        next.advance_input_timing(self.motion);
-        *self = next;
+    fn transition_inputs(&mut self, previous: &Self) {
+        self.battery = previous.battery;
+        self.input_sequence = previous.input_sequence;
+        self.sensor_timestamp = previous.sensor_timestamp;
+        self.advance_input_timing(previous.motion);
     }
 
     fn advance_input_timing(&mut self, previous_motion: MotionSample) {
@@ -1311,6 +1310,19 @@ impl DualSenseController {
     pub fn provider_diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
         self.0.diagnostics()
     }
+    /// Edit an isolated native input candidate as one transaction.
+    /// Only the final candidate is validated. Rejection preserves accepted input,
+    /// clocks, dirty work and queued reports. An unchanged edit adds no dirty work.
+    /// Keep external side effects outside the closure. Call `commit()` to deliver.
+    ///
+    /// # Errors
+    /// Returns the closure's error, a validation error, or `ControlError::Closed`.
+    pub fn edit_inputs(
+        &mut self,
+        edit: impl FnOnce(&mut DualSenseState) -> Result<(), ControlError>,
+    ) -> Result<(), ControlError> {
+        self.0.edit_inputs(edit)
+    }
     /// Replace the complete native input state as one validated edit.
     /// Call `commit()` to deliver it. Protocol counters are session-owned.
     ///
@@ -1318,8 +1330,8 @@ impl DualSenseController {
     /// Returns a control error if the session is closed or the snapshot cannot
     /// be represented by the selected realization.
     pub fn set_inputs(&mut self, state: DualSenseState) -> Result<(), ControlError> {
-        self.0.update_state(|current| {
-            current.replace_inputs(state);
+        self.edit_inputs(|current| {
+            *current = state;
             Ok(())
         })
     }
@@ -1331,7 +1343,7 @@ impl DualSenseController {
         control: DualSenseControl,
         pressed: bool,
     ) -> Result<(), ControlError> {
-        self.0.update_state(|state| {
+        self.edit_inputs(|state| {
             state.set_native(control, pressed);
             Ok(())
         })
@@ -1341,7 +1353,7 @@ impl DualSenseController {
         x: DualSenseAxis,
         y: DualSenseAxis,
     ) -> Result<(), ControlError> {
-        self.0.update_state(|state| {
+        self.edit_inputs(|state| {
             state.left = (x, y);
             Ok(())
         })
@@ -1351,7 +1363,7 @@ impl DualSenseController {
         x: DualSenseAxis,
         y: DualSenseAxis,
     ) -> Result<(), ControlError> {
-        self.0.update_state(|state| {
+        self.edit_inputs(|state| {
             state.right = (x, y);
             Ok(())
         })
@@ -1361,7 +1373,7 @@ impl DualSenseController {
         left: DualSenseTrigger,
         right: DualSenseTrigger,
     ) -> Result<(), ControlError> {
-        self.0.update_state(|state| {
+        self.edit_inputs(|state| {
             state.set_triggers(left, right);
             Ok(())
         })
@@ -1371,18 +1383,16 @@ impl DualSenseController {
         slot: TouchSlot,
         contact: Option<DualSenseTouchContact>,
     ) -> Result<(), ControlError> {
-        self.0.update_state(|state| {
+        self.edit_inputs(|state| {
             state.set_touch(slot, contact);
             Ok(())
         })
     }
     pub fn set_motion(&mut self, motion: MotionSample) -> Result<(), ControlError> {
         let target = self.0.selection().target;
-        self.0.update_state(|state| {
+        self.edit_inputs(|state| {
             common::require_input_target(target, motion_targets())?;
-            let previous_motion = state.motion;
             state.set_motion(motion);
-            state.advance_input_timing(previous_motion);
             Ok(())
         })
     }
@@ -1852,7 +1862,12 @@ mod tests {
             if target == RealizationTarget::LINUX_UINPUT {
                 for dirty in [false, true] {
                     if dirty {
-                        controller.set_inputs(controller.state().clone()).unwrap();
+                        controller
+                            .set_digital(DigitalControlUpdate::FaceButton {
+                                button: FaceButton::South,
+                                pressed: true,
+                            })
+                            .unwrap();
                     }
                     let before = controller.state().clone();
                     let sent = io.lock().unwrap().sent.len();
@@ -1901,6 +1916,57 @@ mod tests {
                 } else {
                     &[]
                 }
+            );
+        }
+    }
+
+    #[test]
+    fn native_input_edits_are_transactional_and_unchanged_edits_stay_clean() {
+        use common::session_tests::{check_input_transactions, snapshot_session};
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            let (session, io) = snapshot_session(DualSenseDefinition, target, [true; 3]);
+            let mut controller = DualSenseController(session);
+            controller.service(&mut |_| {}).unwrap();
+            controller
+                .edit_inputs(|state| {
+                    for (direction, pressed) in [
+                        (gr_controller_contract::DpadDirection::Up, true),
+                        (gr_controller_contract::DpadDirection::Down, true),
+                        (gr_controller_contract::DpadDirection::Up, false),
+                    ] {
+                        state.set_digital(DigitalControlUpdate::Dpad { direction, pressed });
+                    }
+                    Ok(())
+                })
+                .unwrap();
+            assert!(
+                controller
+                    .state()
+                    .dpad_pressed(gr_controller_contract::DpadDirection::Down)
+            );
+            controller.neutralize().unwrap();
+            check_input_transactions!(
+                controller,
+                |state: &mut DualSenseState| {
+                    state.set_native(DualSenseControl::Cross, true);
+                    state.set_digital(DigitalControlUpdate::Dpad {
+                        direction: gr_controller_contract::DpadDirection::Up,
+                        pressed: true,
+                    });
+                    Ok(())
+                },
+                |state: &mut DualSenseState| {
+                    state.set_digital(DigitalControlUpdate::Dpad {
+                        direction: gr_controller_contract::DpadDirection::Down,
+                        pressed: true,
+                    });
+                    Ok(())
+                },
+                io.lock().unwrap().sent.len()
             );
         }
     }
@@ -2206,9 +2272,13 @@ mod tests {
         state.motion.gyroscope = [200; 3];
         expected.sensor_timestamp += 12_000;
         expected.input_sequence += 1;
+        let previous = state.clone();
         <DualSenseDefinition as common::HidDriver>::neutralize_state(&mut state);
+        <DualSenseDefinition as common::HidDriver>::transition_inputs(&previous, &mut state);
         assert_eq!(state, expected);
+        let previous = state.clone();
         <DualSenseDefinition as common::HidDriver>::neutralize_state(&mut state);
+        <DualSenseDefinition as common::HidDriver>::transition_inputs(&previous, &mut state);
         assert_eq!(state, expected);
     }
 

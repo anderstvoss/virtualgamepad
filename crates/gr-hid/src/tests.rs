@@ -694,3 +694,92 @@ fn required_group_bounds_observations_and_services_after_recoverable_error() {
     }
     assert_eq!(*calls.borrow(), vec![0, 1, 2, 0, 1, 2]);
 }
+
+#[test]
+fn transactional_edits_preserve_queued_bytes_and_skip_unchanged_generation() {
+    let (mut rt, io) = runtime(Personality::default());
+    rt.service(0).unwrap();
+    rt.edit_state(
+        |_, next| {
+            *next = 1;
+            Ok(())
+        },
+        |_, _| {},
+        |error| error,
+    )
+    .unwrap();
+    io.borrow_mut()
+        .outcomes
+        .push_back(Delivery::DefinitelyUnsent);
+    rt.service(1).unwrap();
+    let queued = io.borrow().attempts.last().unwrap().clone();
+    rt.edit_state(|_, _| Ok(()), |_, _| {}, |error| error)
+        .unwrap();
+    assert!(rt.is_dirty());
+    assert_eq!(
+        rt.edit_state(
+            |_, next| {
+                *next = 101;
+                Ok(())
+            },
+            |_, _| panic!("invalid candidate reached transition"),
+            |error| error,
+        ),
+        Err(Error::InvalidState)
+    );
+    assert_eq!(*rt.state(), 1);
+    rt.edit_state(
+        |_, next| {
+            *next = 2;
+            Ok(())
+        },
+        |_, _| {},
+        |error| error,
+    )
+    .unwrap();
+    rt.service(2).unwrap();
+    assert_eq!(io.borrow().attempts[1], queued);
+    assert_eq!(io.borrow().attempts[2], queued);
+    let reports: Vec<_> = io
+        .borrow()
+        .submitted
+        .iter()
+        .map(|command| {
+            let Command::Input(report) = command else {
+                panic!("input report");
+            };
+            report.payload()[0]
+        })
+        .collect();
+    assert_eq!(reports, [0, 1, 2]);
+    let sent = io.borrow().submitted.len();
+    rt.edit_state(|_, _| Ok(()), |_, _| {}, |error| error)
+        .unwrap();
+    assert!(!rt.is_dirty());
+    rt.service(3).unwrap();
+    assert_eq!(io.borrow().submitted.len(), sent);
+    rt.service(4002).unwrap();
+    assert_eq!(io.borrow().submitted.len(), sent + 1);
+    rt.edit_state(
+        |_, next| {
+            *next = 3;
+            Ok(())
+        },
+        |_, _| {},
+        |error| error,
+    )
+    .unwrap();
+    io.borrow_mut().outcomes.push_back(Delivery::Uncertain);
+    assert!(rt.service(4003).is_err());
+    assert_eq!(
+        rt.edit_state(
+            |_, _| panic!("closed edit executed"),
+            |_, _| panic!("closed transition executed"),
+            |error| error,
+        ),
+        Err(Error::Closed)
+    );
+    rt.close().unwrap();
+    rt.close().unwrap();
+    assert_eq!(io.borrow().closes, 1);
+}
