@@ -312,6 +312,18 @@ struct XboxProbeFeedback {
     bluetooth: Option<virtualgamepad::XboxSeriesBluetoothRumble>,
     reports: Vec<Value>,
 }
+fn independent_trigger_reports(reports: &[Value]) -> bool {
+    [
+        [15, 25, 0, 25, 50, 255, 0, 235],
+        [15, 0, 50, 25, 50, 255, 0, 235],
+    ]
+    .iter()
+    .all(|bytes| {
+        reports
+            .iter()
+            .any(|report| report["report_id"] == 3 && report["bytes"] == json!(bytes))
+    })
+}
 fn series_nodes_ready(nodes: &BTreeSet<PathBuf>, bluetooth: bool) -> bool {
     probe_node(nodes, false).is_some() && (!bluetooth || probe_node(nodes, true).is_some())
 }
@@ -519,6 +531,9 @@ impl Backend for Linux {
                 if record["observations"]["opened"]["value"] != true { return Err("SDL did not observe this exact device opened".into()); }
                 let mut result = json!({"consumer":"SDL","timestamp_scope":"probe completion upper bound; discovery may occur earlier","observation":record});
                 if series {
+                    if series_hidapi && !independent_trigger_reports(&feedback.reports) {
+                        return Err("independent Xbox trigger command reports not received".into());
+                    }
                     result["hid_output_reports"] = json!(feedback.reports);
                     result["bound_driver_after"] = json!(bound_driver(node));
                     result["trigger_submissions"] = json!(text.lines().filter_map(|line| serde_json::from_str::<Value>(line).ok()).filter(|r| r["record_type"] == "trigger_rumble_submission").collect::<Vec<_>>());
@@ -573,6 +588,31 @@ impl Backend for Linux {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn trigger_acceptance_requires_both_exact_independent_reports() {
+        use serde_json::json;
+        let left = json!({"report_id":3,"bytes":[15,25,0,25,50,255,0,235]});
+        let right = json!({"report_id":3,"bytes":[15,0,50,25,50,255,0,235]});
+        assert!(!super::independent_trigger_reports(&[]));
+        assert!(!super::independent_trigger_reports(std::slice::from_ref(
+            &left
+        )));
+        assert!(super::independent_trigger_reports(&[
+            left.clone(),
+            right.clone()
+        ]));
+        for invalid in [
+            json!({"report_id":1,"bytes":[15,0,50,25,50,255,0,235]}),
+            json!({"report_id":3,"bytes":[15,25,50,25,50,255,0,235]}),
+            json!({"report_id":3,"bytes":[15,0,50]}),
+        ] {
+            assert!(!super::independent_trigger_reports(&[
+                left.clone(),
+                invalid
+            ]));
+        }
+    }
+
     #[test]
     fn series_enumeration_waits_for_input_after_hidraw_and_both_for_bluetooth() {
         use std::{collections::BTreeSet, path::PathBuf};
