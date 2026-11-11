@@ -62,6 +62,14 @@ Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
 | LED controls | Retained raw brightness, override and RGBW intent through the default Steam profile; see [wired LED controls](STEAM_LED_CONTROLS.md) | No HID feature channel or colour/brightness output representation |
 | Unit serial | Synthetic or caller-selected serial in the HID feature response and UHID uniq. Physical format: No evidence | Typed identity is available on the handle. Uinput has no HID feature channel or unique-ID setter |
 
+Reduced-uinput input edits reject non-neutral motion (including a nonzero source
+timestamp), capacitive stick/grip contact and pad pressure with
+`UnavailableInRealization`. The reduced gamepad has no IMU node, independent
+stick/grip contact keys or pressure axes. Final-state validation applies to
+snapshots and transactional edits. Pad touch still gates its coordinates, and
+pad click remains independent. The demo and xtask construct target-specific
+samples.
+
 Create either realization with
 `create_steam_controller_2026(CreationOptions { target, session }, SteamController2026Options::default())`.
 To restore a unit, build `SteamController2026Identity::from_serial(serial)?`
@@ -286,8 +294,8 @@ separate acceleration/quaternion requirements remain unisolated.
 The supporting API keeps raw-zero motion defaults. Callers sending gyro to Steam
 must supply a valid acceleration/quaternion pose as well; setting only gyro on
 `Default::default()` is not a working Steam motion sample. The demo initializes
-and neutralizes to the synthetic stationary pose above, with zero gyro and
-timestamp. This is a caller/demo policy, not captured orientation or factory
+and neutralizes wired UHID sessions to the synthetic stationary pose above, with
+zero gyro and timestamp. Reduced-uinput sessions use raw-zero motion. This is a caller/demo policy, not captured orientation or factory
 calibration. Arbitrary caller-supplied samples are encoded unchanged. Virtual Ping
 and both SDL rumble channels matched the physical reference. No calibrated
 motion or gameplay acceptance is claimed. The profile does not hard-code Steam's

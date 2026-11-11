@@ -11,7 +11,7 @@ use gr_controller_contract::{
 };
 use gr_realization_api::{
     ControllerId, ProviderFrame, ProviderRequirements, RealizationSelection, RealizationSessionId,
-    RealizationTarget,
+    RealizationTarget, RealizationTargetSet,
 };
 
 pub(crate) struct SteamController2026Definition {
@@ -50,6 +50,14 @@ const REDUCED: &[TargetRestriction] = &[
     TargetRestriction {
         feature: "motion sensors",
         reason: "the uinput provider cannot declare INPUT_PROP_ACCELEROMETER or MSC_TIMESTAMP",
+    },
+    TargetRestriction {
+        feature: "capacitive stick and grip contact",
+        reason: "the reduced gamepad has no independent evdev contact keys for the sticks or grips",
+    },
+    TargetRestriction {
+        feature: "trackpad pressure",
+        reason: "the reduced gamepad exposes contact-gated pad coordinates and click keys but no pressure axes",
     },
     TargetRestriction {
         feature: "axis fuzz and resolution",
@@ -200,14 +208,25 @@ impl TargetAwareControllerDriver for SteamController2026Definition {
         selection: RealizationSelection,
         state: &Self::State,
     ) -> Result<(), ControlError> {
-        if matches!(
+        if !matches!(
             selection.target,
             RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UINPUT
         ) {
-            validate_trigger_values(state)
-        } else {
-            Err(crate::common::unavailable(selection.target))
+            return Err(crate::common::unavailable(selection.target));
         }
+        validate_trigger_values(state)?;
+        if selection.target == RealizationTarget::LINUX_UINPUT
+            && (state.motion != super::SteamMotionSample::default()
+                || state.stick_touch.iter().any(|contact| *contact)
+                || state.grip_touch.iter().any(|contact| *contact)
+                || state.pads.iter().any(|pad| pad.pressure != 0))
+        {
+            return Err(ControlError::UnavailableInRealization {
+                selected_target: selection.target,
+                available_in: RealizationTargetSet::new(&[RealizationTarget::LINUX_UHID_USB]),
+            });
+        }
+        Ok(())
     }
 
     fn encode(
@@ -375,6 +394,19 @@ mod tests {
                 assert_eq!(definition.validate_state(selection, &state), Ok(()));
                 assert!(definition.encode(selection, &state).is_ok());
             }
+        }
+    }
+
+    #[test]
+    fn reduced_surface_names_refused_input_features_and_their_missing_channels() {
+        for (feature, reason) in [
+            ("motion sensors", "MSC_TIMESTAMP"),
+            ("capacitive stick and grip contact", "evdev contact keys"),
+            ("trackpad pressure", "no pressure axes"),
+        ] {
+            assert!(UINPUT.restrictions().iter().any(|restriction| {
+                restriction.feature == feature && restriction.reason.contains(reason)
+            }));
         }
     }
 
