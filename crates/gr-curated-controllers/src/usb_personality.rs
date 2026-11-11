@@ -25,7 +25,7 @@ macro_rules! retained_protocol {
 }
 retained_protocol!(dualsense::DualSenseUsbProtocol, DualSense);
 retained_protocol!(
-    crate::common::SnapshotProtocol<dualshock4::DualShock4State, crate::retained::DualShock4OutputState>,
+    crate::common::SnapshotProtocol<dualshock4::DualShock4SessionState, crate::retained::DualShock4OutputState>,
     DualShock4
 );
 retained_protocol!(
@@ -43,7 +43,7 @@ pub fn dualsense(
 #[must_use]
 pub fn dualshock4(
     identity: [u8; 6],
-) -> impl WorkerProtocol<State = dualshock4::DualShock4State, Output = RawReverseEvent> {
+) -> impl WorkerProtocol<State = dualshock4::DualShock4SessionState, Output = RawReverseEvent> {
     dualshock4::DualShock4Definition.hid_protocol(RealizationSessionId(0), identity)
 }
 

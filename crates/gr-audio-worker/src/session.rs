@@ -610,7 +610,7 @@ mod tests {
         );
         check_output_policy(
             usb_personality::dualshock4([0; 6]),
-            NativeState::DualShock4(gr_curated_controllers::DualShock4State::default()),
+            NativeState::DualShock4(gr_curated_controllers::DualShock4SessionState::default()),
             true,
             Some(5),
             Some(vec![0; 31]),
@@ -706,7 +706,7 @@ mod tests {
             ),
             (
                 gr_usbip::profile::ids::DUALSHOCK4,
-                NativeState::DualShock4(gr_curated_controllers::DualShock4State::default()),
+                NativeState::DualShock4(gr_curated_controllers::DualShock4SessionState::default()),
             ),
             (
                 gr_usbip::profile::ids::XBOX360,

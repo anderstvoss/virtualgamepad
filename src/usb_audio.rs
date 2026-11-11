@@ -20,5 +20,5 @@ macro_rules! factory {
     };
 }
 factory!(dualsense, gr_curated_controllers::DualSenseSessionState);
-factory!(dualshock4, gr_curated_controllers::DualShock4State);
+factory!(dualshock4, gr_curated_controllers::DualShock4SessionState);
 factory!(xbox360, gr_curated_controllers::Xbox360State);
