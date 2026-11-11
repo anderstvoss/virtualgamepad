@@ -38,7 +38,10 @@ an API freeze do not promote a cell.
 
 **Alpha 2 — preparation, not yet released.** The five checkpoint merges and
 follow-up work below are verified on `main` as of
-[`eaff3d7`](https://github.com/anderstvoss/virtualgamepad/commit/eaff3d77c2b73dd3668d5b37d54c7927f94251d0).
+[`f27e6114`](https://github.com/anderstvoss/virtualgamepad/commit/f27e6114f742b5044b4ca735ae17b4d20807f654).
+This merged-step list stops at that exact `main` commit. Release closeout
+is tracked under [#365](https://github.com/anderstvoss/virtualgamepad/issues/365), with the owner gate decisions in
+[comment 6792411358](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358).
 The [Alpha 2 release-notes draft](release/ALPHA_2_RELEASE_NOTES_DRAFT.md)
 and [release checklist](release/ALPHA_2_CHECKLIST.md) are provisional;
 they do not authorize a tag or publication. All cells in the
@@ -64,7 +67,8 @@ Follow-on core changes on `main`:
 - [#350](https://github.com/anderstvoss/virtualgamepad/pull/350) ·
   `abcdaf8c4f35167cbd65610d86c3c637b3136b5a`: USB/IP worker
   retained-output *snapshots*, not a continuous host-output stream;
-  a real USB/IP validation on kalux is still required.
+  a **real USB/IP validation on kalux is an Alpha 2 gate**, still unrun as
+  of the draft baseline ([#365 decision](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358)).
 - **VG-1** [#352](https://github.com/anderstvoss/virtualgamepad/pull/352) ·
   `c5d8340d3b4c00a756f2d6611ae380be4af82071`: whole-state
   `set_inputs` for the original four families. [#348](https://github.com/anderstvoss/virtualgamepad/pull/348)
@@ -77,8 +81,15 @@ Follow-on core changes on `main`:
   `5bea7a097f66c9526fae45ea32b5a8a936029580` (transactional edits);
   step c1 [#364](https://github.com/anderstvoss/virtualgamepad/pull/364) ·
   `77ec6e39457ddf123ef732ac0e28237307e05f8c` (Steam
-  reduced-uinput refusals). Steps c2, d and e are not complete on
-  this baseline. **TODO(VG-1b e):** after the local agent's final ledger lands,
+  reduced-uinput refusals);
+  step c2 [#366](https://github.com/anderstvoss/virtualgamepad/pull/366) ·
+  `b41c82da593f179ad2933098dedb4dd658e2aaf0` (Wii battery separated into controller-owned
+  `WiiRemoteBattery` metadata);
+  step d/DualSense [#370](https://github.com/anderstvoss/virtualgamepad/pull/370) ·
+  `f27e6114f742b5044b4ca735ae17b4d20807f654` (`DualSenseInputs` and independent
+  `DualSenseStatus` read view). Other step-d families and step e are not
+  complete at the `f27e6114f742b5044b4ca735ae17b4d20807f654` baseline.
+  **TODO(VG-1b e):** after the local agent's final ledger lands,
   refresh the Alpha 2 API-delta summary and remove this placeholder.
   Do not edit the active migration ledger or application/per-controller API docs
   in this release-prep lane.
@@ -87,7 +98,10 @@ Follow-on core changes on `main`:
 closes only after **VG-1b steps a–e** and the Steam #304 kernel observations
 are recorded in research (currently
 [research PR #122](https://github.com/anderstvoss/controller-protocol-research/pull/122),
-open at this baseline). [VG-2 #344](https://github.com/anderstvoss/virtualgamepad/issues/344)
+open at this baseline). The first-valid-neutral timing oracle
+[#166](https://github.com/anderstvoss/virtualgamepad/issues/166) is a
+**known limitation, not an Alpha 2 gate** ([owner decision](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358)).
+[VG-2 #344](https://github.com/anderstvoss/virtualgamepad/issues/344)
 and [Accepted ADR-0024](adr/ADR-0024-host-output-stream.md) (merged via
 [#354](https://github.com/anderstvoss/virtualgamepad/pull/354) as
 `eaff3d77c2b73dd3668d5b37d54c7927f94251d0`) belong to the separate

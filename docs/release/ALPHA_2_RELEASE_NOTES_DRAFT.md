@@ -1,8 +1,11 @@
 # Alpha 2 release notes — DRAFT (not a release declaration)
 
 > Prepared against `main` at
-> [`eaff3d77c2b73dd3668d5b37d54c7927f94251d0`](https://github.com/anderstvoss/virtualgamepad/commit/eaff3d77c2b73dd3668d5b37d54c7927f94251d0).
-> **Not final:** VG-1b c2–e, the #304 research record, release-commit
+> [`f27e6114f742b5044b4ca735ae17b4d20807f654`](https://github.com/anderstvoss/virtualgamepad/commit/f27e6114f742b5044b4ca735ae17b4d20807f654).
+> Merged VG-1b changes are listed **through this exact commit**;
+> see [Alpha 2 release tracking #365](https://github.com/anderstvoss/virtualgamepad/issues/365) and
+> [Anders's gate decisions](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358).
+> **Not final:** remaining VG-1b d-family splits and e, the #304 research record, release-commit
 > qualification and maintainer authorization remain outstanding. Preserve
 > [Alpha 1's published notes](../ALPHA_RELEASE_NOTES.md); do not replace them.
 > See the [release checklist](ALPHA_2_CHECKLIST.md).
@@ -81,9 +84,17 @@ supporting-crate SPI. Merged changes to review:
   family-typed transactional `edit_inputs`.
   [VG-1b/c1 #364](https://github.com/anderstvoss/virtualgamepad/pull/364):
   Steam reduced-uinput refusal parity.
+  [VG-1b/c2 #366](https://github.com/anderstvoss/virtualgamepad/pull/366)
+  (`b41c82da593f179ad2933098dedb4dd658e2aaf0`): Wii battery moved from input snapshots to
+  controller-owned `WiiRemoteBattery` metadata with `battery()` and
+  `set_battery(...)` accessors.
+  [VG-1b/d DualSense #370](https://github.com/anderstvoss/virtualgamepad/pull/370)
+  (`f27e6114f742b5044b4ca735ae17b4d20807f654`): split native `DualSenseInputs` from
+  `DualSenseStatus`; `inputs()` and `status()` provide separate read views.
+  Other step-d families and step e remain outstanding at this baseline.
 
-**TODO(VG-1b e):** reconcile c2, d (per-family input-only types) and e,
-including all exact merged PR links, API snapshot deltas, removed types,
+**TODO(VG-1b e):** reconcile the remaining d-family splits and e,
+including final merged PR links, API snapshot deltas, removed types,
 updated constructors/methods and concrete migration examples. Copy verified
 facts from the final `docs/ALPHA_API_MIGRATION.md` ledger *after* step e;
 do not guess final names or promote unmerged code.
@@ -110,18 +121,23 @@ administrator-run installation process.
 
 - **All support cells are WIP**; per-function virtual-host or partial
   physical correspondence is not blanket physical-controller equivalence.
-  Native-host timing/first-valid-neutral #166, physical fidelity #136 and
-  many consumer combinations remain unqualified.
+  Physical fidelity #136 and many consumer combinations remain unqualified.
+- **First-valid-neutral oracle (#166):** creation-performance validation and
+  the first-valid-neutral timing oracle are still missing. Existing per-family
+  N1/N4 lifecycle runs remain the available evidence; **#166 is not an
+  Alpha 2 gate**, per [#365 owner decision](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358).
 - **Audio:** sustained duplex continuity, latency, matching profiles and
   physical audio are not qualified (#116, #135, #143, #145); dropouts and
   earlier strict zero-loss failures remain recorded. USB/IP is opt-in WIP.
 - **USB/IP host output:** #350 provides retained **snapshots** (live/final),
   **not a loss-aware host-output stream**. VG-2/#344 and ADR-0024 are assigned
   to the separate audio track; neither is an Alpha 2 gate.
-- **kalux USB/IP run:** at draft time the #350 worker has socket-pair/synthetic
-  tests, but the requested real run on kalux has **not been verified**.
-  Before release, confirm live snapshots, FINAL snapshot on close and
-  stale-worker reinstall refusal; record the outcome without inventing a pass.
+- **Alpha 2 blocking gate — real kalux USB/IP #350 run:** **not yet run**
+  as of this draft; socket-pair/synthetic tests are not a substitute. Per
+  [#365 owner decision](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358), the local run must
+  confirm live `host_outputs()` snapshots while in service, the FINAL
+  snapshot after close, and stale-worker refusal with reinstall guidance.
+  Do not mark the gate passed without its actual on-host evidence.
 - **Xbox Series:** xpad-style uinput only. No Bluetooth pairing/HID report
   map, wired USB GIP, impulse-trigger motors, headset audio/accessories or
   other refused features recorded in its manifest (#160, #168, #164).

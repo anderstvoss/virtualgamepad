@@ -2,7 +2,10 @@
 
 > This is a **maintainer gate**, not evidence of a passed release.
 > Draft source: `main` at
-> [`eaff3d77c2b73dd3668d5b37d54c7927f94251d0`](https://github.com/anderstvoss/virtualgamepad/commit/eaff3d77c2b73dd3668d5b37d54c7927f94251d0).
+> [`f27e6114f742b5044b4ca735ae17b4d20807f654`](https://github.com/anderstvoss/virtualgamepad/commit/f27e6114f742b5044b4ca735ae17b4d20807f654).
+> Alpha 2 release tracking: [#365](https://github.com/anderstvoss/virtualgamepad/issues/365), with Anders's
+> [explicit gate decisions](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358).
+> The merged VG-1b list in the paired draft **stops at this SHA**.
 > Modelled on [Alpha 1's release review](../history/alpha-1/ALPHA_FINAL_REVIEW.md)
 > and [remediation disposition](../history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
 > The eventual **release commit**, not this docs branch/PR head, owns final evidence.
@@ -26,8 +29,12 @@
   [C7 #329](https://github.com/anderstvoss/virtualgamepad/pull/329),
   [C8 #337](https://github.com/anderstvoss/virtualgamepad/pull/337),
   [C9 #342](https://github.com/anderstvoss/virtualgamepad/pull/342),
-  [VG-1 #352](https://github.com/anderstvoss/virtualgamepad/pull/352)
-  and each merged VG-1b step on **the selected release SHA**.
+  [VG-1 #352](https://github.com/anderstvoss/virtualgamepad/pull/352),
+  the VG-1b c2 [#366](https://github.com/anderstvoss/virtualgamepad/pull/366)
+  merge `b41c82da593f179ad2933098dedb4dd658e2aaf0`, the DualSense d
+  [#370](https://github.com/anderstvoss/virtualgamepad/pull/370)
+  merge `f27e6114f742b5044b4ca735ae17b4d20807f654`, and each later merged VG-1b step
+  on **the selected release SHA**. These are not final step-e sign-off.
 - [x] [#258 audit](https://github.com/anderstvoss/virtualgamepad/issues/258)
   was signed off at `69c2283` in
   [owner comment 6777536122](https://github.com/anderstvoss/virtualgamepad/issues/258#issuecomment-6777536122).
@@ -37,6 +44,15 @@
 - [ ] Review the [support matrix](../CONTROLLER_SUPPORT.md), compiled registry,
   per-function manifests, limitations and future-family issue exclusions.
   Do not promote WIP cells without qualifying evidence.
+- [ ] **ALPHA 2 RELEASE GATE — real USB/IP run on kalux for #350.**
+  [Anders requires this run](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358) before
+  Alpha 2. Run it locally on kalux and verify all three distinct cases:
+  (1) live `host_outputs()` snapshots update **while the device is in service**;
+  (2) the **FINAL** retained snapshot arrives **after close**; and
+  (3) opening against a **stale installed worker** fails with the required
+  **reinstall guidance**. Record actual client/worker SHAs, results and failure
+  details. **Not yet run** at this draft baseline; socket-pair/synthetic tests
+  do not satisfy this gate.
 - [ ] Leave **VG-2/#344 and ADR-0024** on the audio track; do not gate Alpha 2
   on the separately planned loss-aware stream.
 
@@ -81,13 +97,6 @@
   feature list, consumer SHA-256 and lock SHA-256. Retain JSON and lockfile
   **outside the source tree** for release evidence. This is compile-only,
   never hardware acceptance.
-- [ ] Perform the **real USB/IP test on kalux** for
-  [#350](https://github.com/anderstvoss/virtualgamepad/pull/350):
-  confirm (1) live `host_outputs()` snapshots update during service,
-  (2) a FINAL retained snapshot after orderly close, and (3) a stale
-  installed worker is rejected with correct reinstall guidance. Record
-  tested client/worker SHAs, actual results and failure details; socket-pair
-  tests alone do not meet this item.
 - [ ] Review #126 GUI/consumer disposition and any open alpha-labelled
   issues against the selected commit. Preserve deferred/failing evidence,
   particularly audio continuity, USB/IP stream, Bluetooth, Puck,
