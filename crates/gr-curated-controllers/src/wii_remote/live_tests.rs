@@ -139,7 +139,7 @@ fn bluetooth_host_binding_extensions_outputs_and_battery_probe() {
         WiiRemoteOptions::default(),
     )
     .unwrap();
-    c.set_battery_raw(0xc0).unwrap();
+    c.set_battery(WiiRemoteBattery::new(0xc0)).unwrap();
     pump(&mut c, Duration::from_secs(2));
     let root = owned_hid(&c).expect("exact owned HID object");
     let driver = fs::read_link(root.join("driver"))
@@ -178,7 +178,7 @@ fn bluetooth_host_binding_extensions_outputs_and_battery_probe() {
         "bounded battery read timed out"
     );
     let capacity = capacity_read.join().unwrap().unwrap();
-    let raw_battery = c.state().battery_raw();
+    let raw_battery = c.battery().raw();
     let leds = fs::read_dir(root.join("leds")).unwrap().flatten().map(|entry| {
         let result = fs::write(entry.path().join("brightness"), "1");
         if let Err(error) = &result {

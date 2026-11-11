@@ -1,6 +1,6 @@
 //! Stateful USB personality shared by HID presentation and future USB adapters.
 use super::{
-    BTreeMap, DualSenseDefinition, DualSenseState, NativeHidReportKey, ProviderFrame,
+    BTreeMap, DualSenseDefinition, DualSenseSessionState, NativeHidReportKey, ProviderFrame,
     RawReverseEvent, RealizationSessionId, common, dualsense_feature_responses,
     dualsense_hid_input_report,
 };
@@ -53,10 +53,10 @@ impl<R: crate::retained::OutputState> DualSenseUsbProtocol<R> {
     }
 }
 impl<R: crate::retained::OutputState> Protocol for DualSenseUsbProtocol<R> {
-    type State = DualSenseState;
+    type State = DualSenseSessionState;
     type Output = RawReverseEvent;
     fn neutral(&self) -> Self::State {
-        DualSenseState::default()
+        DualSenseSessionState::default()
     }
     fn validate(&self, _: &Self::State) -> Result<(), Error> {
         Ok(())
@@ -70,8 +70,8 @@ impl<R: crate::retained::OutputState> Protocol for DualSenseUsbProtocol<R> {
             return Ok(Vec::new());
         }
         let mut sample = state.clone();
-        sample.input_sequence = self.sequence;
-        sample.sensor_timestamp = (now as u32).wrapping_mul(3);
+        sample.status.input_sequence = self.sequence;
+        sample.status.sensor_timestamp = (now as u32).wrapping_mul(3);
         let ProviderFrame::HidInput { report_id, bytes } = dualsense_hid_input_report(&sample)
         else {
             unreachable!()
@@ -158,12 +158,7 @@ impl common::HidDriver for DualSenseDefinition {
         crate::sony_evdev::open_native(request, association)
     }
     fn neutralize_state(state: &mut Self::State) {
-        *state = Self::State {
-            battery: state.battery,
-            input_sequence: state.input_sequence,
-            sensor_timestamp: state.sensor_timestamp,
-            ..Self::State::default()
-        };
+        state.inputs = super::DualSenseInputs::default();
     }
 
     type Hid = DualSenseUsbProtocol;
@@ -229,9 +224,12 @@ mod tests {
             let mut p = DualSenseUsbProtocol::new([2, 1, 2, 3, 4, 5]);
             p.sequence = 0;
             let mut state = p.neutral();
-            state.face[0] = cross;
-            state.battery.set_exposed(true);
-            state.battery.set_level(BatteryLevel::new(0).unwrap());
+            state.inputs.face[0] = cross;
+            state.status.battery.set_exposed(true);
+            state
+                .status
+                .battery
+                .set_level(BatteryLevel::new(0).unwrap());
             let logical = p.input(&state, 0).unwrap().remove(0);
             let expected = fixture(bytes);
             assert_eq!(logical.wire(), expected);

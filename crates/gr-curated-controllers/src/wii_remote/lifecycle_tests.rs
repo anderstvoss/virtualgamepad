@@ -592,9 +592,8 @@ fn extension_init_identity_motionplus_activation_and_passthrough_are_source_mode
     );
 }
 #[test]
-fn neutralization_preserves_topology_battery_and_revision_and_releases_extension_controls() {
+fn neutralization_preserves_topology_and_revision_and_releases_extension_controls() {
     let mut s = WiiRemoteState::new(WiiRemoteRevision::Tr);
-    s.battery = 123;
     s.extension = WiiExtension::Nunchuk(WiiNunchukState {
         c: true,
         z: true,
@@ -603,7 +602,6 @@ fn neutralization_preserves_topology_battery_and_revision_and_releases_extension
     s.set_button(WiiRemoteButton::A, true);
     s.neutralize();
     assert_eq!(s.revision(), WiiRemoteRevision::Tr);
-    assert_eq!(s.battery_raw(), 123);
     assert!(s.motion_plus.attached);
     assert!(!s.pressed(WiiRemoteButton::A));
     assert_eq!(
@@ -1029,4 +1027,66 @@ fn hid_input_transactions_preserve_live_attachment_and_resources() {
     );
     assert_eq!(controller.topology_generation(), generation);
     assert_eq!(controller.resource_dirty(), resource_dirty);
+}
+
+#[test]
+fn battery_metadata_survives_inputs_attachment_neutralization_and_resource_resolution() {
+    let image = WiiEepromImage::import(vec![0x5a; 16]).unwrap();
+    let (mut controller, fake) = create(image.clone());
+    output(&fake, 0x11, &[0x11]);
+    controller.service(&mut |_| {}).unwrap();
+    controller.commit().unwrap();
+    let outputs = controller.host_outputs().unwrap();
+    let resource_dirty = controller.resource_dirty();
+    let initial_inputs = controller.state().clone();
+    let battery = WiiRemoteBattery::new(123);
+    let frames = fake.0.lock().unwrap().sent.len();
+    controller.set_battery(battery).unwrap();
+    assert_eq!(controller.state(), &initial_inputs);
+    assert_eq!(controller.battery(), battery);
+    assert_eq!(
+        controller.session.protocol().unwrap().status().payload()[5],
+        battery.raw()
+    );
+    assert_eq!(fake.0.lock().unwrap().sent.len(), frames);
+    controller.set_inputs(WiiRemoteState::default()).unwrap();
+    assert_eq!(controller.battery(), battery);
+    controller
+        .attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+        .unwrap();
+    controller.set_button(WiiRemoteButton::A, true).unwrap();
+    controller.neutralize().unwrap();
+    assert_eq!(controller.battery(), battery);
+    assert!(matches!(
+        controller.state().extension(),
+        WiiExtension::Nunchuk(_)
+    ));
+    assert!(controller.state().motion_plus().attached);
+    let state = controller.state().clone();
+    let dirty = controller.is_dirty();
+    let topology = controller.topology_generation();
+    assert!(controller.set_inputs(WiiRemoteState::default()).is_err());
+    assert_eq!(controller.state(), &state);
+    assert_eq!(controller.is_dirty(), dirty);
+    assert_eq!(controller.battery(), battery);
+    assert_eq!(controller.topology_generation(), topology);
+    assert_eq!(controller.resource_dirty(), resource_dirty);
+    assert_eq!(controller.host_outputs().unwrap(), outputs);
+    controller.commit().unwrap();
+    controller.set_battery(battery).unwrap();
+    assert!(!controller.is_dirty());
+    controller.close();
+    controller.close();
+    assert_eq!(
+        controller.set_battery(WiiRemoteBattery::default()),
+        Err(ControlError::Closed)
+    );
+    assert_eq!(controller.battery(), battery);
+    assert_eq!(
+        controller
+            .resolve_resource(WiiResourceDisposition::KeepSnapshot)
+            .unwrap(),
+        Some(&image)
+    );
+    assert_eq!(fake.0.lock().unwrap().closed, 1);
 }

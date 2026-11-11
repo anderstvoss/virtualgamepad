@@ -1,13 +1,13 @@
 //! Detached native-state views and bounded edits for the demo only.
 use super::{
-    BatteryLevel, Controller, DigitalControlUpdate, DualSenseAxis, DualSenseControl,
+    BatteryLevel, BatteryState, Controller, DigitalControlUpdate, DualSenseAxis, DualSenseControl,
     DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
     DualShock4MotionSample, DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger,
     MotionSample, SwitchProAxis, SwitchProControl, SwitchProMotionSample, TouchSlot, Xbox360Axis,
     Xbox360Control, Xbox360Trigger,
 };
 use virtualgamepad::{
-    ControllerDiagnostics, DualSenseState, DualShock4State, SwitchProState, Xbox360State,
+    ControllerDiagnostics, DualSenseInputs, DualShock4State, SwitchProState, Xbox360State,
 };
 
 pub(super) const EDIT_LIMIT: usize = 64;
@@ -15,8 +15,9 @@ pub(super) type Command<C> = Box<dyn FnOnce(&mut C) -> Result<(), String> + Send
 type Edit = Command<Controller>;
 pub(super) type EditBatch = Vec<Edit>;
 
-pub(super) struct Editor<S, T: 'static> {
+pub(super) struct Editor<S, T: 'static, M = ()> {
     state: S,
+    metadata: M,
     surface: T,
     edits: EditBatch,
     overflow: bool,
@@ -92,7 +93,7 @@ impl WiiExtensionChoice {
     }
 }
 
-impl<S, T> Editor<S, T> {
+impl<S, T, M> Editor<S, T, M> {
     pub(super) fn state(&self) -> &S {
         &self.state
     }
@@ -127,7 +128,7 @@ impl virtualgamepad::ControllerSurfaceInfo for Surface {
 }
 pub(super) type XboxSeriesEditor = Editor<virtualgamepad::XboxSeriesState, Surface>;
 pub(super) type Xbox360Editor = Editor<Xbox360State, Surface>;
-pub(super) type DualSenseEditor = Editor<DualSenseState, Surface>;
+pub(super) type DualSenseEditor = Editor<DualSenseInputs, Surface, virtualgamepad::DualSenseStatus>;
 pub(super) type DualShock4Editor = Editor<DualShock4State, Surface>;
 pub(super) type SwitchProEditor = Editor<SwitchProState, Surface>;
 pub(super) type WiiRemoteEditor =
@@ -143,15 +144,17 @@ pub(super) enum ControllerView {
     WiiRemote(WiiRemoteEditor),
     Steam(SteamEditor),
 }
-impl<S> Editor<S, Surface> {
+impl<S, M> Editor<S, Surface, M> {
     fn new(
         state: S,
         surface: &'static virtualgamepad::ControllerSurface,
         diagnostics: Option<ControllerDiagnostics>,
         association: Option<virtualgamepad::ControllerAssociation>,
+        metadata: M,
     ) -> Self {
         Self {
             state,
+            metadata,
             surface: Surface(surface),
             edits: Vec::new(),
             overflow: false,
@@ -170,6 +173,7 @@ impl Controller {
                     $c.surface().common(),
                     Some($c.diagnostics()),
                     Some($c.association().clone()),
+                    (),
                 ))
             };
         }
@@ -180,16 +184,27 @@ impl Controller {
                 c.surface(),
                 Some(c.diagnostics()),
                 Some(c.association().clone()),
+                (),
             )),
-            Self::DualSense(c) => view!(c, DualSense),
+            Self::DualSense(c) => ControllerView::DualSense(Editor::new(
+                c.inputs().clone(),
+                c.surface().common(),
+                Some(c.diagnostics()),
+                Some(c.association().clone()),
+                c.status(),
+            )),
             Self::DualShock4(c) => view!(c, DualShock4),
             Self::SwitchPro(c) => view!(c, SwitchPro),
             Self::Steam(c) => {
-                ControllerView::Steam(Editor::new(c.state().clone(), c.surface(), None, None))
+                ControllerView::Steam(Editor::new(c.state().clone(), c.surface(), None, None, ()))
             }
-            Self::WiiRemote(c) => {
-                ControllerView::WiiRemote(Editor::new(c.state().clone(), c.surface(), None, None))
-            }
+            Self::WiiRemote(c) => ControllerView::WiiRemote(Editor::new(
+                c.state().clone(),
+                c.surface(),
+                None,
+                None,
+                (),
+            )),
         }
     }
 }
@@ -370,31 +385,50 @@ pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
             surface,
             None,
             None,
+            (),
         )),
-        super::Kind::Xbox360 => {
-            ControllerView::Xbox(Editor::new(Xbox360State::default(), surface, None, None))
-        }
-        super::Kind::DualSense => {
-            ControllerView::DualSense(Editor::new(DualSenseState::default(), surface, None, None))
-        }
-        super::Kind::DualShock4 => {
-            ControllerView::DualShock4(Editor::new(DualShock4State::default(), surface, None, None))
-        }
+        super::Kind::Xbox360 => ControllerView::Xbox(Editor::new(
+            Xbox360State::default(),
+            surface,
+            None,
+            None,
+            (),
+        )),
+        super::Kind::DualSense => ControllerView::DualSense(Editor::new(
+            DualSenseInputs::default(),
+            surface,
+            None,
+            None,
+            virtualgamepad::DualSenseStatus::default(),
+        )),
+        super::Kind::DualShock4 => ControllerView::DualShock4(Editor::new(
+            DualShock4State::default(),
+            surface,
+            None,
+            None,
+            (),
+        )),
         super::Kind::WiiRemote => ControllerView::WiiRemote(Editor::new(
             gr_curated_controllers::wii_remote::WiiRemoteState::default(),
             surface,
             None,
             None,
+            (),
         )),
         super::Kind::Steam => ControllerView::Steam(Editor::new(
             gr_curated_controllers::steam_controller_2026::SteamController2026State::default(),
             surface,
             None,
             None,
+            (),
         )),
-        super::Kind::SwitchPro => {
-            ControllerView::SwitchPro(Editor::new(SwitchProState::default(), surface, None, None))
-        }
+        super::Kind::SwitchPro => ControllerView::SwitchPro(Editor::new(
+            SwitchProState::default(),
+            surface,
+            None,
+            None,
+            (),
+        )),
     }
 }
 #[cfg(test)]
@@ -580,6 +614,9 @@ impl Xbox360Editor {
     }
 }
 impl DualSenseEditor {
+    pub(super) fn battery(&self) -> BatteryState {
+        self.metadata.battery()
+    }
     pub(super) fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), String> {
         self.queue(Box::new(move |controller| {
             let Controller::DualSense(controller) = controller else {
@@ -1005,6 +1042,7 @@ mod tests {
     fn detached_editor_bounds_work_and_never_changes_its_native_snapshot() {
         let mut editor = Editor {
             state: Xbox360State::default(),
+            metadata: (),
             surface: &(),
             edits: Vec::new(),
             overflow: false,

@@ -4,8 +4,8 @@ use crate::audio::AudioLifecycle;
 use crate::{
     BatteryLevel, CommitError, ControlError, ControllerAssociation, ControllerDiagnostics,
     ControllerError, ControllerId, CreationOptions, DigitalControlUpdate, DualSenseAxis,
-    DualSenseControl, DualSenseFeature, DualSenseOutputEvent, DualSenseState, DualSenseSurface,
-    DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
+    DualSenseControl, DualSenseFeature, DualSenseInputs, DualSenseOutputEvent, DualSenseStatus,
+    DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
     DualShock4MotionSample, DualShock4OutputEvent, DualShock4State, DualShock4Surface,
     DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
     ServiceReadiness, SteamController2026Button, SteamController2026OutputEvent,
@@ -432,9 +432,18 @@ impl DualSenseController {
     shared!(wants_write);
     shared!(next_service_in);
     shared!(dropped_output_events);
-    shared!(state, DualSenseState);
-    shared!(edit_inputs, DualSenseState);
-    shared!(set_inputs, DualSenseState);
+    /// Borrow accepted native input levels.
+    #[must_use]
+    pub fn inputs(&self) -> &DualSenseInputs {
+        self.controller.inner.inputs()
+    }
+    /// Read accepted battery metadata and controller-owned motion clocks.
+    #[must_use]
+    pub fn status(&self) -> DualSenseStatus {
+        self.controller.inner.status()
+    }
+    shared!(edit_inputs, DualSenseInputs);
+    shared!(set_inputs, DualSenseInputs);
     shared!(host_outputs, crate::DualSenseOutputState);
     shared!(surface, DualSenseSurface);
     shared!(is_dirty);
@@ -747,6 +756,12 @@ impl WiiRemoteController {
         self.controller.inner.identity()
     }
 
+    /// Current raw battery metadata, retained after close.
+    #[must_use]
+    pub const fn battery(&self) -> crate::WiiRemoteBattery {
+        self.controller.inner.battery()
+    }
+
     /// Topology for the current attachment combination.
     #[must_use]
     pub fn current_topology(&self) -> &'static crate::InputTopology {
@@ -815,7 +830,7 @@ impl WiiRemoteController {
         fn set_button(button: WiiRemoteButton, pressed: bool);
         fn set_accelerometer(values: [u16; 3]);
         fn set_ir(points: [Option<WiiIrPoint>; 4]);
-        fn set_battery_raw(value: u8);
+        fn set_battery(battery: crate::WiiRemoteBattery);
         fn set_extension(value: WiiExtension);
         fn set_motion_plus(gyroscope: [u16; 3], slow: [bool; 3]);
     }

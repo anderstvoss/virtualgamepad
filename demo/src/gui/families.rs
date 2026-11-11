@@ -488,7 +488,7 @@ impl ControllerView {
     pub(super) fn battery(&self) -> BatteryState {
         match self {
             Self::Xbox(controller) => controller.state().battery(),
-            Self::DualSense(controller) => controller.state().battery(),
+            Self::DualSense(controller) => controller.battery(),
             Self::DualShock4(_)
             | Self::SwitchPro(_)
             | Self::WiiRemote(_)

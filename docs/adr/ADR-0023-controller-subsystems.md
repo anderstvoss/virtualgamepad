@@ -83,6 +83,6 @@ stream history.
 
 [Owner decision (2026-11-10)](https://github.com/anderstvoss/virtualgamepad/issues/322#issuecomment-6774052277):
 keep this compatibility surface for now. A typed, bounded stream API is designed
-separately under [#344](https://github.com/anderstvoss/virtualgamepad/issues/344).
+separately under [#344](https://github.com/anderstvoss/virtualgamepad/issues/344); the consumption contract is [ADR-0024](ADR-0024-host-output-stream.md) (**Accepted** 2026-11-11).
 The retained packet and the PCM payloads in raw observations are removed only in
 the change that ships that typed API, so applications always have a migration path.
