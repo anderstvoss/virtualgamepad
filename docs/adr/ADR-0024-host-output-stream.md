@@ -125,7 +125,7 @@ The already approved [#203](https://github.com/anderstvoss/virtualgamepad/issues
 
 Applications can forward ordered accepted host intent and *detect* loss, but cannot assert lossless delivery once a gap occurs, cannot recover missing command history from `host_outputs()`, and cannot infer that any physical device played the command. Journal capacity and native payload validation become part of each family's reviewed resource budget. Reader lag never reduces protocol correctness; large bursts can permanently invalidate a mirror's lossless claim. Separate journal-eviction diagnostics are needed without changing the meanings of existing observation counters or accepted-value revisions.
 
-This is design only. Implementation changes the alpha family/root API and snapshots, may require new realization-specific refusal entries, and needs its own review, authorization and regressions. Brief 16's S1/S2 remain gated; no physical-speaker, faithful-actuator, USB/IP stream or hardware qualification is claimed.
+This record is the design. Implementation (authorized 2026-11-11) changes the alpha family/root API and snapshots, may require new realization-specific refusal entries, and needs its own review and regressions in separate PRs. Brief 16's S1/S2 remain gated; no physical-speaker, faithful-actuator, USB/IP stream or hardware qualification is claimed.
 
 ## Alternatives
 
