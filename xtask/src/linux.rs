@@ -450,6 +450,42 @@ fn wait_child(
         thread::sleep(Duration::from_millis(1));
     }
 }
+fn open_session_consumers(s: &mut Session) -> Result<Value, String> {
+    if s.nodes.is_empty() {
+        return Err("no owned node observed".into());
+    }
+    let series = matches!(&s.controller, Controller::XboxSeries(_));
+    let series_bt = matches!(&s.controller, Controller::XboxSeries(c)
+                    if c.surface().target() == RealizationId::LINUX_UHID_BLUETOOTH);
+    let mut access = Vec::new();
+    s.phases
+        .insert("consumer_open_attempt_ns", elapsed_ns(s.created));
+    for node in s
+        .nodes
+        .iter()
+        .filter(|node| !series_bt || node.starts_with("/dev/input"))
+    {
+        let (file, diagnostic) =
+            open_consumer_diagnostics(node, series).map_err(|e| e.to_string())?;
+        access.push(diagnostic);
+        s.phases
+            .entry("consumer_first_open_ns")
+            .or_insert_with(|| elapsed_ns(s.created));
+        s.consumers.push(file);
+    }
+    if s.consumers.is_empty() {
+        return Err("no owned consumer node opened".into());
+    }
+    let consumer = if series_bt {
+        "harness evdev"
+    } else {
+        "harness evdev/hidraw"
+    };
+    Ok(
+        json!({"consumer":consumer,"nodes_opened":s.consumers.len(),"access":access,"phases_since_create_ns":s.phases}),
+    )
+}
+
 impl Backend for Linux {
     type Session = Session;
 
@@ -525,23 +561,7 @@ impl Backend for Linux {
                     thread::sleep(Duration::from_millis(1));
                 }
             }
-            "consumer_open"=>{
-                if s.nodes.is_empty(){return Err("no owned node observed".into());}
-                let series = matches!(&s.controller, Controller::XboxSeries(_));
-                let series_bt = matches!(&s.controller, Controller::XboxSeries(c)
-                    if c.surface().target() == RealizationId::LINUX_UHID_BLUETOOTH);
-                let mut access = Vec::new();
-                s.phases.insert("consumer_open_attempt_ns", elapsed_ns(s.created));
-                for node in s.nodes.iter().filter(|node| !series_bt || node.starts_with("/dev/input")) {
-                    let (file, diagnostic) = open_consumer_diagnostics(node, series).map_err(|e|e.to_string())?;
-                    access.push(diagnostic);
-                    s.phases.entry("consumer_first_open_ns").or_insert_with(|| elapsed_ns(s.created));
-                    s.consumers.push(file);
-                }
-                if s.consumers.is_empty() { return Err("no owned consumer node opened".into()); }
-                let consumer = if series_bt { "harness evdev" } else { "harness evdev/hidraw" };
-                Ok(json!({"consumer":consumer,"nodes_opened":s.consumers.len(),"access":access,"phases_since_create_ns":s.phases}))
-            }
+            "consumer_open"=>open_session_consumers(s),
             "first_neutral"=>Err("no validated consumer neutral-report oracle for this family; API commit is not consumer delivery".into()),
             "sdl_ready"=>{
                 if !self.sdl{return Err("SDL probe not requested".into());}
@@ -677,10 +697,7 @@ mod tests {
 
     #[test]
     fn series_enumeration_waits_for_input_after_hidraw_and_both_for_bluetooth() {
-        use std::{
-            collections::{BTreeMap, BTreeSet},
-            path::PathBuf,
-        };
+        use std::{collections::BTreeSet, path::PathBuf};
         let input = PathBuf::from("/dev/input/event999");
         let raw = PathBuf::from("/dev/hidraw999");
         for (nodes, uinput, bluetooth) in [
@@ -696,10 +713,7 @@ mod tests {
 
     #[test]
     fn requested_probe_backend_never_falls_back_to_the_other_node_type() {
-        use std::{
-            collections::{BTreeMap, BTreeSet},
-            path::PathBuf,
-        };
+        use std::{collections::BTreeSet, path::PathBuf};
         let input = PathBuf::from("/dev/input/event999");
         let raw = PathBuf::from("/dev/hidraw999");
         for nodes in [
