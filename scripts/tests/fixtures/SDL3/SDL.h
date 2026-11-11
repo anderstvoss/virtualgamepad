@@ -84,7 +84,7 @@ static void SDL_Delay(unsigned ms) { ticks+=ms; }
 static bool SDL_GamepadConnected(SDL_Gamepad *g) { return !scenario("reopen-removed"); }
 static void SDL_UpdateGamepads(void) {}
 static bool SDL_GetGamepadButton(SDL_Gamepad *g,int button) { return false; }
-static int16_t SDL_GetGamepadAxis(SDL_Gamepad *g,int axis) { return 0; }
+static int16_t SDL_GetGamepadAxis(SDL_Gamepad *g,int axis) { return scenario("initial-not-neutral") && axis < 4 ? -32768 : 0; }
 static const char *SDL_GetGamepadStringForButton(int button) { return button==20 ? "left_paddle1" : "south"; }
 static const char *SDL_GetGamepadStringForAxis(int axis) { static const char *names[]={"leftx","lefty","rightx","righty","lefttrigger","righttrigger"}; return names[axis]; }
 static bool SDL_PollEvent(SDL_Event *event) {

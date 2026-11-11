@@ -169,11 +169,14 @@ int main(int argc, char **argv) {
             neutral = neutral && value >= -512 && value <= 512;
         }
         neutral_observed = neutral_observed || neutral;
-        // Poll the initial neutral stream before the harness applies a transition.
+        // Xbox sweeps must not wait for neutral before asking their producer
+        // for its first transition: evdev can initially expose its axis minimum.
+        // This readiness signal means consumer-open/settled, not neutral delivery.
+        // Sony exact-state modes still need their initial neutral stream.
         // Sony HIDAPI drivers compare against a zero-filled previous packet;
         // applying Up (hat 0) before neutral (hat 8) has arrived loses that edge.
-        if ((control_script || gamepad_script || strcmp(profile, "diagnostic") == 0) && !mapping_ready && probe_control_ready(SDL_GetTicks() - started, neutral)) {
-            puts("{\"schema_version\":2,\"record_type\":\"mapping_ready\",\"neutral_settle_ms\":100}");
+        if ((control_script || gamepad_script || strcmp(profile, "diagnostic") == 0) && !mapping_ready && probe_control_ready(SDL_GetTicks() - started, gamepad_script || neutral)) {
+            printf("{\"schema_version\":2,\"record_type\":\"mapping_ready\",\"settle_ms\":100,\"initial_neutral_observed\":%s}\n", neutral ? "true" : "false");
             fflush(stdout);
             mapping_ready = true;
             matching_since = 0;

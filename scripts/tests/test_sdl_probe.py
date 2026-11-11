@@ -153,3 +153,14 @@ class ProbeIntegration(unittest.TestCase):
             self.assertIn('down_missing', detail['expected_event'])
             self.assertIn('axis_endpoints_missing', detail['expected_event'])
             self.assertNotIn('path', json.dumps(detail))
+
+    def test_series_sweep_unblocks_producer_without_claiming_initial_neutral(self):
+        result, record = self.run_probe('initial-not-neutral', '--gamepad-rumble-script')
+        ready = [json.loads(line) for line in result.stdout.splitlines()
+                 if 'mapping_ready' in line]
+        self.assertEqual(len(ready), 1)
+        self.assertFalse(ready[0]['initial_neutral_observed'])
+        self.assertFalse(record['neutral_observed'])
+        self.assertEqual(result.returncode, 1)  # Readiness alone never passes controls.
+        result, _ = self.run_probe('initial-not-neutral', '--control-0')
+        self.assertNotIn('mapping_ready', result.stdout)
