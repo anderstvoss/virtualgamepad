@@ -175,7 +175,10 @@ fn bound_driver(node: &Path) -> Option<String> {
             .map(|s| s.to_string_lossy().into_owned())
     })
 }
-fn steam_sample(sample: i16) -> virtualgamepad::SteamController2026State {
+fn steam_sample(
+    sample: i16,
+    target: virtualgamepad::RealizationId,
+) -> virtualgamepad::SteamController2026State {
     use virtualgamepad::SteamController2026Button as B;
     const BUTTONS: [B; 22] = [
         B::A,
@@ -202,9 +205,12 @@ fn steam_sample(sample: i16) -> virtualgamepad::SteamController2026State {
         B::LeftTrigger,
     ];
     let mut state = virtualgamepad::SteamController2026State::default();
-    state.motion.timestamp_us = u32::from(u16::from_ne_bytes(sample.to_ne_bytes())) * 10_000;
-    state.motion.accelerometer = [sample % 250 * 100, 500, 1000];
-    state.motion.gyroscope = [sample % 250 * 30, -250, 100];
+    let wired = target == virtualgamepad::RealizationId::LINUX_UHID_USB;
+    if wired {
+        state.motion.timestamp_us = u32::from(u16::from_ne_bytes(sample.to_ne_bytes())) * 10_000;
+        state.motion.accelerometer = [sample % 250 * 100, 500, 1000];
+        state.motion.gyroscope = [sample % 250 * 30, -250, 100];
+    }
     let value = if sample % 20 < 10 { 10000 } else { -10000 };
     state.sticks = [[value, -value], [-value, value]];
     state.triggers = [value.max(0), (-value).max(0)];
@@ -217,11 +223,13 @@ fn steam_sample(sample: i16) -> virtualgamepad::SteamController2026State {
     for (index, pad) in state.pads.iter_mut().enumerate() {
         pad.touch = (sample % 20 < 10) == (index == 0);
         pad.position = [value + sample % 10 * 100, -value + sample % 10 * 60];
-        pad.pressure = if pad.touch { 1000 } else { 0 };
+        pad.pressure = if wired && pad.touch { 1000 } else { 0 };
         pad.click = pad.touch && sample % 5 < 2;
     }
-    state.stick_touch = [value > 0, value < 0];
-    state.grip_touch = [value < 0, value > 0];
+    if wired {
+        state.stick_touch = [value > 0, value < 0];
+        state.grip_touch = [value < 0, value > 0];
+    }
     state
 }
 fn drive_steam_sample(
@@ -229,7 +237,7 @@ fn drive_steam_sample(
     sample: i16,
 ) -> Result<(), String> {
     steam
-        .set_inputs(steam_sample(sample))
+        .set_inputs(steam_sample(sample, steam.surface().target()))
         .map_err(|error| error.to_string())?;
     steam.commit().map_err(|error| error.to_string())
 }
@@ -503,15 +511,51 @@ impl Backend for Linux {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn steam_samples_use_the_selected_realizations_input_capabilities() {
+        use virtualgamepad::{RealizationId, SteamMotionSample};
+        for sample in 1..=138 {
+            let reduced = super::steam_sample(sample, RealizationId::LINUX_UINPUT);
+            let wired = super::steam_sample(sample, RealizationId::LINUX_UHID_USB);
+            assert_eq!(reduced.motion, SteamMotionSample::default());
+            assert_eq!(reduced.stick_touch, [false; 2]);
+            assert_eq!(reduced.grip_touch, [false; 2]);
+            assert_eq!(reduced.sticks, wired.sticks);
+            assert_eq!(reduced.triggers, wired.triggers);
+            assert_ne!(wired.motion, SteamMotionSample::default());
+            assert!(wired.stick_touch.iter().any(|contact| *contact));
+            assert!(wired.grip_touch.iter().any(|contact| *contact));
+            for side in 0..2 {
+                assert_eq!(reduced.pads[side].pressure, 0);
+                assert_eq!(
+                    wired.pads[side].pressure,
+                    if wired.pads[side].touch { 1000 } else { 0 }
+                );
+                assert_eq!(reduced.pads[side].touch, wired.pads[side].touch);
+                assert_eq!(reduced.pads[side].click, wired.pads[side].click);
+                assert_eq!(reduced.pads[side].position, wired.pads[side].position);
+            }
+        }
+    }
+
+    #[test]
     fn steam_controls_wait_for_consumer_neutral_after_arbitrary_startup_delay() {
         use virtualgamepad::SteamController2026Button as B;
-        assert!(super::steam_sample(1).pressed(B::A));
-        assert!(!super::steam_sample(4).pressed(B::A));
-        assert!(super::steam_sample(127).pressed(B::LeftTrigger));
+        assert!(
+            super::steam_sample(1, virtualgamepad::RealizationId::LINUX_UHID_USB).pressed(B::A)
+        );
+        assert!(
+            !super::steam_sample(4, virtualgamepad::RealizationId::LINUX_UHID_USB).pressed(B::A)
+        );
+        assert!(
+            super::steam_sample(127, virtualgamepad::RealizationId::LINUX_UHID_USB)
+                .pressed(B::LeftTrigger)
+        );
         for pad in 0..2 {
             assert_ne!(
-                super::steam_sample(1).pads[pad].position,
-                super::steam_sample(2).pads[pad].position
+                super::steam_sample(1, virtualgamepad::RealizationId::LINUX_UHID_USB).pads[pad]
+                    .position,
+                super::steam_sample(2, virtualgamepad::RealizationId::LINUX_UHID_USB).pads[pad]
+                    .position
             );
         }
 

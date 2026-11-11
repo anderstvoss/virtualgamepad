@@ -423,7 +423,9 @@ mod tests {
                 |state: &mut SteamController2026State| {
                     state.set_button(super::super::SteamController2026Button::A, true);
                     state.triggers = [123, 456];
-                    state.motion.timestamp_us = 123_456;
+                    if target == RealizationTarget::LINUX_UHID_USB {
+                        state.motion.timestamp_us = 123_456;
+                    }
                     Ok(())
                 },
                 |state: &mut SteamController2026State| {
@@ -432,6 +434,137 @@ mod tests {
                 },
                 io.lock().unwrap().sent.len()
             );
+        }
+    }
+
+    fn check_input_representability(
+        edit: impl Fn(&mut SteamController2026State),
+        supported_on_uinput: bool,
+    ) {
+        use super::super::SteamController2026Button as Button;
+        use crate::common::session_tests::snapshot_session;
+        use gr_realization_api::RealizationTargetSet;
+
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+        ] {
+            for dirty in [false, true] {
+                for snapshot in [false, true] {
+                    let options = SteamController2026Options::default();
+                    let identity = SteamController2026Identity::from_serial("TESTVG1C").unwrap();
+                    let definition =
+                        SteamController2026Definition::new(identity.serial().to_owned(), &options);
+                    let (session, io) = snapshot_session(definition, target, [true; 3]);
+                    let mut controller = SteamController2026Controller {
+                        session: Box::new(session),
+                        identity,
+                    };
+                    controller.service(&mut |_| {}).unwrap();
+                    controller.commit().unwrap();
+                    if dirty {
+                        controller.set_button(Button::A, true).unwrap();
+                    }
+                    let before = controller.state().clone();
+                    let outputs = controller.host_outputs().unwrap();
+                    let reports = io.lock().unwrap().sent.len();
+                    let mut candidate = before.clone();
+                    candidate.set_button(Button::B, true);
+                    edit(&mut candidate);
+                    let result = if snapshot {
+                        controller.set_inputs(candidate.clone())
+                    } else {
+                        controller.edit_inputs(|state| {
+                            state.set_button(Button::B, true);
+                            edit(state);
+                            Ok(())
+                        })
+                    };
+                    if supported_on_uinput || target == RealizationTarget::LINUX_UHID_USB {
+                        assert_eq!(result, Ok(()));
+                        assert_eq!(controller.state(), &candidate);
+                        assert!(controller.is_dirty());
+                    } else {
+                        assert_eq!(
+                            result,
+                            Err(ControlError::UnavailableInRealization {
+                                selected_target: target,
+                                available_in: RealizationTargetSet::new(&[
+                                    RealizationTarget::LINUX_UHID_USB
+                                ]),
+                            })
+                        );
+                        assert_eq!(controller.state(), &before);
+                        assert_eq!(controller.is_dirty(), dirty);
+                    }
+                    assert_eq!(io.lock().unwrap().sent.len(), reports);
+                    assert_eq!(controller.host_outputs().unwrap(), outputs);
+                    let accepted = controller.state().clone();
+                    controller.close();
+                    controller.close();
+                    assert_eq!(
+                        controller.edit_inputs(|_| panic!("closed edit executed")),
+                        Err(ControlError::Closed)
+                    );
+                    assert_eq!(controller.state(), &accepted);
+                    assert_eq!(io.lock().unwrap().destroys, 1);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn supported_gamepad_levels_remain_available_on_both_realizations() {
+        check_input_representability(|_| {}, true);
+        for side in 0..2 {
+            check_input_representability(|state| state.sticks[side] = [-1234, 5678], true);
+            check_input_representability(|state| state.triggers[side] = i16::MAX, true);
+            for touch in [false, true] {
+                for click in [false, true] {
+                    check_input_representability(
+                        |state| {
+                            state.pads[side].position = [-1234, 5678];
+                            state.pads[side].touch = touch;
+                            state.pads[side].click = click;
+                        },
+                        true,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reduced_uinput_refuses_each_imu_field_contact_and_pressure() {
+        for axis in 0..3 {
+            for value in [i16::MIN, -1, 1, i16::MAX] {
+                check_input_representability(
+                    |state| state.motion.accelerometer[axis] = value,
+                    false,
+                );
+                check_input_representability(|state| state.motion.gyroscope[axis] = value, false);
+            }
+        }
+        for axis in 0..4 {
+            check_input_representability(|state| state.motion.quaternion[axis] = i16::MAX, false);
+        }
+        for timestamp in [1, u32::MAX] {
+            check_input_representability(|state| state.motion.timestamp_us = timestamp, false);
+        }
+        for side in 0..2 {
+            check_input_representability(|state| state.stick_touch[side] = true, false);
+            check_input_representability(|state| state.grip_touch[side] = true, false);
+            for pressure in [1, u16::MAX] {
+                for touch in [false, true] {
+                    check_input_representability(
+                        |state| {
+                            state.pads[side].pressure = pressure;
+                            state.pads[side].touch = touch;
+                        },
+                        false,
+                    );
+                }
+            }
         }
     }
 
