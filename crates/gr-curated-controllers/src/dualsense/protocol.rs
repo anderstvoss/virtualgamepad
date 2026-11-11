@@ -146,6 +146,9 @@ impl<R: crate::retained::OutputState> Protocol for DualSenseUsbProtocol<R> {
 }
 
 impl common::HidDriver for DualSenseDefinition {
+    fn transition_inputs(previous: &Self::State, next: &mut Self::State) {
+        next.transition_inputs(previous);
+    }
     fn open_native(
         &self,
         request: gr_realization_api::ProviderOpenRequest,
@@ -155,7 +158,12 @@ impl common::HidDriver for DualSenseDefinition {
         crate::sony_evdev::open_native(request, association)
     }
     fn neutralize_state(state: &mut Self::State) {
-        state.replace_inputs(Self::State::default());
+        *state = Self::State {
+            battery: state.battery,
+            input_sequence: state.input_sequence,
+            sensor_timestamp: state.sensor_timestamp,
+            ..Self::State::default()
+        };
     }
 
     type Hid = DualSenseUsbProtocol;

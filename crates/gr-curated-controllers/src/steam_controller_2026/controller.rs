@@ -286,8 +286,21 @@ impl SteamController2026Controller {
         self.session.state()
     }
 
+    /// Edit an isolated native input candidate as one transaction.
+    /// Only the final candidate is validated. Rejection preserves accepted input,
+    /// clocks, dirty work and queued reports. An unchanged edit adds no dirty work.
+    /// Keep external side effects outside the closure. Call `commit()` to deliver.
+    ///
+    /// # Errors
+    /// Returns the closure's error, a validation error, or `ControlError::Closed`.
+    pub fn edit_inputs(
+        &mut self,
+        edit: impl FnOnce(&mut SteamController2026State) -> Result<(), ControlError>,
+    ) -> Result<(), ControlError> {
+        self.session.edit_inputs(edit)
+    }
     pub fn set_inputs(&mut self, state: SteamController2026State) -> Result<(), ControlError> {
-        self.session.update_state(|current| {
+        self.edit_inputs(|current| {
             *current = state;
             Ok(())
         })
@@ -298,7 +311,7 @@ impl SteamController2026Controller {
         button: super::SteamController2026Button,
         pressed: bool,
     ) -> Result<(), ControlError> {
-        self.session.update_state(|state| {
+        self.edit_inputs(|state| {
             state.set_button(button, pressed);
             Ok(())
         })
@@ -386,6 +399,40 @@ mod tests {
             },
         )
         .unwrap()
+    }
+
+    #[test]
+    fn input_transactions_validate_final_levels_and_preserve_source_timestamps() {
+        use crate::common::session_tests::{check_input_transactions, snapshot_session};
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+        ] {
+            let options = SteamController2026Options::default();
+            let identity = SteamController2026Identity::from_serial("TESTVG1B").unwrap();
+            let definition =
+                SteamController2026Definition::new(identity.serial().to_owned(), &options);
+            let (session, io) = snapshot_session(definition, target, [true; 3]);
+            let mut controller = SteamController2026Controller {
+                session: Box::new(session),
+                identity,
+            };
+            controller.service(&mut |_| {}).unwrap();
+            check_input_transactions!(
+                controller,
+                |state: &mut SteamController2026State| {
+                    state.set_button(super::super::SteamController2026Button::A, true);
+                    state.triggers = [123, 456];
+                    state.motion.timestamp_us = 123_456;
+                    Ok(())
+                },
+                |state: &mut SteamController2026State| {
+                    state.triggers[1] = -1;
+                    Ok(())
+                },
+                io.lock().unwrap().sent.len()
+            );
+        }
     }
 
     #[cfg(not(target_os = "linux"))]

@@ -231,3 +231,53 @@ additions, removals or signature changes.
   this operation because it has no motion presentation. The method returns
   `CommitError`, matching Switch Pro's refresh operation. After backpressure,
   retry with `commit()` to deliver the accepted sample at its current clock.
+
+## VG-1b/b · Transactional native input edits
+
+All seven curated and ordinary-root controller handles add
+`edit_inputs(&mut self, edit: impl FnOnce(&mut FamilyState) -> Result<(), ControlError>) -> Result<(), ControlError>`.
+The candidate type is the family's existing native state type.
+
+| Handle | Candidate |
+| --- | --- |
+| `DualSenseController` | `DualSenseState` |
+| `DualShock4Controller` | `DualShock4State` |
+| `SwitchProController` | `SwitchProState` |
+| `Xbox360Controller` | `Xbox360State` |
+| `WiiRemoteController` | `WiiRemoteState` |
+| `SteamController2026Controller` | `SteamController2026State` |
+| `XboxSeriesController` | `XboxSeriesState` |
+
+The root snapshot adds seven methods in each feature view. The Wii and Steam
+supporting snapshots each add one method. There are zero removed declarations
+or changed existing signatures. The supporting runtime crates also add
+`ControllerRuntime::edit_state` and `gr_hid::Runtime::edit_state` for validated
+candidate installation and change detection.
+
+The closure edits an isolated candidate. Its error, or a final-state validation
+error, rejects the entire edit and preserves accepted inputs, clocks, dirty work,
+queued reports and host outputs. Closed handles reject before invoking the closure.
+Keep external side effects outside the closure.
+
+`set_inputs`, field setters, digital edits and `neutralize` use the same input
+transition. Only the final levels determine validity and motion/contact clock
+changes. An accepted unchanged candidate adds no dirty work and preserves existing
+dirty work and queued bytes. Wii companion nodes also skip unchanged state when
+committing.
+
+```rust
+controller.edit_inputs(|state| {
+    state.set_native(DualSenseControl::Cross, true);
+    state.set_sticks((left_x, left_y), (right_x, right_y));
+    Ok(())
+})?;
+controller.commit()?;
+```
+
+Existing family ownership rules apply to edits. Sony and Xbox 360 battery,
+Sony and Switch counters, and Switch streaming state remain controller-owned.
+Wii revision and attachment changes use the live attachment API. Wii raw battery
+ownership and the input-only value types remain scheduled for steps c and d.
+Steam's motion timestamp remains caller-supplied. Explicit Sony motion refresh,
+host servicing, Wii attachment and EEPROM, and Steam protocol modes retain their
+separate operations.

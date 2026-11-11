@@ -454,3 +454,27 @@ fn uinput_keeps_the_library_address_without_requesting_a_host_uniq() {
             })
     );
 }
+
+#[test]
+fn native_input_transactions_preserve_attachment_and_skip_unchanged_companion_frames() {
+    use crate::common::session_tests::check_input_transactions;
+    let factory = Factory::default();
+    let mut controller = create(&factory);
+    controller
+        .attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+        .unwrap();
+    controller.commit().unwrap();
+    let frames = factory.0.lock().unwrap().frames.len();
+    controller.edit_inputs(|_| Ok(())).unwrap();
+    controller.commit().unwrap();
+    assert_eq!(factory.0.lock().unwrap().frames.len(), frames);
+    check_input_transactions!(
+        controller,
+        |state: &mut WiiRemoteState| {
+            state.set_button(WiiRemoteButton::A, true);
+            state.set_accelerometer([500, 600, 700])
+        },
+        |state: &mut WiiRemoteState| { state.set_attachment(WiiExtension::None, false) },
+        factory.0.lock().unwrap().frames.len()
+    );
+}

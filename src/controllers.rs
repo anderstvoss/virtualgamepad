@@ -271,6 +271,22 @@ macro_rules! shared {
             self.controller.inner.state()
         }
     };
+    (edit_inputs, $state:ty) => {
+        /// Edit an isolated native input candidate as one transaction.
+        /// Only the final candidate is validated. Rejection preserves accepted input,
+        /// clocks, dirty work and queued reports. An unchanged edit adds no dirty work.
+        /// Keep external side effects outside the closure. Call `commit()` to deliver.
+        ///
+        /// # Errors
+        /// Returns the closure's error, a validation error, or `ControlError::Closed`.
+        pub fn edit_inputs(
+            &mut self,
+            edit: impl FnOnce(&mut $state) -> Result<(), ControlError>,
+        ) -> Result<(), ControlError> {
+            self.controller.reap_audio_failure();
+            self.controller.inner.edit_inputs(edit)
+        }
+    };
     (set_inputs, $state:ty) => {
         /// Replace the complete native input state as one validated edit.
         /// Call `commit()` to deliver it. Protocol counters are session-owned.
@@ -417,6 +433,7 @@ impl DualSenseController {
     shared!(next_service_in);
     shared!(dropped_output_events);
     shared!(state, DualSenseState);
+    shared!(edit_inputs, DualSenseState);
     shared!(set_inputs, DualSenseState);
     shared!(host_outputs, crate::DualSenseOutputState);
     shared!(surface, DualSenseSurface);
@@ -512,6 +529,7 @@ impl DualShock4Controller {
     shared!(next_service_in);
     shared!(dropped_output_events);
     shared!(state, DualShock4State);
+    shared!(edit_inputs, DualShock4State);
     shared!(set_inputs, DualShock4State);
     shared!(host_outputs, crate::DualShock4OutputState);
     shared!(is_dirty);
@@ -608,6 +626,7 @@ impl SwitchProController {
     shared!(next_service_in);
     shared!(dropped_output_events);
     shared!(state, SwitchProState);
+    shared!(edit_inputs, SwitchProState);
     shared!(set_inputs, SwitchProState);
     shared!(host_outputs, crate::SwitchProOutputState);
     shared!(is_dirty);
@@ -669,6 +688,7 @@ impl Xbox360Controller {
     shared!(next_service_in);
     shared!(dropped_output_events);
     shared!(state, Xbox360State);
+    shared!(edit_inputs, Xbox360State);
     shared!(set_inputs, Xbox360State);
     shared!(host_outputs, crate::Xbox360OutputState);
     shared!(surface, Xbox360Surface);
@@ -774,6 +794,7 @@ impl WiiRemoteController {
     }
 
     shared!(state, WiiRemoteState);
+    shared!(edit_inputs, WiiRemoteState);
     shared!(host_outputs, WiiRemoteOutputs);
     shared!(surface, crate::ControllerSurface);
     shared!(wants_write);
@@ -831,6 +852,7 @@ impl SteamController2026Controller {
     }
 
     shared!(state, SteamController2026State);
+    shared!(edit_inputs, SteamController2026State);
     shared!(host_outputs, SteamController2026Outputs);
     shared!(surface, crate::ControllerSurface);
     shared!(wants_write);
@@ -876,6 +898,7 @@ pub struct XboxSeriesController {
 
 impl XboxSeriesController {
     shared!(state, XboxSeriesState);
+    shared!(edit_inputs, XboxSeriesState);
     shared!(host_outputs, XboxSeriesOutputState);
     shared!(surface, crate::ControllerSurface);
     shared!(wants_write);

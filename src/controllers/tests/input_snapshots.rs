@@ -50,8 +50,68 @@ macro_rules! root_snapshot_case {
     (@assert_state $module:ident, $actual:ident, $candidate:ident) => {
         assert_eq!($actual, $candidate);
     };
-    ($test:ident, $module:ident, $controller:ident, $id:literal, $axes:expr,
+    ($test:ident, $module:ident, $controller:ident, $state:ty, $id:literal, $axes:expr,
      [$($part:expr),*], |$snapshot:ident, $extra_invalid:ident| $setup:block) => {
+        mod $module {
+            use super::*;
+            #[test]
+            fn transactional_root_inputs_preserve_rejected_and_unchanged_work() {
+                let record = Arc::new(Mutex::new(Record::default()));
+                let options = CreationOptions::new(RealizationId::LINUX_UINPUT).internal().unwrap();
+                let inner = gr_curated_controllers::$module::test_controller(Box::new(Fake(record.clone()))).unwrap();
+                let association = ControllerAssociation::single(
+                    ControllerId::new($id), options, inner.association(), inner.surface().common(),
+                );
+                let mut controller = $controller::from_parts(association, inner, $($part),*);
+                controller.commit().unwrap();
+                let clean = controller.state().clone();
+                let mut $snapshot = clean.clone();
+                let mut $extra_invalid: Vec<$state> = Vec::new();
+                $snapshot.set_digital(DigitalControlUpdate::FaceButton {
+                    button: FaceButton::South, pressed: true,
+                });
+                $setup
+                controller.edit_inputs(|_| Ok(())).unwrap();
+                assert!(!controller.is_dirty());
+                let error = ControlError::UnsupportedControl { control: "synthetic late root edit" };
+                for dirty in [false, true] {
+                    if dirty {
+                        controller.edit_inputs(|candidate| {
+                            *candidate = $snapshot.clone();
+                            Ok(())
+                        }).unwrap();
+                    }
+                    let accepted = controller.state().clone();
+                    assert_eq!(controller.edit_inputs(|candidate| {
+                        *candidate = clean.clone();
+                        Err(error.clone())
+                    }), Err(error.clone()));
+                    assert_eq!(controller.state(), &accepted);
+                    assert_eq!(controller.is_dirty(), dirty);
+                    for invalid in &$extra_invalid {
+                        assert!(controller.edit_inputs(|candidate| {
+                            *candidate = invalid.clone();
+                            Ok(())
+                        }).is_err());
+                        assert_eq!(controller.state(), &accepted);
+                        assert_eq!(controller.is_dirty(), dirty);
+                    }
+                    controller.edit_inputs(|_| Ok(())).unwrap();
+                    assert_eq!(controller.is_dirty(), dirty);
+                }
+                assert_eq!(record.lock().unwrap().sent.len(), 1);
+                controller.commit().unwrap();
+                let accepted = controller.state().clone();
+                controller.edit_inputs(|_| Ok(())).unwrap();
+                controller.set_inputs(accepted.clone()).unwrap();
+                assert!(!controller.is_dirty());
+                controller.close();
+                controller.close();
+                assert_eq!(controller.edit_inputs(|_| panic!("closed root edit executed")), Err(ControlError::Closed));
+                assert_eq!(controller.state(), &accepted);
+                assert_eq!(record.lock().unwrap().closes, 1);
+            }
+        }
         #[test]
         fn $test() {
             let record = Arc::new(Mutex::new(Record::default()));
@@ -66,7 +126,7 @@ macro_rules! root_snapshot_case {
             let creation = controller.association().creation();
             let outputs = controller.host_outputs().unwrap();
             let mut $snapshot = controller.state().clone();
-            let mut $extra_invalid = Vec::new();
+            let mut $extra_invalid: Vec<$state> = Vec::new();
             $snapshot.set_digital(DigitalControlUpdate::FaceButton {
                 button: FaceButton::South, pressed: true,
             });
@@ -113,7 +173,7 @@ macro_rules! root_snapshot_case {
 
             controller.set_inputs($snapshot.clone()).unwrap();
             assert_eq!(controller.state(), &accepted);
-            assert!(controller.is_dirty());
+            assert!(!controller.is_dirty());
             controller.commit().unwrap();
             assert_eq!(record.lock().unwrap().sent.last(), Some(&populated_frame));
 
@@ -132,6 +192,10 @@ macro_rules! root_snapshot_case {
             assert_eq!(controller.host_outputs().unwrap(), outputs);
 
             controller.set_inputs($snapshot).unwrap();
+            controller.set_digital(DigitalControlUpdate::FaceButton {
+                button: FaceButton::North,
+                pressed: !controller.state().face_pressed(FaceButton::North),
+            }).unwrap();
             let before_close = controller.state().clone();
             record.lock().unwrap().events.push_back(RawReverseEvent::HidGetReportRequest {
                 request_id: 17, report_id: 1, report_type: 0,
@@ -139,6 +203,7 @@ macro_rules! root_snapshot_case {
             assert!(matches!(controller.service(&mut |_| {}), Err(ControllerError::InvalidRequest { .. })));
             assert!(controller.commit().is_err());
             assert_eq!(controller.set_inputs(neutral), Err(ControlError::Closed));
+            assert_eq!(controller.edit_inputs(|_| panic!("closed root edit executed")), Err(ControlError::Closed));
             assert_eq!(controller.state(), &before_close);
             assert!(controller.is_dirty());
             controller.close();
@@ -169,6 +234,7 @@ root_snapshot_case!(
     dualsense_whole_state,
     dualsense,
     DualSenseController,
+    DualSenseState,
     "virtualgamepad.dualsense",
     BYTE_AXES,
     [None, None],
@@ -200,6 +266,7 @@ root_snapshot_case!(
     ds4_whole_state,
     dualshock4,
     DualShock4Controller,
+    DualShock4State,
     "virtualgamepad.dualshock4",
     BYTE_AXES,
     [None, None],
@@ -234,6 +301,7 @@ root_snapshot_case!(
     switch_pro_whole_state,
     switch_pro,
     SwitchProController,
+    SwitchProState,
     "virtualgamepad.switch-pro",
     &[
         (0, -32768),
@@ -265,6 +333,7 @@ root_snapshot_case!(
     xbox360_whole_state,
     xbox360,
     Xbox360Controller,
+    Xbox360State,
     "virtualgamepad.xbox360",
     &[
         (0, -32768),
