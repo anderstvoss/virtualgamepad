@@ -39,6 +39,7 @@ struct SpeakerControl {
 #[derive(Clone)]
 pub(crate) struct WiiProtocol {
     pub(super) state: WiiRemoteState,
+    pub(super) battery: super::WiiRemoteBattery,
     pub(super) outputs: WiiRemoteOutputs,
     mode: u8,
     reporting: Reporting,
@@ -58,6 +59,7 @@ impl Default for WiiProtocol {
     fn default() -> Self {
         Self {
             state: WiiRemoteState::default(),
+            battery: super::WiiRemoteBattery::default(),
             outputs: WiiRemoteOutputs::default(),
             mode: 0x30,
             reporting: Reporting::Running,
@@ -260,14 +262,14 @@ impl WiiProtocol {
             .enumerate()
             .fold(0, |bits, (i, on)| bits | (u8::from(*on) << (i + 4)));
         // wii-gap-wiibrew-status-20-resend: status bit 0x04 retains speaker-enable intent.
-        let flags = u8::from(self.state.battery < 0x20)
+        let flags = u8::from(self.battery.raw() < 0x20)
             | (u8::from(self.memory.present(&self.state)) << 1)
             | (u8::from(self.speaker.enabled) << 2)
             | (u8::from(self.ir_enabled[0]) << 3)
             | leds;
         input(
             0x20,
-            vec![buttons[0], buttons[1], flags, 0, 0, self.state.battery],
+            vec![buttons[0], buttons[1], flags, 0, 0, self.battery.raw()],
         )
     }
     pub(super) fn ack(&self, id: u8, code: u8) -> Report {

@@ -520,3 +520,43 @@ fn motion_plus_write_reserves_ack_and_status_without_exceeding_pending_bound() {
     let replies: Vec<_> = p.pending.iter().rev().take(2).map(Report::id).collect();
     assert_eq!(replies, [Some(0x20), Some(0x22)]);
 }
+
+#[test]
+fn raw_battery_status_and_queued_bytes_survive_input_replacement() {
+    use crate::wii_remote::WiiRemoteBattery;
+    for raw in 0..=u8::MAX {
+        let mut protocol = WiiProtocol {
+            battery: WiiRemoteBattery::new(raw),
+            ..WiiProtocol::default()
+        };
+        protocol.output(output(0x15, &[0]), 0).unwrap();
+        let accepted = protocol.status();
+        assert_eq!(accepted.payload()[5], raw);
+        assert_eq!(accepted.payload()[2] & 1, u8::from(raw < 32));
+        protocol.battery = WiiRemoteBattery::new(raw.wrapping_add(1));
+        let mut inputs = WiiRemoteState::default();
+        inputs.set_button(WiiRemoteButton::A, true);
+        let reports = protocol.input(&inputs, 1).unwrap();
+        assert!(reports.contains(&accepted));
+        assert_eq!(protocol.status().payload()[5], raw.wrapping_add(1));
+        assert_eq!(protocol.battery.raw(), raw.wrapping_add(1));
+        inputs.neutralize();
+        protocol.input(&inputs, 2).unwrap();
+        assert_eq!(protocol.battery.raw(), raw.wrapping_add(1));
+        protocol.lifecycle(gr_hid::Lifecycle::Stop, 3);
+        protocol.lifecycle(
+            gr_hid::Lifecycle::Start {
+                numbered_input: true,
+                numbered_output: true,
+                numbered_feature: false,
+            },
+            4,
+        );
+        let resumed = protocol.input(&inputs, 4).unwrap();
+        let status = resumed
+            .iter()
+            .find(|report| report.id() == Some(0x20))
+            .unwrap();
+        assert_eq!(status.payload()[5], raw.wrapping_add(1));
+    }
+}

@@ -116,8 +116,11 @@ Evidence: `wii-gap-wiibrew-speaker-control-reports`,
 intent and does not establish audio playback. No public API is added.
 
 The demo creates Wii handles and provides native controls, extension selection
-and typed IR editing. Advanced raw battery and EEPROM configuration use the
-supporting API. Detached editors can use `WiiRemoteState::set_attachment` to
+and typed IR editing. Battery metadata uses `controller.battery()` and
+`controller.set_battery(WiiRemoteBattery::new(raw))` on the root and curated
+handles. The raw byte is separate from input snapshots and survives input edits,
+attachment changes and neutralization. EEPROM configuration uses the supporting
+API. Detached editors can use `WiiRemoteState::set_attachment` to
 project a queued transition before same-frame native edits. This changes only
 the snapshot; live nodes still require `WiiRemoteController::attach`. Wii
 association and provider diagnostics are explicitly unavailable in the demo

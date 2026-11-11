@@ -91,8 +91,8 @@ pub use gr_curated_controllers::steam_controller_2026::{
 };
 pub use gr_curated_controllers::wii_remote::{
     WiiClassicState, WiiEepromImage, WiiExtension, WiiExtensionCalibration, WiiIrPoint,
-    WiiMotionPlusState, WiiNunchukState, WiiRemoteButton, WiiRemoteOutputs, WiiRemoteRevision,
-    WiiRemoteState, WiiResourceDisposition,
+    WiiMotionPlusState, WiiNunchukState, WiiRemoteBattery, WiiRemoteButton, WiiRemoteOutputs,
+    WiiRemoteRevision, WiiRemoteState, WiiResourceDisposition,
 };
 pub use gr_curated_controllers::xbox_series::{
     XboxSeriesButton, XboxSeriesOutputState, XboxSeriesState, XboxSeriesTrigger,
