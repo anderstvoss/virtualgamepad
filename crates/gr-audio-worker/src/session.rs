@@ -603,7 +603,7 @@ mod tests {
     fn interrupt_outputs_follow_controller_set_policy_and_emit_once() {
         check_output_policy(
             usb_personality::dualsense([0; 6]),
-            NativeState::DualSense(gr_curated_controllers::DualSenseState::default()),
+            NativeState::DualSense(gr_curated_controllers::DualSenseSessionState::default()),
             true,
             Some(2),
             Some(vec![0; 47]),
@@ -702,7 +702,7 @@ mod tests {
         for (profile, state) in [
             (
                 gr_usbip::profile::ids::DUALSENSE,
-                NativeState::DualSense(gr_curated_controllers::DualSenseState::default()),
+                NativeState::DualSense(gr_curated_controllers::DualSenseSessionState::default()),
             ),
             (
                 gr_usbip::profile::ids::DUALSHOCK4,

@@ -161,9 +161,9 @@ impl BatteryState {
 
 pub use dualsense::{
     DualSenseAudioPath, DualSenseAxis, DualSenseControl, DualSenseController, DualSenseFeature,
-    DualSenseHidOutput, DualSenseIdentity, DualSenseOptions, DualSenseOutputEvent, DualSenseState,
-    DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, MotionSample, TouchSlot,
-    create_dualsense,
+    DualSenseHidOutput, DualSenseIdentity, DualSenseInputs, DualSenseOptions, DualSenseOutputEvent,
+    DualSenseSessionState, DualSenseStatus, DualSenseSurface, DualSenseTouchContact,
+    DualSenseTrigger, MotionSample, TouchSlot, create_dualsense,
 };
 pub use dualshock4::{
     DualShock4Axis, DualShock4Control, DualShock4Controller, DualShock4HidOutput,

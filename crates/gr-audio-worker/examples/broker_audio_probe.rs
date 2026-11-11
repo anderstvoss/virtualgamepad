@@ -13,7 +13,7 @@ mod linux {
                 Profile::DualSense => (
                     1,
                     gr_curated_controllers::usb_personality::state::NativeState::DualSense(
-                        gr_curated_controllers::DualSenseState::default(),
+                        gr_curated_controllers::DualSenseSessionState::default(),
                     ),
                 ),
                 Profile::DualShock4 => (

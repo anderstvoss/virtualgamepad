@@ -36,7 +36,7 @@ retained_protocol!(
 #[must_use]
 pub fn dualsense(
     identity: [u8; 6],
-) -> impl WorkerProtocol<State = dualsense::DualSenseState, Output = RawReverseEvent> {
+) -> impl WorkerProtocol<State = dualsense::DualSenseSessionState, Output = RawReverseEvent> {
     dualsense::DualSenseDefinition.hid_protocol(RealizationSessionId(0), identity)
 }
 
