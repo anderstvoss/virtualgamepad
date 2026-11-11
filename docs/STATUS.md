@@ -76,7 +76,7 @@ Follow-on core changes on `main`:
   step b [#363](https://github.com/anderstvoss/virtualgamepad/pull/363) ·
   `5bea7a097f66c9526fae45ea32b5a8a936029580` (transactional edits);
   step c1 [#364](https://github.com/anderstvoss/virtualgamepad/pull/364) ·
-  `eaff3d77c2b73dd3668d5b37d54c7927f94251d0` (Steam
+  `77ec6e39457ddf123ef732ac0e28237307e05f8c` (Steam
   reduced-uinput refusals). Steps c2, d and e are not complete on
   this baseline. **TODO(VG-1b e):** after the local agent's final ledger lands,
   refresh the Alpha 2 API-delta summary and remove this placeholder.
