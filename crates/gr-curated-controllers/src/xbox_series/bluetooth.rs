@@ -163,6 +163,48 @@ mod tests {
     use gr_realization_api::RealizationSessionId;
 
     #[test]
+    fn host_open_replays_current_snapshot_after_early_start_delivery() {
+        let mut protocol = super::super::XboxSeriesDefinition::default()
+            .hid_protocol(RealizationSessionId(1), [0; 6]);
+        let mut peer = super::super::XboxSeriesDefinition::default()
+            .hid_protocol(RealizationSessionId(2), [0; 6]);
+        for p in [&mut protocol, &mut peer] {
+            p.lifecycle(
+                Lifecycle::Start {
+                    numbered_input: true,
+                    numbered_output: true,
+                    numbered_feature: false,
+                },
+                0,
+            );
+            p.input(&XboxSeriesState::default(), 0).unwrap();
+            assert_eq!(p.deadline(), None);
+        }
+        // A successful early UHID write can precede evdev registration. OPEN
+        // must schedule the accepted snapshot again without an application edit.
+        protocol.lifecycle(Lifecycle::Open, 20);
+        assert_eq!(protocol.deadline(), Some(20));
+        assert_eq!(peer.deadline(), None);
+        assert_eq!(
+            protocol.input(&XboxSeriesState::default(), 20).unwrap()[0].wire(),
+            [1, 0, 128, 0, 128, 0, 128, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(protocol.deadline(), None);
+        let mut state = XboxSeriesState::default();
+        state.set_button(Button::Share, true);
+        protocol.input(&state, 21).unwrap();
+        protocol.lifecycle(Lifecycle::Close, 22);
+        protocol.lifecycle(Lifecycle::Open, 23);
+        assert_eq!(protocol.deadline(), Some(23));
+        assert_eq!(protocol.input(&state, 23).unwrap()[0].wire()[16], 1);
+        protocol.lifecycle(Lifecycle::Stop, 24);
+        protocol.lifecycle(Lifecycle::Open, 25);
+        assert_eq!(protocol.deadline(), None);
+        protocol.lifecycle(Lifecycle::Stop, 26);
+        assert_eq!(protocol.deadline(), None);
+    }
+
+    #[test]
     fn physical_input_shape_keeps_controls_independent_and_endpoints_exact() {
         let mut state = XboxSeriesState {
             sticks: [[i16::MIN, 0], [i16::MAX, -1]],
