@@ -79,11 +79,15 @@ pub(super) enum Controller {
 // Synthetic stationary pose used by the demo, not a captured orientation or
 // factory calibration. D9 #305 accepted gyro with this combined accel/quaternion
 // pose; their individual necessity was not isolated. API raw-zero defaults stay.
-fn steam_demo_neutral() -> gr_curated_controllers::steam_controller_2026::SteamController2026State {
+fn steam_demo_neutral(
+    target: virtualgamepad::RealizationId,
+) -> gr_curated_controllers::steam_controller_2026::SteamController2026State {
     let mut state =
         gr_curated_controllers::steam_controller_2026::SteamController2026State::default();
-    state.motion.accelerometer = [0, 0, 16384];
-    state.motion.quaternion = [i16::MAX, 0, 0, 0];
+    if target == virtualgamepad::RealizationId::LINUX_UHID_USB {
+        state.motion.accelerometer = [0, 0, 16384];
+        state.motion.quaternion = [i16::MAX, 0, 0, 0];
+    }
     state
 }
 
@@ -139,11 +143,11 @@ impl Kind {
                 .map_err(|e| virtualgamepad::ControllerError::Open {
                     reason: e.to_string(),
                 })?;
-                inner.set_inputs(steam_demo_neutral()).map_err(|e| {
-                    virtualgamepad::ControllerError::Open {
+                inner
+                    .set_inputs(steam_demo_neutral(inner.surface().target()))
+                    .map_err(|e| virtualgamepad::ControllerError::Open {
                         reason: e.to_string(),
-                    }
-                })?;
+                    })?;
                 inner
                     .commit()
                     .map_err(|e| virtualgamepad::ControllerError::Open {
@@ -204,7 +208,7 @@ impl ServicedController for Controller {
             Self::DualShock4(c) => c.neutralize(),
             Self::SwitchPro(c) => c.neutralize(),
             Self::WiiRemote(c) => c.neutralize(),
-            Self::Steam(c) => c.set_inputs(steam_demo_neutral()),
+            Self::Steam(c) => c.set_inputs(steam_demo_neutral(c.surface().target())),
         }
         .map_err(|error| error.to_string())
     }
@@ -645,7 +649,11 @@ mod steam_tests {
         let api = SteamController2026State::default();
         assert_eq!(api.motion, SteamMotionSample::default());
         assert_eq!(api.motion.quaternion, [0; 4]);
-        let demo = steam_demo_neutral();
+        assert_eq!(
+            steam_demo_neutral(virtualgamepad::RealizationId::LINUX_UINPUT),
+            api,
+        );
+        let demo = steam_demo_neutral(virtualgamepad::RealizationId::LINUX_UHID_USB);
         assert_eq!(demo.motion.accelerometer, [0, 0, 16384]);
         assert_eq!(demo.motion.quaternion, [i16::MAX, 0, 0, 0]);
         assert_eq!(demo.motion.gyroscope, [0; 3]);

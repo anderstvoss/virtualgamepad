@@ -281,3 +281,21 @@ ownership and the input-only value types remain scheduled for steps c and d.
 Steam's motion timestamp remains caller-supplied. Explicit Sony motion refresh,
 host servicing, Wii attachment and EEPROM, and Steam protocol modes retain their
 separate operations.
+
+## VG-1b/c1 · Steam reduced-uinput input validation
+
+The root, Wii and Steam signature snapshots each have zero additions, removals
+or changed declarations.
+
+Steam Controller 2026 now rejects non-neutral IMU fields, capacitive stick or
+grip contact, and pad pressure on `LINUX_UINPUT` with
+`ControlError::UnavailableInRealization`. IMU fields include the source timestamp,
+acceleration, gyro and quaternion. The reduced gamepad has no corresponding
+sensor node, contact keys or pressure axes. The same final-state validation runs
+for `set_inputs`, `edit_inputs` and field operations. Rejected edits preserve
+accepted state and dirty work.
+
+Pad contact-gated position and independent clicks remain available on reduced
+uinput. The demo uses raw-zero motion for reduced sessions and its existing
+synthetic stationary pose for wired UHID. Xtask samples include IMU, capacitance
+and pressure only for wired UHID.
