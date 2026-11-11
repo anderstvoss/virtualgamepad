@@ -77,7 +77,7 @@ a legitimate neutral packet with an advancing timestamp is non-neutral.
 
 | Family | Reference in checked-in source | Additional checked-in neutral wire fixture |
 | --- | --- | --- |
-| DualSense | `DualSenseDefinition::neutral_state`, `DualSenseState::default` | `tests/fixtures/protocol-research/ds-neutral.hex` (0x01) |
+| DualSense | `DualSenseDefinition::neutral_state` (session default), `DualSenseInputs::default` | `tests/fixtures/protocol-research/ds-neutral.hex` (0x01) |
 | DualShock 4 | `DualShock4Definition::neutral_state`, `DualShock4State::default`, `ds4_evdev_frame` / `ds4_frame` | No dedicated neutral hex; `ds4-active-layout.hex` is **not** neutral |
 | Switch Pro | `SwitchProDefinition::neutral_state`, `SwitchProState::default`, `switch_pro.rs` encoding | No neutral hex |
 | Xbox 360 | `Xbox360Definition::neutral_state`, `Xbox360State::default`, `xbox_hid_frame` / evdev encoder | No neutral hex |

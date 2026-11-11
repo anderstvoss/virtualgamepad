@@ -4,7 +4,7 @@
 //! an SDL probe-complete timestamp counts as a consumer report.
 use std::collections::BTreeMap;
 use virtualgamepad::{
-    DualSenseState, DualShock4State, SteamController2026State, SwitchProState, WiiRemoteState,
+    DualSenseInputs, DualShock4State, SteamController2026State, SwitchProState, WiiRemoteState,
     Xbox360State, XboxSeriesState,
 };
 
@@ -35,7 +35,7 @@ impl DeviceIdentity {
 /// from the same family-native default used by the corresponding encoder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeInput {
-    DualSense(DualSenseState),
+    DualSense(DualSenseInputs),
     DualShock4(DualShock4State),
     SwitchPro(SwitchProState),
     Xbox360(Xbox360State),
@@ -77,8 +77,8 @@ impl NeutralReference {
         let (family, source, input) = match family {
             "virtualgamepad.dualsense" => (
                 "virtualgamepad.dualsense",
-                "DualSenseDefinition::neutral_state / DualSenseState::default",
-                NativeInput::DualSense(DualSenseState::default()),
+                "DualSenseDefinition::neutral_state / DualSenseSessionState::default().inputs / DualSenseInputs::default",
+                NativeInput::DualSense(DualSenseInputs::default()),
             ),
             "virtualgamepad.dualshock4" => (
                 "virtualgamepad.dualshock4",
