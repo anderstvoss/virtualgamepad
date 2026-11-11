@@ -127,3 +127,16 @@ class ProbeIntegration(unittest.TestCase):
             result, record = self.run_probe('normal', *options)
             self.assertEqual(result.returncode, 1)
             self.assertFalse(record['consumer_closed'])
+
+    def test_trigger_script_submits_each_side_independently_and_closes(self):
+        for scenario, accepted in [('normal', True), ('trigger-fail', False)]:
+            result, record = self.run_probe(scenario, '--gamepad-trigger-rumble-script', '--reopen')
+            submissions = [json.loads(line) for line in result.stdout.splitlines()
+                           if 'trigger_rumble_submission' in line]
+            self.assertEqual(submissions, [dict(record_type='trigger_rumble_submission',
+                                               side=side, accepted=accepted)
+                                          for side in ('left', 'right')])
+            self.assertIn('trigger_call=16384,0,60', result.stderr)
+            self.assertIn('trigger_call=0,32768,60', result.stderr)
+            self.assertTrue(record['consumer_closed'])
+            self.assertTrue(record['observations']['reclosed']['value'])

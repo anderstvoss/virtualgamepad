@@ -306,24 +306,32 @@ fn probe_ready(text: &str) -> bool {
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .any(|record| record["record_type"] == "mapping_ready")
 }
+#[derive(Default)]
+struct XboxProbeFeedback {
+    evdev: Option<virtualgamepad::RumblePlayback>,
+    bluetooth: Option<virtualgamepad::XboxSeriesBluetoothRumble>,
+    reports: Vec<Value>,
+}
+fn probe_node(nodes: &BTreeSet<PathBuf>, hidraw: bool) -> Option<&PathBuf> {
+    nodes
+        .iter()
+        .find(|node| node.starts_with("/dev/input") != hidraw)
+}
+fn xbox_hidapi() -> bool {
+    std::env::var("VIRTUALGAMEPAD_XBOX_HIDAPI").as_deref() == Ok("1")
+}
+
 fn wait_child(
     child: &mut Child,
     controller: &mut Controller,
     peers: &mut [&mut Session],
     capture: &Path,
-) -> Result<
-    (
-        Option<virtualgamepad::RumblePlayback>,
-        Option<virtualgamepad::XboxSeriesBluetoothRumble>,
-    ),
-    String,
-> {
+) -> Result<XboxProbeFeedback, String> {
     let start = Instant::now();
     let deadline = start + Duration::from_secs(30);
     let mut script = ProbeScript::default();
     let mut ready = false;
-    let mut xbox_rumble = None;
-    let mut xbox_bluetooth_rumble = None;
+    let mut feedback = XboxProbeFeedback::default();
     loop {
         for peer in peers.iter_mut() {
             peer.service.service(|| peer.controller.service());
@@ -331,7 +339,7 @@ fn wait_child(
         match child.try_wait() {
             Ok(Some(status)) => {
                 return if status.success() {
-                    Ok((xbox_rumble, xbox_bluetooth_rumble))
+                    Ok(feedback)
                 } else {
                     Err(format!("SDL probe exited {status}"))
                 };
@@ -344,18 +352,31 @@ fn wait_child(
             u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
             ready,
         );
-        let result = controller
-            .service()
-            .and_then(|()| match (&mut *controller, sample) {
-                (Controller::Steam(steam), Some(sample)) => drive_steam_sample(steam, sample),
-                (Controller::XboxSeries(series), Some(sample)) if sample <= 64 => {
-                    series
-                        .set_inputs(xbox_series_sample(sample))
-                        .map_err(|error| error.to_string())?;
-                    series.commit().map_err(|error| error.to_string())
-                }
-                _ => Ok(()),
-            });
+        let service = if let Controller::XboxSeries(series) = &mut *controller {
+            series
+                .service(&mut |event| {
+                    if let virtualgamepad::XboxSeriesOutputEvent::HidOutput { report_id, bytes } =
+                        event
+                    {
+                        feedback
+                            .reports
+                            .push(json!({"report_id":report_id,"bytes":bytes}));
+                    }
+                })
+                .map_err(|error| error.to_string())
+        } else {
+            controller.service()
+        };
+        let result = service.and_then(|()| match (&mut *controller, sample) {
+            (Controller::Steam(steam), Some(sample)) => drive_steam_sample(steam, sample),
+            (Controller::XboxSeries(series), Some(sample)) if sample <= 64 => {
+                series
+                    .set_inputs(xbox_series_sample(sample))
+                    .map_err(|error| error.to_string())?;
+                series.commit().map_err(|error| error.to_string())
+            }
+            _ => Ok(()),
+        });
         if let Err(error) = result {
             let _ = child.kill();
             let _ = child.wait();
@@ -366,11 +387,11 @@ fn wait_child(
                 let playback = outputs.evdev_rumble.filter(|playback| {
                     playback.repetitions > 0 && (playback.strong != 0 || playback.weak != 0)
                 });
-                xbox_rumble = playback.or(xbox_rumble);
+                feedback.evdev = playback.or(feedback.evdev);
                 let bluetooth = outputs
                     .bluetooth_rumble
                     .filter(|playback| playback.strong != 0 || playback.weak != 0);
-                xbox_bluetooth_rumble = bluetooth.or(xbox_bluetooth_rumble);
+                feedback.bluetooth = bluetooth.or(feedback.bluetooth);
             }
         }
         if Instant::now() >= deadline {
@@ -461,13 +482,25 @@ impl Backend for Linux {
                 let steam_hid = matches!(&s.controller, Controller::Steam(c)
                     if c.surface().target() == RealizationId::LINUX_UHID_USB);
                 let series = matches!(&s.controller, Controller::XboxSeries(_));
-                let node=s.nodes.iter().find(|p| p.starts_with("/dev/input") != steam_hid).or_else(||s.nodes.first()).ok_or("no owned node for SDL")?;
+                let series_hidapi = matches!(&s.controller, Controller::XboxSeries(c)
+                    if c.surface().target() == RealizationId::LINUX_UHID_BLUETOOTH) && xbox_hidapi();
+                let node=probe_node(&s.nodes, steam_hid || series_hidapi).ok_or("no owned node for requested SDL backend")?;
                 let path = std::env::temp_dir().join(format!("virtualgamepad-acceptance-{}-{}.json", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
                 let file = OpenOptions::new().write(true).create_new(true).open(&path).map_err(|e|e.to_string())?;
                 let capture = Capture(path);
-                let mut child = Command::new("bash")
-                    .arg(self.root.join("scripts/run-sdl3-gamepad-probe.sh"))
-                    .arg(node).arg(if steam_hid || series { "1800" } else { "100" }).stdout(Stdio::from(file)).stderr(Stdio::null())
+                if series_hidapi && bound_driver(node).as_deref() != Some("microsoft") {
+                    return Err("Xbox HIDAPI acceptance requires stock microsoft binding".into());
+                }
+                // Discovery precedes udev access; wait for this owned raw node only.
+                if series_hidapi { drop(open_consumer(node, true).map_err(|e| e.to_string())?); }
+                let mut command = Command::new("bash");
+                command.arg(self.root.join("scripts/run-sdl3-gamepad-probe.sh"))
+                    .arg(node).arg(if steam_hid || series { "1800" } else { "100" });
+                if series {
+                    command.arg(if series_hidapi { "--gamepad-trigger-rumble-script" } else { "--gamepad-rumble-script" }).arg("--reopen");
+                    command.env("SDL_JOYSTICK_HIDAPI", if series_hidapi { "1" } else { "0" });
+                }
+                let mut child = command.stdout(Stdio::from(file)).stderr(Stdio::null())
                     .spawn().map_err(|e|e.to_string())?;
                 let status = wait_child(&mut child, &mut s.controller, peers, &capture.0);
                 let text = fs::read_to_string(&capture.0).map_err(|e|e.to_string())?;
@@ -475,14 +508,20 @@ impl Backend for Linux {
                 if steam_hid && status.is_err() {
                     return Err(format!("SDL probe failed: {}", record["error"]));
                 }
-                let (playback, bluetooth_playback) = status?;
+                let feedback = status?;
                 if record["observations"]["opened"]["value"] != true { return Err("SDL did not observe this exact device opened".into()); }
                 let mut result = json!({"consumer":"SDL","timestamp_scope":"probe completion upper bound; discovery may occur earlier","observation":record});
                 if series {
-                    result["accepted_evdev_rumble"] = playback.map_or(Value::Null, |playback| json!({
+                    result["hid_output_reports"] = json!(feedback.reports);
+                    result["bound_driver_after"] = json!(bound_driver(node));
+                    result["trigger_submissions"] = json!(text.lines().filter_map(|line| serde_json::from_str::<Value>(line).ok()).filter(|r| r["record_type"] == "trigger_rumble_submission").collect::<Vec<_>>());
+                    if series_hidapi && bound_driver(node).as_deref() != Some("microsoft") {
+                        return Err("Xbox binding changed during HIDAPI acceptance".into());
+                    }
+                    result["accepted_evdev_rumble"] = feedback.evdev.map_or(Value::Null, |playback| json!({
                         "strong":playback.strong, "weak":playback.weak, "repetitions":playback.repetitions
                     }));
-                    result["accepted_bluetooth_rumble"] = bluetooth_playback.map_or(Value::Null, |effect| json!({
+                    result["accepted_bluetooth_rumble"] = feedback.bluetooth.map_or(Value::Null, |effect| json!({
                         "mask":effect.motor_mask, "strong":effect.strong, "weak":effect.weak,
                         "left_trigger":effect.left_trigger, "right_trigger":effect.right_trigger
                     }));
@@ -527,6 +566,23 @@ impl Backend for Linux {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn requested_probe_backend_never_falls_back_to_the_other_node_type() {
+        use std::{collections::BTreeSet, path::PathBuf};
+        let input = PathBuf::from("/dev/input/event999");
+        let raw = PathBuf::from("/dev/hidraw999");
+        for nodes in [
+            BTreeSet::new(),
+            BTreeSet::from([input.clone()]),
+            BTreeSet::from([raw.clone()]),
+            BTreeSet::from([input.clone(), raw.clone()]),
+        ] {
+            for (hidraw, expected) in [(false, &input), (true, &raw)] {
+                assert_eq!(super::probe_node(&nodes, hidraw), nodes.get(expected));
+            }
+        }
+    }
+
     #[test]
     fn steam_samples_use_the_selected_realizations_input_capabilities() {
         use virtualgamepad::{RealizationId, SteamMotionSample};

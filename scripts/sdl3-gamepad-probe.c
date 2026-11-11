@@ -23,7 +23,9 @@ int main(int argc, char **argv) {
     int16_t final_axes[6] = {0};
     bool require_script = strcmp(profile, "--dualsense-script") == 0;
     bool motion_script = strcmp(profile, "--motion-gamepad-script") == 0;
-    bool rumble_script = strcmp(profile, "--gamepad-rumble-script") == 0;
+    bool trigger_script = strcmp(profile, "--gamepad-trigger-rumble-script") == 0;
+    bool trigger_left = false, trigger_right = false, trigger_right_sent = false;
+    bool rumble_script = trigger_script || strcmp(profile, "--gamepad-rumble-script") == 0;
     bool gamepad_script = rumble_script || (strcmp(profile, "--gamepad-script") == 0);
     bool require_motion = require_script || motion_script || (strcmp(profile, "--require-motion") == 0);
     bool initialized = false, passed = false, connected = false;
@@ -95,9 +97,20 @@ int main(int argc, char **argv) {
     mapping = SDL_GetGamepadMapping(gamepad);
     if (!control_script) rumble = SDL_RumbleGamepad(gamepad, 0x4000, 0x8000, (Uint32)duration);
     if (!control_script) led = SDL_SetGamepadLED(gamepad, 32, 64, 128);
+    if (trigger_script) {
+        trigger_left = SDL_RumbleGamepadTriggers(gamepad, 0x4000, 0, 60);
+        printf("{\"record_type\":\"trigger_rumble_submission\",\"side\":\"left\",\"accepted\":%s}\n", trigger_left ? "true" : "false");
+        fflush(stdout);
+    }
     started = SDL_GetTicks();
     connected = true;
     while (SDL_GetTicks() - started < duration) {
+        if (trigger_script && !trigger_right_sent && SDL_GetTicks() - started >= 100) {
+            trigger_right = SDL_RumbleGamepadTriggers(gamepad, 0, 0x8000, 60);
+            trigger_right_sent = true;
+            printf("{\"record_type\":\"trigger_rumble_submission\",\"side\":\"right\",\"accepted\":%s}\n", trigger_right ? "true" : "false");
+            fflush(stdout);
+        }
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_GAMEPAD_REMOVED && event.gdevice.which == selected) connected = false;
@@ -166,6 +179,7 @@ int main(int argc, char **argv) {
             error = "required sensor observations missing, invalid or nonmonotonic";
         }
     }
+    if (trigger_script && (!trigger_left || !trigger_right)) { passed = false; error = "required independent trigger submissions missing"; }
     if (require_script || motion_script || gamepad_script) {
         bool controls = neutral_observed && (down_mask & 0x7fff) == 0x7fff && (up_mask & 0x7fff) == 0x7fff && axis_mask == 0x3f && (!require_script || touch_events > 10);
         for (unsigned axis = 0; axis < 6; ++axis)
