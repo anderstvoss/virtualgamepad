@@ -405,6 +405,17 @@ fn select_outcome(
     }
 }
 
+fn invalid_binding(source: &'static str) -> OracleResult {
+    OracleResult {
+        outcome: Outcome::Unavailable {
+            reason: "incomplete ownership binding or neutral reference family mismatch".to_owned(),
+        },
+        timeline: Timeline::default(),
+        ignored_foreign_events: 0,
+        neutral_source: source,
+    }
+}
+
 /// Evaluate a *creation-bound* observation stream. The first decodable input
 /// report decides `NonNeutralFirst`; later neutral may still be timestamped.
 /// Unknown report formats are unavailable rather than guessed non-neutral.
@@ -428,15 +439,7 @@ pub fn evaluate(
 
     if !owned.complete() || neutral.family != owned.family_id.as_str() || neutral.source.is_empty()
     {
-        return OracleResult {
-            outcome: Outcome::Unavailable {
-                reason: "incomplete ownership binding or neutral reference family mismatch"
-                    .to_owned(),
-            },
-            timeline,
-            ignored_foreign_events,
-            neutral_source: neutral.source,
-        };
+        return invalid_binding(neutral.source);
     }
     for observation in observations {
         if previous_ns.is_some_and(|previous| observation.at_ns < previous) {
