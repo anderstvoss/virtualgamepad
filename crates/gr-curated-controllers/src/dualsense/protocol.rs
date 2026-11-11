@@ -146,6 +146,9 @@ impl<R: crate::retained::OutputState> Protocol for DualSenseUsbProtocol<R> {
 }
 
 impl common::HidDriver for DualSenseDefinition {
+    fn transition_inputs(previous: &Self::State, next: &mut Self::State) {
+        next.transition_inputs(previous);
+    }
     fn open_native(
         &self,
         request: gr_realization_api::ProviderOpenRequest,

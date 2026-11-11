@@ -613,19 +613,19 @@ impl TargetAwareControllerDriver for Xbox360Definition {
     fn validate_state(
         &self,
         selection: RealizationSelection,
-        _: &Self::State,
+        state: &Self::State,
     ) -> Result<(), ControlError> {
-        if matches!(
+        if !matches!(
             selection.target,
             RealizationTarget::LINUX_UINPUT
                 | RealizationTarget::LINUX_UHID_USB
                 | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
                 | RealizationTarget::LINUX_USBIP_USB_AUDIO
         ) {
-            Ok(())
-        } else {
-            Err(common::unavailable(selection.target))
+            return Err(common::unavailable(selection.target));
         }
+        common::validate_hat(state.dpad)?;
+        Ok(())
     }
     fn encode(
         &self,
@@ -787,6 +787,19 @@ impl Xbox360Controller {
     pub fn is_dirty(&self) -> bool {
         self.0.is_dirty()
     }
+    /// Edit an isolated native input candidate as one transaction.
+    /// Only the final candidate is validated. Rejection preserves accepted input,
+    /// clocks, dirty work and queued reports. An unchanged edit adds no dirty work.
+    /// Keep external side effects outside the closure. Call `commit()` to deliver.
+    ///
+    /// # Errors
+    /// Returns the closure's error, a validation error, or `ControlError::Closed`.
+    pub fn edit_inputs(
+        &mut self,
+        edit: impl FnOnce(&mut Xbox360State) -> Result<(), ControlError>,
+    ) -> Result<(), ControlError> {
+        self.0.edit_inputs(edit)
+    }
     /// Replace the complete native input state as one validated edit.
     /// Call `commit()` to deliver it. Session metadata is preserved.
     ///
@@ -794,10 +807,7 @@ impl Xbox360Controller {
     /// Returns a control error if the session is closed or the snapshot cannot
     /// be represented by the selected realization.
     pub fn set_inputs(&mut self, state: Xbox360State) -> Result<(), ControlError> {
-        self.0.update_state(|current| {
-            common::validate_hat(state.dpad)?;
-            let mut state = state;
-            state.battery = current.battery;
+        self.edit_inputs(|current| {
             *current = state;
             Ok(())
         })
@@ -824,19 +834,19 @@ impl Xbox360Controller {
         control: Xbox360Control,
         pressed: bool,
     ) -> Result<(), ControlError> {
-        self.0.update_state(|state| {
+        self.edit_inputs(|state| {
             state.set_native(control, pressed);
             Ok(())
         })
     }
     pub fn set_left_stick(&mut self, x: Xbox360Axis, y: Xbox360Axis) -> Result<(), ControlError> {
-        self.0.update_state(|state| {
+        self.edit_inputs(|state| {
             state.left = (x, y);
             Ok(())
         })
     }
     pub fn set_right_stick(&mut self, x: Xbox360Axis, y: Xbox360Axis) -> Result<(), ControlError> {
-        self.0.update_state(|state| {
+        self.edit_inputs(|state| {
             state.right = (x, y);
             Ok(())
         })
@@ -846,7 +856,7 @@ impl Xbox360Controller {
         left: Xbox360Trigger,
         right: Xbox360Trigger,
     ) -> Result<(), ControlError> {
-        self.0.update_state(|state| {
+        self.edit_inputs(|state| {
             state.set_triggers(left, right);
             Ok(())
         })
@@ -1026,6 +1036,10 @@ pub fn create_xbox360_usb_worker(
 }
 
 impl common::HidDriver for Xbox360Definition {
+    fn transition_inputs(previous: &Self::State, next: &mut Self::State) {
+        next.battery = previous.battery;
+    }
+
     fn neutralize_state(state: &mut Self::State) {
         *state = Self::State {
             battery: state.battery,
@@ -1171,6 +1185,81 @@ impl crate::registry::ControllerFamily for Xbox360Definition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_input_edits_are_transactional_and_unchanged_edits_stay_clean() {
+        use common::session_tests::{check_input_transactions, snapshot_session};
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            let (session, io) = snapshot_session(Xbox360Definition, target, [false; 3]);
+            let mut controller = Xbox360Controller(session);
+            controller.service(&mut |_| {}).unwrap();
+            controller
+                .edit_inputs(|state| {
+                    for (direction, pressed) in [
+                        (gr_controller_contract::DpadDirection::Up, true),
+                        (gr_controller_contract::DpadDirection::Down, true),
+                        (gr_controller_contract::DpadDirection::Up, false),
+                    ] {
+                        state.set_digital(DigitalControlUpdate::Dpad { direction, pressed });
+                    }
+                    Ok(())
+                })
+                .unwrap();
+            assert!(
+                controller
+                    .state()
+                    .dpad_pressed(gr_controller_contract::DpadDirection::Down)
+            );
+            controller.neutralize().unwrap();
+            check_input_transactions!(
+                controller,
+                |state: &mut Xbox360State| {
+                    state.set_native(Xbox360Control::A, true);
+                    state.set_digital(DigitalControlUpdate::Dpad {
+                        direction: gr_controller_contract::DpadDirection::Up,
+                        pressed: true,
+                    });
+                    Ok(())
+                },
+                |state: &mut Xbox360State| {
+                    state.set_digital(DigitalControlUpdate::Dpad {
+                        direction: gr_controller_contract::DpadDirection::Down,
+                        pressed: true,
+                    });
+                    Ok(())
+                },
+                io.lock().unwrap().sent.len()
+            );
+        }
+    }
+
+    #[test]
+    fn field_edits_and_snapshots_share_validation_and_transitions() {
+        use common::session_tests::{check_opposing_dpad, input_validation_session};
+
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            RealizationTarget::LINUX_USBIP_USB_AUDIO,
+        ] {
+            let session = input_validation_session(Xbox360Definition, target, [false; 3]);
+            let mut controller = Xbox360Controller(session);
+            controller.service(&mut |_| {}).unwrap();
+            check_opposing_dpad!(controller, true);
+            controller.neutralize().unwrap();
+            controller.commit().unwrap();
+            controller.close();
+            controller.close();
+            let accepted = controller.state().clone();
+            assert_eq!(controller.neutralize(), Err(ControlError::Closed));
+            assert_eq!(controller.state(), &accepted);
+        }
+    }
 
     #[test]
     fn whole_state_through_each_report_encoder() {

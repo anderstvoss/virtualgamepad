@@ -227,6 +227,7 @@
         "pub fn surface(&self) -> &'static ControllerSurface",
         "pub fn association(&self) -> &ControllerAssociation",
         "pub fn is_closed(&self) -> bool",
+        "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut WiiRemoteState) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
         "pub fn set_inputs(&mut self, state: WiiRemoteState) -> Result<(), ControlError>",
         "pub fn set_button( &mut self, button: WiiRemoteButton, pressed: bool, ) -> Result<(), ControlError>",
         "pub fn set_accelerometer( &mut self, values: [u16; 3], ) -> Result<(), ControlError>",

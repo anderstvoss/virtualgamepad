@@ -89,14 +89,16 @@ impl Nodes {
     }
     pub(super) fn commit(&mut self, state: &WiiRemoteState) -> Result<(), CommitError> {
         for (_, session) in &mut self.companions {
-            session
-                .update_state(|s| {
-                    *s = state.clone();
-                    Ok(())
-                })
-                .map_err(|e| CommitError::Backend {
-                    reason: e.to_string(),
-                })?;
+            if session.state() != state {
+                session
+                    .update_state(|s| {
+                        *s = state.clone();
+                        Ok(())
+                    })
+                    .map_err(|e| CommitError::Backend {
+                        reason: e.to_string(),
+                    })?;
+            }
             session.commit()?;
         }
         Ok(())

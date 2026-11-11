@@ -8,11 +8,14 @@ neutral motion. It performs no transport I/O; the existing explicit commit()
 delivers the accepted state. Backpressure leaves that state dirty and retryable.
 Closed handles reject neutralization without mutation.
 
-Identity, battery metadata, protocol clocks/counters, Switch stream configuration
-and host-owned output state are preserved. DS4's touch sample sequence advances
-once when releasing active contacts, as for a normal contact update; repeated
-neutralization with no active contacts does not advance it. Neutralization is not
-recreation, a battery reset, rumble stop, or cancellation of required host replies.
+Identity, battery metadata, Switch stream configuration and host-owned output
+state are preserved. Under the accepted
+[input model](../spec/input-model-state-and-mutation.md), restoring a changed
+motion value to neutral advances the family motion clock.
+DS4's touch sample sequence advances once when releasing active contacts.
+Repeating an already-neutral edit leaves these clocks and sequences in place.
+Neutralization is not recreation, a battery reset, rumble stop, or cancellation
+of required host replies.
 It introduces no normalized state model, runtime thread or adapter dependency.
 
 All handles expose provider_diagnostics(). Native session cleanup now retains

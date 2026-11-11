@@ -76,6 +76,30 @@ impl<D: TargetAwareControllerDriver, S: FrameSink<Frame = D::Frame>> ControllerR
         self.dirty = true;
         Ok(())
     }
+    /// Edit one isolated candidate, validate it, derive transitions, and install
+    /// only a changed state. Existing dirty work survives an unchanged edit.
+    pub fn edit_state(
+        &mut self,
+        edit: impl FnOnce(&D, &D::State, &mut D::State) -> Result<(), ControlError>,
+        transition: impl FnOnce(&D::State, &mut D::State),
+    ) -> Result<(), ControlError>
+    where
+        D::State: PartialEq,
+    {
+        if self.closed {
+            return Err(ControlError::Closed);
+        }
+        let mut next = self.state.clone();
+        edit(&self.driver, &self.state, &mut next)?;
+        self.driver
+            .validate_state(self.prepared.selection(), &next)?;
+        transition(&self.state, &mut next);
+        if next != self.state {
+            self.state = next;
+            self.dirty = true;
+        }
+        Ok(())
+    }
     pub fn commit(&mut self) -> Result<(), CommitError> {
         if self.closed {
             return Err(CommitError::Closed);
@@ -234,6 +258,52 @@ mod tests {
         ));
         assert!(!*runtime.state());
         assert!(!runtime.is_dirty());
+    }
+
+    #[test]
+    fn transactional_edits_preserve_dirty_retries_without_new_work_for_noops() {
+        let mut runtime = runtime(false);
+        runtime.commit().unwrap();
+        runtime.edit_state(|_, _, _| Ok(()), |_, _| {}).unwrap();
+        assert!(!runtime.is_dirty());
+        runtime
+            .edit_state(
+                |_, _, next| {
+                    *next = true;
+                    Ok(())
+                },
+                |_, _| {},
+            )
+            .unwrap();
+        let error = ControlError::UnsupportedControl {
+            control: "late edit",
+        };
+        assert_eq!(
+            runtime.edit_state(
+                |_, _, next| {
+                    *next = false;
+                    Err(error.clone())
+                },
+                |_, _| panic!("rejected edit reached transition"),
+            ),
+            Err(error)
+        );
+        assert!(*runtime.state());
+        assert!(runtime.is_dirty());
+        runtime.sink.fail = true;
+        assert!(runtime.commit().is_err());
+        runtime.edit_state(|_, _, _| Ok(()), |_, _| {}).unwrap();
+        assert!(runtime.is_dirty());
+        runtime.sink.fail = false;
+        runtime.commit().unwrap();
+        runtime.edit_state(|_, _, _| Ok(()), |_, _| {}).unwrap();
+        runtime.commit().unwrap();
+        assert_eq!(runtime.sink.sent, [false, true]);
+        runtime.close();
+        assert_eq!(
+            runtime.edit_state(|_, _, _| panic!("closed edit executed"), |_, _| {},),
+            Err(ControlError::Closed)
+        );
     }
 
     #[test]

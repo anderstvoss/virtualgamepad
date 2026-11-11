@@ -148,6 +148,9 @@ impl Protocol for SwitchUsbProtocol {
     fn delivered(&mut self, _: &Command, _: Delivery) {}
 }
 impl common::HidDriver for SwitchProDefinition {
+    fn transition_inputs(previous: &Self::State, next: &mut Self::State) {
+        next.transition_inputs(previous);
+    }
     fn neutralize_state(state: &mut Self::State) {
         *state = Self::State {
             timer: state.timer,

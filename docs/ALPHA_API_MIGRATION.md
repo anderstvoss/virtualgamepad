@@ -198,5 +198,86 @@ them as a hat. Switch Pro USB reports carry separate directional bits. On
 uinput, nonzero DualSense, DualShock 4 and Switch Pro motion and an active
 DualSense microphone mute button return `UnavailableInRealization`. DualShock
 4 touch IDs and DualSense USB touch IDs are limited to `0..=127`. DualSense
-uinput touch IDs use `0..=255`. The per-field DualSense mute setter still
-accepts the button level on uinput. That target emits no event for the button.
+uinput touch IDs use `0..=255`.
+
+## VG-1b/a · Final-state validation and input clocks
+
+The root API snapshot adds two methods,
+`DualSenseController::refresh_motion() -> Result<(), CommitError>` and
+`DualShock4Controller::refresh_motion() -> Result<(), CommitError>`. The curated
+handles expose the same methods. The Wii and Steam snapshots have zero
+additions, removals or signature changes.
+
+- The existing setters and whole-state replacements share final-state
+  validation. `set_digital` rejects opposing directions on hat targets.
+  Switch Pro USB continues to accept independent directions.
+- `set_touch` enforces the same contact ID bounds as `set_inputs`. Setting
+  the DualSense microphone mute button to pressed on uinput returns
+  `UnavailableInRealization` because that target has no mute event.
+- The three motion setters return `UnavailableInRealization` on uinput.
+  A snapshot with neutral motion is valid there.
+- An accepted motion change advances the DualSense sensor timestamp by
+  12,000, the DS4 timestamp by 750, or the Switch Pro state timer by 1.
+  This includes a return to neutral via `neutralize()`. Repeating the
+  same motion value leaves these counters at their current positions.
+- DS4 advances the touch sequence once when contacts change, including the
+  last release. A simultaneous motion change cannot add a second touch
+  increment. Repeating the same contact edit leaves the sequence in place.
+
+- `refresh_motion()` explicitly advances the Sony motion clock and sequence
+  even when the motion values are equal, then commits the current input.
+  DS4 also advances the touch sequence when a contact is active.
+  The demo uses this operation for periodic motion samples. Uinput refuses
+  this operation because it has no motion presentation. The method returns
+  `CommitError`, matching Switch Pro's refresh operation. After backpressure,
+  retry with `commit()` to deliver the accepted sample at its current clock.
+
+## VG-1b/b · Transactional native input edits
+
+All seven curated and ordinary-root controller handles add
+`edit_inputs(&mut self, edit: impl FnOnce(&mut FamilyState) -> Result<(), ControlError>) -> Result<(), ControlError>`.
+The candidate type is the family's existing native state type.
+
+| Handle | Candidate |
+| --- | --- |
+| `DualSenseController` | `DualSenseState` |
+| `DualShock4Controller` | `DualShock4State` |
+| `SwitchProController` | `SwitchProState` |
+| `Xbox360Controller` | `Xbox360State` |
+| `WiiRemoteController` | `WiiRemoteState` |
+| `SteamController2026Controller` | `SteamController2026State` |
+| `XboxSeriesController` | `XboxSeriesState` |
+
+The root snapshot adds seven methods in each feature view. The Wii and Steam
+supporting snapshots each add one method. There are zero removed declarations
+or changed existing signatures. The supporting runtime crates also add
+`ControllerRuntime::edit_state` and `gr_hid::Runtime::edit_state` for validated
+candidate installation and change detection.
+
+The closure edits an isolated candidate. Its error, or a final-state validation
+error, rejects the entire edit and preserves accepted inputs, clocks, dirty work,
+queued reports and host outputs. Closed handles reject before invoking the closure.
+Keep external side effects outside the closure.
+
+`set_inputs`, field setters, digital edits and `neutralize` use the same input
+transition. Only the final levels determine validity and motion/contact clock
+changes. An accepted unchanged candidate adds no dirty work and preserves existing
+dirty work and queued bytes. Wii companion nodes also skip unchanged state when
+committing.
+
+```rust
+controller.edit_inputs(|state| {
+    state.set_native(DualSenseControl::Cross, true);
+    state.set_sticks((left_x, left_y), (right_x, right_y));
+    Ok(())
+})?;
+controller.commit()?;
+```
+
+Existing family ownership rules apply to edits. Sony and Xbox 360 battery,
+Sony and Switch counters, and Switch streaming state remain controller-owned.
+Wii revision and attachment changes use the live attachment API. Wii raw battery
+ownership and the input-only value types remain scheduled for steps c and d.
+Steam's motion timestamp remains caller-supplied. Explicit Sony motion refresh,
+host servicing, Wii attachment and EEPROM, and Steam protocol modes retain their
+separate operations.
