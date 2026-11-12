@@ -58,18 +58,17 @@ pub enum SwitchProControl {
     LeftStickPress,
     RightStickPress,
 }
+/// Caller-owned native input levels, including motion measurements.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SwitchProState {
+pub struct SwitchProInputs {
     face: [bool; 4],
     dpad: [bool; 4],
     left: (SwitchProAxis, SwitchProAxis),
     right: (SwitchProAxis, SwitchProAxis),
     buttons: [bool; 10],
     motion: SwitchProMotionSample,
-    timer: u8,
-    stream_enabled: bool,
 }
-impl Default for SwitchProState {
+impl Default for SwitchProInputs {
     fn default() -> Self {
         Self {
             face: [false; 4],
@@ -81,12 +80,9 @@ impl Default for SwitchProState {
                 accelerometer: [0; 3],
                 gyroscope: [0; 3],
             },
-            timer: 0,
-            stream_enabled: false,
         }
     }
 }
-
 const fn motion_targets() -> RealizationTargetSet {
     RealizationTargetSet::new(&[
         RealizationTarget::LINUX_UHID_USB,
@@ -94,19 +90,7 @@ const fn motion_targets() -> RealizationTargetSet {
     ])
 }
 
-impl SwitchProState {
-    fn transition_inputs(&mut self, previous: &Self) {
-        self.timer = previous.timer;
-        self.stream_enabled = previous.stream_enabled;
-        self.advance_input_timing(previous.motion);
-    }
-
-    fn advance_input_timing(&mut self, previous_motion: SwitchProMotionSample) {
-        if self.motion != previous_motion {
-            self.timer = self.timer.wrapping_add(1);
-        }
-    }
-
+impl SwitchProInputs {
     #[must_use]
     pub const fn left_stick(&self) -> (SwitchProAxis, SwitchProAxis) {
         self.left
@@ -193,6 +177,24 @@ impl SwitchProState {
         }
     }
 }
+/// Accepted motion clock and live host-selected stream state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SwitchProStatus {
+    timer: u8,
+    stream_enabled: bool,
+}
+impl SwitchProStatus {
+    /// Accepted motion clock; the transport has a separate report counter.
+    #[must_use]
+    pub const fn timer(self) -> u8 {
+        self.timer
+    }
+    #[must_use]
+    pub const fn stream_enabled(self) -> bool {
+        self.stream_enabled
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SwitchProSurface {
     common: ControllerSurface,
@@ -585,17 +587,17 @@ impl RealizationControllerDefinition for SwitchProDefinition {
     }
 }
 impl TargetAwareControllerDriver for SwitchProDefinition {
-    type State = SwitchProState;
+    type State = (SwitchProInputs, SwitchProStatus);
     type Frame = ProviderFrame;
     fn neutral_state(&self) -> Self::State {
-        SwitchProState::default()
+        <(SwitchProInputs, SwitchProStatus)>::default()
     }
     fn apply_digital(
         &self,
         s: &mut Self::State,
         u: DigitalControlUpdate,
     ) -> Result<(), ControlError> {
-        s.set_digital(u);
+        s.0.set_digital(u);
         Ok(())
     }
     fn validate_state(
@@ -612,9 +614,9 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
             return Err(common::unavailable(sel.target));
         }
         if sel.target == RealizationTarget::LINUX_UINPUT {
-            common::validate_hat(state.dpad)?;
+            common::validate_hat(state.0.dpad)?;
         }
-        if state.motion != SwitchProState::default().motion {
+        if state.0.motion != SwitchProInputs::default().motion {
             common::require_input_target(sel.target, motion_targets())?;
         }
         Ok(())
@@ -643,9 +645,9 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
         }
     }
 }
-fn switch_evdev_frame(state: &SwitchProState) -> ProviderFrame {
+fn switch_evdev_frame(state: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
     let mut events = Vec::with_capacity(22);
-    for (code, pressed) in [304, 305, 308, 307].into_iter().zip(state.face) {
+    for (code, pressed) in [304, 305, 308, 307].into_iter().zip(state.0.face) {
         events.push(EvdevEvent {
             event_type: common::EV_KEY,
             code,
@@ -654,7 +656,7 @@ fn switch_evdev_frame(state: &SwitchProState) -> ProviderFrame {
     }
     for (code, pressed) in [310, 311, 312, 313, 314, 315, 316, 309, 317, 318]
         .into_iter()
-        .zip(state.buttons)
+        .zip(state.0.buttons)
     {
         events.push(EvdevEvent {
             event_type: common::EV_KEY,
@@ -663,12 +665,12 @@ fn switch_evdev_frame(state: &SwitchProState) -> ProviderFrame {
         });
     }
     for (code, value) in [
-        (0, i32::from(state.left.0.raw())),
-        (1, i32::from(state.left.1.raw())),
-        (3, i32::from(state.right.0.raw())),
-        (4, i32::from(state.right.1.raw())),
-        (16, i32::from(state.dpad[3]) - i32::from(state.dpad[2])),
-        (17, i32::from(state.dpad[1]) - i32::from(state.dpad[0])),
+        (0, i32::from(state.0.left.0.raw())),
+        (1, i32::from(state.0.left.1.raw())),
+        (3, i32::from(state.0.right.0.raw())),
+        (4, i32::from(state.0.right.1.raw())),
+        (16, i32::from(state.0.dpad[3]) - i32::from(state.0.dpad[2])),
+        (17, i32::from(state.0.dpad[1]) - i32::from(state.0.dpad[0])),
     ] {
         events.push(EvdevEvent {
             event_type: common::EV_ABS,
@@ -698,51 +700,51 @@ fn pack(out: &mut [u8], x: i16, y: i16) {
     out[1] = ((x >> 8) as u8 & 0x0f) | ((y as u8 & 0x0f) << 4);
     out[2] = (y >> 4) as u8;
 }
-fn switch_frame(s: &SwitchProState) -> ProviderFrame {
+fn switch_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
     let mut b = vec![0; 63];
-    b[0] = s.timer;
+    b[0] = s.1.timer;
     b[1] = 0x80;
     // `FaceButton` follows the host gamepad layout, so its South/East controls
     // map to Nintendo B/A respectively (the printed labels are reversed).
-    b[2] = u8::from(s.face[2])
-        | (u8::from(s.face[3]) << 1)
-        | (u8::from(s.face[0]) << 2)
-        | (u8::from(s.face[1]) << 3)
-        | (u8::from(s.buttons[1]) << 6)
-        | (u8::from(s.buttons[3]) << 7);
-    b[3] = u8::from(s.buttons[4])
-        | (u8::from(s.buttons[5]) << 1)
-        | (u8::from(s.buttons[9]) << 2)
-        | (u8::from(s.buttons[8]) << 3)
-        | (u8::from(s.buttons[6]) << 4)
-        | (u8::from(s.buttons[7]) << 5);
-    b[4] = u8::from(s.dpad[1])
-        | (u8::from(s.dpad[0]) << 1)
-        | (u8::from(s.dpad[3]) << 2)
-        | (u8::from(s.dpad[2]) << 3)
-        | (u8::from(s.buttons[0]) << 6)
-        | (u8::from(s.buttons[2]) << 7);
+    b[2] = u8::from(s.0.face[2])
+        | (u8::from(s.0.face[3]) << 1)
+        | (u8::from(s.0.face[0]) << 2)
+        | (u8::from(s.0.face[1]) << 3)
+        | (u8::from(s.0.buttons[1]) << 6)
+        | (u8::from(s.0.buttons[3]) << 7);
+    b[3] = u8::from(s.0.buttons[4])
+        | (u8::from(s.0.buttons[5]) << 1)
+        | (u8::from(s.0.buttons[9]) << 2)
+        | (u8::from(s.0.buttons[8]) << 3)
+        | (u8::from(s.0.buttons[6]) << 4)
+        | (u8::from(s.0.buttons[7]) << 5);
+    b[4] = u8::from(s.0.dpad[1])
+        | (u8::from(s.0.dpad[0]) << 1)
+        | (u8::from(s.0.dpad[3]) << 2)
+        | (u8::from(s.0.dpad[2]) << 3)
+        | (u8::from(s.0.buttons[0]) << 6)
+        | (u8::from(s.0.buttons[2]) << 7);
     // hid-nintendo negates the packed Switch Y axes before publishing Linux
     // `ABS_Y`/`ABS_RY`. The public API follows that Linux convention (positive
     // means down), so compensate only at the Switch wire boundary.
     pack(
         &mut b[5..8],
-        s.left.0.raw(),
-        s.left.1.raw().saturating_neg(),
+        s.0.left.0.raw(),
+        s.0.left.1.raw().saturating_neg(),
     );
     pack(
         &mut b[8..11],
-        s.right.0.raw(),
-        s.right.1.raw().saturating_neg(),
+        s.0.right.0.raw(),
+        s.0.right.1.raw().saturating_neg(),
     );
     b[11] = 9;
-    let ax = s.motion.accelerometer[1] / 4;
-    let ay = s.motion.accelerometer[0].wrapping_neg() / 4;
-    let az = s.motion.accelerometer[2] / 4;
+    let ax = s.0.motion.accelerometer[1] / 4;
+    let ay = s.0.motion.accelerometer[0].wrapping_neg() / 4;
+    let az = s.0.motion.accelerometer[2] / 4;
     let gyro = [
-        s.motion.gyroscope[1],
-        s.motion.gyroscope[0].wrapping_neg(),
-        s.motion.gyroscope[2],
+        s.0.motion.gyroscope[1],
+        s.0.motion.gyroscope[0].wrapping_neg(),
+        s.0.motion.gyroscope[2],
     ];
     for sample in 0..3 {
         let o = 12 + sample * 12;
@@ -759,7 +761,7 @@ fn switch_frame(s: &SwitchProState) -> ProviderFrame {
     }
 }
 
-fn switch_input_prefix(state: &SwitchProState) -> [u8; 12] {
+fn switch_input_prefix(state: &(SwitchProInputs, SwitchProStatus)) -> [u8; 12] {
     let ProviderFrame::HidInput { bytes, .. } = switch_frame(state) else {
         unreachable!("Switch frame is always HID input")
     };
@@ -802,7 +804,7 @@ fn switch_spi_byte(address: u32) -> u8 {
 }
 
 fn switch_subcommand_reply(
-    state: &SwitchProState,
+    state: &(SwitchProInputs, SwitchProStatus),
     subcommand: u8,
     arguments: &[u8],
     identity: SwitchProIdentity,
@@ -940,11 +942,13 @@ impl SwitchProController {
     pub fn stream_enabled(&self) -> bool {
         self.0
             .protocol()
-            .map_or(self.0.state().stream_enabled, |p| p.stream_enabled)
+            .map_or(self.0.state().1.stream_enabled, |p| p.stream_enabled)
     }
     #[must_use]
     pub fn motion_report_counter(&self) -> u8 {
-        self.0.protocol().map_or(self.0.state().timer, |p| p.timer)
+        self.0
+            .protocol()
+            .map_or(self.0.state().1.timer, |p| p.timer)
     }
 
     /// Whether the HID readiness descriptor should also be watched for writability.
@@ -969,8 +973,16 @@ impl SwitchProController {
     }
 
     #[must_use]
-    pub const fn state(&self) -> &SwitchProState {
-        self.0.state()
+    pub const fn inputs(&self) -> &SwitchProInputs {
+        &self.0.state().0
+    }
+    /// Accepted motion clock and live host-selected stream state.
+    #[must_use]
+    pub fn status(&self) -> SwitchProStatus {
+        SwitchProStatus {
+            stream_enabled: self.stream_enabled(),
+            ..self.0.state().1
+        }
     }
     #[must_use]
     pub fn is_dirty(&self) -> bool {
@@ -993,9 +1005,9 @@ impl SwitchProController {
     /// Returns the closure's error, a validation error, or `ControlError::Closed`.
     pub fn edit_inputs(
         &mut self,
-        edit: impl FnOnce(&mut SwitchProState) -> Result<(), ControlError>,
+        edit: impl FnOnce(&mut SwitchProInputs) -> Result<(), ControlError>,
     ) -> Result<(), ControlError> {
-        self.0.edit_inputs(edit)
+        self.0.edit_inputs(|state| edit(&mut state.0))
     }
     /// Replace the complete native input state as one validated edit.
     /// Call `commit()` to deliver it. Protocol counters are session-owned.
@@ -1003,7 +1015,7 @@ impl SwitchProController {
     /// # Errors
     /// Returns a control error if the session is closed or the snapshot cannot
     /// be represented by the selected realization.
-    pub fn set_inputs(&mut self, state: SwitchProState) -> Result<(), ControlError> {
+    pub fn set_inputs(&mut self, state: SwitchProInputs) -> Result<(), ControlError> {
         self.edit_inputs(|current| {
             *current = state;
             Ok(())
@@ -1068,10 +1080,10 @@ impl SwitchProController {
         if self.0.selection().target == RealizationTarget::LINUX_UHID_USB {
             return self.0.commit();
         }
-        if self.0.state().stream_enabled {
+        if self.0.state().1.stream_enabled {
             self.0
                 .update_state(|s| {
-                    s.timer = s.timer.wrapping_add(1);
+                    s.1.timer = s.1.timer.wrapping_add(1);
                     Ok(())
                 })
                 .map_err(|e| CommitError::Backend {
@@ -1151,7 +1163,7 @@ impl SwitchProController {
         if enable {
             self.0
                 .update_state(|s| {
-                    s.stream_enabled = true;
+                    s.1.stream_enabled = true;
                     Ok(())
                 })
                 .map_err(|e| ProviderError::Open {
@@ -1386,8 +1398,120 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
 }
 
 #[cfg(test)]
+impl crate::common::session_tests::InputFixture for (SwitchProInputs, SwitchProStatus) {
+    type Inputs = SwitchProInputs;
+    fn test_inputs(&self) -> &Self::Inputs {
+        &self.0
+    }
+    fn test_inputs_mut(&mut self) -> &mut Self::Inputs {
+        &mut self.0
+    }
+    fn test_into_inputs(self) -> Self::Inputs {
+        self.0
+    }
+}
+#[cfg(test)]
+impl crate::common::session_tests::ControllerFixture for SwitchProController {
+    type State = (SwitchProInputs, SwitchProStatus);
+    fn test_state(&self) -> &Self::State {
+        self.0.state()
+    }
+}
+#[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::session_tests::{ControllerFixture as _, InputFixture as _};
+
+    #[test]
+    fn input_values_are_independent_of_controller_clocks_and_stream_state() {
+        use common::session_tests::input_validation_session;
+        let neutral = SwitchProInputs::default();
+        assert_eq!(neutral, neutral.clone());
+        assert_eq!(
+            neutral.left_stick(),
+            (SwitchProAxis::new(0), SwitchProAxis::new(0))
+        );
+        assert_eq!(
+            neutral.motion(),
+            SwitchProMotionSample {
+                accelerometer: [0; 3],
+                gyroscope: [0; 3]
+            }
+        );
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            let session =
+                input_validation_session(SwitchProDefinition, target, [true, true, false]);
+            let mut controller = SwitchProController(session, fixture_identity());
+            controller.service(&mut |_| {}).unwrap();
+            let status = controller.status();
+            let outputs = controller.host_outputs();
+            let mut inputs = neutral.clone();
+            inputs.set_native(SwitchProControl::B, true);
+            inputs.set_sticks(
+                (SwitchProAxis::new(-123), SwitchProAxis::new(456)),
+                (SwitchProAxis::new(789), SwitchProAxis::new(-321)),
+            );
+            let motion = target != RealizationTarget::LINUX_UINPUT;
+            if motion {
+                inputs.set_motion(SwitchProMotionSample {
+                    accelerometer: [1, 2, 3],
+                    gyroscope: [4, 5, 6],
+                });
+            }
+            controller.set_inputs(inputs.clone()).unwrap();
+            assert_eq!(controller.inputs(), &inputs);
+            assert_eq!(
+                controller.status().timer(),
+                status.timer().wrapping_add(u8::from(motion))
+            );
+            assert_eq!(
+                controller.status().stream_enabled(),
+                status.stream_enabled()
+            );
+            controller.commit().unwrap();
+            let accepted_status = controller.status();
+            controller.edit_inputs(|_| Ok(())).unwrap();
+            controller.set_inputs(inputs.clone()).unwrap();
+            assert!(!controller.is_dirty());
+            assert_eq!(controller.status(), accepted_status);
+            let error = ControlError::UnsupportedControl {
+                control: "synthetic late input failure",
+            };
+            assert_eq!(
+                controller.edit_inputs(|candidate| {
+                    candidate.set_native(SwitchProControl::A, true);
+                    Err(error.clone())
+                }),
+                Err(error)
+            );
+            assert_eq!(controller.inputs(), &inputs);
+            assert_eq!(controller.status(), accepted_status);
+            assert!(!controller.is_dirty());
+            controller.neutralize().unwrap();
+            assert_eq!(controller.inputs(), &neutral);
+            assert_eq!(
+                controller.status().timer(),
+                status.timer().wrapping_add(u8::from(motion) * 2)
+            );
+            assert_eq!(
+                controller.status().stream_enabled(),
+                status.stream_enabled()
+            );
+            assert_eq!(controller.host_outputs(), outputs);
+            let final_status = controller.status();
+            controller.close();
+            controller.close();
+            assert_eq!(controller.status(), final_status);
+            assert_eq!(
+                controller.set_inputs(neutral.clone()),
+                Err(ControlError::Closed)
+            );
+        }
+    }
 
     #[test]
     fn native_input_edits_are_transactional_and_unchanged_edits_stay_clean() {
@@ -1414,13 +1538,13 @@ mod tests {
                 .unwrap();
             assert!(
                 controller
-                    .state()
+                    .inputs()
                     .dpad_pressed(gr_controller_contract::DpadDirection::Down)
             );
             controller.neutralize().unwrap();
             check_input_transactions!(
                 controller,
-                |state: &mut SwitchProState| {
+                |state: &mut SwitchProInputs| {
                     state.set_native(SwitchProControl::B, true);
                     state.set_digital(DigitalControlUpdate::Dpad {
                         direction: gr_controller_contract::DpadDirection::Up,
@@ -1428,7 +1552,7 @@ mod tests {
                     });
                     Ok(())
                 },
-                |state: &mut SwitchProState| {
+                |state: &mut SwitchProInputs| {
                     state.set_digital(DigitalControlUpdate::Dpad {
                         direction: gr_controller_contract::DpadDirection::Down,
                         pressed: true,
@@ -1468,8 +1592,8 @@ mod tests {
                 accelerometer: [10, 20, 30],
                 gyroscope: [40, 50, 60],
             };
-            let mut candidate = controller.state().clone();
-            candidate.set_motion(motion);
+            let mut candidate = controller.test_state().clone();
+            candidate.0.set_motion(motion);
             if is_uinput {
                 assert_input_rejected!(
                     controller,
@@ -1478,32 +1602,34 @@ mod tests {
                     unavailable.clone()
                 );
                 assert_eq!(
-                    controller.set_motion(controller.state().motion()),
+                    controller.set_motion(controller.test_state().0.motion()),
                     Err(unavailable)
                 );
-                controller.set_inputs(controller.state().clone()).unwrap();
+                controller
+                    .set_inputs(controller.test_state().clone().test_into_inputs())
+                    .unwrap();
             } else {
-                let timer = controller.state().timer;
+                let timer = controller.test_state().1.timer;
                 controller.set_motion(motion).unwrap();
-                let changed = controller.state().clone();
-                assert_eq!(changed.timer, timer.wrapping_add(1));
+                let changed = controller.test_state().clone();
+                assert_eq!(changed.1.timer, timer.wrapping_add(1));
                 controller.set_motion(motion).unwrap();
-                controller.set_inputs(candidate).unwrap();
+                controller.set_inputs(candidate.test_into_inputs()).unwrap();
                 controller
                     .edit_inputs(|state| {
                         state.set_motion(motion);
                         Ok(())
                     })
                     .unwrap();
-                assert_eq!(controller.state(), &changed);
+                assert_eq!(controller.test_state(), &changed);
                 controller.neutralize().unwrap();
-                assert_eq!(controller.state().timer, timer.wrapping_add(2));
+                assert_eq!(controller.test_state().1.timer, timer.wrapping_add(2));
             }
             controller.close();
             controller.close();
-            let accepted = controller.state().clone();
+            let accepted = controller.test_state().clone();
             assert_eq!(controller.neutralize(), Err(ControlError::Closed));
-            assert_eq!(controller.state(), &accepted);
+            assert_eq!(controller.test_state(), &accepted);
         }
     }
 
@@ -1520,7 +1646,7 @@ mod tests {
             controller
                 .0
                 .update_state(|current| {
-                    current.timer = 17;
+                    current.1.timer = 17;
                     Ok(())
                 })
                 .unwrap();
@@ -1538,38 +1664,44 @@ mod tests {
                 controller.service(&mut |_| {}).unwrap();
                 controller.service(&mut |_| {}).unwrap();
                 assert!(controller.stream_enabled());
+                assert!(controller.status().stream_enabled());
             }
             let identity = controller.identity();
             let axis = SwitchProAxis::new;
-            let mut snapshot = SwitchProState {
-                face: [true; 4],
-                dpad: [true, false, false, true],
-                left: (axis(i16::MIN), axis(i16::MAX)),
-                right: (axis(i16::MAX), axis(i16::MIN)),
-                buttons: [true; 10],
-                ..Default::default()
-            };
+            let mut snapshot = (
+                SwitchProInputs {
+                    face: [true; 4],
+                    dpad: [true, false, false, true],
+                    left: (axis(i16::MIN), axis(i16::MAX)),
+                    right: (axis(i16::MAX), axis(i16::MIN)),
+                    buttons: [true; 10],
+                    ..Default::default()
+                },
+                SwitchProStatus::default(),
+            );
             let motion = SwitchProMotionSample {
                 accelerometer: [i16::MIN, 24, i16::MAX],
                 gyroscope: [50, -60, 70],
             };
             if target != RealizationTarget::LINUX_UINPUT {
-                snapshot.set_motion(motion);
+                snapshot.0.set_motion(motion);
             }
             // Switch's USB report exposes opposing directions as separate bits.
             if target != RealizationTarget::LINUX_UINPUT {
-                snapshot.dpad[1] = true;
+                snapshot.0.dpad[1] = true;
             }
-            let current = controller.state();
-            let motion_changed = snapshot.motion != current.motion;
-            let expected = SwitchProState {
-                timer: current.timer.wrapping_add(u8::from(motion_changed)),
-                stream_enabled: current.stream_enabled,
-                ..snapshot.clone()
-            };
+            let current = controller.test_state();
+            let motion_changed = snapshot.0.motion != current.0.motion;
+            let expected = (
+                (snapshot.clone()).0,
+                SwitchProStatus {
+                    timer: current.1.timer.wrapping_add(u8::from(motion_changed)),
+                    stream_enabled: current.1.stream_enabled,
+                },
+            );
             let mut bad = snapshot.clone();
-            bad.face[0] = false;
-            bad.dpad[1] = true;
+            bad.0.face[0] = false;
+            bad.0.dpad[1] = true;
             let invalid = (target == RealizationTarget::LINUX_UINPUT).then_some((
                 bad,
                 ControlError::UnsupportedControl {
@@ -1583,11 +1715,15 @@ mod tests {
                 expected,
                 invalid,
                 SwitchProDefinition
-                    .encode(controller.0.selection(), controller.state())
+                    .encode(controller.0.selection(), controller.test_state())
                     .unwrap(),
                 &[(0, 255)]
             );
             assert_eq!(controller.identity(), identity);
+            assert_eq!(
+                controller.status().stream_enabled(),
+                controller.stream_enabled()
+            );
             assert_eq!(
                 controller.stream_enabled(),
                 target != RealizationTarget::LINUX_UINPUT
@@ -1675,20 +1811,22 @@ mod tests {
 
     #[test]
     fn neutralization_releases_native_inputs_and_preserves_metadata() {
-        let mut expected = SwitchProState {
-            timer: 77,
-            stream_enabled: true,
-            ..SwitchProState::default()
-        };
+        let mut expected = (
+            SwitchProInputs::default(),
+            SwitchProStatus {
+                timer: 77,
+                stream_enabled: true,
+            },
+        );
         let mut state = expected.clone();
-        state.face.fill(true);
-        state.dpad.fill(true);
-        state.buttons.fill(true);
-        state.left = (SwitchProAxis(100), SwitchProAxis(200));
-        state.right = (SwitchProAxis(200), SwitchProAxis(100));
-        state.motion.accelerometer = [100; 3];
-        state.motion.gyroscope = [200; 3];
-        expected.timer += 1;
+        state.0.face.fill(true);
+        state.0.dpad.fill(true);
+        state.0.buttons.fill(true);
+        state.0.left = (SwitchProAxis(100), SwitchProAxis(200));
+        state.0.right = (SwitchProAxis(200), SwitchProAxis(100));
+        state.0.motion.accelerometer = [100; 3];
+        state.0.motion.gyroscope = [200; 3];
+        expected.1.timer += 1;
         let previous = state.clone();
         <SwitchProDefinition as common::HidDriver>::neutralize_state(&mut state);
         <SwitchProDefinition as common::HidDriver>::transition_inputs(&previous, &mut state);
@@ -1711,9 +1849,9 @@ mod tests {
             (SwitchProControl::RightStickPress, 318),
             (SwitchProControl::Home, 316),
         ] {
-            let mut state = SwitchProState::default();
+            let mut state = <(SwitchProInputs, SwitchProStatus)>::default();
             for pressed in [true, false] {
-                state.set_native(control, pressed);
+                state.0.set_native(control, pressed);
                 let ProviderFrame::Evdev(events) =
                     SwitchProDefinition.encode(selection, &state).unwrap()
                 else {
@@ -1755,13 +1893,16 @@ mod tests {
 
     #[test]
     fn openpuck_motion_triplicates_and_maps_axes() {
-        let s = SwitchProState {
-            motion: SwitchProMotionSample {
-                accelerometer: [400, -800, 1200],
-                gyroscope: [1, -2, 3],
+        let s = (
+            SwitchProInputs {
+                motion: SwitchProMotionSample {
+                    accelerometer: [400, -800, 1200],
+                    gyroscope: [1, -2, 3],
+                },
+                ..Default::default()
             },
-            ..Default::default()
-        };
+            SwitchProStatus::default(),
+        );
         let ProviderFrame::HidInput { report_id, bytes } = switch_frame(&s) else {
             unreachable!()
         };
@@ -1780,7 +1921,7 @@ mod tests {
                     controller: SwitchProDefinition.controller_id(),
                     target: RealizationTarget::LINUX_UHID_USB,
                 },
-                &SwitchProState::default(),
+                &<(SwitchProInputs, SwitchProStatus)>::default(),
             )
             .unwrap();
         assert!(matches!(f,ProviderFrame::HidInput{report_id:Some(0x30),bytes}if bytes.len()==63));
@@ -1794,7 +1935,7 @@ mod tests {
                     controller: SwitchProDefinition.controller_id(),
                     target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 },
-                &SwitchProState::default(),
+                &<(SwitchProInputs, SwitchProStatus)>::default(),
             )
             .expect("DummyHcd Switch frame");
         assert!(
@@ -1843,7 +1984,7 @@ mod tests {
                     controller: SwitchProDefinition.controller_id(),
                     target: RealizationTarget::LINUX_UINPUT,
                 },
-                &SwitchProState::default(),
+                &<(SwitchProInputs, SwitchProStatus)>::default(),
             )
             .expect("evdev frame");
         assert!(
@@ -1868,9 +2009,9 @@ mod tests {
 
     #[test]
     fn trigger_controls_reach_hid_and_evdev_presentations() {
-        let mut state = SwitchProState::default();
-        state.set_native(SwitchProControl::Zl, true);
-        state.set_native(SwitchProControl::Zr, true);
+        let mut state = <(SwitchProInputs, SwitchProStatus)>::default();
+        state.0.set_native(SwitchProControl::Zl, true);
+        state.0.set_native(SwitchProControl::Zr, true);
         let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
             unreachable!()
         };
@@ -1893,26 +2034,35 @@ mod tests {
 
     #[test]
     fn host_face_positions_use_the_nintendo_a_b_x_y_wire_bits() {
-        let state = SwitchProState {
-            face: [true, true, true, true],
-            ..Default::default()
-        };
+        let state = (
+            SwitchProInputs {
+                face: [true, true, true, true],
+                ..Default::default()
+            },
+            SwitchProStatus::default(),
+        );
         let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
             unreachable!()
         };
         assert_eq!(bytes[2] & 0x0f, 0x0f);
-        let state = SwitchProState {
-            face: [true, false, false, false], // South / B
-            ..Default::default()
-        };
+        let state = (
+            SwitchProInputs {
+                face: [true, false, false, false],
+                ..Default::default()
+            },
+            SwitchProStatus::default(),
+        );
         let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
             unreachable!()
         };
         assert_eq!(bytes[2] & 0x0f, 0b0100);
-        let state = SwitchProState {
-            face: [false, true, false, false], // East / A
-            ..Default::default()
-        };
+        let state = (
+            SwitchProInputs {
+                face: [false, true, false, false],
+                ..Default::default()
+            },
+            SwitchProStatus::default(),
+        );
         let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
             unreachable!()
         };
@@ -1930,11 +2080,14 @@ mod tests {
 
     #[test]
     fn switch_hid_wire_y_compensates_for_hid_nintendo_inversion() {
-        let state = SwitchProState {
-            left: (SwitchProAxis::new(0), SwitchProAxis::new(i16::MAX)),
-            right: (SwitchProAxis::new(0), SwitchProAxis::new(i16::MIN)),
-            ..Default::default()
-        };
+        let state = (
+            SwitchProInputs {
+                left: (SwitchProAxis::new(0), SwitchProAxis::new(i16::MAX)),
+                right: (SwitchProAxis::new(0), SwitchProAxis::new(i16::MIN)),
+                ..Default::default()
+            },
+            SwitchProStatus::default(),
+        );
         let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
             unreachable!()
         };
@@ -1973,7 +2126,7 @@ mod tests {
     }
 
     fn assert_spi_reply(address: u32, expected: &[u8]) {
-        let state = SwitchProState::default();
+        let state = <(SwitchProInputs, SwitchProStatus)>::default();
         let mut arguments = address.to_le_bytes().to_vec();
         arguments.push(u8::try_from(expected.len()).unwrap());
         let (reply, enabled) =
@@ -2043,7 +2196,7 @@ mod tests {
     #[test]
     fn device_info_does_not_advertise_erased_spi_colors() {
         assert_spi_reply(0x6050, &[0xff; 11]);
-        let state = SwitchProState::default();
+        let state = <(SwitchProInputs, SwitchProStatus)>::default();
         let identity = fixture_identity();
         let (reply, enabled) = switch_subcommand_reply(&state, 0x02, &[], identity);
         assert!(!enabled);
@@ -2063,7 +2216,7 @@ mod tests {
 
     #[test]
     fn steam_style_subcommands_receive_full_replies_and_enable_motion() {
-        let state = SwitchProState::default();
+        let state = <(SwitchProInputs, SwitchProStatus)>::default();
         let (device_info, enabled) = switch_subcommand_reply(&state, 0x02, &[], fixture_identity());
         assert!(!enabled);
         assert!(

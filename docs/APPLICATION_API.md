@@ -328,3 +328,9 @@ lists the unavailable impulse-trigger motors and other uinput limits.
 `status()` returns copyable `DualShock4Status` battery metadata and accepted
 motion/contact clock positions. Input replacement and edits cannot replace that
 status; `refresh_motion()` keeps its separate explicit clock-advance semantics.
+
+`SwitchProController::inputs()` borrows `SwitchProInputs`; `status()` returns
+copyable `SwitchProStatus` with the accepted motion timer and live host-selected
+stream state. The accepted timer is separate from the existing
+`motion_report_counter()` transport observation. Input edits preserve stream
+state, and `refresh_motion()` keeps its existing explicit delivery behavior.

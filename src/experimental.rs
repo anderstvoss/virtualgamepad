@@ -27,9 +27,9 @@ pub use gr_curated_controllers::{
     DualShock4Inputs, DualShock4MotionSample, DualShock4Options, DualShock4OutputEvent,
     DualShock4SessionState, DualShock4Status, DualShock4Surface, DualShock4TouchContact,
     DualShock4TouchSlot, DualShock4Trigger, MotionSample, SwitchProAxis, SwitchProControl,
-    SwitchProController, SwitchProIdentity, SwitchProMotionSample, SwitchProOptions,
-    SwitchProOutputEvent, SwitchProRumble, SwitchProState, SwitchProSurface, TouchSlot,
-    Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360Options, Xbox360OutputEvent,
+    SwitchProController, SwitchProIdentity, SwitchProInputs, SwitchProMotionSample,
+    SwitchProOptions, SwitchProOutputEvent, SwitchProRumble, SwitchProStatus, SwitchProSurface,
+    TouchSlot, Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360Options, Xbox360OutputEvent,
     Xbox360State, Xbox360Surface, Xbox360Trigger, create_dualsense, create_dualshock4,
     create_switch_pro, create_xbox360,
 };

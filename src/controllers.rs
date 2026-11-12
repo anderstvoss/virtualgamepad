@@ -10,7 +10,7 @@ use crate::{
     DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
     ServiceReadiness, SteamController2026Button, SteamController2026OutputEvent,
     SteamController2026Outputs, SteamController2026State, SwitchProAxis, SwitchProControl,
-    SwitchProMotionSample, SwitchProOutputEvent, SwitchProState, SwitchProSurface, TouchSlot,
+    SwitchProInputs, SwitchProMotionSample, SwitchProOutputEvent, SwitchProSurface, TouchSlot,
     WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton, WiiRemoteOutputEvent,
     WiiRemoteOutputs, WiiRemoteState, WiiResourceDisposition, Xbox360Axis, Xbox360Control,
     Xbox360OutputEvent, Xbox360State, Xbox360Surface, Xbox360Trigger, XboxSeriesButton,
@@ -643,9 +643,18 @@ impl SwitchProController {
     shared!(wants_write);
     shared!(next_service_in);
     shared!(dropped_output_events);
-    shared!(state, SwitchProState);
-    shared!(edit_inputs, SwitchProState);
-    shared!(set_inputs, SwitchProState);
+    /// Borrow accepted native input levels.
+    #[must_use]
+    pub fn inputs(&self) -> &SwitchProInputs {
+        self.controller.inner.inputs()
+    }
+    /// Read accepted motion timing and host-selected stream state.
+    #[must_use]
+    pub fn status(&self) -> crate::SwitchProStatus {
+        self.controller.inner.status()
+    }
+    shared!(edit_inputs, SwitchProInputs);
+    shared!(set_inputs, SwitchProInputs);
     shared!(host_outputs, crate::SwitchProOutputState);
     shared!(is_dirty);
     shared!(surface, SwitchProSurface);

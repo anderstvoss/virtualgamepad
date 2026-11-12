@@ -15,6 +15,9 @@ macro_rules! accepted_inputs {
     ($controller:ident, dualsense) => {
         $controller.inputs()
     };
+    ($controller:ident, switch_pro) => {
+        $controller.inputs()
+    };
     ($controller:ident, dualshock4) => {
         $controller.inputs()
     };
@@ -24,6 +27,9 @@ macro_rules! accepted_inputs {
 }
 macro_rules! accepted_clock {
     ($controller:ident, dualsense) => {
+        $controller.status()
+    };
+    ($controller:ident, switch_pro) => {
         $controller.status()
     };
     ($controller:ident, dualshock4) => {
