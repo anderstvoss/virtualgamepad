@@ -1,6 +1,6 @@
 use super::{
-    RawReverseEvent, RealizationSessionId, SwitchProDefinition, SwitchProIdentity, SwitchProState,
-    common, switch_frame, switch_subcommand_reply, switch_usb_reply,
+    RawReverseEvent, RealizationSessionId, SwitchProDefinition, SwitchProIdentity, SwitchProInputs,
+    SwitchProStatus, common, switch_frame, switch_subcommand_reply, switch_usb_reply,
 };
 use gr_hid::{
     Command, Delivery, Error, Lifecycle, Protocol, Reply, ReplyError, Report, ReportType,
@@ -12,7 +12,7 @@ use std::collections::VecDeque;
 pub(crate) struct SwitchUsbProtocol {
     identity: SwitchProIdentity,
     retained: crate::retained::SwitchProOutputState,
-    state: SwitchProState,
+    state: (SwitchProInputs, SwitchProStatus),
     pub(crate) timer: u8,
     pub(crate) stream_enabled: bool,
     pending: VecDeque<Report>,
@@ -24,7 +24,7 @@ impl SwitchUsbProtocol {
     fn new(identity: SwitchProIdentity) -> Self {
         Self {
             identity,
-            state: SwitchProState::default(),
+            state: <(SwitchProInputs, SwitchProStatus)>::default(),
             retained: crate::retained::SwitchProOutputState::default(),
             timer: 0,
             stream_enabled: false,
@@ -81,10 +81,10 @@ impl SwitchUsbProtocol {
     }
 }
 impl Protocol for SwitchUsbProtocol {
-    type State = SwitchProState;
+    type State = (SwitchProInputs, SwitchProStatus);
     type Output = RawReverseEvent;
     fn neutral(&self) -> Self::State {
-        SwitchProState::default()
+        <(SwitchProInputs, SwitchProStatus)>::default()
     }
     fn validate(&self, _: &Self::State) -> Result<(), Error> {
         Ok(())
@@ -97,8 +97,8 @@ impl Protocol for SwitchUsbProtocol {
             return Ok(vec![]);
         }
         self.state = state.clone();
-        self.state.timer = self.timer;
-        self.state.stream_enabled = self.stream_enabled;
+        self.state.1.timer = self.timer;
+        self.state.1.stream_enabled = self.stream_enabled;
         let mut reports: Vec<_> = self.pending.drain(..).collect();
         reports.push(common::logical_input(switch_frame(&self.state)));
         self.timer = self.timer.wrapping_add(1);
@@ -149,14 +149,13 @@ impl Protocol for SwitchUsbProtocol {
 }
 impl common::HidDriver for SwitchProDefinition {
     fn transition_inputs(previous: &Self::State, next: &mut Self::State) {
-        next.transition_inputs(previous);
+        next.1 = previous.1;
+        if next.0.motion != previous.0.motion {
+            next.1.timer = next.1.timer.wrapping_add(1);
+        }
     }
     fn neutralize_state(state: &mut Self::State) {
-        *state = Self::State {
-            timer: state.timer,
-            stream_enabled: state.stream_enabled,
-            ..Self::State::default()
-        };
+        state.0 = SwitchProInputs::default();
     }
 
     type Hid = SwitchUsbProtocol;

@@ -330,3 +330,14 @@ The selected surface lists the realization's limitations.
 `status()` returns copyable `DualShock4Status` battery metadata and accepted
 motion/contact clock positions. Input replacement and edits cannot replace that
 status; `refresh_motion()` keeps its separate explicit clock-advance semantics.
+
+`SwitchProController::inputs()` borrows `SwitchProInputs`; `status()` returns
+copyable `SwitchProStatus` with the accepted motion timer and live host-selected
+stream state. The accepted timer is separate from the existing
+`motion_report_counter()` transport observation. Input edits preserve stream
+state, and `refresh_motion()` keeps its existing explicit delivery behavior.
+
+`Xbox360Controller::inputs()` borrows native `Xbox360Inputs` levels.
+`status().battery()` reads separate controller-owned metadata, retained after
+close. Battery setters remain explicit handle operations; input replacement,
+edits and neutralization preserve that metadata.

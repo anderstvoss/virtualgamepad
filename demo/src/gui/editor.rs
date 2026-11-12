@@ -7,7 +7,7 @@ use super::{
     Xbox360Control, Xbox360Trigger,
 };
 use virtualgamepad::{
-    ControllerDiagnostics, DualSenseInputs, DualShock4Inputs, SwitchProState, Xbox360State,
+    ControllerDiagnostics, DualSenseInputs, DualShock4Inputs, SwitchProInputs, Xbox360Inputs,
 };
 
 pub(super) const EDIT_LIMIT: usize = 64;
@@ -127,11 +127,11 @@ impl virtualgamepad::ControllerSurfaceInfo for Surface {
     }
 }
 pub(super) type XboxSeriesEditor = Editor<virtualgamepad::XboxSeriesState, Surface>;
-pub(super) type Xbox360Editor = Editor<Xbox360State, Surface>;
+pub(super) type Xbox360Editor = Editor<Xbox360Inputs, Surface, virtualgamepad::Xbox360Status>;
 pub(super) type DualSenseEditor = Editor<DualSenseInputs, Surface, virtualgamepad::DualSenseStatus>;
 pub(super) type DualShock4Editor =
     Editor<DualShock4Inputs, Surface, virtualgamepad::DualShock4Status>;
-pub(super) type SwitchProEditor = Editor<SwitchProState, Surface>;
+pub(super) type SwitchProEditor = Editor<SwitchProInputs, Surface, virtualgamepad::SwitchProStatus>;
 pub(super) type WiiRemoteEditor =
     Editor<gr_curated_controllers::wii_remote::WiiRemoteState, Surface>;
 pub(super) type SteamEditor =
@@ -167,19 +167,14 @@ impl<S, M> Editor<S, Surface, M> {
 }
 impl Controller {
     pub(super) fn snapshot(&mut self) -> ControllerView {
-        macro_rules! view {
-            ($c:ident, $variant:ident) => {
-                ControllerView::$variant(Editor::new(
-                    $c.state().clone(),
-                    $c.surface().common(),
-                    Some($c.diagnostics()),
-                    Some($c.association().clone()),
-                    (),
-                ))
-            };
-        }
         match self {
-            Self::Xbox(c) => view!(c, Xbox),
+            Self::Xbox(c) => ControllerView::Xbox(Editor::new(
+                c.inputs().clone(),
+                c.surface().common(),
+                Some(c.diagnostics()),
+                Some(c.association().clone()),
+                c.status(),
+            )),
             Self::XboxSeries(c) => ControllerView::XboxSeries(Editor::new(
                 c.state().clone(),
                 c.surface(),
@@ -201,7 +196,13 @@ impl Controller {
                 Some(c.association().clone()),
                 c.status(),
             )),
-            Self::SwitchPro(c) => view!(c, SwitchPro),
+            Self::SwitchPro(c) => ControllerView::SwitchPro(Editor::new(
+                c.inputs().clone(),
+                c.surface().common(),
+                Some(c.diagnostics()),
+                Some(c.association().clone()),
+                c.status(),
+            )),
             Self::Steam(c) => {
                 ControllerView::Steam(Editor::new(c.state().clone(), c.surface(), None, None, ()))
             }
@@ -395,11 +396,11 @@ pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
             (),
         )),
         super::Kind::Xbox360 => ControllerView::Xbox(Editor::new(
-            Xbox360State::default(),
+            Xbox360Inputs::default(),
             surface,
             None,
             None,
-            (),
+            virtualgamepad::Xbox360Status::default(),
         )),
         super::Kind::DualSense => ControllerView::DualSense(Editor::new(
             DualSenseInputs::default(),
@@ -430,11 +431,11 @@ pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
             (),
         )),
         super::Kind::SwitchPro => ControllerView::SwitchPro(Editor::new(
-            SwitchProState::default(),
+            SwitchProInputs::default(),
             surface,
             None,
             None,
-            (),
+            virtualgamepad::SwitchProStatus::default(),
         )),
     }
 }
@@ -541,6 +542,9 @@ impl XboxSeriesEditor {
 }
 
 impl Xbox360Editor {
+    pub(super) fn battery(&self) -> BatteryState {
+        self.metadata.battery()
+    }
     pub(super) fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), String> {
         self.queue(Box::new(move |controller| {
             let Controller::Xbox(controller) = controller else {
@@ -1048,7 +1052,7 @@ mod tests {
     #[test]
     fn detached_editor_bounds_work_and_never_changes_its_native_snapshot() {
         let mut editor = Editor {
-            state: Xbox360State::default(),
+            state: Xbox360Inputs::default(),
             metadata: (),
             surface: &(),
             edits: Vec::new(),

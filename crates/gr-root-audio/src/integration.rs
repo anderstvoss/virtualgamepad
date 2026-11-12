@@ -36,7 +36,7 @@ pub mod usb {
     use super::{AudioOptions, ControllerAudio, OpenError};
     use gr_controller_wire::registry::{self, ids};
     use gr_curated_controllers::{
-        DualSenseSessionState, DualShock4SessionState, WorkerBridge, Xbox360State,
+        DualSenseSessionState, DualShock4SessionState, WorkerBridge, Xbox360SessionState,
     };
     use gr_privileged_broker::audio_launch::Profile;
     /// Select the same compiled profile and tag without root-side magic bytes.
@@ -73,7 +73,7 @@ pub mod usb {
     }
     factory!(dualsense, DualSenseSessionState, DUALSENSE, dualsense);
     factory!(dualshock4, DualShock4SessionState, DUALSHOCK4, dualshock4);
-    factory!(xbox360, Xbox360State, XBOX360, xbox360);
+    factory!(xbox360, Xbox360SessionState, XBOX360, xbox360);
     pub fn worker_output(
         control: &mut gr_audio_worker::client::Control,
         retained: &mut gr_realization_api::ProviderDiagnostics,

@@ -29,7 +29,7 @@ retained_protocol!(
     DualShock4
 );
 retained_protocol!(
-    crate::common::SnapshotProtocol<xbox360::Xbox360State, crate::retained::Xbox360OutputState>,
+    crate::common::SnapshotProtocol<xbox360::Xbox360SessionState, crate::retained::Xbox360OutputState>,
     Xbox360
 );
 
@@ -48,7 +48,8 @@ pub fn dualshock4(
 }
 
 #[must_use]
-pub fn xbox360() -> impl WorkerProtocol<State = xbox360::Xbox360State, Output = RawReverseEvent> {
+pub fn xbox360()
+-> impl WorkerProtocol<State = xbox360::Xbox360SessionState, Output = RawReverseEvent> {
     xbox360::Xbox360Definition.hid_protocol(RealizationSessionId(0), [0; 6])
 }
 
