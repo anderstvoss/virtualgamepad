@@ -155,7 +155,7 @@ class InputLabSeatTests(unittest.TestCase):
                 MODULE.seat_for_phys(label)
 
     @staticmethod
-    def child_policy(rules, subsystem, kernel, parent, attributes=None, ancestor_attributes=None):
+    def child_policy(rules, subsystem, kernel, parent, attributes=None, ancestor_attributes=None, action="add"):
         """Model the used rule subset: ENV matching precedes parent imports.
 
         The installed-rule failure reproduced with udevadm test on the host:
@@ -166,7 +166,10 @@ class InputLabSeatTests(unittest.TestCase):
         properties = {}
         tags = set()
         for line in rules.splitlines():
-            if not line.startswith(f'SUBSYSTEM=="{subsystem}"'):
+            subsystem_match = re.search(r'SUBSYSTEM=="([^\"]+)"', line)
+            if not subsystem_match or subsystem_match[1] != subsystem:
+                continue
+            if 'ACTION!="remove"' in line and action == 'remove':
                 continue
             pattern = re.search(r'KERNEL=="([^\"]+)"', line)
             if pattern and not fnmatch.fnmatchcase(kernel, pattern[1]):
@@ -256,6 +259,24 @@ class InputLabSeatTests(unittest.TestCase):
                                               ancestor_attributes={'phys': phys})
             self.assertNotIn('@GROUP', properties)
             self.assertNotIn('@MODE', properties)
+
+    def test_optional_steam_override_exposes_only_validated_xbox_lab_nodes(self):
+        base = HELPER.with_name('71-virtualgamepad-input-lab.rules').read_text()
+        override = HELPER.with_name('90-virtualgamepad-xbox-steam.rules').read_text()
+        parent = {'VG_INPUT_LAB_SEAT': 'seat-vg-alpha-p2a', 'VG_INPUT_LAB_XBOX': '1'}
+        isolated, _ = self.child_policy(base, 'input', 'event1', parent)
+        self.assertEqual(isolated['LIBINPUT_IGNORE_DEVICE'], '1')
+        self.assertEqual(isolated['ID_SEAT'], parent['VG_INPUT_LAB_SEAT'])
+        visible, tags = self.child_policy(base + override, 'input', 'event1', parent)
+        self.assertEqual(visible['ID_SEAT'], 'seat0')
+        self.assertEqual(visible['LIBINPUT_IGNORE_DEVICE'], '0')
+        self.assertIn('uaccess', tags)
+        for unrelated in [{}, {'VG_INPUT_LAB_SEAT': parent['VG_INPUT_LAB_SEAT']},
+                          {'VG_INPUT_LAB_SEAT': parent['VG_INPUT_LAB_SEAT'], 'VG_INPUT_LAB_XBOX': '0'}]:
+            original = self.child_policy(base, 'input', 'event1', unrelated)
+            self.assertEqual(self.child_policy(base + override, 'input', 'event1', unrelated), original)
+        self.assertEqual(self.child_policy(base + override, 'input', 'event1', parent, action='remove'),
+                         self.child_policy(base, 'input', 'event1', parent, action='remove'))
 
     def test_same_rule_import_guard_regression_drops_valid_parent(self):
         seat = 'seat-vg-alpha-p2a'
