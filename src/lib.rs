@@ -105,7 +105,7 @@ pub use gr_curated_controllers::{
     DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger,
     MotionSample, SwitchProAxis, SwitchProControl, SwitchProInputs, SwitchProMotionSample,
     SwitchProRumble, SwitchProStatus, SwitchProSurface, TouchSlot, Xbox360Axis, Xbox360Control,
-    Xbox360State, Xbox360Surface, Xbox360Trigger,
+    Xbox360Inputs, Xbox360Status, Xbox360Surface, Xbox360Trigger,
 };
 pub use gr_realization_api::{
     ControllerId, ForceFeedbackEffect, ForceFeedbackEvent, RealizationId, RealizationTargetSet,

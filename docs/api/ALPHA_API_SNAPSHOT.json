@@ -2968,9 +2968,10 @@
             "pub fn wants_write(&self) -> bool",
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
-            "pub fn state(&self) -> &Xbox360State",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut Xbox360State) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: Xbox360State) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &Xbox360Inputs",
+            "pub fn status(&self) -> Xbox360Status",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut Xbox360Inputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: Xbox360Inputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<Xbox360OutputState, ControlError>",
             "pub fn surface(&self) -> &'static Xbox360Surface",
             "pub fn is_dirty(&self) -> bool",
@@ -2995,6 +2996,33 @@
             "impl !UnwindSafe for Xbox360Controller",
             "impl Send for Xbox360Controller",
             "impl Unpin for Xbox360Controller"
+          ]
+        },
+        "struct.Xbox360Inputs.html": {
+          "declarations": [
+            "pub struct Xbox360Inputs { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
+            "pub const fn right_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
+            "pub const fn triggers(&self) -> (Xbox360Trigger, Xbox360Trigger)",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub const fn native_pressed(&self, control: Xbox360Control) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub fn set_sticks( &mut self, left: (Xbox360Axis, Xbox360Axis), right: (Xbox360Axis, Xbox360Axis), )",
+            "pub fn set_triggers(&mut self, left: Xbox360Trigger, right: Xbox360Trigger)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, control: Xbox360Control, pressed: bool)"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Inputs",
+            "impl Debug for Xbox360Inputs",
+            "impl Default for Xbox360Inputs",
+            "impl Eq for Xbox360Inputs",
+            "impl PartialEq for Xbox360Inputs",
+            "impl RefUnwindSafe for Xbox360Inputs",
+            "impl Send for Xbox360Inputs",
+            "impl Sync for Xbox360Inputs",
+            "impl Unpin for Xbox360Inputs",
+            "impl UnwindSafe for Xbox360Inputs"
           ]
         },
         "struct.Xbox360Options.html": {
@@ -3030,32 +3058,23 @@
             "impl UnwindSafe for Xbox360OutputState"
           ]
         },
-        "struct.Xbox360State.html": {
+        "struct.Xbox360Status.html": {
           "declarations": [
-            "pub struct Xbox360State { /* private fields */ }",
-            "pub const fn left_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
-            "pub const fn right_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
-            "pub const fn triggers(&self) -> (Xbox360Trigger, Xbox360Trigger)",
-            "pub const fn battery(&self) -> BatteryState",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
-            "pub const fn native_pressed(&self, control: Xbox360Control) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub fn set_sticks( &mut self, left: (Xbox360Axis, Xbox360Axis), right: (Xbox360Axis, Xbox360Axis), )",
-            "pub fn set_triggers(&mut self, left: Xbox360Trigger, right: Xbox360Trigger)",
-            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
-            "pub fn set_native(&mut self, control: Xbox360Control, pressed: bool)"
+            "pub struct Xbox360Status { /* private fields */ }",
+            "pub const fn battery(self) -> BatteryState"
           ],
           "traits": [
-            "impl Clone for Xbox360State",
-            "impl Debug for Xbox360State",
-            "impl Default for Xbox360State",
-            "impl Eq for Xbox360State",
-            "impl PartialEq for Xbox360State",
-            "impl RefUnwindSafe for Xbox360State",
-            "impl Send for Xbox360State",
-            "impl Sync for Xbox360State",
-            "impl Unpin for Xbox360State",
-            "impl UnwindSafe for Xbox360State"
+            "impl Clone for Xbox360Status",
+            "impl Copy for Xbox360Status",
+            "impl Debug for Xbox360Status",
+            "impl Default for Xbox360Status",
+            "impl Eq for Xbox360Status",
+            "impl PartialEq for Xbox360Status",
+            "impl RefUnwindSafe for Xbox360Status",
+            "impl Send for Xbox360Status",
+            "impl Sync for Xbox360Status",
+            "impl Unpin for Xbox360Status",
+            "impl UnwindSafe for Xbox360Status"
           ]
         },
         "struct.Xbox360Surface.html": {
@@ -6187,9 +6206,10 @@
             "pub fn wants_write(&self) -> bool",
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
-            "pub fn state(&self) -> &Xbox360State",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut Xbox360State) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: Xbox360State) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &Xbox360Inputs",
+            "pub fn status(&self) -> Xbox360Status",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut Xbox360Inputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: Xbox360Inputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<Xbox360OutputState, ControlError>",
             "pub fn surface(&self) -> &'static Xbox360Surface",
             "pub fn is_dirty(&self) -> bool",
@@ -6214,6 +6234,33 @@
             "impl !UnwindSafe for Xbox360Controller",
             "impl Send for Xbox360Controller",
             "impl Unpin for Xbox360Controller"
+          ]
+        },
+        "struct.Xbox360Inputs.html": {
+          "declarations": [
+            "pub struct Xbox360Inputs { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
+            "pub const fn right_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
+            "pub const fn triggers(&self) -> (Xbox360Trigger, Xbox360Trigger)",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub const fn native_pressed(&self, control: Xbox360Control) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub fn set_sticks( &mut self, left: (Xbox360Axis, Xbox360Axis), right: (Xbox360Axis, Xbox360Axis), )",
+            "pub fn set_triggers(&mut self, left: Xbox360Trigger, right: Xbox360Trigger)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, control: Xbox360Control, pressed: bool)"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Inputs",
+            "impl Debug for Xbox360Inputs",
+            "impl Default for Xbox360Inputs",
+            "impl Eq for Xbox360Inputs",
+            "impl PartialEq for Xbox360Inputs",
+            "impl RefUnwindSafe for Xbox360Inputs",
+            "impl Send for Xbox360Inputs",
+            "impl Sync for Xbox360Inputs",
+            "impl Unpin for Xbox360Inputs",
+            "impl UnwindSafe for Xbox360Inputs"
           ]
         },
         "struct.Xbox360Options.html": {
@@ -6249,32 +6296,23 @@
             "impl UnwindSafe for Xbox360OutputState"
           ]
         },
-        "struct.Xbox360State.html": {
+        "struct.Xbox360Status.html": {
           "declarations": [
-            "pub struct Xbox360State { /* private fields */ }",
-            "pub const fn left_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
-            "pub const fn right_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
-            "pub const fn triggers(&self) -> (Xbox360Trigger, Xbox360Trigger)",
-            "pub const fn battery(&self) -> BatteryState",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
-            "pub const fn native_pressed(&self, control: Xbox360Control) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub fn set_sticks( &mut self, left: (Xbox360Axis, Xbox360Axis), right: (Xbox360Axis, Xbox360Axis), )",
-            "pub fn set_triggers(&mut self, left: Xbox360Trigger, right: Xbox360Trigger)",
-            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
-            "pub fn set_native(&mut self, control: Xbox360Control, pressed: bool)"
+            "pub struct Xbox360Status { /* private fields */ }",
+            "pub const fn battery(self) -> BatteryState"
           ],
           "traits": [
-            "impl Clone for Xbox360State",
-            "impl Debug for Xbox360State",
-            "impl Default for Xbox360State",
-            "impl Eq for Xbox360State",
-            "impl PartialEq for Xbox360State",
-            "impl RefUnwindSafe for Xbox360State",
-            "impl Send for Xbox360State",
-            "impl Sync for Xbox360State",
-            "impl Unpin for Xbox360State",
-            "impl UnwindSafe for Xbox360State"
+            "impl Clone for Xbox360Status",
+            "impl Copy for Xbox360Status",
+            "impl Debug for Xbox360Status",
+            "impl Default for Xbox360Status",
+            "impl Eq for Xbox360Status",
+            "impl PartialEq for Xbox360Status",
+            "impl RefUnwindSafe for Xbox360Status",
+            "impl Send for Xbox360Status",
+            "impl Sync for Xbox360Status",
+            "impl Unpin for Xbox360Status",
+            "impl UnwindSafe for Xbox360Status"
           ]
         },
         "struct.Xbox360Surface.html": {
