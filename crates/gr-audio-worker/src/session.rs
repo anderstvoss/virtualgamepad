@@ -610,14 +610,14 @@ mod tests {
         );
         check_output_policy(
             usb_personality::dualshock4([0; 6]),
-            NativeState::DualShock4(gr_curated_controllers::DualShock4State::default()),
+            NativeState::DualShock4(gr_curated_controllers::DualShock4SessionState::default()),
             true,
             Some(5),
             Some(vec![0; 31]),
         );
         check_output_policy(
             usb_personality::xbox360(),
-            NativeState::Xbox360(gr_curated_controllers::Xbox360State::default()),
+            NativeState::Xbox360(gr_curated_controllers::Xbox360SessionState::default()),
             false,
             None,
             None,
@@ -706,11 +706,11 @@ mod tests {
             ),
             (
                 gr_usbip::profile::ids::DUALSHOCK4,
-                NativeState::DualShock4(gr_curated_controllers::DualShock4State::default()),
+                NativeState::DualShock4(gr_curated_controllers::DualShock4SessionState::default()),
             ),
             (
                 gr_usbip::profile::ids::XBOX360,
-                NativeState::Xbox360(gr_curated_controllers::Xbox360State::default()),
+                NativeState::Xbox360(gr_curated_controllers::Xbox360SessionState::default()),
             ),
         ] {
             let (usb, _host) = pair();

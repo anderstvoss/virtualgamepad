@@ -1,4 +1,4 @@
-use super::{XboxSeriesOutputState, XboxSeriesState, XboxSeriesTrigger, evdev};
+use super::{XboxSeriesOutputState, XboxSeriesState, XboxSeriesTrigger, bluetooth, evdev};
 use crate::{
     common,
     registry::{self, ControllerFamily, FamilyOperation, FamilyRealization, FamilySpec},
@@ -252,7 +252,19 @@ static TOPOLOGY: InputTopology = InputTopologySpec {
 .build();
 
 const UINPUT: RealizationTarget = RealizationTarget::LINUX_UINPUT;
-const TARGETS: &[RealizationTarget] = &[UINPUT];
+const UHID_BT: RealizationTarget = RealizationTarget::LINUX_UHID_BLUETOOTH;
+const UINPUT_ONLY: &[RealizationTarget] = &[UINPUT];
+const BLUETOOTH_ONLY: &[RealizationTarget] = &[UHID_BT];
+const BT_RESTRICTIONS: &[TargetRestriction] = &[
+    TargetRestriction {
+        feature: "battery, LED and headset audio",
+        reason: "the measured Bluetooth HID report map declares only gamepad input and rumble output",
+    },
+    TargetRestriction {
+        feature: "Bluetooth radio and pairing",
+        reason: "UHID exposes a local Bluetooth-bus HID device without a radio transport",
+    },
+];
 const RESTRICTIONS: &[TargetRestriction] = &[
     TargetRestriction {
         feature: "impulse triggers and extra motors",
@@ -295,6 +307,27 @@ pub(super) static SURFACE: ControllerSurface = ControllerSurfaceSpec {
 }
 .build();
 
+const BLUETOOTH_RUMBLE: &[OutputKind] = &[OutputKind::Rumble {
+    motors: &[
+        MotorRole::Strong,
+        MotorRole::Weak,
+        MotorRole::LeftTrigger,
+        MotorRole::RightTrigger,
+    ],
+}];
+
+pub(super) static BLUETOOTH: ControllerSurface = ControllerSurfaceSpec {
+    target: UHID_BT,
+    validation_status: RealizationValidationStatus::ResearchBacked,
+    digital_controls: &[],
+    axes: &[],
+    outputs: &[],
+    output_kinds: BLUETOOTH_RUMBLE,
+    restrictions: BT_RESTRICTIONS,
+    input_topology: &TOPOLOGY,
+}
+.build();
+
 impl RealizationControllerDefinition for XboxSeriesDefinition {
     fn controller_id(&self) -> ControllerId {
         Self::SPEC.id
@@ -327,7 +360,7 @@ impl TargetAwareControllerDriver for XboxSeriesDefinition {
         selection: RealizationSelection,
         _: &XboxSeriesState,
     ) -> Result<(), ControlError> {
-        if selection.target != UINPUT {
+        if !matches!(selection.target, UINPUT | UHID_BT) {
             return Err(common::unavailable(selection.target));
         }
         Ok(())
@@ -339,7 +372,10 @@ impl TargetAwareControllerDriver for XboxSeriesDefinition {
         state: &XboxSeriesState,
     ) -> Result<ProviderFrame, ControlError> {
         self.validate_state(selection, state)?;
-        Ok(evdev::frame(state))
+        Ok(match selection.target {
+            UINPUT => evdev::frame(state),
+            _ => bluetooth::frame(state),
+        })
     }
 }
 
@@ -369,20 +405,29 @@ impl common::HidDriver for XboxSeriesDefinition {
     }
 
     fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
-        unreachable!("the Xbox Series manifest only admits uinput")
+        common::SnapshotProtocol::new(
+            XboxSeriesState::default(),
+            bluetooth::input,
+            bluetooth::validate_output,
+            std::collections::BTreeMap::new(),
+            [true, true, false],
+            None,
+        )
     }
 }
 
 impl ControllerFamily for XboxSeriesDefinition {
     const SPEC: &'static FamilySpec = &gr_controller_wire::registry::XBOX_SERIES;
-    const OUTPUT_KINDS: &'static [OutputKind] = RUMBLE;
+    const OUTPUT_KINDS: &'static [OutputKind] = BLUETOOTH_RUMBLE;
     const REFUSED_OPERATIONS: &'static [FamilyOperation] = &[
-        registry::refusal(RESTRICTIONS[0], TARGETS),
-        registry::refusal(RESTRICTIONS[1], TARGETS),
-        registry::refusal(RESTRICTIONS[2], TARGETS),
-        registry::refusal(RESTRICTIONS[3], TARGETS),
-        registry::refusal(RESTRICTIONS[4], TARGETS),
-        registry::refusal(RESTRICTIONS[5], TARGETS),
+        registry::refusal(RESTRICTIONS[0], UINPUT_ONLY),
+        registry::refusal(RESTRICTIONS[1], UINPUT_ONLY),
+        registry::refusal(RESTRICTIONS[2], UINPUT_ONLY),
+        registry::refusal(RESTRICTIONS[3], UINPUT_ONLY),
+        registry::refusal(RESTRICTIONS[4], UINPUT_ONLY),
+        registry::refusal(RESTRICTIONS[5], UINPUT_ONLY),
+        registry::refusal(BT_RESTRICTIONS[0], BLUETOOTH_ONLY),
+        registry::refusal(BT_RESTRICTIONS[1], BLUETOOTH_ONLY),
     ];
 
     fn topology() -> &'static InputTopology {
@@ -390,22 +435,33 @@ impl ControllerFamily for XboxSeriesDefinition {
     }
 
     fn realizations() -> &'static [FamilyRealization] {
-        static REALIZATIONS: &[FamilyRealization] = &[FamilyRealization::new(
-            &SURFACE,
-            registry::RealizationTier::PlayableReduced,
-            registry::PermissionClass::Uinput,
-        )];
+        static REALIZATIONS: &[FamilyRealization] = &[
+            FamilyRealization::new(
+                &SURFACE,
+                registry::RealizationTier::PlayableReduced,
+                registry::PermissionClass::Uinput,
+            ),
+            FamilyRealization::new(
+                &BLUETOOTH,
+                registry::RealizationTier::PlayableFull,
+                registry::PermissionClass::Uhid,
+            ),
+        ];
         REALIZATIONS
     }
 
     fn manifest() -> RealizationManifest {
-        RealizationManifest::new(&[RealizationManifestEntry {
-            target: UINPUT,
-            provider_requirements: ProviderRequirements {
-                requires_reverse_output: true,
-            },
-            audio_sidecar: None,
-        }])
+        const fn entry(target: RealizationTarget) -> RealizationManifestEntry {
+            RealizationManifestEntry {
+                target,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: true,
+                },
+                audio_sidecar: None,
+            }
+        }
+        const ENTRIES: &[RealizationManifestEntry] = &[entry(UINPUT), entry(UHID_BT)];
+        RealizationManifest::new(ENTRIES)
     }
 }
 
@@ -414,7 +470,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn family_contract_exposes_only_reduced_uinput_and_two_main_motors() {
+    fn family_contract_keeps_realization_specific_outputs_and_restrictions() {
         let family = registry::family_entry::<XboxSeriesDefinition>();
         assert_eq!(family.id.as_str(), "virtualgamepad.xbox-series");
         assert!(family.broker_tag.is_none());
@@ -424,31 +480,32 @@ mod tests {
         assert!(family.persistent_resources.is_empty());
         (family.topology)().validate().unwrap();
         let manifest = (family.manifest)();
-        let [entry] = manifest.entries() else {
-            panic!("expected one target")
-        };
-        assert_eq!(entry.target, UINPUT);
-        assert!(entry.provider_requirements.requires_reverse_output);
-        assert!(entry.audio_sidecar.is_none());
-        let [realization] = (family.realizations)() else {
-            panic!("expected one surface")
-        };
-        assert_eq!(realization.surface.target(), entry.target);
-        assert_eq!(realization.surface.output_kinds(), RUMBLE);
-        assert_eq!(family.output_kinds, RUMBLE);
+        let surfaces = (family.realizations)();
+        assert_eq!(manifest.entries().len(), 2);
+        assert_eq!(surfaces.len(), 2);
+        assert_eq!(family.output_kinds, BLUETOOTH_RUMBLE);
         assert_eq!(
-            realization.surface.restrictions().len(),
-            family.refused_operations.len()
+            family.refused_operations.len(),
+            RESTRICTIONS.len() + BT_RESTRICTIONS.len()
         );
-        for (restriction, refusal) in realization
-            .surface
-            .restrictions()
+        for ((entry, realization), (target, output)) in manifest
+            .entries()
             .iter()
-            .zip(family.refused_operations)
+            .zip(surfaces)
+            .zip([(UINPUT, RUMBLE), (UHID_BT, BLUETOOTH_RUMBLE)])
         {
-            assert_eq!(refusal.name, restriction.feature);
-            assert_eq!(refusal.detail, restriction.reason);
-            assert_eq!(refusal.targets, TARGETS);
+            assert_eq!(entry.target, target);
+            assert_eq!(realization.surface.target(), target);
+            assert!(entry.provider_requirements.requires_reverse_output);
+            assert!(entry.audio_sidecar.is_none());
+            assert_eq!(realization.surface.output_kinds(), output);
+            for restriction in realization.surface.restrictions() {
+                assert!(family.refused_operations.iter().any(|refusal| {
+                    refusal.name == restriction.feature
+                        && refusal.detail == restriction.reason
+                        && refusal.targets == [target]
+                }));
+            }
         }
         assert!(
             family

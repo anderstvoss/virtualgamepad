@@ -34,9 +34,9 @@ macro_rules! input_fixture {
 }
 input_fixture!(
     crate::DualSenseInputs,
-    crate::DualShock4State,
-    crate::SwitchProState,
-    crate::Xbox360State,
+    crate::DualShock4Inputs,
+    crate::SwitchProInputs,
+    crate::Xbox360Inputs,
     crate::wii_remote::WiiRemoteState,
     crate::steam_controller_2026::SteamController2026State,
     crate::xbox_series::XboxSeriesState,
@@ -50,9 +50,6 @@ macro_rules! controller_fixture {
     )*};
 }
 controller_fixture!(
-    crate::DualShock4Controller => crate::DualShock4State,
-    crate::SwitchProController => crate::SwitchProState,
-    crate::Xbox360Controller => crate::Xbox360State,
     crate::wii_remote::WiiRemoteController => crate::wii_remote::WiiRemoteState,
     crate::steam_controller_2026::SteamController2026Controller => crate::steam_controller_2026::SteamController2026State,
     crate::xbox_series::XboxSeriesController => crate::xbox_series::XboxSeriesState,
@@ -2037,6 +2034,6 @@ fn worker_input_transactions_preserve_clean_dirty_and_closed_boundaries() {
         }};
     }
     check!(create_dualsense_usb_worker, crate::DualSenseInputs);
-    check!(create_dualshock4_usb_worker, crate::DualShock4State);
-    check!(create_xbox360_usb_worker, crate::Xbox360State);
+    check!(create_dualshock4_usb_worker, crate::DualShock4Inputs);
+    check!(create_xbox360_usb_worker, crate::Xbox360Inputs);
 }

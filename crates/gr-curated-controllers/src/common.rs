@@ -326,6 +326,9 @@ fn input_lab_physical_path(physical_path: &str, enabled: bool) -> Option<String>
     match physical_path {
         "virtualgamepad/uhid/dualsense" => Some("virtualgamepad/input-lab/uhid/dualsense".into()),
         "virtualgamepad/uhid/dualshock4" => Some("virtualgamepad/input-lab/uhid/dualshock4".into()),
+        "virtualgamepad/uhid/xbox-series" => {
+            Some("virtualgamepad/input-lab/uhid/xbox-series".into())
+        }
         _ => None,
     }
 }
@@ -585,6 +588,10 @@ mod tests {
 
     #[test]
     fn input_lab_identity_is_explicit_and_limited_to_sony_uhid_families() {
+        assert_eq!(
+            input_lab_physical_path("virtualgamepad/uhid/xbox-series", true).as_deref(),
+            Some("virtualgamepad/input-lab/uhid/xbox-series")
+        );
         assert_eq!(
             input_lab_physical_path("virtualgamepad/uhid/dualsense", true).as_deref(),
             Some("virtualgamepad/input-lab/uhid/dualsense")

@@ -4,7 +4,8 @@ use crate::sony_evdev::*;
 #[cfg(test)]
 mod tests {
     use super::super::{
-        DualShock4State, DualShock4TouchContact, ds4_evdev_frame, evdev_realization,
+        DualShock4Inputs, DualShock4SessionState, DualShock4Status, DualShock4TouchContact,
+        ds4_evdev_frame, evdev_realization,
     };
     use super::*;
     use crate::common;
@@ -196,9 +197,12 @@ mod tests {
             ],
             [None, None],
         ] {
-            let state = DualShock4State {
-                touches,
-                ..Default::default()
+            let state = DualShock4SessionState {
+                inputs: DualShock4Inputs {
+                    touches,
+                    ..Default::default()
+                },
+                status: DualShock4Status::default(),
             };
             let ProviderFrame::Evdev(original) = ds4_evdev_frame(&state) else {
                 panic!()
@@ -263,9 +267,12 @@ mod tests {
             } else {
                 [None, None]
             };
-            let state = DualShock4State {
-                touches,
-                ..Default::default()
+            let state = DualShock4SessionState {
+                inputs: DualShock4Inputs {
+                    touches,
+                    ..Default::default()
+                },
+                status: DualShock4Status::default(),
             };
             let frame = ds4_evdev_frame(&state);
             if step < 5 {
@@ -287,7 +294,7 @@ mod tests {
         }
         first.close().unwrap();
         assert_eq!(
-            first.send(ds4_evdev_frame(&DualShock4State::default())),
+            first.send(ds4_evdev_frame(&DualShock4SessionState::default())),
             Err(ProviderError::Closed)
         );
         second.close().unwrap();
@@ -530,7 +537,7 @@ mod tests {
             ..Default::default()
         }));
         let mut session = open(request(), Arc::new(Factory(Arc::clone(&record)))).unwrap();
-        let frame = ds4_evdev_frame(&DualShock4State::default());
+        let frame = ds4_evdev_frame(&DualShock4SessionState::default());
         assert_eq!(session.send(frame.clone()), Err(ProviderError::WouldBlock));
         session.send(frame.clone()).unwrap();
         let frames = &record.lock().unwrap().frames.clone();

@@ -24,11 +24,11 @@ class ProbeIntegration(unittest.TestCase):
     def tearDownClass(cls):
         cls.directory.cleanup()
 
-    def run_probe(self, scenario, *options, evidence=None):
+    def run_probe(self, scenario, *options, evidence=None, duration=300):
         env = {key: value for key, value in os.environ.items() if not key.startswith(('PROBE_', 'SDL_'))}
         env.update(PROBE_SCENARIO=scenario)
         env.update(evidence or {})
-        result = subprocess.run([str(self.binary), env.get('PROBE_PATH', 'synthetic-device'), '300', *options], env=env, capture_output=True, text=True)
+        result = subprocess.run([str(self.binary), env.get('PROBE_PATH', 'synthetic-device'), str(duration), *options], env=env, capture_output=True, text=True)
         records = [json.loads(line) for line in result.stdout.splitlines()]
         record = records[-1]
         COMPARE.normalize(record)
@@ -127,3 +127,40 @@ class ProbeIntegration(unittest.TestCase):
             result, record = self.run_probe('normal', *options)
             self.assertEqual(result.returncode, 1)
             self.assertFalse(record['consumer_closed'])
+
+    def test_trigger_script_submits_each_side_independently_and_closes(self):
+        for scenario, accepted in [('normal', True), ('trigger-fail', False)]:
+            result, record = self.run_probe(scenario, '--gamepad-trigger-rumble-script', '--reopen', duration=1200)
+            submissions = [json.loads(line) for line in result.stdout.splitlines()
+                           if 'trigger_rumble_submission' in line]
+            self.assertEqual(submissions, [dict(record_type='trigger_rumble_submission',
+                                               side=side, accepted=accepted)
+                                          for side in ('left', 'right')])
+            self.assertIn('\"record_type\":\"mapping_ready\"', result.stdout)
+            self.assertIn('trigger_call=16384,0,200', result.stderr)
+            self.assertIn('trigger_call=0,32768,200', result.stderr)
+            self.assertTrue(record['consumer_closed'])
+            self.assertTrue(record['observations']['reclosed']['value'])
+
+    def test_failure_records_step_last_event_and_missing_expectations(self):
+        for scenario, options, step in [('init-fail', (), 'initialization'),
+                                        ('normal', ('--gamepad-rumble-script',), 'controls-and-output')]:
+            result, record = self.run_probe(scenario, *options)
+            self.assertEqual(result.returncode, 1)
+            detail = record['failure_detail']
+            self.assertEqual(detail['step'], step)
+            self.assertEqual(set(detail['last_event']), {'type', 'code', 'value'})
+            self.assertIn('down_missing', detail['expected_event'])
+            self.assertIn('axis_endpoints_missing', detail['expected_event'])
+            self.assertNotIn('path', json.dumps(detail))
+
+    def test_series_sweep_unblocks_producer_without_claiming_initial_neutral(self):
+        result, record = self.run_probe('initial-not-neutral', '--gamepad-rumble-script')
+        ready = [json.loads(line) for line in result.stdout.splitlines()
+                 if 'mapping_ready' in line]
+        self.assertEqual(len(ready), 1)
+        self.assertFalse(ready[0]['initial_neutral_observed'])
+        self.assertFalse(record['neutral_observed'])
+        self.assertEqual(result.returncode, 1)  # Readiness alone never passes controls.
+        result, _ = self.run_probe('initial-not-neutral', '--control-0')
+        self.assertNotIn('mapping_ready', result.stdout)
