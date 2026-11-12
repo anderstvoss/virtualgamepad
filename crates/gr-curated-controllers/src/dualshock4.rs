@@ -120,8 +120,9 @@ pub enum DualShock4Control {
     RightStickPress,
 }
 
+/// Caller-owned native input levels. Battery and protocol clocks are separate.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DualShock4State {
+pub struct DualShock4Inputs {
     face: [bool; 4],
     dpad: [bool; 4],
     left: (DualShock4Axis, DualShock4Axis),
@@ -129,16 +130,9 @@ pub struct DualShock4State {
     triggers: (DualShock4Trigger, DualShock4Trigger),
     buttons: [bool; 8],
     touches: [Option<DualShock4TouchContact>; 2],
-    touch_sequence: u8,
     motion: DualShock4MotionSample,
-    sequence: u8,
-    /// Sensor time is expressed in the DS4's 5.33µs wire units.  The Linux
-    /// `PlayStation` driver uses it to advance `MSC_TIMESTAMP`; leaving it at
-    /// zero makes every sample appear to have the same time.
-    sensor_timestamp: u16,
-    battery: BatteryState,
 }
-impl Default for DualShock4State {
+impl Default for DualShock4Inputs {
     fn default() -> Self {
         Self {
             face: [false; 4],
@@ -148,18 +142,13 @@ impl Default for DualShock4State {
             triggers: (DualShock4Trigger(0), DualShock4Trigger(0)),
             buttons: [false; 8],
             touches: [None, None],
-            touch_sequence: 0,
             motion: DualShock4MotionSample {
                 accelerometer: [0; 3],
                 gyroscope: [0; 3],
             },
-            sequence: 0,
-            sensor_timestamp: 0,
-            battery: BatteryState::default(),
         }
     }
 }
-
 const fn motion_targets() -> RealizationTargetSet {
     RealizationTargetSet::new(&[
         RealizationTarget::LINUX_UHID_USB,
@@ -168,30 +157,7 @@ const fn motion_targets() -> RealizationTargetSet {
     ])
 }
 
-impl DualShock4State {
-    fn transition_inputs(&mut self, previous: &Self) {
-        self.battery = previous.battery;
-        self.sequence = previous.sequence;
-        self.sensor_timestamp = previous.sensor_timestamp;
-        self.touch_sequence = previous.touch_sequence;
-        self.advance_input_timing(previous.motion, previous.touches);
-    }
-
-    fn advance_input_timing(
-        &mut self,
-        previous_motion: DualShock4MotionSample,
-        previous_touches: [Option<DualShock4TouchContact>; 2],
-    ) {
-        let previous_touch_sequence = self.touch_sequence;
-        if self.motion != previous_motion {
-            advance_ds4_timing(self);
-        }
-        // Motion already advances the touch packet when a contact is active.
-        if self.touches != previous_touches && self.touch_sequence == previous_touch_sequence {
-            self.touch_sequence = self.touch_sequence.wrapping_add(1);
-        }
-    }
-
+impl DualShock4Inputs {
     #[must_use]
     pub const fn motion(&self) -> DualShock4MotionSample {
         self.motion
@@ -291,6 +257,73 @@ impl DualShock4State {
             DualShock4Control::TouchpadClick => self.buttons[5] = pressed,
             DualShock4Control::LeftStickPress => self.buttons[6] = pressed,
             DualShock4Control::RightStickPress => self.buttons[7] = pressed,
+        }
+    }
+}
+/// Accepted battery metadata and controller-owned motion/contact clocks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DualShock4Status {
+    battery: BatteryState,
+    sequence: u8,
+    sensor_timestamp: u16,
+    touch_sequence: u8,
+}
+impl DualShock4Status {
+    #[must_use]
+    pub const fn battery(self) -> BatteryState {
+        self.battery
+    }
+    /// Accepted motion sequence; transport cadence may maintain its own sequence.
+    #[must_use]
+    pub const fn sequence(self) -> u8 {
+        self.sequence
+    }
+    /// Accepted sensor timestamp in native 5.33-microsecond units.
+    #[must_use]
+    pub const fn sensor_timestamp(self) -> u16 {
+        self.sensor_timestamp
+    }
+    /// Accepted touch packet sequence, including last-contact release.
+    #[must_use]
+    pub const fn touch_sequence(self) -> u8 {
+        self.touch_sequence
+    }
+}
+/// Supporting runtime/worker state. Applications edit `DualShock4Inputs`.
+#[doc(hidden)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DualShock4SessionState {
+    inputs: DualShock4Inputs,
+    status: DualShock4Status,
+}
+impl DualShock4SessionState {
+    #[must_use]
+    pub const fn inputs(&self) -> &DualShock4Inputs {
+        &self.inputs
+    }
+    #[must_use]
+    pub const fn status(&self) -> DualShock4Status {
+        self.status
+    }
+    fn transition_inputs(&mut self, previous: &Self) {
+        self.status = previous.status;
+        self.advance_input_timing(previous.inputs.motion, previous.inputs.touches);
+    }
+
+    fn advance_input_timing(
+        &mut self,
+        previous_motion: DualShock4MotionSample,
+        previous_touches: [Option<DualShock4TouchContact>; 2],
+    ) {
+        let previous_touch_sequence = self.status.touch_sequence;
+        if self.inputs.motion != previous_motion {
+            advance_ds4_timing(self);
+        }
+        // Motion already advances the touch packet when a contact is active.
+        if self.inputs.touches != previous_touches
+            && self.status.touch_sequence == previous_touch_sequence
+        {
+            self.status.touch_sequence = self.status.touch_sequence.wrapping_add(1);
         }
     }
 }
@@ -784,17 +817,17 @@ impl RealizationControllerDefinition for DualShock4Definition {
     }
 }
 impl TargetAwareControllerDriver for DualShock4Definition {
-    type State = DualShock4State;
+    type State = DualShock4SessionState;
     type Frame = ProviderFrame;
     fn neutral_state(&self) -> Self::State {
-        DualShock4State::default()
+        DualShock4SessionState::default()
     }
     fn apply_digital(
         &self,
         state: &mut Self::State,
         update: DigitalControlUpdate,
     ) -> Result<(), ControlError> {
-        state.set_digital(update);
+        state.inputs.set_digital(update);
         Ok(())
     }
     fn validate_state(
@@ -811,16 +844,17 @@ impl TargetAwareControllerDriver for DualShock4Definition {
         ) {
             return Err(common::unavailable(selection.target));
         }
-        common::validate_hat(state.dpad)?;
+        common::validate_hat(state.inputs.dpad)?;
         // The DS4 evdev tracking ID range also ends at 127.
         common::validate_touch_ids(
             state
+                .inputs
                 .touches
                 .into_iter()
                 .flatten()
                 .map(DualShock4TouchContact::id),
         )?;
-        if state.motion != DualShock4State::default().motion {
+        if state.inputs.motion != DualShock4Inputs::default().motion {
             common::require_input_target(selection.target, motion_targets())?;
         }
         Ok(())
@@ -861,9 +895,9 @@ impl TargetAwareControllerDriver for DualShock4Definition {
         }
     }
 }
-fn ds4_evdev_frame(state: &DualShock4State) -> ProviderFrame {
+fn ds4_evdev_frame(state: &DualShock4SessionState) -> ProviderFrame {
     let mut events = Vec::with_capacity(31);
-    for (code, pressed) in [304, 305, 308, 307].into_iter().zip(state.face) {
+    for (code, pressed) in [304, 305, 308, 307].into_iter().zip(state.inputs.face) {
         events.push(EvdevEvent {
             event_type: common::EV_KEY,
             code,
@@ -872,7 +906,7 @@ fn ds4_evdev_frame(state: &DualShock4State) -> ProviderFrame {
     }
     for (code, pressed) in [310, 311, 314, 315, 316, 704, 317, 318]
         .into_iter()
-        .zip(state.buttons)
+        .zip(state.inputs.buttons)
     {
         events.push(EvdevEvent {
             event_type: common::EV_KEY,
@@ -880,7 +914,10 @@ fn ds4_evdev_frame(state: &DualShock4State) -> ProviderFrame {
             value: i32::from(pressed),
         });
     }
-    for (code, value) in [(312, state.triggers.0.raw()), (313, state.triggers.1.raw())] {
+    for (code, value) in [
+        (312, state.inputs.triggers.0.raw()),
+        (313, state.inputs.triggers.1.raw()),
+    ] {
         events.push(EvdevEvent {
             event_type: common::EV_KEY,
             code,
@@ -888,14 +925,20 @@ fn ds4_evdev_frame(state: &DualShock4State) -> ProviderFrame {
         });
     }
     for (code, value) in [
-        (0, i32::from(state.left.0.raw())),
-        (1, i32::from(state.left.1.raw())),
-        (2, i32::from(state.triggers.0.raw())),
-        (3, i32::from(state.right.0.raw())),
-        (4, i32::from(state.right.1.raw())),
-        (5, i32::from(state.triggers.1.raw())),
-        (16, i32::from(state.dpad[3]) - i32::from(state.dpad[2])),
-        (17, i32::from(state.dpad[1]) - i32::from(state.dpad[0])),
+        (0, i32::from(state.inputs.left.0.raw())),
+        (1, i32::from(state.inputs.left.1.raw())),
+        (2, i32::from(state.inputs.triggers.0.raw())),
+        (3, i32::from(state.inputs.right.0.raw())),
+        (4, i32::from(state.inputs.right.1.raw())),
+        (5, i32::from(state.inputs.triggers.1.raw())),
+        (
+            16,
+            i32::from(state.inputs.dpad[3]) - i32::from(state.inputs.dpad[2]),
+        ),
+        (
+            17,
+            i32::from(state.inputs.dpad[1]) - i32::from(state.inputs.dpad[0]),
+        ),
     ] {
         events.push(EvdevEvent {
             event_type: common::EV_ABS,
@@ -903,7 +946,7 @@ fn ds4_evdev_frame(state: &DualShock4State) -> ProviderFrame {
             value,
         });
     }
-    for (slot, contact) in state.touches.into_iter().enumerate() {
+    for (slot, contact) in state.inputs.touches.into_iter().enumerate() {
         events.push(EvdevEvent {
             event_type: common::EV_ABS,
             code: 47, // ABS_MT_SLOT
@@ -932,7 +975,7 @@ fn ds4_evdev_frame(state: &DualShock4State) -> ProviderFrame {
     events.push(EvdevEvent {
         event_type: common::EV_KEY,
         code: 330, // BTN_TOUCH
-        value: i32::from(state.touches.iter().any(Option::is_some)),
+        value: i32::from(state.inputs.touches.iter().any(Option::is_some)),
     });
     events.push(EvdevEvent {
         event_type: common::EV_SYN,
@@ -954,48 +997,50 @@ fn hat(d: [bool; 4]) -> u8 {
         _ => 8,
     }
 }
-fn ds4_frame(state: &DualShock4State) -> ProviderFrame {
+fn ds4_frame(state: &DualShock4SessionState) -> ProviderFrame {
     let mut b = vec![0; 63];
     b[..4].copy_from_slice(&[
-        state.left.0.raw(),
-        state.left.1.raw(),
-        state.right.0.raw(),
-        state.right.1.raw(),
+        state.inputs.left.0.raw(),
+        state.inputs.left.1.raw(),
+        state.inputs.right.0.raw(),
+        state.inputs.right.1.raw(),
     ]);
-    b[4] = hat(state.dpad)
-        | (u8::from(state.face[2]) << 4)
-        | (u8::from(state.face[0]) << 5)
-        | (u8::from(state.face[1]) << 6)
-        | (u8::from(state.face[3]) << 7);
-    b[5] = u8::from(state.buttons[0])
-        | (u8::from(state.buttons[1]) << 1)
-        | (u8::from(state.triggers.0.raw() != 0) << 2)
-        | (u8::from(state.triggers.1.raw() != 0) << 3)
-        | (u8::from(state.buttons[2]) << 4)
-        | (u8::from(state.buttons[3]) << 5)
-        | (u8::from(state.buttons[6]) << 6)
-        | (u8::from(state.buttons[7]) << 7);
-    b[6] = (state.sequence << 4) | u8::from(state.buttons[4]) | (u8::from(state.buttons[5]) << 1);
-    b[7] = state.triggers.0.raw();
-    b[8] = state.triggers.1.raw();
-    b[9..11].copy_from_slice(&state.sensor_timestamp.to_le_bytes());
+    b[4] = hat(state.inputs.dpad)
+        | (u8::from(state.inputs.face[2]) << 4)
+        | (u8::from(state.inputs.face[0]) << 5)
+        | (u8::from(state.inputs.face[1]) << 6)
+        | (u8::from(state.inputs.face[3]) << 7);
+    b[5] = u8::from(state.inputs.buttons[0])
+        | (u8::from(state.inputs.buttons[1]) << 1)
+        | (u8::from(state.inputs.triggers.0.raw() != 0) << 2)
+        | (u8::from(state.inputs.triggers.1.raw() != 0) << 3)
+        | (u8::from(state.inputs.buttons[2]) << 4)
+        | (u8::from(state.inputs.buttons[3]) << 5)
+        | (u8::from(state.inputs.buttons[6]) << 6)
+        | (u8::from(state.inputs.buttons[7]) << 7);
+    b[6] = (state.status.sequence << 4)
+        | u8::from(state.inputs.buttons[4])
+        | (u8::from(state.inputs.buttons[5]) << 1);
+    b[7] = state.inputs.triggers.0.raw();
+    b[8] = state.inputs.triggers.1.raw();
+    b[9..11].copy_from_slice(&state.status.sensor_timestamp.to_le_bytes());
     for (i, v) in [
-        state.motion.gyroscope[0],
-        state.motion.gyroscope[2],
-        state.motion.gyroscope[1].wrapping_neg(),
+        state.inputs.motion.gyroscope[0],
+        state.inputs.motion.gyroscope[2],
+        state.inputs.motion.gyroscope[1].wrapping_neg(),
     ]
     .into_iter()
     .enumerate()
     {
         b[12 + i * 2..14 + i * 2].copy_from_slice(&v.to_le_bytes());
     }
-    for (i, v) in state.motion.accelerometer.into_iter().enumerate() {
+    for (i, v) in state.inputs.motion.accelerometer.into_iter().enumerate() {
         b[18 + i * 2..20 + i * 2].copy_from_slice(&v.to_le_bytes());
     }
     // A zero count means "no update", not "all contacts released" to the host.
     b[32] = 1;
-    b[33] = state.touch_sequence;
-    encode_ds4_touches(&mut b[34..42], state.touches);
+    b[33] = state.status.touch_sequence;
+    encode_ds4_touches(&mut b[34..42], state.inputs.touches);
     b[29] = 0x1b;
     ProviderFrame::HidInput {
         report_id: Some(1),
@@ -1019,13 +1064,13 @@ fn encode_ds4_touches(bytes: &mut [u8], touches: [Option<DualShock4TouchContact>
     }
 }
 
-fn advance_ds4_timing(state: &mut DualShock4State) {
-    state.sequence = state.sequence.wrapping_add(1);
+fn advance_ds4_timing(state: &mut DualShock4SessionState) {
+    state.status.sequence = state.status.sequence.wrapping_add(1);
     // 4 ms at 5.33 µs/tick. This matches the motion worker cadence and lets
     // hid-playstation produce monotonically timed samples.
-    state.sensor_timestamp = state.sensor_timestamp.wrapping_add(750);
-    if state.touches.iter().any(Option::is_some) {
-        state.touch_sequence = state.touch_sequence.wrapping_add(1);
+    state.status.sensor_timestamp = state.status.sensor_timestamp.wrapping_add(750);
+    if state.inputs.touches.iter().any(Option::is_some) {
+        state.status.touch_sequence = state.status.touch_sequence.wrapping_add(1);
     }
 }
 
@@ -1130,8 +1175,13 @@ impl DualShock4Controller {
     }
 
     #[must_use]
-    pub const fn state(&self) -> &DualShock4State {
-        self.0.state()
+    pub const fn inputs(&self) -> &DualShock4Inputs {
+        &self.0.state().inputs
+    }
+    /// Accepted battery metadata and controller-owned motion/contact clocks.
+    #[must_use]
+    pub const fn status(&self) -> DualShock4Status {
+        self.0.state().status
     }
     #[must_use]
     pub fn is_dirty(&self) -> bool {
@@ -1155,9 +1205,9 @@ impl DualShock4Controller {
     /// Returns the closure's error, a validation error, or `ControlError::Closed`.
     pub fn edit_inputs(
         &mut self,
-        edit: impl FnOnce(&mut DualShock4State) -> Result<(), ControlError>,
+        edit: impl FnOnce(&mut DualShock4Inputs) -> Result<(), ControlError>,
     ) -> Result<(), ControlError> {
-        self.0.edit_inputs(edit)
+        self.0.edit_inputs(|state| edit(&mut state.inputs))
     }
     /// Replace the complete native input state as one validated edit.
     /// Call `commit()` to deliver it. Protocol counters are session-owned.
@@ -1165,7 +1215,7 @@ impl DualShock4Controller {
     /// # Errors
     /// Returns a control error if the session is closed or the snapshot cannot
     /// be represented by the selected realization.
-    pub fn set_inputs(&mut self, state: DualShock4State) -> Result<(), ControlError> {
+    pub fn set_inputs(&mut self, state: DualShock4Inputs) -> Result<(), ControlError> {
         self.edit_inputs(|current| {
             *current = state;
             Ok(())
@@ -1396,7 +1446,7 @@ impl DualShock4Identity {
 /// Bind a pre-opened, unprivileged USB worker to the typed controller contract.
 #[must_use]
 pub fn create_dualshock4_usb_worker(
-    bridge: Box<dyn common::WorkerBridge<DualShock4State>>,
+    bridge: Box<dyn common::WorkerBridge<DualShock4SessionState>>,
 ) -> DualShock4Controller {
     let selection = RealizationSelection {
         controller: ControllerId::new("virtualgamepad.dualshock4"),
@@ -1488,26 +1538,21 @@ impl common::HidDriver for DualShock4Definition {
         crate::sony_evdev::open_native(request, association)
     }
     fn neutralize_state(state: &mut Self::State) {
-        *state = Self::State {
-            battery: state.battery,
-            sequence: state.sequence,
-            sensor_timestamp: state.sensor_timestamp,
-            touch_sequence: state.touch_sequence,
-            ..Self::State::default()
-        };
+        state.inputs = DualShock4Inputs::default();
     }
 
-    type Hid = common::SnapshotProtocol<DualShock4State, crate::retained::DualShock4OutputState>;
+    type Hid =
+        common::SnapshotProtocol<DualShock4SessionState, crate::retained::DualShock4OutputState>;
     fn hid_identity(&self) -> Result<[u8; 6], ProviderError> {
         common::creation_identity()
     }
     fn hid_protocol(&self, _: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
         #[allow(clippy::cast_possible_truncation)] // Protocol counters wrap at their declared width.
-        fn encode(state: &DualShock4State, now: u64, sequence: u8) -> gr_hid::Report {
+        fn encode(state: &DualShock4SessionState, now: u64, sequence: u8) -> gr_hid::Report {
             let mut wire = state.clone();
-            wire.sequence = sequence;
-            wire.sensor_timestamp = ((now / 16).wrapping_mul(3)) as u16;
-            wire.touch_sequence = sequence;
+            wire.status.sequence = sequence;
+            wire.status.sensor_timestamp = ((now / 16).wrapping_mul(3)) as u16;
+            wire.status.touch_sequence = sequence;
             common::logical_input(ds4_frame(&wire))
         }
         fn validate(report: &gr_hid::Report) -> Result<(), gr_hid::ReplyError> {
@@ -1520,7 +1565,7 @@ impl common::HidDriver for DualShock4Definition {
             Ok(())
         }
         common::SnapshotProtocol::new(
-            DualShock4State::default(),
+            DualShock4SessionState::default(),
             encode,
             validate,
             features(identity),
@@ -1601,8 +1646,150 @@ impl crate::registry::ControllerFamily for DualShock4Definition {
 }
 
 #[cfg(test)]
+impl crate::common::session_tests::InputFixture for DualShock4SessionState {
+    type Inputs = DualShock4Inputs;
+    fn test_inputs(&self) -> &Self::Inputs {
+        &self.inputs
+    }
+    fn test_inputs_mut(&mut self) -> &mut Self::Inputs {
+        &mut self.inputs
+    }
+    fn test_into_inputs(self) -> Self::Inputs {
+        self.inputs
+    }
+}
+#[cfg(test)]
+impl crate::common::session_tests::ControllerFixture for DualShock4Controller {
+    type State = DualShock4SessionState;
+    fn test_state(&self) -> &Self::State {
+        self.0.state()
+    }
+}
+#[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::session_tests::{ControllerFixture as _, InputFixture as _};
+
+    fn neutral_inputs() -> DualShock4Inputs {
+        let neutral = DualShock4Inputs::default();
+        assert_eq!(neutral, neutral.clone());
+        assert_eq!(
+            neutral.left_stick(),
+            (DualShock4Axis::new(128), DualShock4Axis::new(128))
+        );
+        assert_eq!(
+            neutral.motion(),
+            DualShock4MotionSample {
+                accelerometer: [0; 3],
+                gyroscope: [0; 3]
+            }
+        );
+        neutral
+    }
+
+    #[test]
+    fn input_values_are_independent_of_battery_and_controller_clocks() {
+        use common::session_tests::input_validation_session;
+        let neutral = neutral_inputs();
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            RealizationTarget::LINUX_USBIP_USB_AUDIO,
+        ] {
+            let session = input_validation_session(DualShock4Definition, target, [true; 3]);
+            let mut controller = DualShock4Controller(session);
+            controller.service(&mut |_| {}).unwrap();
+            controller
+                .0
+                .update_state(|state| {
+                    state.status.battery.set_exposed(true);
+                    state
+                        .status
+                        .battery
+                        .set_level(crate::BatteryLevel::new(37).unwrap());
+                    Ok(())
+                })
+                .unwrap();
+            let status = controller.status();
+            let outputs = controller.host_outputs();
+            let mut inputs = neutral.clone();
+            inputs.set_native(DualShock4Control::Cross, true);
+            inputs.set_digital(DigitalControlUpdate::Dpad {
+                direction: gr_controller_contract::DpadDirection::Up,
+                pressed: true,
+            });
+            inputs.set_touch(
+                DualShock4TouchSlot::First,
+                Some(DualShock4TouchContact::new(7, 100, 200).unwrap()),
+            );
+            let motion = target != RealizationTarget::LINUX_UINPUT;
+            if motion {
+                inputs.set_motion(DualShock4MotionSample {
+                    accelerometer: [1, 2, 3],
+                    gyroscope: [4, 5, 6],
+                });
+            }
+            controller.set_inputs(inputs.clone()).unwrap();
+            assert_eq!(controller.inputs(), &inputs);
+            assert_eq!(controller.status().battery(), status.battery());
+            let expected_ticks = if motion { 750 } else { 0 };
+            assert_eq!(
+                controller.status().sensor_timestamp(),
+                status.sensor_timestamp().wrapping_add(expected_ticks)
+            );
+            assert_eq!(
+                controller.status().sequence(),
+                status.sequence().wrapping_add(u8::from(motion))
+            );
+            assert_eq!(
+                controller.status().touch_sequence(),
+                status.touch_sequence().wrapping_add(1)
+            );
+            controller.commit().unwrap();
+            let accepted_status = controller.status();
+            controller.edit_inputs(|_| Ok(())).unwrap();
+            controller.set_inputs(inputs.clone()).unwrap();
+            assert!(!controller.is_dirty());
+            assert_eq!(controller.status(), accepted_status);
+            assert!(
+                controller
+                    .edit_inputs(|candidate| {
+                        candidate
+                            .set_triggers(DualShock4Trigger::new(19), DualShock4Trigger::new(23));
+                        candidate.set_digital(DigitalControlUpdate::Dpad {
+                            direction: gr_controller_contract::DpadDirection::Down,
+                            pressed: true,
+                        });
+                        Ok(())
+                    })
+                    .is_err()
+            );
+            assert_eq!(controller.inputs(), &inputs);
+            assert_eq!(controller.status(), accepted_status);
+            assert!(!controller.is_dirty());
+            controller.neutralize().unwrap();
+            assert_eq!(controller.inputs(), &neutral);
+            assert_eq!(controller.status().battery(), status.battery());
+            assert_eq!(
+                controller.status().sensor_timestamp(),
+                status.sensor_timestamp().wrapping_add(expected_ticks * 2)
+            );
+            assert_eq!(controller.host_outputs(), outputs);
+            assert_eq!(
+                controller.status().touch_sequence(),
+                status.touch_sequence().wrapping_add(2)
+            );
+            let final_status = controller.status();
+            controller.close();
+            controller.close();
+            assert_eq!(controller.status(), final_status);
+            assert_eq!(
+                controller.set_inputs(neutral.clone()),
+                Err(ControlError::Closed)
+            );
+        }
+    }
 
     #[test]
     fn explicit_motion_refresh_advances_and_retries_unchanged_samples() {
@@ -1626,10 +1813,10 @@ mod tests {
                             })
                             .unwrap();
                     }
-                    let before = controller.state().clone();
+                    let before = controller.test_state().clone();
                     let sent = io.lock().unwrap().sent.len();
                     assert!(controller.refresh_motion().is_err());
-                    assert_eq!(controller.state(), &before);
+                    assert_eq!(controller.test_state(), &before);
                     assert_eq!(controller.is_dirty(), dirty);
                     assert_eq!(io.lock().unwrap().sent.len(), sent);
                 }
@@ -1655,9 +1842,9 @@ mod tests {
             controller
                 .0
                 .update_state(|state| {
-                    state.sensor_timestamp = u16::MAX - 750;
-                    state.sequence = u8::MAX;
-                    state.touch_sequence = u8::MAX;
+                    state.status.sensor_timestamp = u16::MAX - 750;
+                    state.status.sequence = u8::MAX;
+                    state.status.touch_sequence = u8::MAX;
                     Ok(())
                 })
                 .unwrap();
@@ -1665,10 +1852,10 @@ mod tests {
                 controller,
                 io,
                 expected,
-                |state: &mut DualShock4State| {
-                    state.sensor_timestamp = state.sensor_timestamp.wrapping_add(750);
-                    state.sequence = state.sequence.wrapping_add(1);
-                    state.touch_sequence = state.touch_sequence.wrapping_add(1);
+                |state: &mut DualShock4SessionState| {
+                    state.status.sensor_timestamp = state.status.sensor_timestamp.wrapping_add(750);
+                    state.status.sequence = state.status.sequence.wrapping_add(1);
+                    state.status.touch_sequence = state.status.touch_sequence.wrapping_add(1);
                 },
                 DualShock4Definition
                     .encode(controller.0.selection(), &expected)
@@ -1707,13 +1894,14 @@ mod tests {
                 .unwrap();
             assert!(
                 controller
-                    .state()
+                    .test_state()
+                    .inputs
                     .dpad_pressed(gr_controller_contract::DpadDirection::Down)
             );
             controller.neutralize().unwrap();
             check_input_transactions!(
                 controller,
-                |state: &mut DualShock4State| {
+                |state: &mut DualShock4Inputs| {
                     state.set_native(DualShock4Control::Cross, true);
                     state.set_digital(DigitalControlUpdate::Dpad {
                         direction: gr_controller_contract::DpadDirection::Up,
@@ -1721,7 +1909,7 @@ mod tests {
                     });
                     Ok(())
                 },
-                |state: &mut DualShock4State| {
+                |state: &mut DualShock4Inputs| {
                     state.set_digital(DigitalControlUpdate::Dpad {
                         direction: gr_controller_contract::DpadDirection::Down,
                         pressed: true,
@@ -1729,6 +1917,60 @@ mod tests {
                     Ok(())
                 },
                 io.lock().unwrap().sent.len()
+            );
+        }
+    }
+
+    fn check_motion_edit_paths(
+        controller: &mut DualShock4Controller,
+        is_uinput: bool,
+        unavailable: ControlError,
+    ) {
+        use common::session_tests::assert_input_rejected;
+        let motion = DualShock4MotionSample {
+            accelerometer: [10, 20, 30],
+            gyroscope: [40, 50, 60],
+        };
+        let mut candidate = controller.test_state().clone();
+        candidate.inputs.set_motion(motion);
+        if is_uinput {
+            assert_input_rejected!(
+                controller,
+                candidate,
+                controller.set_motion(motion),
+                unavailable.clone()
+            );
+            assert_eq!(
+                controller.set_motion(controller.test_state().inputs.motion()),
+                Err(unavailable)
+            );
+            controller
+                .set_inputs(controller.test_state().clone().test_into_inputs())
+                .unwrap();
+        } else {
+            let timestamp = controller.test_state().status.sensor_timestamp;
+            let sequence = controller.test_state().status.sequence;
+            controller.set_motion(motion).unwrap();
+            let changed = controller.test_state().clone();
+            assert_eq!(changed.status.sensor_timestamp, timestamp.wrapping_add(750));
+            assert_eq!(changed.status.sequence, sequence.wrapping_add(1));
+            controller.set_motion(motion).unwrap();
+            controller.set_inputs(candidate.test_into_inputs()).unwrap();
+            controller
+                .edit_inputs(|state| {
+                    state.set_motion(motion);
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(controller.test_state(), &changed);
+            controller.neutralize().unwrap();
+            assert_eq!(
+                controller.test_state().status.sensor_timestamp,
+                timestamp.wrapping_add(1500)
+            );
+            assert_eq!(
+                controller.test_state().status.sequence,
+                sequence.wrapping_add(2)
             );
         }
     }
@@ -1756,8 +1998,10 @@ mod tests {
             };
 
             let contact = Some(DualShock4TouchContact::new(128, 0, 0).unwrap());
-            let mut touched = controller.state().clone();
-            touched.set_touch(DualShock4TouchSlot::Second, contact);
+            let mut touched = controller.test_state().clone();
+            touched
+                .inputs
+                .set_touch(DualShock4TouchSlot::Second, contact);
             assert_input_rejected!(
                 controller,
                 touched,
@@ -1771,65 +2015,80 @@ mod tests {
 
             let contact = Some(DualShock4TouchContact::new(127, 0, 0).unwrap());
             let first = DualShock4TouchSlot::First;
-            let sequence = controller.state().touch_sequence;
+            let sequence = controller.test_state().status.touch_sequence;
             controller.set_touch(first, None).unwrap();
-            assert_eq!(controller.state().touch_sequence, sequence);
+            assert_eq!(controller.test_state().status.touch_sequence, sequence);
             controller.set_touch(first, contact).unwrap();
-            assert_eq!(controller.state().touch_sequence, sequence.wrapping_add(1));
+            assert_eq!(
+                controller.test_state().status.touch_sequence,
+                sequence.wrapping_add(1)
+            );
             controller.set_touch(first, contact).unwrap();
-            assert_eq!(controller.state().touch_sequence, sequence.wrapping_add(1));
+            assert_eq!(
+                controller.test_state().status.touch_sequence,
+                sequence.wrapping_add(1)
+            );
             controller.set_touch(first, None).unwrap();
-            assert_eq!(controller.state().touch_sequence, sequence.wrapping_add(2));
+            assert_eq!(
+                controller.test_state().status.touch_sequence,
+                sequence.wrapping_add(2)
+            );
             controller.set_touch(first, None).unwrap();
-            assert_eq!(controller.state().touch_sequence, sequence.wrapping_add(2));
+            assert_eq!(
+                controller.test_state().status.touch_sequence,
+                sequence.wrapping_add(2)
+            );
 
-            let motion = DualShock4MotionSample {
-                accelerometer: [10, 20, 30],
-                gyroscope: [40, 50, 60],
-            };
-            let mut candidate = controller.state().clone();
-            candidate.set_motion(motion);
-            if is_uinput {
-                assert_input_rejected!(
-                    controller,
-                    candidate,
-                    controller.set_motion(motion),
-                    unavailable.clone()
-                );
-                assert_eq!(
-                    controller.set_motion(controller.state().motion()),
-                    Err(unavailable)
-                );
-                controller.set_inputs(controller.state().clone()).unwrap();
-            } else {
-                let timestamp = controller.state().sensor_timestamp;
-                let sequence = controller.state().sequence;
-                controller.set_motion(motion).unwrap();
-                let changed = controller.state().clone();
-                assert_eq!(changed.sensor_timestamp, timestamp.wrapping_add(750));
-                assert_eq!(changed.sequence, sequence.wrapping_add(1));
-                controller.set_motion(motion).unwrap();
-                controller.set_inputs(candidate).unwrap();
-                controller
-                    .edit_inputs(|state| {
-                        state.set_motion(motion);
-                        Ok(())
-                    })
-                    .unwrap();
-                assert_eq!(controller.state(), &changed);
-                controller.neutralize().unwrap();
-                assert_eq!(
-                    controller.state().sensor_timestamp,
-                    timestamp.wrapping_add(1500)
-                );
-                assert_eq!(controller.state().sequence, sequence.wrapping_add(2));
-            }
+            check_motion_edit_paths(&mut controller, is_uinput, unavailable);
             controller.close();
             controller.close();
-            let accepted = controller.state().clone();
+            let accepted = controller.test_state().clone();
             assert_eq!(controller.neutralize(), Err(ControlError::Closed));
-            assert_eq!(controller.state(), &accepted);
+            assert_eq!(controller.test_state(), &accepted);
         }
+    }
+
+    fn populated_inputs(
+        target: RealizationTarget,
+    ) -> (DualShock4SessionState, DualShock4MotionSample) {
+        let axis = DualShock4Axis::new;
+        let mut snapshot = DualShock4SessionState {
+            inputs: DualShock4Inputs {
+                face: [true; 4],
+                dpad: [true, false, false, true],
+                left: (axis(0), axis(255)),
+                right: (axis(255), axis(0)),
+                buttons: [true; 8],
+                triggers: (DualShock4Trigger::new(255), DualShock4Trigger::new(23)),
+                ..Default::default()
+            },
+            status: DualShock4Status::default(),
+        };
+        let first_id = 127;
+        let first = DualShock4TouchContact::new(first_id, 1919, 941).unwrap();
+        let second = DualShock4TouchContact::new(7, 0, 0).unwrap();
+        snapshot
+            .inputs
+            .set_touch(DualShock4TouchSlot::First, Some(first));
+        snapshot
+            .inputs
+            .set_touch(DualShock4TouchSlot::Second, Some(second));
+        assert_eq!(
+            snapshot.inputs.touch(DualShock4TouchSlot::First),
+            Some(first)
+        );
+        assert_eq!(
+            snapshot.inputs.touch(DualShock4TouchSlot::Second),
+            Some(second)
+        );
+        let motion = DualShock4MotionSample {
+            accelerometer: [i16::MIN, 24, i16::MAX],
+            gyroscope: [50, -60, 70],
+        };
+        if target != RealizationTarget::LINUX_UINPUT {
+            snapshot.inputs.set_motion(motion);
+        }
+        (snapshot, motion)
     }
 
     #[test]
@@ -1845,56 +2104,40 @@ mod tests {
             controller
                 .0
                 .update_state(|current| {
-                    current.battery.set_exposed(true);
+                    current.status.battery.set_exposed(true);
                     current
+                        .status
                         .battery
                         .set_level(crate::BatteryLevel::new(37).unwrap());
-                    current.sequence = 17;
-                    current.sensor_timestamp = 17;
-                    current.touch_sequence = 17;
+                    current.status.sequence = 17;
+                    current.status.sensor_timestamp = 17;
+                    current.status.touch_sequence = 17;
                     Ok(())
                 })
                 .unwrap();
             let identity = controller.identity();
-            let axis = DualShock4Axis::new;
-            let mut snapshot = DualShock4State {
-                face: [true; 4],
-                dpad: [true, false, false, true],
-                left: (axis(0), axis(255)),
-                right: (axis(255), axis(0)),
-                buttons: [true; 8],
-                triggers: (DualShock4Trigger::new(255), DualShock4Trigger::new(23)),
-                ..Default::default()
-            };
-            let first_id = 127;
-            let first = DualShock4TouchContact::new(first_id, 1919, 941).unwrap();
-            let second = DualShock4TouchContact::new(7, 0, 0).unwrap();
-            snapshot.set_touch(DualShock4TouchSlot::First, Some(first));
-            snapshot.set_touch(DualShock4TouchSlot::Second, Some(second));
-            assert_eq!(snapshot.touch(DualShock4TouchSlot::First), Some(first));
-            assert_eq!(snapshot.touch(DualShock4TouchSlot::Second), Some(second));
-            let motion = DualShock4MotionSample {
-                accelerometer: [i16::MIN, 24, i16::MAX],
-                gyroscope: [50, -60, 70],
-            };
-            if target != RealizationTarget::LINUX_UINPUT {
-                snapshot.set_motion(motion);
-            }
-            let current = controller.state();
-            let motion_changed = snapshot.motion != current.motion;
-            let expected = DualShock4State {
-                battery: current.battery,
-                sequence: current.sequence.wrapping_add(u8::from(motion_changed)),
-                sensor_timestamp: current
-                    .sensor_timestamp
-                    .wrapping_add(u16::from(motion_changed) * 750),
-                touch_sequence: current.touch_sequence.wrapping_add(1),
-                ..snapshot.clone()
+            let (snapshot, motion) = populated_inputs(target);
+            let current = controller.test_state();
+            let motion_changed = snapshot.inputs.motion != current.inputs.motion;
+            let expected = DualShock4SessionState {
+                inputs: (snapshot.clone()).inputs,
+                status: DualShock4Status {
+                    battery: current.status.battery,
+                    sequence: current
+                        .status
+                        .sequence
+                        .wrapping_add(u8::from(motion_changed)),
+                    sensor_timestamp: current
+                        .status
+                        .sensor_timestamp
+                        .wrapping_add(u16::from(motion_changed) * 750),
+                    touch_sequence: current.status.touch_sequence.wrapping_add(1),
+                },
             };
             let mut bad = snapshot.clone();
-            bad.face[0] = false;
+            bad.inputs.face[0] = false;
             let invalid = if target == RealizationTarget::LINUX_UINPUT {
-                bad.set_motion(motion);
+                bad.inputs.set_motion(motion);
                 Some((
                     bad,
                     ControlError::UnavailableInRealization {
@@ -1907,7 +2150,7 @@ mod tests {
                     },
                 ))
             } else {
-                bad.set_touch(
+                bad.inputs.set_touch(
                     DualShock4TouchSlot::Second,
                     Some(DualShock4TouchContact::new(128, 0, 0).unwrap()),
                 );
@@ -1927,7 +2170,7 @@ mod tests {
                 expected,
                 invalid,
                 DualShock4Definition
-                    .encode(controller.0.selection(), controller.state())
+                    .encode(controller.0.selection(), controller.test_state())
                     .unwrap(),
                 &[(6, 0xf0), (9, 255), (10, 255), (33, 255)]
             );
@@ -1944,25 +2187,35 @@ mod tests {
             [true; 3],
         );
         let mut controller = DualShock4Controller(session);
-        let mut snapshot = DualShock4State::default();
-        snapshot.set_touch(
+        let mut snapshot = DualShock4SessionState::default();
+        snapshot.inputs.set_touch(
             DualShock4TouchSlot::First,
             Some(DualShock4TouchContact::new(7, 10, 20).unwrap()),
         );
-        controller.set_inputs(snapshot.clone()).unwrap();
-        assert_eq!(controller.state().touch_sequence, 1);
-        assert_eq!(controller.state().sensor_timestamp, 0);
+        controller
+            .set_inputs(snapshot.clone().test_into_inputs())
+            .unwrap();
+        assert_eq!(controller.test_state().status.touch_sequence, 1);
+        assert_eq!(controller.test_state().status.sensor_timestamp, 0);
 
-        snapshot.set_touch(DualShock4TouchSlot::First, None);
-        snapshot.motion.gyroscope[0] = 123;
-        controller.set_inputs(snapshot.clone()).unwrap();
-        assert_eq!(controller.state().touch_sequence, 2);
-        assert_eq!(controller.state().sensor_timestamp, 750);
-        assert_eq!(controller.state().touch(DualShock4TouchSlot::First), None);
+        snapshot.inputs.set_touch(DualShock4TouchSlot::First, None);
+        snapshot.inputs.motion.gyroscope[0] = 123;
+        controller
+            .set_inputs(snapshot.clone().test_into_inputs())
+            .unwrap();
+        assert_eq!(controller.test_state().status.touch_sequence, 2);
+        assert_eq!(controller.test_state().status.sensor_timestamp, 750);
+        assert_eq!(
+            controller
+                .test_state()
+                .inputs
+                .touch(DualShock4TouchSlot::First),
+            None
+        );
 
-        let accepted = controller.state().clone();
-        controller.set_inputs(snapshot).unwrap();
-        assert_eq!(controller.state(), &accepted);
+        let accepted = controller.test_state().clone();
+        controller.set_inputs(snapshot.test_into_inputs()).unwrap();
+        assert_eq!(controller.test_state(), &accepted);
         controller.close();
     }
 
@@ -1979,30 +2232,31 @@ mod tests {
 
     #[test]
     fn neutralization_releases_native_inputs_and_preserves_metadata() {
-        let mut expected = DualShock4State::default();
-        expected.battery.set_exposed(true);
+        let mut expected = DualShock4SessionState::default();
+        expected.status.battery.set_exposed(true);
         expected
+            .status
             .battery
             .set_level(crate::BatteryLevel::new(37).unwrap());
-        expected.sequence = 77;
-        expected.sensor_timestamp = 12345;
-        expected.touch_sequence = 9;
+        expected.status.sequence = 77;
+        expected.status.sensor_timestamp = 12345;
+        expected.status.touch_sequence = 9;
         let mut state = expected.clone();
-        state.face.fill(true);
-        state.dpad.fill(true);
-        state.buttons.fill(true);
-        state.left = (DualShock4Axis(100), DualShock4Axis(200));
-        state.right = (DualShock4Axis(200), DualShock4Axis(100));
-        state.triggers = (DualShock4Trigger(255), DualShock4Trigger(255));
-        state.touches = [
+        state.inputs.face.fill(true);
+        state.inputs.dpad.fill(true);
+        state.inputs.buttons.fill(true);
+        state.inputs.left = (DualShock4Axis(100), DualShock4Axis(200));
+        state.inputs.right = (DualShock4Axis(200), DualShock4Axis(100));
+        state.inputs.triggers = (DualShock4Trigger(255), DualShock4Trigger(255));
+        state.inputs.touches = [
             Some(DualShock4TouchContact::new(1, 100, 200).unwrap()),
             Some(DualShock4TouchContact::new(2, 300, 400).unwrap()),
         ];
-        state.touch_sequence = 8;
-        state.motion.accelerometer = [100; 3];
-        state.motion.gyroscope = [200; 3];
-        expected.sensor_timestamp += 750;
-        expected.sequence += 1;
+        state.status.touch_sequence = 8;
+        state.inputs.motion.accelerometer = [100; 3];
+        state.inputs.motion.gyroscope = [200; 3];
+        expected.status.sensor_timestamp += 750;
+        expected.status.sequence += 1;
         let previous = state.clone();
         <DualShock4Definition as common::HidDriver>::neutralize_state(&mut state);
         <DualShock4Definition as common::HidDriver>::transition_inputs(&previous, &mut state);
@@ -2084,9 +2338,12 @@ mod tests {
             (255, 255, 12),
             (0, 0, 0),
         ] {
-            let state = DualShock4State {
-                triggers: (DualShock4Trigger::new(left), DualShock4Trigger::new(right)),
-                ..Default::default()
+            let state = DualShock4SessionState {
+                inputs: DualShock4Inputs {
+                    triggers: (DualShock4Trigger::new(left), DualShock4Trigger::new(right)),
+                    ..Default::default()
+                },
+                status: DualShock4Status::default(),
             };
             let ProviderFrame::HidInput { bytes, .. } = ds4_frame(&state) else {
                 panic!("HID input")
@@ -2108,9 +2365,9 @@ mod tests {
             (DualShock4Control::RightStickPress, 318),
             (DualShock4Control::PlayStation, 316),
         ] {
-            let mut state = DualShock4State::default();
+            let mut state = DualShock4SessionState::default();
             for pressed in [true, false] {
-                state.set_native(control, pressed);
+                state.inputs.set_native(control, pressed);
                 let ProviderFrame::Evdev(events) =
                     DualShock4Definition.encode(selection, &state).unwrap()
                 else {
@@ -2142,9 +2399,12 @@ mod tests {
             (0, 255, vec![313]),
             (255, 255, vec![312, 313]),
         ] {
-            let state = DualShock4State {
-                triggers: (DualShock4Trigger::new(left), DualShock4Trigger::new(right)),
-                ..Default::default()
+            let state = DualShock4SessionState {
+                inputs: DualShock4Inputs {
+                    triggers: (DualShock4Trigger::new(left), DualShock4Trigger::new(right)),
+                    ..Default::default()
+                },
+                status: DualShock4Status::default(),
             };
             let ProviderFrame::Evdev(events) =
                 DualShock4Definition.encode(selection, &state).unwrap()
@@ -2211,12 +2471,15 @@ mod tests {
 
     #[test]
     fn openpuck_ds4_motion_layout_and_feature_reports_are_stable() {
-        let s = DualShock4State {
-            motion: DualShock4MotionSample {
-                gyroscope: [1, -2, 3],
-                accelerometer: [-4, 5, -6],
+        let s = DualShock4SessionState {
+            inputs: DualShock4Inputs {
+                motion: DualShock4MotionSample {
+                    gyroscope: [1, -2, 3],
+                    accelerometer: [-4, 5, -6],
+                },
+                ..Default::default()
             },
-            ..Default::default()
+            status: DualShock4Status::default(),
         };
         let ProviderFrame::HidInput { report_id, bytes } = ds4_frame(&s) else {
             unreachable!()
@@ -2253,7 +2516,7 @@ mod tests {
                     controller: DualShock4Definition.controller_id(),
                     target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 },
-                &DualShock4State::default(),
+                &DualShock4SessionState::default(),
             )
             .expect("DummyHcd DS4 frame");
         assert!(
@@ -2290,7 +2553,7 @@ mod tests {
                     controller: DualShock4Definition.controller_id(),
                     target: RealizationTarget::LINUX_UHID_USB,
                 },
-                &DualShock4State::default(),
+                &DualShock4SessionState::default(),
             )
             .unwrap();
         assert!(matches!(f,ProviderFrame::HidInput{report_id:Some(1),bytes}if bytes.len()==63));
@@ -2304,7 +2567,7 @@ mod tests {
                     controller: DualShock4Definition.controller_id(),
                     target: RealizationTarget::LINUX_UINPUT,
                 },
-                &DualShock4State::default(),
+                &DualShock4SessionState::default(),
             )
             .expect("evdev frame");
         assert!(
@@ -2324,13 +2587,16 @@ mod tests {
 
     #[test]
     fn sticks_triggers_and_native_buttons_reach_both_presentations() {
-        let mut state = DualShock4State {
-            left: (DualShock4Axis(10), DualShock4Axis(20)),
-            right: (DualShock4Axis(30), DualShock4Axis(40)),
-            triggers: (DualShock4Trigger(50), DualShock4Trigger(60)),
-            ..Default::default()
+        let mut state = DualShock4SessionState {
+            inputs: DualShock4Inputs {
+                left: (DualShock4Axis(10), DualShock4Axis(20)),
+                right: (DualShock4Axis(30), DualShock4Axis(40)),
+                triggers: (DualShock4Trigger(50), DualShock4Trigger(60)),
+                ..Default::default()
+            },
+            status: DualShock4Status::default(),
         };
-        state.set_native(DualShock4Control::L1, true);
+        state.inputs.set_native(DualShock4Control::L1, true);
         let ProviderFrame::HidInput { bytes, .. } = ds4_frame(&state) else {
             unreachable!()
         };
@@ -2357,15 +2623,18 @@ mod tests {
 
     #[test]
     fn motion_refresh_advances_the_ds4_sensor_and_touch_timestamps() {
-        let mut state = DualShock4State {
-            touches: [
-                Some(DualShock4TouchContact::new(1, 100, 200).expect("touch")),
-                None,
-            ],
-            ..Default::default()
+        let mut state = DualShock4SessionState {
+            inputs: DualShock4Inputs {
+                touches: [
+                    Some(DualShock4TouchContact::new(1, 100, 200).expect("touch")),
+                    None,
+                ],
+                ..Default::default()
+            },
+            status: DualShock4Status::default(),
         };
-        state.sensor_timestamp = 100;
-        state.touch_sequence = 4;
+        state.status.sensor_timestamp = 100;
+        state.status.touch_sequence = 4;
         advance_ds4_timing(&mut state);
         let ProviderFrame::HidInput { bytes, .. } = ds4_frame(&state) else {
             unreachable!()
@@ -2390,10 +2659,15 @@ mod tests {
         .into_iter()
         .enumerate()
         {
-            let state = DualShock4State {
-                touches,
-                touch_sequence: u8::try_from(sequence).unwrap(),
-                ..Default::default()
+            let state = DualShock4SessionState {
+                inputs: DualShock4Inputs {
+                    touches,
+                    ..Default::default()
+                },
+                status: DualShock4Status {
+                    touch_sequence: u8::try_from(sequence).unwrap(),
+                    ..Default::default()
+                },
             };
             let ProviderFrame::HidInput { bytes, .. } = ds4_frame(&state) else {
                 panic!("HID input")
@@ -2435,20 +2709,23 @@ mod tests {
         let expected = common::fixture_bytes(include_str!(
             "../../../tests/fixtures/protocol-research/ds4-active-layout.hex"
         ));
-        let mut state = DualShock4State {
-            left: (DualShock4Axis::new(10), DualShock4Axis::new(20)),
-            right: (DualShock4Axis::new(30), DualShock4Axis::new(40)),
-            triggers: (DualShock4Trigger::new(255), DualShock4Trigger::new(127)),
-            dpad: [false, false, false, true],
-            touches: [
-                Some(DualShock4TouchContact::new(0, 1234, 567).unwrap()),
-                Some(DualShock4TouchContact::new(1, 1919, 941).unwrap()),
-            ],
-            ..Default::default()
+        let mut state = DualShock4SessionState {
+            inputs: DualShock4Inputs {
+                left: (DualShock4Axis::new(10), DualShock4Axis::new(20)),
+                right: (DualShock4Axis::new(30), DualShock4Axis::new(40)),
+                triggers: (DualShock4Trigger::new(255), DualShock4Trigger::new(127)),
+                dpad: [false, false, false, true],
+                touches: [
+                    Some(DualShock4TouchContact::new(0, 1234, 567).unwrap()),
+                    Some(DualShock4TouchContact::new(1, 1919, 941).unwrap()),
+                ],
+                ..Default::default()
+            },
+            status: DualShock4Status::default(),
         };
-        state.face[0] = true;
-        state.buttons[4] = true;
-        state.buttons[5] = true;
+        state.inputs.face[0] = true;
+        state.inputs.buttons[4] = true;
+        state.inputs.buttons[5] = true;
         let ProviderFrame::HidInput { report_id, bytes } = ds4_frame(&state) else {
             panic!("HID input");
         };
@@ -2458,13 +2735,18 @@ mod tests {
 
     #[test]
     fn touchpad_contacts_use_the_ds4_timestamped_touch_block() {
-        let state = DualShock4State {
-            touches: [
-                Some(DualShock4TouchContact::new(9, 0x345, 0x2a1).expect("contact")),
-                None,
-            ],
-            touch_sequence: 7,
-            ..Default::default()
+        let state = DualShock4SessionState {
+            inputs: DualShock4Inputs {
+                touches: [
+                    Some(DualShock4TouchContact::new(9, 0x345, 0x2a1).expect("contact")),
+                    None,
+                ],
+                ..Default::default()
+            },
+            status: DualShock4Status {
+                touch_sequence: 7,
+                ..Default::default()
+            },
         };
         let ProviderFrame::HidInput { bytes, .. } = ds4_frame(&state) else {
             unreachable!()
@@ -2477,12 +2759,15 @@ mod tests {
 
     #[test]
     fn evdev_preserves_ds4_touch_contacts_when_the_provider_supports_them() {
-        let state = DualShock4State {
-            touches: [
-                Some(DualShock4TouchContact::new(7, 1_234, 567).expect("touch")),
-                None,
-            ],
-            ..Default::default()
+        let state = DualShock4SessionState {
+            inputs: DualShock4Inputs {
+                touches: [
+                    Some(DualShock4TouchContact::new(7, 1_234, 567).expect("touch")),
+                    None,
+                ],
+                ..Default::default()
+            },
+            status: DualShock4Status::default(),
         };
         let ProviderFrame::Evdev(events) = ds4_evdev_frame(&state) else {
             unreachable!()

@@ -371,3 +371,38 @@ input and status values. The in-repo worker, root-audio adapter, demo and tests
 are migrated together. The worker envelope and HID report bytes are pinned
 against the pre-split synthetic payload; their encodings retain the existing
 format and version.
+
+## VG-1b/d · DualShock 4 input-only values
+
+`DualShock4Inputs` replaces `DualShock4State` on the ordinary root and curated
+surfaces. It contains native controls, contacts and motion only. `inputs()`
+borrows accepted levels; `status()` returns a copyable `DualShock4Status` with
+battery, accepted motion sequence, sensor timestamp and touch packet sequence.
+
+| Previous API | Current API |
+| --- | --- |
+| `DualShock4State` | `DualShock4Inputs` |
+| `controller.state()` | `controller.inputs()` |
+| `set_inputs(DualShock4State)` | `set_inputs(DualShock4Inputs)` |
+| `edit_inputs(FnOnce(&mut DualShock4State) -> Result<(), ControlError>)` | `edit_inputs(FnOnce(&mut DualShock4Inputs) -> Result<(), ControlError>)` |
+
+In each root snapshot feature view, remove the old type and add `DualShock4Inputs`
+and `DualShock4Status`. Remove the handle's `state()`, add
+`inputs() -> &DualShock4Inputs` and `status() -> DualShock4Status`, and change
+both input mutation signatures above. The fourteen native getters/mutators move
+to the input type. Status adds four read accessors: `battery()`, `sequence()`,
+`sensor_timestamp()` and `touch_sequence()`. Both types support defaults, clone
+and equality; status is also copyable. Wii and Steam supporting snapshots have
+zero delta.
+
+The experimental surface exports both new types, plus the supporting worker
+`DualShock4SessionState`; it also now exports `DualSenseInputs` and
+`DualSenseStatus` alongside the session type introduced in #370.
+
+The runtime retains one authoritative status value. Input edits preserve battery
+and apply the existing change-triggered motion and contact timing, including
+last-contact release and the motion/contact double-bump guard. Explicit
+`refresh_motion()` remains a separate clock update. Worker and HID bytes match
+synthetic baselines captured before the split, with family byte and field order
+unchanged. All compiling worker, root-audio, demo and test consumers migrate in
+this PR; no compatibility alias remains.

@@ -323,3 +323,8 @@ values. Share and Guide are independent. `XboxSeriesOutputEvent` carries
 conventional force-feedback observations, and the retained state exposes
 the latest accepted strong/weak playback request. The selected surface
 lists the unavailable impulse-trigger motors and other uinput limits.
+
+`DualShock4Controller::inputs()` borrows native `DualShock4Inputs` levels.
+`status()` returns copyable `DualShock4Status` battery metadata and accepted
+motion/contact clock positions. Input replacement and edits cannot replace that
+status; `refresh_motion()` keeps its separate explicit clock-advance semantics.

@@ -7,7 +7,7 @@ use super::{
     Xbox360Control, Xbox360Trigger,
 };
 use virtualgamepad::{
-    ControllerDiagnostics, DualSenseInputs, DualShock4State, SwitchProState, Xbox360State,
+    ControllerDiagnostics, DualSenseInputs, DualShock4Inputs, SwitchProState, Xbox360State,
 };
 
 pub(super) const EDIT_LIMIT: usize = 64;
@@ -129,7 +129,8 @@ impl virtualgamepad::ControllerSurfaceInfo for Surface {
 pub(super) type XboxSeriesEditor = Editor<virtualgamepad::XboxSeriesState, Surface>;
 pub(super) type Xbox360Editor = Editor<Xbox360State, Surface>;
 pub(super) type DualSenseEditor = Editor<DualSenseInputs, Surface, virtualgamepad::DualSenseStatus>;
-pub(super) type DualShock4Editor = Editor<DualShock4State, Surface>;
+pub(super) type DualShock4Editor =
+    Editor<DualShock4Inputs, Surface, virtualgamepad::DualShock4Status>;
 pub(super) type SwitchProEditor = Editor<SwitchProState, Surface>;
 pub(super) type WiiRemoteEditor =
     Editor<gr_curated_controllers::wii_remote::WiiRemoteState, Surface>;
@@ -193,7 +194,13 @@ impl Controller {
                 Some(c.association().clone()),
                 c.status(),
             )),
-            Self::DualShock4(c) => view!(c, DualShock4),
+            Self::DualShock4(c) => ControllerView::DualShock4(Editor::new(
+                c.inputs().clone(),
+                c.surface().common(),
+                Some(c.diagnostics()),
+                Some(c.association().clone()),
+                c.status(),
+            )),
             Self::SwitchPro(c) => view!(c, SwitchPro),
             Self::Steam(c) => {
                 ControllerView::Steam(Editor::new(c.state().clone(), c.surface(), None, None, ()))
@@ -402,11 +409,11 @@ pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
             virtualgamepad::DualSenseStatus::default(),
         )),
         super::Kind::DualShock4 => ControllerView::DualShock4(Editor::new(
-            DualShock4State::default(),
+            DualShock4Inputs::default(),
             surface,
             None,
             None,
-            (),
+            virtualgamepad::DualShock4Status::default(),
         )),
         super::Kind::WiiRemote => ControllerView::WiiRemote(Editor::new(
             gr_curated_controllers::wii_remote::WiiRemoteState::default(),

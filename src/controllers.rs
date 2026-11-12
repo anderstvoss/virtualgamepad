@@ -6,7 +6,7 @@ use crate::{
     ControllerError, ControllerId, CreationOptions, DigitalControlUpdate, DualSenseAxis,
     DualSenseControl, DualSenseFeature, DualSenseInputs, DualSenseOutputEvent, DualSenseStatus,
     DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
-    DualShock4MotionSample, DualShock4OutputEvent, DualShock4State, DualShock4Surface,
+    DualShock4Inputs, DualShock4MotionSample, DualShock4OutputEvent, DualShock4Surface,
     DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
     ServiceReadiness, SteamController2026Button, SteamController2026OutputEvent,
     SteamController2026Outputs, SteamController2026State, SwitchProAxis, SwitchProControl,
@@ -537,9 +537,18 @@ impl DualShock4Controller {
     shared!(wants_write);
     shared!(next_service_in);
     shared!(dropped_output_events);
-    shared!(state, DualShock4State);
-    shared!(edit_inputs, DualShock4State);
-    shared!(set_inputs, DualShock4State);
+    /// Borrow accepted native input levels.
+    #[must_use]
+    pub fn inputs(&self) -> &DualShock4Inputs {
+        self.controller.inner.inputs()
+    }
+    /// Read battery metadata and controller-owned motion/contact clocks.
+    #[must_use]
+    pub fn status(&self) -> crate::DualShock4Status {
+        self.controller.inner.status()
+    }
+    shared!(edit_inputs, DualShock4Inputs);
+    shared!(set_inputs, DualShock4Inputs);
     shared!(host_outputs, crate::DualShock4OutputState);
     shared!(is_dirty);
     shared!(surface, DualShock4Surface);

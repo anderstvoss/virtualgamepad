@@ -19,7 +19,7 @@ mod linux {
                 Profile::DualShock4 => (
                     2,
                     gr_curated_controllers::usb_personality::state::NativeState::DualShock4(
-                        gr_curated_controllers::DualShock4State::default(),
+                        gr_curated_controllers::DualShock4SessionState::default(),
                     ),
                 ),
                 Profile::Xbox360 => (

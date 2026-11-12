@@ -266,7 +266,7 @@ root_snapshot_case!(
     ds4_whole_state,
     dualshock4,
     DualShock4Controller,
-    DualShock4State,
+    DualShock4Inputs,
     "virtualgamepad.dualshock4",
     BYTE_AXES,
     [None, None],
