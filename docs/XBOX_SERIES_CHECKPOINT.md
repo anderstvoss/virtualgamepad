@@ -332,3 +332,56 @@ pinned research and Windows/macOS tests. Later heads require fresh CI review.
 The temporary runtime blacklist cleanup and Steam owner observations remain
 pending in the GitHub handoff. No physical actuation claim or research
 follow-up is added.
+
+## Owner-observed Steam follow-up
+
+The owner confirmed removal of the temporary xpadneo autoload blacklist;
+its absence was independently checked. All 19 CI checks passed on `c06110a`.
+Steam package version was `1792618285`, Linux `7.3.0-1-mainline`, installed
+SDL 3.4.18. The physical reference was not connected during these checks.
+
+### Uinput
+
+Steam identification was owner-confirmed on `c06110a`: the new virtual pad
+was listed as Xbox Series. The initial full input cycle repeatedly opened
+Big Picture when it pressed Guide, preventing verification in the test
+screen. At the owner's request, manual-probe candidate
+`883b5b93f6966cc3732967ae918079f886218d32` adds `sweep-no-guide`, with a
+regression test preserving all other buttons and analog endpoints.
+
+The owner then confirmed all remaining buttons, both sticks and both
+triggers in Steam's test screen. Guide is excluded from this manual
+qualification; its Big Picture action was observed, not its test-screen
+registration. The reported pause after Menu before Share is the omitted
+Guide interval in the test script, not a measured input delivery latency.
+
+The owner clicked Steam's Ping multiple times, with the UI's rumble-test
+status unclear. The independent retained-output observer recorded four
+nonzero conventional playback snapshots, each strong 32767, weak 32767,
+repetition 1, interleaved with zero-magnitude stops. This verifies Steam
+Ping reverse feedback on the virtual uinput device, not physical actuation.
+No hardware driver binds to uinput. Closing the probe removed its owned
+input node; cleanup was checked independently.
+
+### Bluetooth-bus UHID: visibility gate
+
+On manual candidate `883b5b9`, the virtual device bound to stock microsoft
+and its hidraw node was readable and writable. The owner reported that
+Steam listed neither an Xbox Series pad nor any new controller under
+another name. No control cycle or rumble test was attempted on that absent
+entry; those manual observations remain unverified.
+
+The dev input policy assigned the virtual event node to an inactive lab
+seat and set `LIBINPUT_IGNORE_DEVICE=1`. This differs from the normal-seat
+uinput run and may explain the visibility result. It is an environment
+observation, not evidence that an actively exposed Bluetooth realization
+is incompatible with Steam.
+
+An optional, temporary `90-virtualgamepad-xbox-steam.rules` override was
+prepared to expose helper-validated virtual Xbox lab nodes on seat0 without
+the ignore flag. Physical and unrelated lab devices are unchanged. Udev
+syntax verification and a deterministic policy regression passed; the full
+Python suite now passes 240 tests. Installation/owner confirmation is
+pending. The Bluetooth probe was closed while waiting. After installing,
+recreate the pad, verify its properties and repeat the three owner checks;
+then remove the temporary override and reload rules.

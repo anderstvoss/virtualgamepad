@@ -112,8 +112,10 @@ VIRTUALGAMEPAD_INPUT_LAB=1 cargo run --locked --example xbox_series_steam_probe 
 ```
 
 Select the newly created virtual pad in Steam Settings → Controller. Record
-whether Steam identifies it as Xbox Series. Enter `sweep` in the probe to
-cycle all buttons, both sticks and both triggers. Enter `neutral` before
+whether Steam identifies it as Xbox Series. Enter `sweep-no-guide` in the probe to
+cycle the other buttons, both sticks and both triggers. Guide can open Big
+Picture; this mode deliberately leaves its Steam test-screen registration
+unverified. The full `sweep` mode remains available for other consumers. Enter `neutral` before
 Steam's rumble test; confirm that a nonzero retained output appears, rather
 than treating a successful UI action as evidence. Enter `quit` and verify
 removal. Ask for one owner observation at a time and retain the Steam build,
@@ -121,8 +123,8 @@ candidate, kernel and driver scope with the answers.
 
 | Steam Input consumer | Status |
 | --- | --- |
-| `linux.uinput` identity, controls, retained rumble | Awaiting owner observations. |
-| `linux.uhid.bluetooth` identity, controls, retained rumble | Awaiting owner observations. |
+| `linux.uinput` | Owner confirmed Xbox Series identity and controls excluding Guide. Steam Ping produced retained 32767/32767 playback and stops. Guide test-screen registration remains unverified. |
+| `linux.uhid.bluetooth` | Not listed during the inactive-seat lab run. Controls/rumble unverified; temporary active-seat visibility override prepared for retest. |
 
 ## Alpha 2 host audit
 

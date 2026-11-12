@@ -96,16 +96,17 @@ reason = "Exact-candidate 20-session concurrent lifecycle and 250-session timing
 [[functions]]
 id = "steam-input"
 [functions.cells."linux.uinput"]
-status = "wip"
+status = "virtual-live"
 test_id = "xbox_series_steam_manual"
 evidence = []
-reason = "Steam Input is a separate manual consumer check."
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#owner-observed-steam-follow-up"
+reason = "Owner confirmed Xbox Series identity and controls except Guide; Steam Ping independently retained 32767/32767 playback and stops. Guide test-screen registration remains unverified."
 
 [functions.cells."linux.uhid.bluetooth"]
 status = "wip"
 test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
 evidence = []
-reason = "Steam Input is a separate manual consumer check."
+reason = "Steam did not list the pad on the inactive lab seat with the ignore flag set. Active-seat retest is pending; controls and rumble remain unverified."
 
 [[functions]]
 id = "impulse-trigger-motors"
