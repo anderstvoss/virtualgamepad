@@ -1,9 +1,9 @@
 schema_version = 1
 controller = "virtualgamepad.xbox-series"
-research_revision = "e1a059125d8c435d1575638360ab787a14136f19"
-realizations = ["linux.uinput"]
+research_revision = "eba02ad610e264a2518a699394255cc7f1d670dd"
+realizations = ["linux.uinput", "linux.uhid.bluetooth"]
 persistent_resources = []
-refused_operations = ["impulse triggers and extra motors", "axis fuzz", "gain and periodic force feedback", "automatic force-feedback trigger", "battery and device status", "headset audio and accessories"]
+refused_operations = ["impulse triggers and extra motors", "axis fuzz", "gain and periodic force feedback", "automatic force-feedback trigger", "battery and device status", "headset audio and accessories", "battery, LED and headset audio", "Bluetooth radio and pairing"]
 
 [[functions]]
 id = "xpad-evdev-capabilities"
@@ -11,6 +11,12 @@ id = "xpad-evdev-capabilities"
 status = "source-evidence"
 test_id = "provider_capabilities_match_the_xpad_golden_shape_except_documented_limits"
 evidence = ["xbox-series-xpad-evdev-golden", "xbox-series-xpad-evdev-shape"]
+
+[functions.cells."linux.uhid.bluetooth"]
+status = "not-supported"
+test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
+evidence = []
+reason = "This cell refers to the wired xpad-shaped uinput layout. Bluetooth presents its native HID map."
 
 [[functions]]
 id = "buttons-and-dpad"
@@ -20,6 +26,13 @@ test_id = "commits_every_key_and_full_axis_domain_with_xpad_hat_orientation"
 evidence = ["xbox-series-xpad-evdev-shape", "xbox-series-xpad-identity-share"]
 reason = "SDL observed all button transitions including Guide and Share."
 
+[functions.cells."linux.uhid.bluetooth"]
+status = "virtual-live"
+test_id = "physical_input_shape_keeps_controls_independent_and_endpoints_exact"
+evidence = []
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
+reason = "Integrated SDL observed all 16 button press and release bits, including Guide and Share, and final neutral."
+
 [[functions]]
 id = "sticks-and-triggers"
 [functions.cells."linux.uinput"]
@@ -27,6 +40,13 @@ status = "source-evidence"
 test_id = "commits_every_key_and_full_axis_domain_with_xpad_hat_orientation"
 evidence = ["xbox-series-xpad-axis-domains", "xbox-series-xpad-evdev-shape"]
 reason = "SDL observed all six analog axes and the final neutral state."
+
+[functions.cells."linux.uhid.bluetooth"]
+status = "virtual-live"
+test_id = "physical_input_shape_keeps_controls_independent_and_endpoints_exact"
+evidence = []
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
+reason = "Integrated SDL observed all six analog axes and final neutral."
 
 [[functions]]
 id = "main-rumble"
@@ -36,6 +56,13 @@ test_id = "completes_each_rumble_request_and_retains_only_playback"
 evidence = ["xbox-series-xpad-trigger-rumble-limitation", "xbox-series-xpad-evdev-shape"]
 reason = "The virtual run observed both SDL magnitudes in the retained controller state."
 
+[functions.cells."linux.uhid.bluetooth"]
+status = "virtual-live"
+test_id = "host_requests_reply_for_each_report_class_and_keep_valid_rumble"
+evidence = []
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
+reason = "Integrated SDL produced native output 0x03 and the controller retained both main motor amplitudes."
+
 [[functions]]
 id = "identity-and-enumeration"
 [functions.cells."linux.uinput"]
@@ -43,6 +70,13 @@ status = "source-evidence"
 test_id = "provider_capabilities_match_the_xpad_golden_shape_except_documented_limits"
 evidence = ["xbox-series-xpad-evdev-golden"]
 reason = "One virtual evdev node with the xpad-style input ID and capability set."
+
+[functions.cells."linux.uhid.bluetooth"]
+status = "virtual-live"
+test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
+evidence = []
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
+reason = "Integrated Linux observed the 045e:0b13 Bluetooth-bus identity and microsoft binding."
 
 [[functions]]
 id = "lifecycle-and-timing"
@@ -52,21 +86,43 @@ test_id = "creation_rollback_removal_and_shutdown_close_each_session_once"
 evidence = ["xbox-series-xpad-evdev-shape"]
 reason = "C9 measured 50 single and 200 concurrent sessions in docs/XBOX_SERIES.md. First-valid-neutral timing remains unavailable under #166."
 
+[functions.cells."linux.uhid.bluetooth"]
+status = "virtual-live"
+test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
+evidence = []
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
+reason = "Exact-candidate 20-session concurrent lifecycle and 250-session timing completed without service errors; concurrent open tail reached 1.31 s, no Bluetooth budget is qualified, and first-valid-neutral remains open."
+
 [[functions]]
 id = "steam-input"
 [functions.cells."linux.uinput"]
-status = "wip"
+status = "virtual-live"
 test_id = "xbox_series_steam_manual"
 evidence = []
-reason = "Steam Input is a separate manual consumer check."
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#owner-observed-steam-follow-up"
+reason = "Owner confirmed Xbox Series identity and controls except Guide; Steam Ping independently retained 32767/32767 playback and stops. Guide test-screen registration remains unverified."
+
+[functions.cells."linux.uhid.bluetooth"]
+status = "virtual-live"
+test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
+evidence = []
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#bluetooth-active-seat-retest-and-final-cleanup"
+reason = "On microsoft with the temporary active-seat dev override, owner confirmed Xbox Series identity and controls excluding Guide; Steam Ping independently retained native 50/50 main rumble and stops. Guide test-screen registration remains unverified."
 
 [[functions]]
 id = "impulse-trigger-motors"
 [functions.cells."linux.uinput"]
 status = "not-supported"
-test_id = "family_contract_exposes_only_reduced_uinput_and_two_main_motors"
+test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
 evidence = ["xbox-series-xpad-trigger-rumble-limitation"]
 reason = "FF_RUMBLE exposes two main-motor amplitudes and no trigger channels."
+
+[functions.cells."linux.uhid.bluetooth"]
+status = "virtual-live"
+test_id = "host_requests_reply_for_each_report_class_and_keep_valid_rumble"
+evidence = []
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
+reason = "Exact-candidate SDL HIDAPI independently submitted left-only and right-only commands received by the product on microsoft. Physical actuation remains unverified."
 
 [[functions]]
 id = "axis-fuzz"
@@ -76,6 +132,12 @@ test_id = "provider_capabilities_match_the_xpad_golden_shape_except_documented_l
 evidence = ["xbox-series-xpad-evdev-golden"]
 reason = "The native evdev provider sets fuzz to zero."
 
+[functions.cells."linux.uhid.bluetooth"]
+status = "not-supported"
+test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
+evidence = []
+reason = "The native HID report map carries values, while evdev axis fuzz belongs to the bound Linux consumer."
+
 [[functions]]
 id = "gain-and-periodic-ff"
 [functions.cells."linux.uinput"]
@@ -83,6 +145,12 @@ status = "not-supported"
 test_id = "completes_each_rumble_request_and_retains_only_playback"
 evidence = ["xbox-series-xpad-ff-memless"]
 reason = "The curated provider accepts conventional rumble effects only."
+
+[functions.cells."linux.uhid.bluetooth"]
+status = "not-supported"
+test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
+evidence = []
+reason = "The native report map declares a four-channel rumble report; kernel-converted effects are consumer behavior."
 
 [[functions]]
 id = "button-triggered-rumble"
@@ -92,13 +160,25 @@ test_id = "completes_each_rumble_request_and_retains_only_playback"
 evidence = ["xbox-series-xpad-evdev-shape"]
 reason = "The shared uinput effect policy refuses automatic button triggering."
 
+[functions.cells."linux.uhid.bluetooth"]
+status = "not-supported"
+test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
+evidence = []
+reason = "The native report has no automatic button-to-effect binding."
+
 [[functions]]
 id = "battery-and-status"
 [functions.cells."linux.uinput"]
 status = "not-supported"
-test_id = "family_contract_exposes_only_reduced_uinput_and_two_main_motors"
+test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
 evidence = []
 reason = "The gamepad event node has no battery or device status channel."
+
+[functions.cells."linux.uhid.bluetooth"]
+status = "not-supported"
+test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
+evidence = []
+reason = "The measured report map declares no battery or status report."
 
 [[functions]]
 id = "audio-and-accessories"
@@ -108,10 +188,22 @@ test_id = "xbox_series_converged_constructors_reject_unavailable_targets_and_aud
 evidence = []
 reason = "The evdev gamepad has no audio sidecar or accessory transport."
 
+[functions.cells."linux.uhid.bluetooth"]
+status = "not-supported"
+test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
+evidence = []
+reason = "The measured Bluetooth HID map has no headset, microphone or accessory transport."
+
 [[functions]]
 id = "motion-and-touch"
 [functions.cells."linux.uinput"]
 status = "not-supported"
-test_id = "family_contract_exposes_only_reduced_uinput_and_two_main_motors"
+test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
 evidence = []
 reason = "The xpad gamepad target declares no motion or touch controls."
+
+[functions.cells."linux.uhid.bluetooth"]
+status = "not-supported"
+test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
+evidence = []
+reason = "The measured report map has no motion or touch fields."

@@ -76,6 +76,7 @@ static int SDL_GetNumJoystickAxes(SDL_Joystick *j) { return 6; }
 static int SDL_GetNumJoystickHats(SDL_Joystick *j) { return 1; }
 static int SDL_GetJoystickHat(SDL_Joystick *j,int hat) { return 0; }
 static char *SDL_GetGamepadMapping(SDL_Gamepad *g) { return SDL_strdup("synthetic-guid,Synthetic,south:b0,leftpaddle1:b20,"); }
+static bool SDL_RumbleGamepadTriggers(SDL_Gamepad *g, unsigned left, unsigned right, Uint32 ms) { fprintf(stderr, "trigger_call=%u,%u,%u\n", left, right, ms); return strcmp(getenv("PROBE_SCENARIO"), "trigger-fail") != 0; }
 static bool SDL_RumbleGamepad(SDL_Gamepad *g,unsigned low,unsigned high,Uint32 ms) { return true; }
 static bool SDL_SetGamepadLED(SDL_Gamepad *g,unsigned r,unsigned green,unsigned b) { return false; }
 static Uint64 SDL_GetTicks(void) { return ++ticks; }
@@ -83,7 +84,7 @@ static void SDL_Delay(unsigned ms) { ticks+=ms; }
 static bool SDL_GamepadConnected(SDL_Gamepad *g) { return !scenario("reopen-removed"); }
 static void SDL_UpdateGamepads(void) {}
 static bool SDL_GetGamepadButton(SDL_Gamepad *g,int button) { return false; }
-static int16_t SDL_GetGamepadAxis(SDL_Gamepad *g,int axis) { return 0; }
+static int16_t SDL_GetGamepadAxis(SDL_Gamepad *g,int axis) { return scenario("initial-not-neutral") && axis < 4 ? -32768 : 0; }
 static const char *SDL_GetGamepadStringForButton(int button) { return button==20 ? "left_paddle1" : "south"; }
 static const char *SDL_GetGamepadStringForAxis(int axis) { static const char *names[]={"leftx","lefty","rightx","righty","lefttrigger","righttrigger"}; return names[axis]; }
 static bool SDL_PollEvent(SDL_Event *event) {

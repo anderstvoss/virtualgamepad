@@ -2,7 +2,7 @@
 use crate::Backend;
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
@@ -59,6 +59,8 @@ pub struct Session {
     nodes: BTreeSet<PathBuf>,
     consumers: Vec<File>,
     service: crate::PeerService,
+    created: Instant,
+    phases: BTreeMap<&'static str, u64>,
 }
 
 fn matching_nodes(physical_paths: &[String]) -> BTreeSet<PathBuf> {
@@ -95,13 +97,26 @@ fn matching_nodes(physical_paths: &[String]) -> BTreeSet<PathBuf> {
     result
 }
 fn open_consumer(node: &Path, wait_for_udev: bool) -> std::io::Result<File> {
+    open_consumer_diagnostics(node, wait_for_udev).map(|(file, _)| file)
+}
+fn open_consumer_diagnostics(node: &Path, wait_for_udev: bool) -> std::io::Result<(File, Value)> {
+    let mut attempts = 0u64;
+    let mut permission_denied = 0u64;
     let deadline = Instant::now() + Duration::from_secs(2);
     retry_consumer_open(
         || {
-            OpenOptions::new()
+            attempts += 1;
+            let result = OpenOptions::new()
                 .read(true)
                 .custom_flags(libc::O_NONBLOCK)
-                .open(node)
+                .open(node);
+            if result
+                .as_ref()
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::PermissionDenied)
+            {
+                permission_denied += 1;
+            }
+            result
         },
         || {
             if !wait_for_udev || Instant::now() >= deadline {
@@ -112,6 +127,12 @@ fn open_consumer(node: &Path, wait_for_udev: bool) -> std::io::Result<File> {
             true
         },
     )
+    .map(|file| {
+        (
+            file,
+            json!({"attempts": attempts, "permission_denied": permission_denied}),
+        )
+    })
 }
 
 fn retry_consumer_open<T>(
@@ -306,17 +327,59 @@ fn probe_ready(text: &str) -> bool {
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .any(|record| record["record_type"] == "mapping_ready")
 }
+#[derive(Default)]
+struct XboxProbeFeedback {
+    evdev: Option<virtualgamepad::RumblePlayback>,
+    bluetooth: Option<virtualgamepad::XboxSeriesBluetoothRumble>,
+    reports: Vec<Value>,
+}
+fn independent_trigger_reports(reports: &[Value]) -> bool {
+    [
+        [15, 25, 0, 25, 50, 255, 0, 235],
+        [15, 0, 50, 25, 50, 255, 0, 235],
+    ]
+    .iter()
+    .all(|bytes| {
+        reports
+            .iter()
+            .any(|report| report["report_id"] == 3 && report["bytes"] == json!(bytes))
+    })
+}
+fn series_nodes_ready(nodes: &BTreeSet<PathBuf>, bluetooth: bool) -> bool {
+    probe_node(nodes, false).is_some() && (!bluetooth || probe_node(nodes, true).is_some())
+}
+fn probe_node(nodes: &BTreeSet<PathBuf>, hidraw: bool) -> Option<&PathBuf> {
+    nodes
+        .iter()
+        .find(|node| node.starts_with("/dev/input") != hidraw)
+}
+fn xbox_hidapi() -> bool {
+    std::env::var("VIRTUALGAMEPAD_XBOX_HIDAPI").as_deref() == Ok("1")
+}
+
+fn elapsed_ns(start: Instant) -> u64 {
+    u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX)
+}
+fn sdl_failure_diagnostic(record: &Value, elapsed: u64, node_present: bool) -> String {
+    json!({"failure":"SDL sweep failed", "step":record["failure_detail"]["step"],
+        "last_event":record["failure_detail"]["last_event"],
+        "expected_event":record["failure_detail"]["expected_event"],
+        "elapsed_since_creation_ns":elapsed,"node_present":node_present,
+        "control_masks":record["observations"]["controls"]})
+    .to_string()
+}
+
 fn wait_child(
     child: &mut Child,
     controller: &mut Controller,
     peers: &mut [&mut Session],
     capture: &Path,
-) -> Result<Option<virtualgamepad::RumblePlayback>, String> {
+) -> Result<XboxProbeFeedback, String> {
     let start = Instant::now();
     let deadline = start + Duration::from_secs(30);
     let mut script = ProbeScript::default();
     let mut ready = false;
-    let mut xbox_rumble = None;
+    let mut feedback = XboxProbeFeedback::default();
     loop {
         for peer in peers.iter_mut() {
             peer.service.service(|| peer.controller.service());
@@ -324,7 +387,7 @@ fn wait_child(
         match child.try_wait() {
             Ok(Some(status)) => {
                 return if status.success() {
-                    Ok(xbox_rumble)
+                    Ok(feedback)
                 } else {
                     Err(format!("SDL probe exited {status}"))
                 };
@@ -337,32 +400,47 @@ fn wait_child(
             u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
             ready,
         );
-        let result = controller
-            .service()
-            .and_then(|()| match (&mut *controller, sample) {
-                (Controller::Steam(steam), Some(sample)) => drive_steam_sample(steam, sample),
-                (Controller::XboxSeries(series), Some(sample)) if sample <= 64 => {
-                    series
-                        .set_inputs(xbox_series_sample(sample))
-                        .map_err(|error| error.to_string())?;
-                    series.commit().map_err(|error| error.to_string())
-                }
-                _ => Ok(()),
-            });
+        let service = if let Controller::XboxSeries(series) = &mut *controller {
+            series
+                .service(&mut |event| {
+                    if let virtualgamepad::XboxSeriesOutputEvent::HidOutput { report_id, bytes } =
+                        event
+                    {
+                        feedback
+                            .reports
+                            .push(json!({"report_id":report_id,"bytes":bytes}));
+                    }
+                })
+                .map_err(|error| error.to_string())
+        } else {
+            controller.service()
+        };
+        let result = service.and_then(|()| match (&mut *controller, sample) {
+            (Controller::Steam(steam), Some(sample)) => drive_steam_sample(steam, sample),
+            (Controller::XboxSeries(series), Some(sample)) if sample <= 64 => {
+                series
+                    .set_inputs(xbox_series_sample(sample))
+                    .map_err(|error| error.to_string())?;
+                series.commit().map_err(|error| error.to_string())
+            }
+            _ => Ok(()),
+        });
         if let Err(error) = result {
             let _ = child.kill();
             let _ = child.wait();
             return Err(error);
         }
         if let Controller::XboxSeries(series) = controller {
-            let playback = series
-                .host_outputs()
-                .ok()
-                .and_then(|outputs| outputs.evdev_rumble)
-                .filter(|playback| {
+            if let Ok(outputs) = series.host_outputs() {
+                let playback = outputs.evdev_rumble.filter(|playback| {
                     playback.repetitions > 0 && (playback.strong != 0 || playback.weak != 0)
                 });
-            xbox_rumble = playback.or(xbox_rumble);
+                feedback.evdev = playback.or(feedback.evdev);
+                let bluetooth = outputs
+                    .bluetooth_rumble
+                    .filter(|playback| playback.strong != 0 || playback.weak != 0);
+                feedback.bluetooth = bluetooth.or(feedback.bluetooth);
+            }
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
@@ -372,6 +450,42 @@ fn wait_child(
         thread::sleep(Duration::from_millis(1));
     }
 }
+fn open_session_consumers(s: &mut Session) -> Result<Value, String> {
+    if s.nodes.is_empty() {
+        return Err("no owned node observed".into());
+    }
+    let series = matches!(&s.controller, Controller::XboxSeries(_));
+    let series_bt = matches!(&s.controller, Controller::XboxSeries(c)
+                    if c.surface().target() == RealizationId::LINUX_UHID_BLUETOOTH);
+    let mut access = Vec::new();
+    s.phases
+        .insert("consumer_open_attempt_ns", elapsed_ns(s.created));
+    for node in s
+        .nodes
+        .iter()
+        .filter(|node| !series_bt || node.starts_with("/dev/input"))
+    {
+        let (file, diagnostic) =
+            open_consumer_diagnostics(node, series).map_err(|e| e.to_string())?;
+        access.push(diagnostic);
+        s.phases
+            .entry("consumer_first_open_ns")
+            .or_insert_with(|| elapsed_ns(s.created));
+        s.consumers.push(file);
+    }
+    if s.consumers.is_empty() {
+        return Err("no owned consumer node opened".into());
+    }
+    let consumer = if series_bt {
+        "harness evdev"
+    } else {
+        "harness evdev/hidraw"
+    };
+    Ok(
+        json!({"consumer":consumer,"nodes_opened":s.consumers.len(),"access":access,"phases_since_create_ns":s.phases}),
+    )
+}
+
 impl Backend for Linux {
     type Session = Session;
 
@@ -391,7 +505,9 @@ impl Backend for Linux {
             })
             .ok_or("undeclared realization")?
             .target;
+        let created = Instant::now();
         let controller = Controller::create(family, target)?;
+        let phases = BTreeMap::from([("provider_create_returned_ns", elapsed_ns(created))]);
         let physical_paths = controller.physical_paths();
         Ok(Session {
             controller,
@@ -399,6 +515,8 @@ impl Backend for Linux {
             nodes: BTreeSet::new(),
             consumers: Vec::new(),
             service: crate::PeerService::default(),
+            created,
+            phases,
         })
     }
     fn observe(
@@ -413,12 +531,21 @@ impl Backend for Linux {
                 loop {
                     for peer in peers.iter_mut() { peer.service.service(|| peer.controller.service()); }
                     let nodes=matching_nodes(&s.physical_paths);
+                    if stage == "node_present" {
+                        if probe_node(&nodes, true).is_some() { s.phases.entry("hidraw_appearance_ns").or_insert_with(|| elapsed_ns(s.created)); }
+                        if probe_node(&nodes, false).is_some() { s.phases.entry("input_appearance_ns").or_insert_with(|| elapsed_ns(s.created)); }
+                        if nodes.iter().any(|node| bound_driver(node).is_some()) { s.phases.entry("hid_bind_observed_ns").or_insert_with(|| elapsed_ns(s.created)); }
+                    }
                     let steam_hid = matches!(&s.controller, Controller::Steam(c)
                         if c.surface().target() == RealizationId::LINUX_UHID_USB);
-                    if stage=="node_present" && !nodes.is_empty()
+                    let series_ready = match &s.controller {
+                        Controller::XboxSeries(c) => series_nodes_ready(&nodes, c.surface().target() == RealizationId::LINUX_UHID_BLUETOOTH),
+                        _ => true,
+                    };
+                    if stage=="node_present" && !nodes.is_empty() && series_ready
                         && (!steam_hid || nodes.iter().any(|p| !p.starts_with("/dev/input"))) {
                         s.nodes=nodes;
-                        return Ok(json!({"poll_interval_ns":1_000_000,"devices":s.nodes.iter().map(|p| {
+                        return Ok(json!({"poll_interval_ns":1_000_000,"phases_since_create_ns":s.phases,"devices":s.nodes.iter().map(|p| {
                             let driver = bound_driver(p);
                             let mut device = json!({"path":p,"bound_driver":driver,"driver_reason":if driver.is_none(){Some("no bound driver observed")}else{None}});
                             if let Some(capabilities) = matches!(&s.controller, Controller::Steam(_) | Controller::XboxSeries(_))
@@ -434,40 +561,58 @@ impl Backend for Linux {
                     thread::sleep(Duration::from_millis(1));
                 }
             }
-            "consumer_open"=>{
-                if s.nodes.is_empty(){return Err("no owned node observed".into());}
-                let series = matches!(&s.controller, Controller::XboxSeries(_));
-                for node in &s.nodes {
-                    s.consumers.push(open_consumer(node, series).map_err(|e|e.to_string())?);
-                }
-                Ok(json!({"consumer":"harness evdev/hidraw","nodes_opened":s.consumers.len()}))
-            }
+            "consumer_open"=>open_session_consumers(s),
             "first_neutral"=>Err("no validated consumer neutral-report oracle for this family; API commit is not consumer delivery".into()),
             "sdl_ready"=>{
                 if !self.sdl{return Err("SDL probe not requested".into());}
                 let steam_hid = matches!(&s.controller, Controller::Steam(c)
                     if c.surface().target() == RealizationId::LINUX_UHID_USB);
                 let series = matches!(&s.controller, Controller::XboxSeries(_));
-                let node=s.nodes.iter().find(|p| p.starts_with("/dev/input") != steam_hid).or_else(||s.nodes.first()).ok_or("no owned node for SDL")?;
+                let series_hidapi = matches!(&s.controller, Controller::XboxSeries(c)
+                    if c.surface().target() == RealizationId::LINUX_UHID_BLUETOOTH) && xbox_hidapi();
+                let node=probe_node(&s.nodes, steam_hid || series_hidapi).ok_or("no owned node for requested SDL backend")?;
                 let path = std::env::temp_dir().join(format!("virtualgamepad-acceptance-{}-{}.json", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
                 let file = OpenOptions::new().write(true).create_new(true).open(&path).map_err(|e|e.to_string())?;
                 let capture = Capture(path);
-                let mut child = Command::new("bash")
-                    .arg(self.root.join("scripts/run-sdl3-gamepad-probe.sh"))
-                    .arg(node).arg(if steam_hid || series { "1800" } else { "100" }).stdout(Stdio::from(file)).stderr(Stdio::null())
+                if series_hidapi && bound_driver(node).as_deref() != Some("microsoft") {
+                    return Err("Xbox HIDAPI acceptance requires stock microsoft binding".into());
+                }
+                // Discovery precedes udev access; wait for this owned raw node only.
+                if series_hidapi { drop(open_consumer(node, true).map_err(|e| e.to_string())?); }
+                let mut command = Command::new("bash");
+                command.arg(self.root.join("scripts/run-sdl3-gamepad-probe.sh"))
+                    .arg(node).arg(if steam_hid || series { "1800" } else { "100" });
+                if series {
+                    command.arg(if series_hidapi { "--gamepad-trigger-rumble-script" } else { "--gamepad-rumble-script" }).arg("--reopen");
+                    command.env("SDL_JOYSTICK_HIDAPI", if series_hidapi { "1" } else { "0" });
+                }
+                let mut child = command.stdout(Stdio::from(file)).stderr(Stdio::null())
                     .spawn().map_err(|e|e.to_string())?;
                 let status = wait_child(&mut child, &mut s.controller, peers, &capture.0);
                 let text = fs::read_to_string(&capture.0).map_err(|e|e.to_string())?;
-                let record = text.lines().filter_map(|line|serde_json::from_str::<Value>(line).ok()).find(|r|r["consumer"]=="SDL").ok_or("SDL probe emitted no observation")?;
+                let record = text.lines().filter_map(|line|serde_json::from_str::<Value>(line).ok()).find(|r|r["consumer"]=="SDL").unwrap_or_else(||json!({"failure_detail":{"step":"probe-process/no-final-record","last_event":null,"expected_event":"SDL final observation"}}));
                 if steam_hid && status.is_err() {
                     return Err(format!("SDL probe failed: {}", record["error"]));
                 }
-                let playback = status?;
-                if record["observations"]["opened"]["value"] != true { return Err("SDL did not observe this exact device opened".into()); }
+                let feedback = status.map_err(|_| sdl_failure_diagnostic(&record, elapsed_ns(s.created), node.exists()))?;
+                if record["observations"]["opened"]["value"] != true { return Err(sdl_failure_diagnostic(&record, elapsed_ns(s.created), node.exists())); }
                 let mut result = json!({"consumer":"SDL","timestamp_scope":"probe completion upper bound; discovery may occur earlier","observation":record});
                 if series {
-                    result["accepted_evdev_rumble"] = playback.map_or(Value::Null, |playback| json!({
+                    if series_hidapi && !independent_trigger_reports(&feedback.reports) {
+                        return Err("independent Xbox trigger command reports not received".into());
+                    }
+                    result["hid_output_reports"] = json!(feedback.reports);
+                    result["bound_driver_after"] = json!(bound_driver(node));
+                    result["trigger_submissions"] = json!(text.lines().filter_map(|line| serde_json::from_str::<Value>(line).ok()).filter(|r| r["record_type"] == "trigger_rumble_submission").collect::<Vec<_>>());
+                    if series_hidapi && bound_driver(node).as_deref() != Some("microsoft") {
+                        return Err("Xbox binding changed during HIDAPI acceptance".into());
+                    }
+                    result["accepted_evdev_rumble"] = feedback.evdev.map_or(Value::Null, |playback| json!({
                         "strong":playback.strong, "weak":playback.weak, "repetitions":playback.repetitions
+                    }));
+                    result["accepted_bluetooth_rumble"] = feedback.bluetooth.map_or(Value::Null, |effect| json!({
+                        "mask":effect.motor_mask, "strong":effect.strong, "weak":effect.weak,
+                        "left_trigger":effect.left_trigger, "right_trigger":effect.right_trigger
                     }));
                 }
                 Ok(result)
@@ -510,6 +655,79 @@ impl Backend for Linux {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn failed_probe_keeps_actionable_diagnostics_without_device_identifiers() {
+        let record = serde_json::json!({"path":"private", "guid":"private", "failure_detail":{
+            "step":"controls", "last_event":{"type":4,"code":2,"value":0},
+            "expected_event":{"down_missing":8,"up_missing":0,"axis_missing":0}}});
+        let result = super::sdl_failure_diagnostic(&record, 123, true);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["step"], "controls");
+        assert_eq!(parsed["last_event"]["code"], 2);
+        assert_eq!(parsed["expected_event"]["down_missing"], 8);
+        assert_eq!(parsed["elapsed_since_creation_ns"], 123);
+        assert_eq!(parsed["node_present"], true);
+        assert!(!result.contains("private"));
+    }
+
+    #[test]
+    fn trigger_acceptance_requires_both_exact_independent_reports() {
+        use serde_json::json;
+        let left = json!({"report_id":3,"bytes":[15,25,0,25,50,255,0,235]});
+        let right = json!({"report_id":3,"bytes":[15,0,50,25,50,255,0,235]});
+        assert!(!super::independent_trigger_reports(&[]));
+        assert!(!super::independent_trigger_reports(std::slice::from_ref(
+            &left
+        )));
+        assert!(super::independent_trigger_reports(&[
+            left.clone(),
+            right.clone()
+        ]));
+        for invalid in [
+            json!({"report_id":1,"bytes":[15,0,50,25,50,255,0,235]}),
+            json!({"report_id":3,"bytes":[15,25,50,25,50,255,0,235]}),
+            json!({"report_id":3,"bytes":[15,0,50]}),
+        ] {
+            assert!(!super::independent_trigger_reports(&[
+                left.clone(),
+                invalid
+            ]));
+        }
+    }
+
+    #[test]
+    fn series_enumeration_waits_for_input_after_hidraw_and_both_for_bluetooth() {
+        use std::{collections::BTreeSet, path::PathBuf};
+        let input = PathBuf::from("/dev/input/event999");
+        let raw = PathBuf::from("/dev/hidraw999");
+        for (nodes, uinput, bluetooth) in [
+            (BTreeSet::new(), false, false),
+            (BTreeSet::from([raw.clone()]), false, false),
+            (BTreeSet::from([input.clone()]), true, false),
+            (BTreeSet::from([input, raw]), true, true),
+        ] {
+            assert_eq!(super::series_nodes_ready(&nodes, false), uinput);
+            assert_eq!(super::series_nodes_ready(&nodes, true), bluetooth);
+        }
+    }
+
+    #[test]
+    fn requested_probe_backend_never_falls_back_to_the_other_node_type() {
+        use std::{collections::BTreeSet, path::PathBuf};
+        let input = PathBuf::from("/dev/input/event999");
+        let raw = PathBuf::from("/dev/hidraw999");
+        for nodes in [
+            BTreeSet::new(),
+            BTreeSet::from([input.clone()]),
+            BTreeSet::from([raw.clone()]),
+            BTreeSet::from([input.clone(), raw.clone()]),
+        ] {
+            for (hidraw, expected) in [(false, &input), (true, &raw)] {
+                assert_eq!(super::probe_node(&nodes, hidraw), nodes.get(expected));
+            }
+        }
+    }
+
     #[test]
     fn steam_samples_use_the_selected_realizations_input_capabilities() {
         use virtualgamepad::{RealizationId, SteamMotionSample};
