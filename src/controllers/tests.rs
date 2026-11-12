@@ -15,6 +15,9 @@ macro_rules! accepted_inputs {
     ($controller:ident, dualsense) => {
         $controller.inputs()
     };
+    ($controller:ident, dualshock4) => {
+        $controller.inputs()
+    };
     ($controller:ident, $module:ident) => {
         $controller.state()
     };
@@ -23,12 +26,18 @@ macro_rules! accepted_clock {
     ($controller:ident, dualsense) => {
         $controller.status()
     };
+    ($controller:ident, dualshock4) => {
+        $controller.status()
+    };
     ($controller:ident, $module:ident) => {
         $controller.state().clone()
     };
 }
 macro_rules! sample_inputs {
     ($sample:expr, dualsense) => {
+        $sample.inputs()
+    };
+    ($sample:expr, dualshock4) => {
         $sample.inputs()
     };
     ($sample:expr, $module:ident) => {

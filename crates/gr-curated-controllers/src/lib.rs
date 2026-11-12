@@ -167,9 +167,9 @@ pub use dualsense::{
 };
 pub use dualshock4::{
     DualShock4Axis, DualShock4Control, DualShock4Controller, DualShock4HidOutput,
-    DualShock4Identity, DualShock4MotionSample, DualShock4Options, DualShock4OutputEvent,
-    DualShock4State, DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot,
-    DualShock4Trigger, create_dualshock4,
+    DualShock4Identity, DualShock4Inputs, DualShock4MotionSample, DualShock4Options,
+    DualShock4OutputEvent, DualShock4SessionState, DualShock4Status, DualShock4Surface,
+    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, create_dualshock4,
 };
 pub use switch_pro::{
     SwitchProAxis, SwitchProControl, SwitchProController, SwitchProIdentity, SwitchProMotionSample,

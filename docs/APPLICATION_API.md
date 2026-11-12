@@ -325,3 +325,8 @@ conventional force feedback on uinput and native HID output on Bluetooth-bus
 UHID. `host_outputs()` retains the latest two-motor evdev playback or
 four-channel Bluetooth command, including trigger amplitudes and timing bytes.
 The selected surface lists the realization's limitations.
+
+`DualShock4Controller::inputs()` borrows native `DualShock4Inputs` levels.
+`status()` returns copyable `DualShock4Status` battery metadata and accepted
+motion/contact clock positions. Input replacement and edits cannot replace that
+status; `refresh_motion()` keeps its separate explicit clock-advance semantics.

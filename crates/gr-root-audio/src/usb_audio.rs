@@ -3,7 +3,7 @@
 use crate::{AudioAccess, AudioError, AudioOptions, ControllerError};
 use gr_audio_worker::{client::Control, client_pcm::SampleStreams};
 use gr_curated_controllers::{
-    DualSenseSessionState, DualShock4State, WorkerBridge, Xbox360State,
+    DualSenseSessionState, DualShock4SessionState, WorkerBridge, Xbox360State,
     usb_personality::{outputs::WorkerOutputs, state::NativeState},
 };
 use gr_privileged_broker::{audio_client::Client, audio_launch::Profile};
@@ -637,7 +637,7 @@ pub(crate) fn open<S: Send + 'static>(
 pub(crate) fn dualsense(state: &DualSenseSessionState) -> NativeState {
     NativeState::DualSense(state.clone())
 }
-pub(crate) fn dualshock4(state: &DualShock4State) -> NativeState {
+pub(crate) fn dualshock4(state: &DualShock4SessionState) -> NativeState {
     NativeState::DualShock4(state.clone())
 }
 pub(crate) fn xbox360(state: &Xbox360State) -> NativeState {
