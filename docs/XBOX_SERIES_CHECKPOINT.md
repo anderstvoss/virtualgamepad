@@ -223,3 +223,77 @@ repeat does not erase it. Physical nodes and binding survived both attempts.
 
 The corrected candidate passed required Rust fmt/check/clippy/test and the
 fresh API comparison. The additional pin-workflow suite passed all 15 tests.
+
+## Review follow-up: main merge, failure diagnosis and isolated timing
+
+Main `f27e611` (#370, DualSense input/status split) was merged into the
+existing PR branch as `659b1f7`. The migration-guide conflict preserves both
+entries; the merged API inventory was checked against fresh documentation.
+No signed-off Alpha audit row changed.
+
+The diagnostic harness candidate `109469a` recorded failure step, last
+selected input event, expected missing controls/endpoints, elapsed time
+since creation and whether the owned node still existed. Its first five
+250-session timing runs (1,250 sessions) and all five immediate evdev sweeps
+passed. Three of 20 standalone sweeps failed. Each failure had no input
+events, all four stick axes at SDL's initial minimum, no observed neutral,
+and a present node. This identified a producer/consumer readiness cycle:
+the harness waited for neutral before sending its first input transition.
+An experimental host-OPEN snapshot refresh still failed one of 20 standalone
+sweeps and was reverted. It is not part of the final protocol.
+
+Final runtime/harness candidate:
+`8b42170810bb95e42f94cac845c543690d425552`. The Series sweep readiness
+signal now means consumer-open plus a bounded settle interval. It reports
+whether initial neutral was actually observed separately. It does not
+claim neutral delivery or bypass the eventual control/neutral assertions.
+Other exact-state modes retain their neutral prerequisite. A deterministic
+fake-SDL test starts with non-neutral axes, verifies producer readiness,
+and verifies that readiness alone cannot pass the control assertions.
+The sanitized diagnostic retention also has a regression test.
+
+After this fix, the 250-session timing run, immediate evdev sweep and all
+20 standalone sweeps passed (21 sweeps, zero failures). This resolves the
+reproduced harness deadlock; first-valid-neutral remains open under #166.
+All these runs used Linux `7.3.0-1-mainline`, SDL 3.4.18 and virtual stock
+`microsoft`. Xpadneo was kept unloaded. The physical reference was initially
+disconnected and was present but unbound during the final isolated run.
+No concurrent validation work ran during these timing arms.
+
+| Final isolated arm | Sessions | Create to first evdev open p50 / p95 / p99 / max (ms) |
+| --- | ---: | ---: |
+| Single controller | 50 | 84.62 / 130.73 / 148.38 / 148.38 |
+| Four concurrent controllers | 200 | 109.33 / 145.24 / 152.59 / 168.29 |
+
+For the final concurrent arm's slowest open, observed phases since creation
+were: provider create return 1.43 ms, hidraw appearance 3.47 ms, observed
+kernel binding 3.53 ms, input-node appearance 3.48 ms, first open attempt
+3.94 ms, successful open 168.24 ms. The open encountered 130 permission-denied
+responses. These are polled upper bounds, not kernel trace timestamps.
+The dominant observed tail is access-policy readiness after node appearance;
+no library lock or serialized library wait accounts for that interval.
+No kernel/udev workaround or Bluetooth timing budget is introduced.
+
+Before the final fix, the five isolated single/concurrent maxima were
+156.13/199.77, 181.33/224.99, 146.62/198.85, 159.83/342.96 and
+174.69/301.76 ms. The worst observed access had 220 permission denials;
+its input node appeared at 20.85 ms and open succeeded at 342.91 ms.
+The earlier loaded-host 898 ms result remains historical, rather than an
+isolated-host latency claim.
+
+### Physical trigger check blocked before pulses
+
+The owner confirmed reconnection with USB unplugged. With xpadneo unloaded,
+the physical HID device was present but unbound. The installed physical
+xpadneo `60-xpadneo.rules` unbinds stock microsoft and tries to bind xpadneo;
+its dev wrapper exempts only the validated virtual lab device. No usable
+physical hidraw node appeared, so the stock-driver permission gate could
+not be reached. No pulse was sent and no owner actuation observation was
+requested. Physical trigger actuation remains unverified; no passing-result
+research PR is warranted. Reloading xpadneo restored the physical binding,
+which was checked explicitly.
+
+Udev also automatically reloaded xpadneo on new HID creation after a simple
+module unload. For the isolated run the owner installed a temporary runtime
+modprobe blacklist. This is dev/test only; cleanup is tracked in the GitHub
+handoff. The driver lab helper's allowlist was not broadened.
