@@ -297,3 +297,38 @@ Udev also automatically reloaded xpadneo on new HID creation after a simple
 module unload. For the isolated run the owner installed a temporary runtime
 modprobe blacklist. This is dev/test only; cleanup is tracked in the GitHub
 handoff. The driver lab helper's allowlist was not broadened.
+
+### Latest main integration and final combined-head acceptance
+
+Main advanced during the review to `031dd11696badb267e1c3c2b3e962316dfba7f1c`
+(#371, DualShock 4 input/status split). Merge `11fa0b52ebcbd010fbab1c67efa4692e0068ace5`
+resolves the application-guide conflict by keeping Series Bluetooth output
+semantics and upstream DualShock 4 input/status documentation. The Series
+protocol and sweep fix are unchanged. The fresh API inventory matches root
+167 items, Wii 22 and Steam 13. Required Rust checks, Ruff and the 239-test
+Python suite pass on this combined head.
+
+Exact-head host acceptance on `11fa0b52ebcbd010fbab1c67efa4692e0068ace5`
+repeated evdev and HIDAPI controls/neutral/reopen, separate virtual trigger
+commands, uinput controls and retained 16384/32768 rumble, 20 four-controller
+lifecycle sessions and 250 isolated Bluetooth timing sessions. All passed;
+resource counts returned to baseline. Linux/SDL versions were unchanged,
+virtual binding was microsoft, and xpadneo stayed unloaded during timing.
+The physical reference was not usable on stock binding as recorded above.
+
+| Latest isolated arm | Sessions | Open p50 / p95 / p99 / max (ms) |
+| --- | ---: | ---: |
+| Single | 50 | 96.41 / 106.66 / 110.48 / 110.48 |
+| Four concurrent | 200 | 97.88 / 118.85 / 135.02 / 247.83 |
+
+In the slowest concurrent sample, provider creation returned at 0.15 ms,
+binding was observed at 2.67 ms, input appeared at 2.60 ms, open was attempted
+at 5.16 ms and succeeded at 247.78 ms after 209 permission denials. The
+phase attribution remains host access readiness. No Bluetooth budget is
+claimed. Xpadneo was reloaded after this run.
+
+The first main-merge commit `659b1f7` passed all 19 GitHub checks, including
+pinned research and Windows/macOS tests. Later heads require fresh CI review.
+The temporary runtime blacklist cleanup and Steam owner observations remain
+pending in the GitHub handoff. No physical actuation claim or research
+follow-up is added.
