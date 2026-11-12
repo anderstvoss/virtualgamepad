@@ -7,8 +7,7 @@ the same two-argument shape with its supporting `CreationOptions`.
 | Realization | Scope |
 | --- | --- |
 | `linux.uinput` | One gamepad with the Linux xpad evdev layout. It exposes A/B/X/Y, bumpers, View/Menu/Guide/Share, stick clicks, the D-pad hat, four signed stick axes and two 10-bit triggers. Conventional force feedback carries strong and weak main-motor playback. |
-| `linux.uhid.bluetooth` | Local Bluetooth-bus HID for the measured `045e:0b13` report map. Qualified with SDL 3.4.18 over evdev and hidraw on stock `microsoft`: all standard controls, separate Guide/Share, final neutral, main rumble and independent virtual trigger-command reception. Steam identity, controls excluding Guide, and Ping feedback were qualified
-with the active-seat dev setup. Physical trigger actuation remains unverified. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
+| `linux.uhid.bluetooth` | Local Bluetooth-bus HID for the measured `045e:0b13` report map. Qualified with SDL 3.4.18 over evdev and hidraw on stock `microsoft`: all standard controls, separate Guide/Share, final neutral, main rumble and independent virtual trigger-command reception. Steam identity, controls excluding Guide, and Ping feedback were qualified with the active-seat dev setup. Physical trigger actuation remains unverified. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
 | USB-bus UHID and `dummy_hcd` USB HID | Inapplicable to the wired GIP controller. GIP and USB/IP feasibility stay with [#168](https://github.com/anderstvoss/virtualgamepad/issues/168). |
 
 The xpad [consumer ledger](https://github.com/anderstvoss/controller-protocol-research/blob/eba02ad610e264a2518a699394255cc7f1d670dd/docs/ledgers/xbox-series-l0.md)
@@ -45,7 +44,7 @@ needed.
 - SDL submitted conventional rumble. The controller independently retained
   strong 16384, weak 32768 and one playback repetition. This is a virtual
   reverse-output observation. Steam Input and physical reference validation
-  remain untested.
+  were not tested in that run.
 
 The reproduction commands use temporary output paths.
 
