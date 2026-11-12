@@ -25,7 +25,7 @@ mod linux {
                 Profile::Xbox360 => (
                     3,
                     gr_curated_controllers::usb_personality::state::NativeState::Xbox360(
-                        gr_curated_controllers::Xbox360State::default(),
+                        gr_curated_controllers::Xbox360SessionState::default(),
                     ),
                 ),
             };

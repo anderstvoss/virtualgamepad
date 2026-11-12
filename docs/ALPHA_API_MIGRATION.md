@@ -442,3 +442,34 @@ The supporting runtime holds the separate input and status values as a pair;
 there is no additional combined public family state type or worker codec. The
 demo and tests migrate with the API, retaining protocol, provider, handshake,
 queued-report and cleanup regressions.
+
+## VG-1b/d · Xbox 360 input-only values
+
+`Xbox360Inputs` replaces `Xbox360State` on the ordinary root and curated surfaces.
+Native buttons, sticks and triggers are caller-owned input levels; battery is
+separate controller metadata returned by copyable `Xbox360Status`.
+
+| Previous API | Current API |
+| --- | --- |
+| `Xbox360State` | `Xbox360Inputs` |
+| `controller.state()` | `controller.inputs()` |
+| `controller.state().battery()` | `controller.status().battery()` |
+| `set_inputs(Xbox360State)` | `set_inputs(Xbox360Inputs)` |
+| `edit_inputs(FnOnce(&mut Xbox360State) -> Result<(), ControlError>)` | `edit_inputs(FnOnce(&mut Xbox360Inputs) -> Result<(), ControlError>)` |
+
+In each root snapshot feature view, remove the old type and add `Xbox360Inputs`
+and `Xbox360Status`. Remove the handle's `state()`, add
+`inputs() -> &Xbox360Inputs` and `status() -> Xbox360Status`, and change both input
+mutation signatures above. Ten native getters/mutators move to the input type;
+status adds the `battery()` getter. Both values support defaults, clone and
+equality; status is also copyable. Wii and Steam supporting snapshots have zero
+delta.
+
+Root, curated and experimental exports migrate together. The supporting worker
+representation is the doc-hidden `Xbox360SessionState`, with separate inputs and
+status. Worker envelope and HID bytes are pinned against synthetic levels
+captured before the split: family byte 3, version and field order are unchanged.
+Battery setters remain separate runtime updates, while input edits and
+neutralization preserve accepted metadata. No input clock is invented for this
+family. Worker, root-audio, demo and test consumers migrate in the same PR with
+no compatibility alias.

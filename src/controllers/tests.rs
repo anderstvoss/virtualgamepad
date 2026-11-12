@@ -15,6 +15,9 @@ macro_rules! accepted_inputs {
     ($controller:ident, dualsense) => {
         $controller.inputs()
     };
+    ($controller:ident, xbox360) => {
+        $controller.inputs()
+    };
     ($controller:ident, switch_pro) => {
         $controller.inputs()
     };

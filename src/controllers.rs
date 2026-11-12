@@ -13,7 +13,7 @@ use crate::{
     SwitchProInputs, SwitchProMotionSample, SwitchProOutputEvent, SwitchProSurface, TouchSlot,
     WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton, WiiRemoteOutputEvent,
     WiiRemoteOutputs, WiiRemoteState, WiiResourceDisposition, Xbox360Axis, Xbox360Control,
-    Xbox360OutputEvent, Xbox360State, Xbox360Surface, Xbox360Trigger, XboxSeriesButton,
+    Xbox360Inputs, Xbox360OutputEvent, Xbox360Surface, Xbox360Trigger, XboxSeriesButton,
     XboxSeriesOutputEvent, XboxSeriesOutputState, XboxSeriesState,
 };
 // The family adapter owns only static dispatch; protocol semantics stay curated.
@@ -714,9 +714,18 @@ impl Xbox360Controller {
     shared!(wants_write);
     shared!(next_service_in);
     shared!(dropped_output_events);
-    shared!(state, Xbox360State);
-    shared!(edit_inputs, Xbox360State);
-    shared!(set_inputs, Xbox360State);
+    /// Borrow accepted native input levels.
+    #[must_use]
+    pub fn inputs(&self) -> &Xbox360Inputs {
+        self.controller.inner.inputs()
+    }
+    /// Read accepted battery metadata.
+    #[must_use]
+    pub fn status(&self) -> crate::Xbox360Status {
+        self.controller.inner.status()
+    }
+    shared!(edit_inputs, Xbox360Inputs);
+    shared!(set_inputs, Xbox360Inputs);
     shared!(host_outputs, crate::Xbox360OutputState);
     shared!(surface, Xbox360Surface);
     shared!(is_dirty);

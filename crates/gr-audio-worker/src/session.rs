@@ -617,7 +617,7 @@ mod tests {
         );
         check_output_policy(
             usb_personality::xbox360(),
-            NativeState::Xbox360(gr_curated_controllers::Xbox360State::default()),
+            NativeState::Xbox360(gr_curated_controllers::Xbox360SessionState::default()),
             false,
             None,
             None,
@@ -710,7 +710,7 @@ mod tests {
             ),
             (
                 gr_usbip::profile::ids::XBOX360,
-                NativeState::Xbox360(gr_curated_controllers::Xbox360State::default()),
+                NativeState::Xbox360(gr_curated_controllers::Xbox360SessionState::default()),
             ),
         ] {
             let (usb, _host) = pair();

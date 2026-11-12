@@ -177,8 +177,9 @@ pub use switch_pro::{
     SwitchProStatus, SwitchProSurface, create_switch_pro,
 };
 pub use xbox360::{
-    Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360Options, Xbox360OutputEvent,
-    Xbox360State, Xbox360Surface, Xbox360Trigger, create_xbox360,
+    Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360Inputs, Xbox360Options,
+    Xbox360OutputEvent, Xbox360SessionState, Xbox360Status, Xbox360Surface, Xbox360Trigger,
+    create_xbox360,
 };
 
 #[cfg(test)]
