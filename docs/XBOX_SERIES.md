@@ -102,11 +102,27 @@ PY
 SDL's neutral observation comes from its bounded control sweep. The runner
 still has no timestamp oracle for the first valid consumer neutral state.
 
-For the manual Steam Input check, create one Series uinput controller, select
-the exact virtual pad in Steam's controller tester, verify Share, Guide, both
-triggers, all axes and D-pad directions, then remove the controller and verify
-that Steam stops listing it. Record the Steam build and observed result with
-[#160](https://github.com/anderstvoss/virtualgamepad/issues/160).
+For the manual Steam Input check, close Dolphin first, then create one
+product controller at a time. The owner-observed probe keeps it alive and
+prints retained host output changes:
+
+```sh
+VIRTUALGAMEPAD_INPUT_LAB=1 cargo run --locked --example xbox_series_steam_probe -- uinput
+# Repeat after closing that probe, selecting bluetooth instead.
+```
+
+Select the newly created virtual pad in Steam Settings → Controller. Record
+whether Steam identifies it as Xbox Series. Enter `sweep` in the probe to
+cycle all buttons, both sticks and both triggers. Enter `neutral` before
+Steam's rumble test; confirm that a nonzero retained output appears, rather
+than treating a successful UI action as evidence. Enter `quit` and verify
+removal. Ask for one owner observation at a time and retain the Steam build,
+candidate, kernel and driver scope with the answers.
+
+| Steam Input consumer | Status |
+| --- | --- |
+| `linux.uinput` identity, controls, retained rumble | Awaiting owner observations. |
+| `linux.uhid.bluetooth` identity, controls, retained rumble | Awaiting owner observations. |
 
 ## Alpha 2 host audit
 
@@ -138,15 +154,18 @@ trigger-motor actuation remains unverified. The original evdev runs could not ex
 denied. A later dev-only raw-path probe with the stock microsoft driver
 passed all controls and observed separate left-only and right-only trigger
 commands. This qualifies a bounded virtual HIDAPI command path. Physical
-trigger actuation and exact-candidate acceptance after rebase remain open.
+trigger actuation remains unverified: the physical xpadneo bind rule prevented
+stock microsoft binding, so no physical pulse was sent. Exact-candidate
+virtual acceptance after the main merge passed.
 The dev setup and failed competing-driver attempt are retained in the
 checkpoint handoff.
 
 ## Bluetooth-bus UHID candidate qualification
 
 See [the exact-candidate checkpoint](XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate)
-for the research pin, tested commit, kernel, consumer versions, binding,
-20-session concurrency check and 250-session timing results. The concurrent
+for the research pin and historical results. The [review follow-up](XBOX_SERIES_CHECKPOINT.md#review-follow-up-main-merge-failure-diagnosis-and-isolated-timing)
+records the main merge, diagnosed harness readiness deadlock, final
+acceptance, isolated 250-session timing and blocked physical test. The concurrent
 Bluetooth open tail exceeded the C9 uinput budget; no Bluetooth timing budget
 is qualified. First-valid-neutral remains open under #166.
 
