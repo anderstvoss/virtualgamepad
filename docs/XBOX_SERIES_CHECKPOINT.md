@@ -381,7 +381,39 @@ An optional, temporary `90-virtualgamepad-xbox-steam.rules` override was
 prepared to expose helper-validated virtual Xbox lab nodes on seat0 without
 the ignore flag. Physical and unrelated lab devices are unchanged. Udev
 syntax verification and a deterministic policy regression passed; the full
-Python suite now passes 240 tests. Installation/owner confirmation is
-pending. The Bluetooth probe was closed while waiting. After installing,
-recreate the pad, verify its properties and repeat the three owner checks;
-then remove the temporary override and reload rules.
+Python suite now passes 240 tests. The first probe was closed while installation was pending. The completed
+active-seat retest and cleanup are recorded below.
+
+### Bluetooth active-seat retest and final cleanup
+
+The owner installed the optional temporary rule and reloaded udev. Its
+installed bytes matched the committed rule. On candidate
+`c92f1a27a21d9c407dd94d51c6fa6d52d793422b`, the recreated pad remained
+bound to stock microsoft, with readable/writable hidraw. The event node
+now reported seat0 and `LIBINPUT_IGNORE_DEVICE=0`. Kernel, SDL and Steam
+versions were unchanged; the physical reference was not connected.
+
+The owner confirmed Steam now listed the new pad as Xbox Series. In the
+input test screen the owner confirmed all other buttons, both sticks and
+both triggers during `sweep-no-guide`. Guide remains excluded from Steam
+test-screen qualification. The owner then clicked Steam Ping. Independent
+retained state recorded two native main-rumble commands, strong 50/weak 50,
+mask 15, trigger amplitudes zero, duration 255, delay zero and repeat 235,
+each followed by a zero-main-magnitude stop. This is virtual Steam Ping
+reverse-command evidence, not physical motor actuation or trigger-rumble
+qualification in Steam.
+
+The binding was rechecked as microsoft before close. Closing removed the
+owned HID/input/hidraw nodes, and the owner confirmed the controller also
+disappeared from Steam's connected-controller list. The initial not-listed
+result is therefore scoped to the deliberately isolated lab policy; the
+active-seat retest qualified Steam with the stated dev setup.
+
+After testing, the owner removed the temporary visibility rule and reloaded
+udev. Rule removal, earlier blacklist removal and absence of both probes'
+owned nodes were independently checked. Xpadneo is restored. The optional
+rule remains source-only and off by default; standard lab isolation is
+preserved. All 19 CI checks passed on `c92f1a2`, including pinned research,
+MSRV and all platform tests. No new runtime/API changes were needed for
+this visibility retest. Physical trigger actuation and first-valid-neutral
+remain unverified as previously scoped.

@@ -7,7 +7,8 @@ the same two-argument shape with its supporting `CreationOptions`.
 | Realization | Scope |
 | --- | --- |
 | `linux.uinput` | One gamepad with the Linux xpad evdev layout. It exposes A/B/X/Y, bumpers, View/Menu/Guide/Share, stick clicks, the D-pad hat, four signed stick axes and two 10-bit triggers. Conventional force feedback carries strong and weak main-motor playback. |
-| `linux.uhid.bluetooth` | Local Bluetooth-bus HID for the measured `045e:0b13` report map. Qualified with SDL 3.4.18 over evdev and hidraw on stock `microsoft`: all standard controls, separate Guide/Share, final neutral, main rumble and independent virtual trigger-command reception. Physical trigger actuation and Steam Input remain unverified. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
+| `linux.uhid.bluetooth` | Local Bluetooth-bus HID for the measured `045e:0b13` report map. Qualified with SDL 3.4.18 over evdev and hidraw on stock `microsoft`: all standard controls, separate Guide/Share, final neutral, main rumble and independent virtual trigger-command reception. Steam identity, controls excluding Guide, and Ping feedback were qualified
+with the active-seat dev setup. Physical trigger actuation remains unverified. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
 | USB-bus UHID and `dummy_hcd` USB HID | Inapplicable to the wired GIP controller. GIP and USB/IP feasibility stay with [#168](https://github.com/anderstvoss/virtualgamepad/issues/168). |
 
 The xpad [consumer ledger](https://github.com/anderstvoss/controller-protocol-research/blob/eba02ad610e264a2518a699394255cc7f1d670dd/docs/ledgers/xbox-series-l0.md)
@@ -111,6 +112,11 @@ VIRTUALGAMEPAD_INPUT_LAB=1 cargo run --locked --example xbox_series_steam_probe 
 # Repeat after closing that probe, selecting bluetooth instead.
 ```
 
+Bluetooth lab nodes normally use an inactive seat and an ignore flag, so
+Steam may not list them. For this manual check only, the optional temporary
+[Steam visibility override](DEPLOYMENT_AND_VALIDATION.md#temporary-xbox-steam-visibility)
+exposes validated Xbox lab nodes on seat0. Remove it after testing.
+
 Select the newly created virtual pad in Steam Settings → Controller. Record
 whether Steam identifies it as Xbox Series. Enter `sweep-no-guide` in the probe to
 cycle the other buttons, both sticks and both triggers. Guide can open Big
@@ -124,7 +130,7 @@ candidate, kernel and driver scope with the answers.
 | Steam Input consumer | Status |
 | --- | --- |
 | `linux.uinput` | Owner confirmed Xbox Series identity and controls excluding Guide. Steam Ping produced retained 32767/32767 playback and stops. Guide test-screen registration remains unverified. |
-| `linux.uhid.bluetooth` | Not listed during the inactive-seat lab run. Controls/rumble unverified; temporary active-seat visibility override prepared for retest. |
+| `linux.uhid.bluetooth` | With the temporary active-seat dev override, owner confirmed Xbox Series identity and controls excluding Guide. Steam Ping retained native 50/50 main rumble and stops on microsoft. Guide test-screen registration remains unverified. |
 
 ## Alpha 2 host audit
 

@@ -329,3 +329,30 @@ rules only for the exact Bluetooth Xbox identity and helper-validated
 virtual label. Physical-device rules are retained. Unload xpadneo before
 a stock-driver run and record the actual bound driver after enumeration
 settles. This remains opt-in test setup.
+
+### Temporary Xbox Steam visibility
+
+The normal input-lab policy isolates validated Xbox nodes on an inactive
+seat and sets the input ignore flag. For owner-observed Steam validation
+on seat0 only, the optional override below makes those nodes visible. It
+does not affect physical pads or unrelated lab devices and is not installed
+by default. Install before creating the manual probe:
+
+```sh
+sudo install -d -m 0755 /run/udev/rules.d
+sudo install -o root -g root -m 0644 udev/90-virtualgamepad-xbox-steam.rules /run/udev/rules.d/90-virtualgamepad-xbox-steam.rules
+sudo udevadm control --reload-rules
+```
+
+After closing and removing the virtual probe, restore normal isolation:
+
+```sh
+sudo rm /run/udev/rules.d/90-virtualgamepad-xbox-steam.rules
+sudo udevadm control --reload-rules
+```
+
+Use `sweep-no-guide` for the Steam input test to avoid opening Big Picture.
+Observe nonzero retained output and subsequent stops for Steam Ping; the
+UI action alone does not establish reverse-command delivery. The completed
+[Steam checkpoint](XBOX_SERIES_CHECKPOINT.md#owner-observed-steam-follow-up)
+records the qualified versions, native units, owner observations and cleanup.

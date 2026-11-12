@@ -103,10 +103,11 @@ live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#owner-observed-steam-follow-up"
 reason = "Owner confirmed Xbox Series identity and controls except Guide; Steam Ping independently retained 32767/32767 playback and stops. Guide test-screen registration remains unverified."
 
 [functions.cells."linux.uhid.bluetooth"]
-status = "wip"
+status = "virtual-live"
 test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
 evidence = []
-reason = "Steam did not list the pad on the inactive lab seat with the ignore flag set. Active-seat retest is pending; controls and rumble remain unverified."
+live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#bluetooth-active-seat-retest-and-final-cleanup"
+reason = "On microsoft with the temporary active-seat dev override, owner confirmed Xbox Series identity and controls excluding Guide; Steam Ping independently retained native 50/50 main rumble and stops. Guide test-screen registration remains unverified."
 
 [[functions]]
 id = "impulse-trigger-motors"
