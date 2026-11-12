@@ -255,7 +255,7 @@ fn statistics(values: &[u64], missing: usize) -> Value {
         .map(|v| (*v as f64 - mean).powi(2))
         .sum::<f64>()
         / values.len() as f64;
-    json!({"n":values.len(),"missing":missing,"min_ns":values[0],"p50_ns":median,"p90_ns":percentile(90),"p99_ns":percentile(99),"max_ns":values[values.len()-1],"mean_ns":mean,"population_stddev_ns":variance.sqrt(),"mad_ns":deviations[values.len().div_ceil(2)-1]})
+    json!({"n":values.len(),"missing":missing,"min_ns":values[0],"p50_ns":median,"p90_ns":percentile(90),"p95_ns":percentile(95),"p99_ns":percentile(99),"max_ns":values[values.len()-1],"mean_ns":mean,"population_stddev_ns":variance.sqrt(),"mad_ns":deviations[values.len().div_ceil(2)-1]})
 }
 
 /// Scripted fake backend for deterministic orchestration tests, never live evidence.

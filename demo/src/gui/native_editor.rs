@@ -1545,10 +1545,13 @@ mod xbox_series_tests {
         let kinds = Kind::registered();
         assert_eq!(kinds.len(), 7);
         assert!(matches!(kinds.last(), Some(Kind::XboxSeries)));
-        let [target] = (Kind::XboxSeries.entry().realizations)() else {
-            panic!("expected only uinput");
-        };
-        assert_eq!(target.surface.target(), RealizationId::LINUX_UINPUT);
+        let targets = (Kind::XboxSeries.entry().realizations)();
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].surface.target(), RealizationId::LINUX_UINPUT);
+        assert_eq!(
+            targets[1].surface.target(),
+            RealizationId::LINUX_UHID_BLUETOOTH
+        );
 
         let mut state = XboxSeriesState::default();
         assert!(apply_xbox_series_event(

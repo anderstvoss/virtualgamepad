@@ -89,7 +89,7 @@ impl ButtonEdit {
         Ok(edit)
     }
 }
-impl ControlEdit<crate::Xbox360State> for ButtonEdit {
+impl ControlEdit<crate::Xbox360SessionState> for ButtonEdit {
     fn control_id(&self) -> InputControlId {
         match self.button {
             FaceButton::South => OPTIONAL,
@@ -97,7 +97,7 @@ impl ControlEdit<crate::Xbox360State> for ButtonEdit {
             _ => InputControlId::new("unsupported"),
         }
     }
-    fn apply(self, state: &mut crate::Xbox360State) -> Result<(), ControlError> {
+    fn apply(self, state: &mut crate::Xbox360SessionState) -> Result<(), ControlError> {
         Xbox360Definition.apply_digital(
             state,
             DigitalControlUpdate::FaceButton {
@@ -123,7 +123,12 @@ fn fifth_optional_module_generations_are_retained_and_absent_edits_fail() {
         press(&view, &mut session, OPTIONAL, FaceButton::South),
         Err(ControlError::UnavailableInRealization { .. })
     ));
-    assert!(!session.state().native_pressed(crate::Xbox360Control::A));
+    assert!(
+        !session
+            .state()
+            .inputs()
+            .native_pressed(crate::Xbox360Control::A)
+    );
     transition(&mut view, &mut session, true).unwrap();
     assert_eq!(view.topology_generation(), 1);
     assert_eq!(view.current_topology(), &TOPOLOGY);
@@ -133,8 +138,18 @@ fn fifth_optional_module_generations_are_retained_and_absent_edits_fail() {
     press(&view, &mut session, BASE_BUTTON, FaceButton::East).unwrap();
     transition(&mut view, &mut session, false).unwrap();
     assert_eq!(view.topology_generation(), 2);
-    assert!(!session.state().native_pressed(crate::Xbox360Control::A));
-    assert!(session.state().native_pressed(crate::Xbox360Control::B));
+    assert!(
+        !session
+            .state()
+            .inputs()
+            .native_pressed(crate::Xbox360Control::A)
+    );
+    assert!(
+        session
+            .state()
+            .inputs()
+            .native_pressed(crate::Xbox360Control::B)
+    );
     for _ in 0..40 {
         session.drain(&mut |_| {}).unwrap();
     }
@@ -318,7 +333,12 @@ fn present_id_cannot_authorize_a_different_absent_control() {
     ] {
         let (mut session, _, view) = open(target);
         assert!(press(&view, &mut session, BASE_BUTTON, FaceButton::South).is_err());
-        assert!(!session.state().native_pressed(crate::Xbox360Control::A));
+        assert!(
+            !session
+                .state()
+                .inputs()
+                .native_pressed(crate::Xbox360Control::A)
+        );
         assert_eq!(view.topology_generation(), 0);
     }
 }
@@ -326,11 +346,11 @@ fn present_id_cannot_authorize_a_different_absent_control() {
 #[test]
 fn dishonest_typed_operation_cannot_leave_an_absent_control_active() {
     struct Forged;
-    impl ControlEdit<crate::Xbox360State> for Forged {
+    impl ControlEdit<crate::Xbox360SessionState> for Forged {
         fn control_id(&self) -> InputControlId {
             BASE_BUTTON
         }
-        fn apply(self, state: &mut crate::Xbox360State) -> Result<(), ControlError> {
+        fn apply(self, state: &mut crate::Xbox360SessionState) -> Result<(), ControlError> {
             Xbox360Definition.apply_digital(
                 state,
                 DigitalControlUpdate::FaceButton {

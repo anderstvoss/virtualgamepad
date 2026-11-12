@@ -130,11 +130,17 @@ pub(crate) fn xbox360(
     })
 }
 
-/// Accepted host feedback for the Xbox Series uinput realization.
+/// Host feedback for the selected Xbox Series realization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum XboxSeriesOutputEvent {
     ForceFeedback(ForceFeedbackEvent),
+    HostLifecycle(HostLifecycle),
+    /// Native Bluetooth HID output after protocol handling.
+    HidOutput {
+        report_id: Option<u8>,
+        bytes: Vec<u8>,
+    },
 }
 
 #[allow(clippy::needless_pass_by_value)] // Family adapters consume each observation.
@@ -148,7 +154,11 @@ pub(crate) fn xbox_series(
         | E::ForceFeedbackErase { .. }
         | E::HidGetReportRequest { .. }
         | E::HidSetReportRequest { .. } => Err(request_leaked()),
-        E::Evdev(_) | E::HidLifecycle(_) | E::HidOutput { .. } => Ok(None),
+        E::HidLifecycle(event) => Ok(Some(XboxSeriesOutputEvent::HostLifecycle(lifecycle(event)))),
+        E::HidOutput { report_id, bytes } => {
+            Ok(Some(XboxSeriesOutputEvent::HidOutput { report_id, bytes }))
+        }
+        E::Evdev(_) => Ok(None),
     }
 }
 
