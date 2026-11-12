@@ -172,9 +172,9 @@ pub use dualshock4::{
     DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, create_dualshock4,
 };
 pub use switch_pro::{
-    SwitchProAxis, SwitchProControl, SwitchProController, SwitchProIdentity, SwitchProMotionSample,
-    SwitchProOptions, SwitchProOutputEvent, SwitchProRumble, SwitchProState, SwitchProSurface,
-    create_switch_pro,
+    SwitchProAxis, SwitchProControl, SwitchProController, SwitchProIdentity, SwitchProInputs,
+    SwitchProMotionSample, SwitchProOptions, SwitchProOutputEvent, SwitchProRumble,
+    SwitchProStatus, SwitchProSurface, create_switch_pro,
 };
 pub use xbox360::{
     Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360Options, Xbox360OutputEvent,

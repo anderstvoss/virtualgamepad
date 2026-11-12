@@ -7,7 +7,7 @@ use super::{
     Xbox360Control, Xbox360Trigger,
 };
 use virtualgamepad::{
-    ControllerDiagnostics, DualSenseInputs, DualShock4Inputs, SwitchProState, Xbox360State,
+    ControllerDiagnostics, DualSenseInputs, DualShock4Inputs, SwitchProInputs, Xbox360State,
 };
 
 pub(super) const EDIT_LIMIT: usize = 64;
@@ -131,7 +131,7 @@ pub(super) type Xbox360Editor = Editor<Xbox360State, Surface>;
 pub(super) type DualSenseEditor = Editor<DualSenseInputs, Surface, virtualgamepad::DualSenseStatus>;
 pub(super) type DualShock4Editor =
     Editor<DualShock4Inputs, Surface, virtualgamepad::DualShock4Status>;
-pub(super) type SwitchProEditor = Editor<SwitchProState, Surface>;
+pub(super) type SwitchProEditor = Editor<SwitchProInputs, Surface, virtualgamepad::SwitchProStatus>;
 pub(super) type WiiRemoteEditor =
     Editor<gr_curated_controllers::wii_remote::WiiRemoteState, Surface>;
 pub(super) type SteamEditor =
@@ -201,7 +201,13 @@ impl Controller {
                 Some(c.association().clone()),
                 c.status(),
             )),
-            Self::SwitchPro(c) => view!(c, SwitchPro),
+            Self::SwitchPro(c) => ControllerView::SwitchPro(Editor::new(
+                c.inputs().clone(),
+                c.surface().common(),
+                Some(c.diagnostics()),
+                Some(c.association().clone()),
+                c.status(),
+            )),
             Self::Steam(c) => {
                 ControllerView::Steam(Editor::new(c.state().clone(), c.surface(), None, None, ()))
             }
@@ -430,11 +436,11 @@ pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
             (),
         )),
         super::Kind::SwitchPro => ControllerView::SwitchPro(Editor::new(
-            SwitchProState::default(),
+            SwitchProInputs::default(),
             surface,
             None,
             None,
-            (),
+            virtualgamepad::SwitchProStatus::default(),
         )),
     }
 }

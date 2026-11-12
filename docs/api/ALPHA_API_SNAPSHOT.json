@@ -2384,9 +2384,10 @@
             "pub fn wants_write(&self) -> bool",
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
-            "pub fn state(&self) -> &SwitchProState",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProState) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: SwitchProState) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &SwitchProInputs",
+            "pub fn status(&self) -> SwitchProStatus",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: SwitchProInputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>",
             "pub fn is_dirty(&self) -> bool",
             "pub fn surface(&self) -> &'static SwitchProSurface",
@@ -2429,6 +2430,33 @@
             "impl Sync for SwitchProIdentity",
             "impl Unpin for SwitchProIdentity",
             "impl UnwindSafe for SwitchProIdentity"
+          ]
+        },
+        "struct.SwitchProInputs.html": {
+          "declarations": [
+            "pub struct SwitchProInputs { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
+            "pub const fn right_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
+            "pub const fn motion(&self) -> SwitchProMotionSample",
+            "pub const fn native_pressed(&self, control: SwitchProControl) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub fn set_sticks( &mut self, left: (SwitchProAxis, SwitchProAxis), right: (SwitchProAxis, SwitchProAxis), )",
+            "pub fn set_motion(&mut self, motion: SwitchProMotionSample)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, c: SwitchProControl, p: bool)"
+          ],
+          "traits": [
+            "impl Clone for SwitchProInputs",
+            "impl Debug for SwitchProInputs",
+            "impl Default for SwitchProInputs",
+            "impl Eq for SwitchProInputs",
+            "impl PartialEq for SwitchProInputs",
+            "impl RefUnwindSafe for SwitchProInputs",
+            "impl Send for SwitchProInputs",
+            "impl Sync for SwitchProInputs",
+            "impl Unpin for SwitchProInputs",
+            "impl UnwindSafe for SwitchProInputs"
           ]
         },
         "struct.SwitchProMotionSample.html": {
@@ -2500,31 +2528,24 @@
             "impl UnwindSafe for SwitchProRumble"
           ]
         },
-        "struct.SwitchProState.html": {
+        "struct.SwitchProStatus.html": {
           "declarations": [
-            "pub struct SwitchProState { /* private fields */ }",
-            "pub const fn left_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
-            "pub const fn right_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
-            "pub const fn motion(&self) -> SwitchProMotionSample",
-            "pub const fn native_pressed(&self, control: SwitchProControl) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
-            "pub fn set_sticks( &mut self, left: (SwitchProAxis, SwitchProAxis), right: (SwitchProAxis, SwitchProAxis), )",
-            "pub fn set_motion(&mut self, motion: SwitchProMotionSample)",
-            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
-            "pub fn set_native(&mut self, c: SwitchProControl, p: bool)"
+            "pub struct SwitchProStatus { /* private fields */ }",
+            "pub const fn timer(self) -> u8",
+            "pub const fn stream_enabled(self) -> bool"
           ],
           "traits": [
-            "impl Clone for SwitchProState",
-            "impl Debug for SwitchProState",
-            "impl Default for SwitchProState",
-            "impl Eq for SwitchProState",
-            "impl PartialEq for SwitchProState",
-            "impl RefUnwindSafe for SwitchProState",
-            "impl Send for SwitchProState",
-            "impl Sync for SwitchProState",
-            "impl Unpin for SwitchProState",
-            "impl UnwindSafe for SwitchProState"
+            "impl Clone for SwitchProStatus",
+            "impl Copy for SwitchProStatus",
+            "impl Debug for SwitchProStatus",
+            "impl Default for SwitchProStatus",
+            "impl Eq for SwitchProStatus",
+            "impl PartialEq for SwitchProStatus",
+            "impl RefUnwindSafe for SwitchProStatus",
+            "impl Send for SwitchProStatus",
+            "impl Sync for SwitchProStatus",
+            "impl Unpin for SwitchProStatus",
+            "impl UnwindSafe for SwitchProStatus"
           ]
         },
         "struct.SwitchProSurface.html": {
@@ -5582,9 +5603,10 @@
             "pub fn wants_write(&self) -> bool",
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
-            "pub fn state(&self) -> &SwitchProState",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProState) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: SwitchProState) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &SwitchProInputs",
+            "pub fn status(&self) -> SwitchProStatus",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: SwitchProInputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>",
             "pub fn is_dirty(&self) -> bool",
             "pub fn surface(&self) -> &'static SwitchProSurface",
@@ -5627,6 +5649,33 @@
             "impl Sync for SwitchProIdentity",
             "impl Unpin for SwitchProIdentity",
             "impl UnwindSafe for SwitchProIdentity"
+          ]
+        },
+        "struct.SwitchProInputs.html": {
+          "declarations": [
+            "pub struct SwitchProInputs { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
+            "pub const fn right_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
+            "pub const fn motion(&self) -> SwitchProMotionSample",
+            "pub const fn native_pressed(&self, control: SwitchProControl) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub fn set_sticks( &mut self, left: (SwitchProAxis, SwitchProAxis), right: (SwitchProAxis, SwitchProAxis), )",
+            "pub fn set_motion(&mut self, motion: SwitchProMotionSample)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, c: SwitchProControl, p: bool)"
+          ],
+          "traits": [
+            "impl Clone for SwitchProInputs",
+            "impl Debug for SwitchProInputs",
+            "impl Default for SwitchProInputs",
+            "impl Eq for SwitchProInputs",
+            "impl PartialEq for SwitchProInputs",
+            "impl RefUnwindSafe for SwitchProInputs",
+            "impl Send for SwitchProInputs",
+            "impl Sync for SwitchProInputs",
+            "impl Unpin for SwitchProInputs",
+            "impl UnwindSafe for SwitchProInputs"
           ]
         },
         "struct.SwitchProMotionSample.html": {
@@ -5698,31 +5747,24 @@
             "impl UnwindSafe for SwitchProRumble"
           ]
         },
-        "struct.SwitchProState.html": {
+        "struct.SwitchProStatus.html": {
           "declarations": [
-            "pub struct SwitchProState { /* private fields */ }",
-            "pub const fn left_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
-            "pub const fn right_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
-            "pub const fn motion(&self) -> SwitchProMotionSample",
-            "pub const fn native_pressed(&self, control: SwitchProControl) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
-            "pub fn set_sticks( &mut self, left: (SwitchProAxis, SwitchProAxis), right: (SwitchProAxis, SwitchProAxis), )",
-            "pub fn set_motion(&mut self, motion: SwitchProMotionSample)",
-            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
-            "pub fn set_native(&mut self, c: SwitchProControl, p: bool)"
+            "pub struct SwitchProStatus { /* private fields */ }",
+            "pub const fn timer(self) -> u8",
+            "pub const fn stream_enabled(self) -> bool"
           ],
           "traits": [
-            "impl Clone for SwitchProState",
-            "impl Debug for SwitchProState",
-            "impl Default for SwitchProState",
-            "impl Eq for SwitchProState",
-            "impl PartialEq for SwitchProState",
-            "impl RefUnwindSafe for SwitchProState",
-            "impl Send for SwitchProState",
-            "impl Sync for SwitchProState",
-            "impl Unpin for SwitchProState",
-            "impl UnwindSafe for SwitchProState"
+            "impl Clone for SwitchProStatus",
+            "impl Copy for SwitchProStatus",
+            "impl Debug for SwitchProStatus",
+            "impl Default for SwitchProStatus",
+            "impl Eq for SwitchProStatus",
+            "impl PartialEq for SwitchProStatus",
+            "impl RefUnwindSafe for SwitchProStatus",
+            "impl Send for SwitchProStatus",
+            "impl Sync for SwitchProStatus",
+            "impl Unpin for SwitchProStatus",
+            "impl UnwindSafe for SwitchProStatus"
           ]
         },
         "struct.SwitchProSurface.html": {

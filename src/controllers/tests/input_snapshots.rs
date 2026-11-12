@@ -301,7 +301,7 @@ root_snapshot_case!(
     switch_pro_whole_state,
     switch_pro,
     SwitchProController,
-    SwitchProState,
+    SwitchProInputs,
     "virtualgamepad.switch-pro",
     &[
         (0, -32768),
