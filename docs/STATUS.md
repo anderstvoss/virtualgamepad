@@ -36,48 +36,92 @@ an API freeze do not promote a cell.
 
 ## Next release
 
-The next release is Alpha 2. C5 (Wii Remote), C6 (wired Steam Controller
-2026), and C7 (API convergence) are merged. C8 closes out the core work and
-drafts the host setup and permissions audit (#258). C9 adds Xbox Series (#160)
-and its host surfaces before Anders signs off the audit.
+**Alpha 2 — preparation, not yet released.** The five checkpoint merges and
+follow-up work below are verified on `main` as of
+[`f27e6114`](https://github.com/anderstvoss/virtualgamepad/commit/f27e6114f742b5044b4ca735ae17b4d20807f654).
+This merged-step list stops at that exact `main` commit. Release closeout
+is tracked under [#365](https://github.com/anderstvoss/virtualgamepad/issues/365), with the owner gate decisions in
+[comment 6792411358](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358).
+The [Alpha 2 release-notes draft](release/ALPHA_2_RELEASE_NOTES_DRAFT.md)
+and [release checklist](release/ALPHA_2_CHECKLIST.md) are provisional;
+they do not authorize a tag or publication. All cells in the
+[support matrix](CONTROLLER_SUPPORT.md) remain WIP.
 
-C7 [#329](https://github.com/anderstvoss/virtualgamepad/pull/329) landed as
-`692f41b`. All six families now use
-`create_<family>(CreationOptions, <Family>Options)` at the ordinary root and
-curated layer. Wii topology and EEPROM and Steam scheduling are reachable
-through their root handles. The ordinary-root snapshot has 155 items per feature
-view. The alpha API policy requires snapshot updates and migration notes for
-changes. [Owner policy](https://github.com/anderstvoss/virtualgamepad/issues/322#issuecomment-6747067225)
-· [C7 migration](ALPHA_API_MIGRATION.md)
+| Checkpoint | Merged PR and exact `main` merge SHA | Disposition |
+| --- | --- | --- |
+| C5 · Wii Remote | [#233](https://github.com/anderstvoss/virtualgamepad/pull/233) · `714958dc844214a52d4f25ad544a58f37a1e1e42` | Linux uinput and local Bluetooth-bus UHID package; not real Bluetooth |
+| C6 · wired Steam Controller 2026 | [#301](https://github.com/anderstvoss/virtualgamepad/pull/301) · `ad80ae6ea8f0e434b026b0c3dfd94ee3f06ba7df` | Wired USB UHID and reduced uinput; no production Puck |
+| C7 · API convergence | [#329](https://github.com/anderstvoss/virtualgamepad/pull/329) · `692f41bfac8d300472edb35575b8f652674bfc0f` | Common `create_<family>(CreationOptions, <Family>Options)` shape for the six then-existing families |
+| C8 · core closeout and host audit draft | [#337](https://github.com/anderstvoss/virtualgamepad/pull/337) · `4ac42325468b11a9edc3f6ba3295983ebaf04b43` | Closed; includes ADR dispositions, virtual-host acceptance review and the draft permissions audit |
+| C9 · Xbox Series | [#342](https://github.com/anderstvoss/virtualgamepad/pull/342) · `69c2283fe6fd6ab143f650018c0d24522eaa4f9a` | Seventh compiled family; reduced xpad-style uinput only |
 
-The C1 registry checkpoint adds compiled family metadata and a typed registry,
-with deterministic Bluetooth-bus fake-provider coverage. It changes no support
-cell, public-root API, broker wire bytes or live acceptance claim.
+The Alpha 2 host setup/permissions gate [#258](https://github.com/anderstvoss/virtualgamepad/issues/258)
+is **closed and signed off**, on C9's `69c2283`, by
+[owner comment 6777536122](https://github.com/anderstvoss/virtualgamepad/issues/258#issuecomment-6777536122).
+The signed-off [host audit](ALPHA_2_HOST_AUDIT.md) is authoritative for
+creator/consumer permission boundaries, administrator opt-ins and test-only
+privileges. No implicit new host policies are part of Alpha 2.
 
-The C3 facade step consolidates application-handle lifecycle and audio-failure
-ownership behind private generic state and shared forwarding. Public signatures
-and docs remain frozen; existing regression construction changes are mechanical,
-as authorized on #176. This refactor changes no support or acceptance cell.
+Follow-on core changes on `main`:
 
-The C3 pre-C5 follow-up validates native attachment configuration atomically and
-uses typed topology operations with derived IDs. Deterministic regressions cover
-rejected transitions, missing neutralization and absent-control edits on both
-backends. This is an internal seam repair, not a Wii implementation or acceptance
-claim; fixed-family runtime layout and provider identity remain unchanged.
+- [#350](https://github.com/anderstvoss/virtualgamepad/pull/350) ·
+  `abcdaf8c4f35167cbd65610d86c3c637b3136b5a`: USB/IP worker
+  retained-output *snapshots*, not a continuous host-output stream;
+  a **real USB/IP validation on kalux is an Alpha 2 gate**, still unrun as
+  of the draft baseline ([#365 decision](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358)).
+- **VG-1** [#352](https://github.com/anderstvoss/virtualgamepad/pull/352) ·
+  `c5d8340d3b4c00a756f2d6611ae380be4af82071`: whole-state
+  `set_inputs` for the original four families. [#348](https://github.com/anderstvoss/virtualgamepad/pull/348)
+  was initially stacked on the audio branch; #352 brought the change onto `main`.
+- **VG-1b in progress** ([#322](https://github.com/anderstvoss/virtualgamepad/issues/322),
+  [input-model spec](spec/input-model-state-and-mutation.md)):
+  step a [#353](https://github.com/anderstvoss/virtualgamepad/pull/353) ·
+  `2890223d79d6a5ec53778e8d588737e20e4a3fb6` (validation/clocks);
+  step b [#363](https://github.com/anderstvoss/virtualgamepad/pull/363) ·
+  `5bea7a097f66c9526fae45ea32b5a8a936029580` (transactional edits);
+  step c1 [#364](https://github.com/anderstvoss/virtualgamepad/pull/364) ·
+  `77ec6e39457ddf123ef732ac0e28237307e05f8c` (Steam
+  reduced-uinput refusals);
+  step c2 [#366](https://github.com/anderstvoss/virtualgamepad/pull/366) ·
+  `b41c82da593f179ad2933098dedb4dd658e2aaf0` (Wii battery separated into controller-owned
+  `WiiRemoteBattery` metadata);
+  step d/DualSense [#370](https://github.com/anderstvoss/virtualgamepad/pull/370) ·
+  `f27e6114f742b5044b4ca735ae17b4d20807f654` (`DualSenseInputs` and independent
+  `DualSenseStatus` read view). Other step-d families and step e are not
+  complete at the `f27e6114f742b5044b4ca735ae17b4d20807f654` baseline.
+  **TODO(VG-1b e):** after the local agent's final ledger lands,
+  refresh the Alpha 2 API-delta summary and remove this placeholder.
+  Do not edit the active migration ledger or application/per-controller API docs
+  in this release-prep lane.
 
-Step 10c exposes retained-output snapshots on ordinary handles for in-process
-UHID and uinput under D2 (#176 comments 6325147128 and 6328169640). The API
-snapshot grows from 110 to 122 items with non-exhaustive retained-state and kind
-types; selected output metadata respects realization limits. The original four
-families leave typed native input kinds unused. Step 21c (#203) adds USB/IP
-worker snapshots for DualSense, DualShock 4 and the standard-HID Xbox 360
-fallback, with refresh during service and final recovery at orderly close.
-This describes accepted protocol state.
+[Phase 2 #322](https://github.com/anderstvoss/virtualgamepad/issues/322)
+closes only after **VG-1b steps a–e** and the Steam #304 kernel observations
+are recorded in research (currently
+[research PR #122](https://github.com/anderstvoss/controller-protocol-research/pull/122),
+open at this baseline). The first-valid-neutral timing oracle
+[#166](https://github.com/anderstvoss/virtualgamepad/issues/166) is a
+**known limitation, not an Alpha 2 gate** ([owner decision](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358)).
+[VG-2 #344](https://github.com/anderstvoss/virtualgamepad/issues/344)
+and [Accepted ADR-0024](adr/ADR-0024-host-output-stream.md) (merged via
+[#354](https://github.com/anderstvoss/virtualgamepad/pull/354) as
+`eaff3d77c2b73dd3668d5b37d54c7927f94251d0`) belong to the separate
+audio track; the design is accepted but its stream implementation is not
+landed, and neither is **an Alpha 2 gate**.
 
-C3 crate tidy extracts audio implementation into `gr-root-audio`, with stable
-root reexports and root-specific creation error mapping. The wire crate fold
-keeps `gr_controller_wire::dualsense` and its exact bytes. Feature behavior and
-dummy_hcd disposition are preserved; no new external dependencies are added.
+New-controller work after Alpha 2 is tracked separately:
+[DualSense Edge #170](https://github.com/anderstvoss/virtualgamepad/issues/170),
+[Switch 2 Pro #171](https://github.com/anderstvoss/virtualgamepad/issues/171),
+[Xbox One #355](https://github.com/anderstvoss/virtualgamepad/issues/355),
+[Elite Series 2 #356](https://github.com/anderstvoss/virtualgamepad/issues/356),
+[Xbox Nano #357](https://github.com/anderstvoss/virtualgamepad/issues/357),
+[Elite Series 3 preliminary #358](https://github.com/anderstvoss/virtualgamepad/issues/358),
+[Elite Series 1 #359](https://github.com/anderstvoss/virtualgamepad/issues/359),
+[Switch 2 GameCube #360](https://github.com/anderstvoss/virtualgamepad/issues/360),
+[Wii U Pro #361](https://github.com/anderstvoss/virtualgamepad/issues/361)
+and [Joy-Con 2 #362](https://github.com/anderstvoss/virtualgamepad/issues/362).
+The original [GameCube adapter #296](https://github.com/anderstvoss/virtualgamepad/issues/296)
+and [Joy-Con #297](https://github.com/anderstvoss/virtualgamepad/issues/297)
+also remain future-family work, not Alpha 2 acceptance.
 
 ## Runtime contracts
 
