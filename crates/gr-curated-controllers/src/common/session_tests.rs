@@ -51,7 +51,7 @@ macro_rules! controller_fixture {
 }
 controller_fixture!(
     crate::wii_remote::WiiRemoteController => crate::wii_remote::WiiRemoteState,
-        crate::xbox_series::XboxSeriesController => crate::xbox_series::XboxSeriesState,
+    crate::xbox_series::XboxSeriesController => crate::xbox_series::XboxSeriesState,
 );
 
 impl ControllerFixture for crate::steam_controller_2026::SteamController2026Controller {

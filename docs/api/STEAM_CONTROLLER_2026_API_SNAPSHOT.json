@@ -76,9 +76,10 @@
         "pub fn wants_write(&self) -> bool",
         "pub fn is_dirty(&self) -> bool",
         "pub fn dropped_output_events(&self) -> u64",
-        "pub fn state(&self) -> &SteamController2026State",
-        "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SteamController2026State) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
-        "pub fn set_inputs( &mut self, state: SteamController2026State, ) -> Result<(), ControlError>",
+        "pub fn inputs(&self) -> &SteamController2026Inputs",
+        "pub fn status(&self) -> SteamController2026Status",
+        "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SteamController2026Inputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+        "pub fn set_inputs( &mut self, state: SteamController2026Inputs, ) -> Result<(), ControlError>",
         "pub fn set_button( &mut self, button: SteamController2026Button, pressed: bool, ) -> Result<(), ControlError>",
         "pub fn neutralize(&mut self) -> Result<(), ControlError>",
         "pub fn commit(&mut self) -> Result<(), CommitError>",
@@ -111,6 +112,27 @@
         "impl Sync for SteamController2026Identity",
         "impl Unpin for SteamController2026Identity",
         "impl UnwindSafe for SteamController2026Identity"
+      ]
+    },
+    "struct.SteamController2026Inputs.html": {
+      "declarations": [
+        "pub struct SteamController2026Inputs { pub sticks: [[i16; 2]; 2], pub triggers: [i16; 2], pub pads: [SteamTrackpadState; 2], pub stick_touch: [bool; 2], pub grip_touch: [bool; 2], pub motion: SteamMotionSample, /* private fields */ }",
+        "pub const fn input_topology(&self) -> &'static InputTopology",
+        "pub fn neutralize(&mut self)",
+        "pub const fn pressed(&self, button: SteamController2026Button) -> bool",
+        "pub fn set_button(&mut self, button: SteamController2026Button, pressed: bool)"
+      ],
+      "traits": [
+        "impl Clone for SteamController2026Inputs",
+        "impl Debug for SteamController2026Inputs",
+        "impl Default for SteamController2026Inputs",
+        "impl Eq for SteamController2026Inputs",
+        "impl PartialEq for SteamController2026Inputs",
+        "impl RefUnwindSafe for SteamController2026Inputs",
+        "impl Send for SteamController2026Inputs",
+        "impl Sync for SteamController2026Inputs",
+        "impl Unpin for SteamController2026Inputs",
+        "impl UnwindSafe for SteamController2026Inputs"
       ]
     },
     "struct.SteamController2026Options.html": {
@@ -155,25 +177,29 @@
         "impl UnwindSafe for SteamController2026Outputs"
       ]
     },
-    "struct.SteamController2026State.html": {
+    "struct.SteamController2026Status.html": {
       "declarations": [
-        "pub struct SteamController2026State { pub sticks: [[i16; 2]; 2], pub triggers: [i16; 2], pub pads: [SteamTrackpadState; 2], pub stick_touch: [bool; 2], pub grip_touch: [bool; 2], pub motion: SteamMotionSample, /* private fields */ }",
-        "pub const fn input_topology(&self) -> &'static InputTopology",
-        "pub fn neutralize(&mut self)",
-        "pub const fn pressed(&self, button: SteamController2026Button) -> bool",
-        "pub fn set_button(&mut self, button: SteamController2026Button, pressed: bool)"
+        "pub struct SteamController2026Status { /* private fields */ }",
+        "pub const fn report_sequence(self) -> Option<u8>",
+        "pub const fn steam_client_compat(self) -> Option<bool>",
+        "pub const fn haptic_streaming(self) -> Option<bool>",
+        "pub const fn lizard_mode(self) -> Option<bool>",
+        "pub const fn mappings(self) -> Option<bool>",
+        "pub const fn lizard_setting(self) -> Option<bool>",
+        "pub const fn imu_mode(self) -> Option<u16>"
       ],
       "traits": [
-        "impl Clone for SteamController2026State",
-        "impl Debug for SteamController2026State",
-        "impl Default for SteamController2026State",
-        "impl Eq for SteamController2026State",
-        "impl PartialEq for SteamController2026State",
-        "impl RefUnwindSafe for SteamController2026State",
-        "impl Send for SteamController2026State",
-        "impl Sync for SteamController2026State",
-        "impl Unpin for SteamController2026State",
-        "impl UnwindSafe for SteamController2026State"
+        "impl Clone for SteamController2026Status",
+        "impl Copy for SteamController2026Status",
+        "impl Debug for SteamController2026Status",
+        "impl Default for SteamController2026Status",
+        "impl Eq for SteamController2026Status",
+        "impl PartialEq for SteamController2026Status",
+        "impl RefUnwindSafe for SteamController2026Status",
+        "impl Send for SteamController2026Status",
+        "impl Sync for SteamController2026Status",
+        "impl Unpin for SteamController2026Status",
+        "impl UnwindSafe for SteamController2026Status"
       ]
     },
     "struct.SteamController2026StreamOutputs.html": {
