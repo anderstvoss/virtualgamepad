@@ -30,15 +30,23 @@ an API freeze do not promote a cell.
   because Linux `f_hid` lacks complete GET_REPORT metadata and negative replies.
   Near feature-complete UHID realizations are the supported target for controller
   buildout; dummy_hcd and USB/IP are optional faithful tiers, never defaults.
-- Wii Remote ships a local UHID Bluetooth-bus realization. Actual Bluetooth
-  radio, pairing and BlueZ remain deferred under #164.
+- Wii Remote and Xbox Series ship local UHID Bluetooth-bus realizations. Actual
+  Bluetooth radio, pairing and BlueZ remain deferred under #164.
+- SDL 3.2.10's Wii HIDAPI path can disconnect on a non-MotionPlus extension
+  hotplug without reattaching the still-enumerated device ([#241](https://github.com/anderstvoss/virtualgamepad/issues/241),
+  [W4 evidence](WII_REMOTE.md#w4-fixed-extension-sdl-scope)).
+- Linux SDL Wii MotionPlus gyro events were not observed in the tested SDL
+  3.2.10 path; kernel MotionPlus gyro delivery was observed separately
+  ([#244](https://github.com/anderstvoss/virtualgamepad/issues/244), [W5 evidence](WII_REMOTE.md#w5-gyro-consumer-boundary)).
+- DualShock 4's typed USB HID output event omits a decoded blink field; retained
+  `host_outputs()` carries the blink bytes ([#287](https://github.com/anderstvoss/virtualgamepad/issues/287)).
 - Steam acceptance is deferred (#144). Broader GUI review is deferred (#126).
 
 ## Next release
 
 **Alpha 2 — preparation, not yet released.** The five checkpoint merges and
 follow-up work below are verified on `main` as of
-[`f27e6114`](https://github.com/anderstvoss/virtualgamepad/commit/f27e6114f742b5044b4ca735ae17b4d20807f654).
+[`12358d7`](https://github.com/anderstvoss/virtualgamepad/commit/12358d71d762fb438cbf01f5b120986279a8540d).
 This merged-step list stops at that exact `main` commit. Release closeout
 is tracked under [#365](https://github.com/anderstvoss/virtualgamepad/issues/365), with the owner gate decisions in
 [comment 6792411358](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358).
@@ -53,17 +61,28 @@ they do not authorize a tag or publication. All cells in the
 | C6 · wired Steam Controller 2026 | [#301](https://github.com/anderstvoss/virtualgamepad/pull/301) · `ad80ae6ea8f0e434b026b0c3dfd94ee3f06ba7df` | Wired USB UHID and reduced uinput; no production Puck |
 | C7 · API convergence | [#329](https://github.com/anderstvoss/virtualgamepad/pull/329) · `692f41bfac8d300472edb35575b8f652674bfc0f` | Common `create_<family>(CreationOptions, <Family>Options)` shape for the six then-existing families |
 | C8 · core closeout and host audit draft | [#337](https://github.com/anderstvoss/virtualgamepad/pull/337) · `4ac42325468b11a9edc3f6ba3295983ebaf04b43` | Closed; includes ADR dispositions, virtual-host acceptance review and the draft permissions audit |
-| C9 · Xbox Series | [#342](https://github.com/anderstvoss/virtualgamepad/pull/342) · `69c2283fe6fd6ab143f650018c0d24522eaa4f9a` | Seventh compiled family; reduced xpad-style uinput only |
+| C9 · Xbox Series | [#342](https://github.com/anderstvoss/virtualgamepad/pull/342) · `69c2283fe6fd6ab143f650018c0d24522eaa4f9a` | Seventh compiled family; C9 introduced reduced xpad-style uinput; #369 subsequently added local Bluetooth-bus UHID |
 
 The Alpha 2 host setup/permissions gate [#258](https://github.com/anderstvoss/virtualgamepad/issues/258)
 is **closed and signed off**, on C9's `69c2283`, by
 [owner comment 6777536122](https://github.com/anderstvoss/virtualgamepad/issues/258#issuecomment-6777536122).
 The signed-off [host audit](ALPHA_2_HOST_AUDIT.md) is authoritative for
 creator/consumer permission boundaries, administrator opt-ins and test-only
-privileges. No implicit new host policies are part of Alpha 2.
+privileges. No implicit new host policies are part of Alpha 2. The #369 Xbox driver lab helper, xpadneo rule wrapper, Xbox additions to the input-lab rule and temporary Steam visibility rule are dev/test-only, not release defaults, and are not installed by default.
+Under the 2026-11-11 [owner classification recorded in #369's review](https://github.com/anderstvoss/virtualgamepad/pull/369#issuecomment-6806936162), host setup changes remain development changes for now; a beta+ subset is a later decision, and no new #258 sign-off is required for these dev/test-only changes.
 
 Follow-on core changes on `main`:
 
+- [#369](https://github.com/anderstvoss/virtualgamepad/pull/369) ·
+  `5f83165051318bd2a75c1f22d615b45a61146ae8`: Xbox Series now declares `linux.uinput` and local
+  `linux.uhid.bluetooth` ([compiled Series definition](https://github.com/anderstvoss/virtualgamepad/blob/12358d71d762fb438cbf01f5b120986279a8540d/crates/gr-curated-controllers/src/xbox_series/definition.rs#L437-L447); [compiled registry](https://github.com/anderstvoss/virtualgamepad/blob/12358d71d762fb438cbf01f5b120986279a8540d/crates/gr-curated-controllers/src/registry.rs#L160-L168)).
+  [Series evidence](XBOX_SERIES.md) records SDL 3.4.18 evdev/HIDAPI controls,
+  main rumble and independent virtual trigger-rumble commands on Bluetooth-bus
+  UHID; uinput retains two-motor feedback. Steam listed both realizations and
+  exercised controls excluding Guide, with the temporary active-seat dev setup
+  for UHID. Steam Guide and physical trigger actuation remain unverified;
+  real radio/pairing, wired GIP, battery, LED and audio are not implemented.
+  This is bounded virtual evidence, not physical actuation or support promotion.
 - [#350](https://github.com/anderstvoss/virtualgamepad/pull/350) ·
   `abcdaf8c4f35167cbd65610d86c3c637b3136b5a`: USB/IP worker
   retained-output *snapshots*, not a continuous host-output stream;
@@ -87,26 +106,28 @@ Follow-on core changes on `main`:
   `WiiRemoteBattery` metadata);
   step d/DualSense [#370](https://github.com/anderstvoss/virtualgamepad/pull/370) ·
   `f27e6114f742b5044b4ca735ae17b4d20807f654` (`DualSenseInputs` and independent
-  `DualSenseStatus` read view). Other step-d families and step e are not
-  complete at the `f27e6114f742b5044b4ca735ae17b4d20807f654` baseline.
+  `DualSenseStatus` read view);
+  step d/DualShock 4 [#371](https://github.com/anderstvoss/virtualgamepad/pull/371) · `031dd11696badb267e1c3c2b3e962316dfba7f1c`;
+  step d/Switch Pro [#374](https://github.com/anderstvoss/virtualgamepad/pull/374) · `8cd1000a308eac682eca43d766b0f1a1f71a6f1e`;
+  step d/Xbox 360 [#375](https://github.com/anderstvoss/virtualgamepad/pull/375) · `26168b3f291090f9e44bc1e6abd7cd3431dffee9`.
+  Steam, Xbox Series and Wii residue remain outstanding, followed by step e.
   **TODO(VG-1b e):** after the local agent's final ledger lands,
   refresh the Alpha 2 API-delta summary and remove this placeholder.
-  Do not edit the active migration ledger or application/per-controller API docs
-  in this release-prep lane.
+  Do not edit the active migration ledger or application/per-controller input
+  sections in this release-prep lane.
 
 [Phase 2 #322](https://github.com/anderstvoss/virtualgamepad/issues/322)
 closes only after **VG-1b steps a–e** and the Steam #304 kernel observations
-are recorded in research (currently
-[research PR #122](https://github.com/anderstvoss/controller-protocol-research/pull/122),
-open at this baseline). The first-valid-neutral timing oracle
+are recorded in research (now recorded upstream by the merged [research #122 merge](https://github.com/anderstvoss/controller-protocol-research/commit/261e7bec4351a6969563893a2092198a183ab8c9);
+this does not establish adoption in vg). The first-valid-neutral timing oracle
 [#166](https://github.com/anderstvoss/virtualgamepad/issues/166) is a
 **known limitation, not an Alpha 2 gate** ([owner decision](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358)).
 [VG-2 #344](https://github.com/anderstvoss/virtualgamepad/issues/344)
 and [Accepted ADR-0024](adr/ADR-0024-host-output-stream.md) (merged via
 [#354](https://github.com/anderstvoss/virtualgamepad/pull/354) as
 `eaff3d77c2b73dd3668d5b37d54c7927f94251d0`) belong to the separate
-audio track; the design is accepted but its stream implementation is not
-landed, and neither is **an Alpha 2 gate**.
+audio track. [#373](https://github.com/anderstvoss/virtualgamepad/pull/373) landed the journal core without family
+wiring; the end-to-end stream remains future work, not **an Alpha 2 gate**.
 
 New-controller work after Alpha 2 is tracked separately:
 [DualSense Edge #170](https://github.com/anderstvoss/virtualgamepad/issues/170),
@@ -187,7 +208,7 @@ LiveTopology is already non-Copy in the integrated C3 implementation.
 
 ## Acceptance manifests
 
-All six compiled families have per-function TOML manifests under `acceptance/`,
+All seven compiled families have per-function TOML manifests under `acceptance/`,
 checked against actual declared realizations. They record the scope of source,
 virtual-host and physical evidence and keep refusals and missing evidence explicit.
 

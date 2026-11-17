@@ -2,7 +2,7 @@
 
 > This is a **maintainer gate**, not evidence of a passed release.
 > Draft source: `main` at
-> [`f27e6114f742b5044b4ca735ae17b4d20807f654`](https://github.com/anderstvoss/virtualgamepad/commit/f27e6114f742b5044b4ca735ae17b4d20807f654).
+> [`12358d71d762fb438cbf01f5b120986279a8540d`](https://github.com/anderstvoss/virtualgamepad/commit/12358d71d762fb438cbf01f5b120986279a8540d).
 > Alpha 2 release tracking: [#365](https://github.com/anderstvoss/virtualgamepad/issues/365), with Anders's
 > [explicit gate decisions](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358).
 > The merged VG-1b list in the paired draft **stops at this SHA**.
@@ -14,16 +14,21 @@
 
 - [ ] Confirm [#322 phase 2](https://github.com/anderstvoss/virtualgamepad/issues/322)
   close condition: VG-1b **a–e** are merged to `main`, and the #304 Steam
-  kernel observations are recorded through
-  [research PR #122](https://github.com/anderstvoss/controller-protocol-research/pull/122).
-  Do not mark #122 completed from a draft or open PR.
+  kernel observations are recorded through [research #122 merge](https://github.com/anderstvoss/controller-protocol-research/commit/261e7bec4351a6969563893a2092198a183ab8c9) (merged upstream
+  on 2026-11-11; do not infer vg adoption). VG-1b d/e remain outstanding.
+- [ ] Decide whether to bump the `protocol-research` pin before tagging
+  (vg pin [`eba02ad`](https://github.com/anderstvoss/controller-protocol-research/commit/eba02ad610e264a2518a699394255cc7f1d670dd), research main
+  [`73a6fc6`](https://github.com/anderstvoss/controller-protocol-research/commit/73a6fc6724c3fbf9b6cbbf5aaa21822978c42c4f) 22 commits ahead,
+  including research #122 with the #304 record); a bump needs local
+  fixture regeneration (`python3 scripts/check-protocol-research.py --write`)
+  and verification (`python3 scripts/check-protocol-research.py`).
 - [ ] **TODO(VG-1b e):** after step e merges, review the final
   `docs/ALPHA_API_MIGRATION.md` ledger, `docs/APPLICATION_API.md`,
   per-controller documentation, all three API snapshots and changes since
   the draft baseline. Consolidate exact PR/SHA links, removed APIs,
   migration examples, and intentional behavioral differences in
   [these release notes](ALPHA_2_RELEASE_NOTES_DRAFT.md). Do **not** edit
-  the local agent's files as part of this draft PR.
+  the local agent's input sections or migration ledger as part of this draft PR.
 - [ ] Verify [C5 #233](https://github.com/anderstvoss/virtualgamepad/pull/233),
   [C6 #301](https://github.com/anderstvoss/virtualgamepad/pull/301),
   [C7 #329](https://github.com/anderstvoss/virtualgamepad/pull/329),
@@ -33,14 +38,23 @@
   the VG-1b c2 [#366](https://github.com/anderstvoss/virtualgamepad/pull/366)
   merge `b41c82da593f179ad2933098dedb4dd658e2aaf0`, the DualSense d
   [#370](https://github.com/anderstvoss/virtualgamepad/pull/370)
-  merge `f27e6114f742b5044b4ca735ae17b4d20807f654`, and each later merged VG-1b step
-  on **the selected release SHA**. These are not final step-e sign-off.
+  merge `f27e6114f742b5044b4ca735ae17b4d20807f654`, [#371](https://github.com/anderstvoss/virtualgamepad/pull/371),
+  [#374](https://github.com/anderstvoss/virtualgamepad/pull/374), [#375](https://github.com/anderstvoss/virtualgamepad/pull/375),
+  [#369](https://github.com/anderstvoss/virtualgamepad/pull/369) (Xbox Series local Bluetooth-bus UHID), and each
+  later merged VG-1b step on **the selected release SHA**. These are not final step-e sign-off.
 - [x] [#258 audit](https://github.com/anderstvoss/virtualgamepad/issues/258)
   was signed off at `69c2283` in
   [owner comment 6777536122](https://github.com/anderstvoss/virtualgamepad/issues/258#issuecomment-6777536122).
-  Re-review if subsequent changes introduce a **new host setup or permission
-  requirement**; the #350 private worker tag is not, by itself, a verified
-  operator-level hardware test.
+  The 2026-11-11 [owner classification recorded in #369's review](https://github.com/anderstvoss/virtualgamepad/pull/369#issuecomment-6806936162) treats host setup changes as
+  development changes for now; a beta+ subset will be chosen later. No new
+  #258 sign-off is required for #369's dev/test-only setup. The signed audit
+  remains unchanged; the #350 private worker tag is not a hardware test.
+- [ ] Confirm #369's dev/test-only tools are not release defaults or installed
+  by default: `scripts/xbox-driver-lab.py`, `scripts/prepare-xbox-bt-lab.py`,
+  Xbox additions to `udev/71-virtualgamepad-input-lab.rules`, and
+  `udev/90-virtualgamepad-xbox-steam.rules`. See
+  [dev setup](../DEPLOYMENT_AND_VALIDATION.md#xbox-series-driver-lab); ordinary
+  Series UHID uses existing creator/consumer access policy.
 - [ ] Review the [support matrix](../CONTROLLER_SUPPORT.md), compiled registry,
   per-function manifests, limitations and future-family issue exclusions.
   Do not promote WIP cells without qualifying evidence.

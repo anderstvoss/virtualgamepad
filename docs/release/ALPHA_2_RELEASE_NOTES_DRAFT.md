@@ -1,12 +1,13 @@
 # Alpha 2 release notes — DRAFT (not a release declaration)
 
 > Prepared against `main` at
-> [`f27e6114f742b5044b4ca735ae17b4d20807f654`](https://github.com/anderstvoss/virtualgamepad/commit/f27e6114f742b5044b4ca735ae17b4d20807f654).
+> [`12358d71d762fb438cbf01f5b120986279a8540d`](https://github.com/anderstvoss/virtualgamepad/commit/12358d71d762fb438cbf01f5b120986279a8540d).
 > Merged VG-1b changes are listed **through this exact commit**;
 > see [Alpha 2 release tracking #365](https://github.com/anderstvoss/virtualgamepad/issues/365) and
 > [Anders's gate decisions](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358).
-> **Not final:** remaining VG-1b d-family splits and e, the #304 research record, release-commit
-> qualification and maintainer authorization remain outstanding. Preserve
+> **Not final:** remaining VG-1b d-family splits and e, release-commit
+> qualification and maintainer authorization remain outstanding. The #304
+> kernel observations are recorded upstream in [research #122 merge](https://github.com/anderstvoss/controller-protocol-research/commit/261e7bec4351a6969563893a2092198a183ab8c9). Preserve
 > [Alpha 1's published notes](../ALPHA_RELEASE_NOTES.md); do not replace them.
 > See the [release checklist](ALPHA_2_CHECKLIST.md).
 
@@ -40,15 +41,21 @@ declared/implemented paths, not a blanket acceptance of all native functions.
 | Xbox 360 | `linux.uinput` evdev and `linux.uhid.usb` **standard HID** (not proprietary Xbox XInput); separately opt-in USB/IP worker | WIP |
 | Wii Remote | `linux.uinput` reduced evdev with companion nodes; `linux.uhid.bluetooth` **local Bluetooth-bus metadata via UHID**, without radio or pairing | WIP |
 | Steam Controller (2026), wired | `linux.uinput` reduced evdev; `linux.uhid.usb` wired USB HID with native protocol controls. The Puck receiver is **not implemented** | WIP |
-| Xbox Series | `linux.uinput` reduced, xpad-style evdev only. Not wired GIP and not Bluetooth | WIP |
+| Xbox Series | `linux.uinput` reduced xpad-style evdev; `linux.uhid.bluetooth` local Bluetooth-bus HID with independent virtual trigger-rumble commands. No wired GIP or real Bluetooth radio/pairing | WIP |
 
 The Wii package includes explicit attachment/EEPROM and MotionPlus behavior
 within its [function limits](../WII_REMOTE.md); it is not native Bluetooth
 pairing. Wired Steam includes the opt-in Steam-client compatibility profile and
 a reduced-uinput path with explicit unrepresentable-input refusals; the
 [bounded D9 observations](../C6_D9_ACCEPTANCE.md) do not establish complete
-client/game compatibility. Xbox Series has an
-[explicit reduced-function manifest](../../acceptance/virtualgamepad.xbox-series.toml).
+client/game compatibility. [#369](https://github.com/anderstvoss/virtualgamepad/pull/369) added Xbox Series local
+Bluetooth-bus UHID beside uinput ([compiled Series definition](https://github.com/anderstvoss/virtualgamepad/blob/12358d71d762fb438cbf01f5b120986279a8540d/crates/gr-curated-controllers/src/xbox_series/definition.rs#L437-L447); [compiled registry](https://github.com/anderstvoss/virtualgamepad/blob/12358d71d762fb438cbf01f5b120986279a8540d/crates/gr-curated-controllers/src/registry.rs#L160-L168)).
+[The Series guide](../XBOX_SERIES.md) records bounded SDL 3.4.18 evdev and
+HIDAPI observations, including main rumble and independent virtual trigger-rumble
+commands on UHID. Steam listed both realizations and exercised controls excluding
+Guide; the UHID observation required the temporary active-seat dev setup.
+See the [per-function manifest](../../acceptance/virtualgamepad.xbox-series.toml).
+No physical effect or blanket support is inferred.
 Experimental `dummy_hcd` USB HID creation is refused before allocation; it
 is not a shipped functional realization.
 
@@ -71,6 +78,8 @@ supporting-crate SPI. Merged changes to review:
   changes. See [the migration ledger](../ALPHA_API_MIGRATION.md).
 - [C9 #342](https://github.com/anderstvoss/virtualgamepad/pull/342):
   Xbox Series as the seventh root/curated family.
+- [#369](https://github.com/anderstvoss/virtualgamepad/pull/369): local Xbox Series Bluetooth-bus UHID, typed Bluetooth
+  rumble outputs and HID lifecycle/raw-output events.
 - [Worker #350](https://github.com/anderstvoss/virtualgamepad/pull/350):
   USB/IP retained-output **snapshots** for the three worker-backed
   families; a current client refuses an older worker with reinstall guidance.
@@ -91,7 +100,14 @@ supporting-crate SPI. Merged changes to review:
   [VG-1b/d DualSense #370](https://github.com/anderstvoss/virtualgamepad/pull/370)
   (`f27e6114f742b5044b4ca735ae17b4d20807f654`): split native `DualSenseInputs` from
   `DualSenseStatus`; `inputs()` and `status()` provide separate read views.
-  Other step-d families and step e remain outstanding at this baseline.
+  [VG-1b/d DualShock 4 #371](https://github.com/anderstvoss/virtualgamepad/pull/371)
+  (`031dd11696badb267e1c3c2b3e962316dfba7f1c`),
+  [Switch Pro #374](https://github.com/anderstvoss/virtualgamepad/pull/374)
+  (`8cd1000a308eac682eca43d766b0f1a1f71a6f1e`), and
+  [Xbox 360 #375](https://github.com/anderstvoss/virtualgamepad/pull/375)
+  (`26168b3f291090f9e44bc1e6abd7cd3431dffee9`) also landed input-only
+  type/status splits. Steam, Xbox Series and Wii residue remain outstanding,
+  followed by step e.
 
 **TODO(VG-1b e):** reconcile the remaining d-family splits and e,
 including final merged PR links, API snapshot deltas, removed types,
@@ -117,6 +133,8 @@ WIP opt-in; actual Bluetooth provisioning is out of scope. A newer USB/IP
 client may require reinstalling an older worker after #350, using the existing
 administrator-run installation process.
 
+The #369 Xbox driver lab helper, xpadneo rule wrapper, Xbox additions to the input-lab rule and temporary Steam visibility rule are dev/test-only, not release defaults, and are not installed by default. Per the 2026-11-11 [owner classification recorded in #369's review](https://github.com/anderstvoss/virtualgamepad/pull/369#issuecomment-6806936162), no new #258 sign-off is needed for these development changes; selection of a beta+ subset is deferred.
+
 ## Known limitations
 
 - **All support cells are WIP**; per-function virtual-host or partial
@@ -131,16 +149,28 @@ administrator-run installation process.
   earlier strict zero-loss failures remain recorded. USB/IP is opt-in WIP.
 - **USB/IP host output:** #350 provides retained **snapshots** (live/final),
   **not a loss-aware host-output stream**. VG-2/#344 and ADR-0024 are assigned
-  to the separate audio track; neither is an Alpha 2 gate.
+  to the separate audio track; #373 landed the journal core without family
+  wiring. Neither is an Alpha 2 gate.
 - **Alpha 2 blocking gate — real kalux USB/IP #350 run:** **not yet run**
   as of this draft; socket-pair/synthetic tests are not a substitute. Per
   [#365 owner decision](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358), the local run must
   confirm live `host_outputs()` snapshots while in service, the FINAL
   snapshot after close, and stale-worker refusal with reinstall guidance.
   Do not mark the gate passed without its actual on-host evidence.
-- **Xbox Series:** xpad-style uinput only. No Bluetooth pairing/HID report
-  map, wired USB GIP, impulse-trigger motors, headset audio/accessories or
-  other refused features recorded in its manifest (#160, #168, #164).
+- **Xbox Series:** uinput is limited to conventional main-motor rumble;
+  Bluetooth-bus UHID has independent virtual trigger-rumble commands but no
+  verified physical trigger actuation. Steam Guide test-screen registration
+  and Steam trigger-rumble support remain unverified. Real radio/pairing,
+  wired GIP, battery, LED, audio and accessories remain unimplemented
+  ([Series guide](../XBOX_SERIES.md), #160, #168, #164).
+- SDL 3.2.10's Wii HIDAPI path can disconnect on a non-MotionPlus extension
+  hotplug without reattaching the still-enumerated device ([#241](https://github.com/anderstvoss/virtualgamepad/issues/241),
+  [W4 evidence](../WII_REMOTE.md#w4-fixed-extension-sdl-scope)).
+- Linux SDL Wii MotionPlus gyro events were not observed in the tested SDL
+  3.2.10 path; kernel MotionPlus gyro delivery was observed separately
+  ([#244](https://github.com/anderstvoss/virtualgamepad/issues/244), [W5 evidence](../WII_REMOTE.md#w5-gyro-consumer-boundary)).
+- DualShock 4's typed USB HID output event omits a decoded blink field; retained
+  `host_outputs()` carries the blink bytes ([#287](https://github.com/anderstvoss/virtualgamepad/issues/287)).
 - **Steam Puck/receiver:** unsupported in production; wired Steam is not a
   Puck/receiver simulation. Real Bluetooth (including Wii radio/pairing)
   remains out of scope (#159, #164, #165).
@@ -151,9 +181,8 @@ administrator-run installation process.
   Steam client run; broader interactive GUI and screen-reader acceptance are
   deferred (#126, #144). Windows/macOS CI does not establish functioning
   non-Linux providers.
-- **Research closeout:** #304 kernel observations must be recorded in
-  [research PR #122](https://github.com/anderstvoss/controller-protocol-research/pull/122)
-  before phase 2 closes; it was open on the draft baseline.
+- **Research closeout:** #304 kernel observations are recorded upstream by
+  [research #122 merge](https://github.com/anderstvoss/controller-protocol-research/commit/261e7bec4351a6969563893a2092198a183ab8c9); the separate vg adoption decision remains open.
 - **Post-Alpha 2 families:** DualSense Edge #170, Switch 2 Pro #171,
   Xbox One/Elite/Nano #355–#359, Switch 2 GameCube #360,
   Wii U Pro #361 and Joy-Con 2 #362 are future targets, not included.
