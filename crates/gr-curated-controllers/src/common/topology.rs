@@ -37,6 +37,9 @@ impl<P: gr_hid::Protocol> LiveTopology<P> {
     pub(crate) const fn topology_generation(&self) -> u64 {
         self.generation
     }
+    pub(crate) const fn native_protocol(&self) -> Option<&P> {
+        self.native_protocol.as_ref()
+    }
     /// Validate the shape/counter before running a typed, transactional protocol edit.
     /// Callers retain controller-native attachment rules and bounded status edges.
     pub(crate) fn change<D: HidDriver<Hid = P, State = P::State>>(

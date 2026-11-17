@@ -11,8 +11,8 @@ use crate::{
     ServiceReadiness, SteamController2026Button, SteamController2026Inputs,
     SteamController2026OutputEvent, SteamController2026Outputs, SwitchProAxis, SwitchProControl,
     SwitchProInputs, SwitchProMotionSample, SwitchProOutputEvent, SwitchProSurface, TouchSlot,
-    WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton, WiiRemoteOutputEvent,
-    WiiRemoteOutputs, WiiRemoteState, WiiResourceDisposition, Xbox360Axis, Xbox360Control,
+    WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton, WiiRemoteInputs,
+    WiiRemoteOutputEvent, WiiRemoteOutputs, WiiResourceDisposition, Xbox360Axis, Xbox360Control,
     Xbox360Inputs, Xbox360OutputEvent, Xbox360Surface, Xbox360Trigger, XboxSeriesButton,
     XboxSeriesOutputEvent, XboxSeriesOutputState, XboxSeriesState,
 };
@@ -785,7 +785,7 @@ impl WiiRemoteController {
 
     /// Current raw battery metadata, retained after close.
     #[must_use]
-    pub const fn battery(&self) -> crate::WiiRemoteBattery {
+    pub fn battery(&self) -> crate::WiiRemoteBattery {
         self.controller.inner.battery()
     }
 
@@ -835,8 +835,17 @@ impl WiiRemoteController {
         self.controller.inner.resolve_resource(choice)
     }
 
-    shared!(state, WiiRemoteState);
-    shared!(edit_inputs, WiiRemoteState);
+    /// Borrow accepted native levels for the current attachment.
+    #[must_use]
+    pub fn inputs(&self) -> &WiiRemoteInputs {
+        self.controller.inner.inputs()
+    }
+    /// Read revision, attachment and protocol-owned battery metadata.
+    #[must_use]
+    pub fn status(&self) -> crate::WiiRemoteStatus {
+        self.controller.inner.status()
+    }
+    shared!(edit_inputs, WiiRemoteInputs);
     shared!(host_outputs, WiiRemoteOutputs);
     shared!(surface, crate::ControllerSurface);
     shared!(wants_write);
@@ -853,7 +862,7 @@ impl WiiRemoteController {
     shared!(service, WiiRemoteOutputEvent);
     edits! {
         fn set_digital(update: DigitalControlUpdate);
-        fn set_inputs(state: WiiRemoteState);
+        fn set_inputs(state: WiiRemoteInputs);
         fn set_button(button: WiiRemoteButton, pressed: bool);
         fn set_accelerometer(values: [u16; 3]);
         fn set_ir(points: [Option<WiiIrPoint>; 4]);

@@ -1,4 +1,5 @@
-use super::WiiRemoteState;
+use super::RuntimeState;
+use super::RuntimeStateExt;
 use crate::common;
 use crate::registry::{
     ControllerFamily, CreationOptionKind, CreationToggle, FamilyOperation, FamilyRealization,
@@ -189,10 +190,10 @@ impl RealizationControllerDefinition for WiiRemoteDefinition {
     }
 }
 impl TargetAwareControllerDriver for WiiRemoteDefinition {
-    type State = WiiRemoteState;
+    type State = RuntimeState;
     type Frame = ProviderFrame;
     fn neutral_state(&self) -> Self::State {
-        WiiRemoteState::default()
+        RuntimeState::default()
     }
     fn apply_digital(
         &self,
@@ -232,12 +233,17 @@ impl TargetAwareControllerDriver for WiiRemoteDefinition {
 impl common::HidDriver for WiiRemoteDefinition {
     fn validate_input_edit(previous: &Self::State, next: &Self::State) -> Result<(), ControlError> {
         if next.revision() != previous.revision()
-            || next.motion_plus().attached != previous.motion_plus().attached
+            || next.motion_plus_attached() != previous.motion_plus_attached()
             || std::mem::discriminant(next.extension())
                 != std::mem::discriminant(previous.extension())
         {
             return Err(ControlError::UnsupportedControl {
                 control: "native input edit cannot change Wii identity or attachment",
+            });
+        }
+        if !next.2 && next.0.motion_plus != super::WiiMotionPlusInputs::default() {
+            return Err(ControlError::UnsupportedControl {
+                control: "MotionPlus input requires active attachment",
             });
         }
         Ok(())
@@ -250,7 +256,7 @@ impl common::HidDriver for WiiRemoteDefinition {
     fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
         {
             let mut p = super::codec::WiiProtocol::default();
-            p.state = WiiRemoteState::default();
+            p.state = RuntimeState::default();
             p
         }
     }
@@ -361,10 +367,10 @@ impl RealizationControllerDefinition for Configured {
     }
 }
 impl TargetAwareControllerDriver for Configured {
-    type State = WiiRemoteState;
+    type State = RuntimeState;
     type Frame = ProviderFrame;
     fn neutral_state(&self) -> Self::State {
-        WiiRemoteState::new(self.revision)
+        RuntimeState::new(self.revision)
     }
     fn apply_digital(
         &self,
@@ -430,7 +436,7 @@ impl common::HidDriver for Configured {
     fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
         let mut protocol =
             super::codec::WiiProtocol::with_creation_options(self.image.clone(), self.options);
-        protocol.state = WiiRemoteState::new(self.revision);
+        protocol.state = RuntimeState::new(self.revision);
         protocol
     }
 }

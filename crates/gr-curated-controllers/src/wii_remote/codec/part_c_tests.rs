@@ -1,6 +1,6 @@
 //! Part C documentary regressions; claims are pinned to research main732ca43.
 use super::*;
-use crate::wii_remote::{WiiClassicState, WiiExtension, WiiNunchukState};
+use crate::wii_remote::{WiiClassicInputs, WiiExtension, WiiNunchukInputs};
 
 fn output(id: u8, payload: &[u8]) -> Report {
     Report::new(ReportType::Output, Some(id), payload.to_vec()).unwrap()
@@ -54,7 +54,7 @@ fn extension_status_pauses_only_data_until_valid_mode_reselection() {
     );
     send(&mut p, 0x12, &[0, 0x31]);
     tick(&mut p);
-    p.change_attachment(WiiExtension::Nunchuk(WiiNunchukState::default()), false, 1)
+    p.change_attachment(WiiExtension::Nunchuk(WiiNunchukInputs::default()), false, 1)
         .unwrap();
     let notice = tick(&mut p);
     assert_eq!(
@@ -105,13 +105,13 @@ fn motionplus_deactivation_restores_downstream_and_retains_inactive_suffix() {
     for (extension, mode, expected_id, flags) in [
         (WiiExtension::None, 4, None, [0, 0]),
         (
-            WiiExtension::Nunchuk(WiiNunchukState::default()),
+            WiiExtension::Nunchuk(WiiNunchukInputs::default()),
             5,
             Some([0, 0, 0xa4, 0x20, 0, 0]),
             [0, 2],
         ),
         (
-            WiiExtension::Classic(WiiClassicState::default()),
+            WiiExtension::Classic(WiiClassicInputs::default()),
             7,
             Some([0, 0, 0xa4, 0x20, 1, 1]),
             [0, 2],
@@ -157,7 +157,7 @@ fn motionplus_deactivation_restores_downstream_and_retains_inactive_suffix() {
 fn motionplus_deactivation_reserves_all_three_replies_atomically() {
     // wii-gap-wiibrew-motionplus-deactivation: ACK, unplug, current-port status.
     let mut p = WiiProtocol::default();
-    p.change_attachment(WiiExtension::Nunchuk(WiiNunchukState::default()), true, 1)
+    p.change_attachment(WiiExtension::Nunchuk(WiiNunchukInputs::default()), true, 1)
         .unwrap();
     tick(&mut p);
     write(&mut p, 0x53, 0xfe, &[5]);
@@ -206,7 +206,7 @@ fn eeprom_reads_mirror_high_byte_and_intersect_documented_host_window_with_image
 fn classic_format_selector_and_encrypted_setup_are_explicit_negative_acks() {
     // wii-gap-wiibrew-extension-data-format-selector; wii-extension-encryption-gap.
     let mut p = WiiProtocol::default();
-    p.change_attachment(WiiExtension::Classic(WiiClassicState::default()), false, 1)
+    p.change_attachment(WiiExtension::Classic(WiiClassicInputs::default()), false, 1)
         .unwrap();
     tick(&mut p);
     write(&mut p, 0x52, 0xf0, &[0x55]);
@@ -230,7 +230,7 @@ fn classic_format_selector_and_encrypted_setup_are_explicit_negative_acks() {
 #[test]
 fn documented_acceleration_fragments_are_absent_from_other_report_modes() {
     // wii-gap-wiibrew-data-report-powerup-default; wii-c5-report-layouts.
-    let mut state = WiiRemoteState::default();
+    let mut state = RuntimeState::default();
     state.set_accelerometer([3, 2, 0x2d6]).unwrap();
     for &(mode, _) in MODES {
         let report = data(mode, &state, false).unwrap();
@@ -306,7 +306,7 @@ fn unsupported_active_motionplus_selectors_share_atomic_deactivation() {
     for mode in [4, 5, 7] {
         for selector in (0..=u8::MAX).filter(|b| !matches!(b, 4 | 5 | 7)) {
             let mut p = WiiProtocol::default();
-            p.change_attachment(WiiExtension::Nunchuk(WiiNunchukState::default()), true, 1)
+            p.change_attachment(WiiExtension::Nunchuk(WiiNunchukInputs::default()), true, 1)
                 .unwrap();
             tick(&mut p);
             write(&mut p, 0x52, 0xf0, &[0x55]);

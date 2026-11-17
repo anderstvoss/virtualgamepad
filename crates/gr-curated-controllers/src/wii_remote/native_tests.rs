@@ -1,3 +1,4 @@
+use super::RuntimeStateExt;
 use super::*;
 use gr_realization_api::*;
 use std::sync::{Arc, Mutex};
@@ -124,23 +125,23 @@ fn fake_provider_observes_source_shapes_and_dynamic_companions_with_rollback() {
     let factory = Factory::default();
     let mut c = create(&factory);
     assert_eq!(factory.0.lock().unwrap().requests.len(), 3);
-    c.attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+    c.attach(WiiExtension::Nunchuk(WiiNunchukInputs::default()), true)
         .unwrap();
     c.commit().unwrap();
     assert_eq!(factory.0.lock().unwrap().requests.len(), 5);
     assert_eq!(c.association().companions.len(), 4);
     factory.0.lock().unwrap().fail_name = Some("Nintendo Wii Remote Classic Controller".into());
-    let state = c.state().clone();
+    let state = c.runtime_state().clone();
     let generation = c.topology_generation();
     assert!(
-        c.attach(WiiExtension::Classic(WiiClassicState::default()), false)
+        c.attach(WiiExtension::Classic(WiiClassicInputs::default()), false)
             .is_err()
     );
-    assert_eq!(c.state(), &state);
+    assert_eq!(c.runtime_state(), &state);
     assert_eq!(c.topology_generation(), generation);
     assert!(factory.0.lock().unwrap().closed.is_empty());
     factory.0.lock().unwrap().fail_name = None;
-    c.attach(WiiExtension::Classic(WiiClassicState::default()), false)
+    c.attach(WiiExtension::Classic(WiiClassicInputs::default()), false)
         .unwrap();
     c.commit().unwrap();
     assert_eq!(factory.0.lock().unwrap().closed.len(), 2);
@@ -211,7 +212,7 @@ fn failed_creation_rolls_back_prepared_nodes_and_fatal_service_closes_only_its_c
     let sibling = Factory::default();
     let mut a = create(&first);
     let mut b = create(&sibling);
-    a.attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+    a.attach(WiiExtension::Nunchuk(WiiNunchukInputs::default()), true)
         .unwrap();
     first.0.lock().unwrap().fail_read = true;
     assert!(a.service(&mut |_| {}).is_err());
@@ -300,7 +301,7 @@ fn repeated_native_attachment_changes_do_not_accumulate_hid_only_status_notices(
     for index in 0..100 {
         c.attach(
             if index % 2 == 0 {
-                WiiExtension::Nunchuk(WiiNunchukState::default())
+                WiiExtension::Nunchuk(WiiNunchukInputs::default())
             } else {
                 WiiExtension::None
             },
@@ -323,15 +324,15 @@ fn repeated_native_attachment_changes_do_not_accumulate_hid_only_status_notices(
 fn partially_prepared_attachment_rolls_back_without_touching_existing_nodes() {
     let factory = Factory::default();
     let mut c = create(&factory);
-    let state = c.state().clone();
+    let state = c.runtime_state().clone();
     let association = c.association().clone();
     let generation = c.topology_generation();
     factory.0.lock().unwrap().fail_name = Some("Nintendo Wii Remote Nunchuk".into());
     assert!(
-        c.attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+        c.attach(WiiExtension::Nunchuk(WiiNunchukInputs::default()), true)
             .is_err()
     );
-    assert_eq!(c.state(), &state);
+    assert_eq!(c.runtime_state(), &state);
     assert_eq!(c.association(), &association);
     assert_eq!(c.topology_generation(), generation);
     {
@@ -356,7 +357,7 @@ fn fatal_core_commit_closes_companions_but_retryable_commit_preserves_them() {
     let sibling = Factory::default();
     let mut c = create(&factory);
     let mut other = create(&sibling);
-    c.attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+    c.attach(WiiExtension::Nunchuk(WiiNunchukInputs::default()), true)
         .unwrap();
     factory.0.lock().unwrap().fail_send = Some(ProviderError::WouldBlock);
     assert!(c.commit().is_err());
@@ -461,7 +462,7 @@ fn native_input_transactions_preserve_attachment_and_skip_unchanged_companion_fr
     let factory = Factory::default();
     let mut controller = create(&factory);
     controller
-        .attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+        .attach(WiiExtension::Nunchuk(WiiNunchukInputs::default()), true)
         .unwrap();
     controller.commit().unwrap();
     let frames = factory.0.lock().unwrap().frames.len();
@@ -470,11 +471,11 @@ fn native_input_transactions_preserve_attachment_and_skip_unchanged_companion_fr
     assert_eq!(factory.0.lock().unwrap().frames.len(), frames);
     check_input_transactions!(
         controller,
-        |state: &mut WiiRemoteState| {
+        |state: &mut super::WiiRemoteInputs| {
             state.set_button(WiiRemoteButton::A, true);
             state.set_accelerometer([500, 600, 700])
         },
-        |state: &mut WiiRemoteState| { state.set_attachment(WiiExtension::None, false) },
+        |state: &mut super::WiiRemoteInputs| { state.set_extension_values(WiiExtension::None) },
         factory.0.lock().unwrap().frames.len()
     );
 }
@@ -484,33 +485,33 @@ fn native_battery_metadata_is_separate_from_inputs_and_live_attachment() {
     let factory = Factory::default();
     let mut controller = create(&factory);
     let battery = WiiRemoteBattery::new(0xc0);
-    let state = controller.state().clone();
+    let state = controller.runtime_state().clone();
     let outputs = controller.host_outputs().unwrap();
     controller.set_battery(battery).unwrap();
-    assert_eq!(controller.state(), &state);
+    assert_eq!(controller.runtime_state(), &state);
     assert!(factory.0.lock().unwrap().frames.is_empty());
     controller
-        .attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+        .attach(WiiExtension::Nunchuk(WiiNunchukInputs::default()), true)
         .unwrap();
     controller.commit().unwrap();
-    let input = controller.state().clone();
+    let input = controller.runtime_state().clone();
     controller.set_battery(WiiRemoteBattery::new(31)).unwrap();
-    controller.set_inputs(input).unwrap();
+    controller.set_inputs(input.0).unwrap();
     controller.set_accelerometer([100, 200, 300]).unwrap();
     controller.neutralize().unwrap();
     assert_eq!(controller.battery().raw(), 31);
     assert!(matches!(
-        controller.state().extension(),
+        controller.runtime_state().extension(),
         WiiExtension::Nunchuk(_)
     ));
-    let before = controller.state().clone();
+    let before = controller.runtime_state().clone();
     let dirty = controller.is_dirty();
     assert!(
         controller
-            .edit_inputs(|state| { state.set_attachment(WiiExtension::None, false) })
+            .edit_inputs(|state| { state.set_extension_values(WiiExtension::None) })
             .is_err()
     );
-    assert_eq!(controller.state(), &before);
+    assert_eq!(controller.runtime_state(), &before);
     assert_eq!(controller.is_dirty(), dirty);
     assert_eq!(controller.battery().raw(), 31);
     assert_eq!(controller.host_outputs().unwrap(), outputs);

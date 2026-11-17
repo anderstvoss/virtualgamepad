@@ -37,7 +37,7 @@ input_fixture!(
     crate::DualShock4Inputs,
     crate::SwitchProInputs,
     crate::Xbox360Inputs,
-    crate::wii_remote::WiiRemoteState,
+    crate::wii_remote::WiiRemoteInputs,
     crate::steam_controller_2026::SteamController2026Inputs,
     crate::xbox_series::XboxSeriesState,
 );
@@ -50,7 +50,6 @@ macro_rules! controller_fixture {
     )*};
 }
 controller_fixture!(
-    crate::wii_remote::WiiRemoteController => crate::wii_remote::WiiRemoteState,
     crate::xbox_series::XboxSeriesController => crate::xbox_series::XboxSeriesState,
 );
 

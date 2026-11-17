@@ -1,6 +1,7 @@
 //! Controller-owned native interfaces. Record: wii-c5-evdev-consumer-shape.
 //! uinput cannot carry bus5 or fuzz; these deviations are surfaced and tested.
-use super::{WiiExtension, WiiRemoteRevision, WiiRemoteState};
+use super::RuntimeStateExt;
+use super::{RuntimeState, WiiExtension, WiiRemoteRevision};
 use gr_realization_api::{
     EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization, NativeDeviceIdentity,
     NativeEvdevRealization, ProviderFrame, RealizationTarget,
@@ -145,9 +146,9 @@ pub(super) fn specification(
         force_feedback_codes: ff.to_vec(),
     })
 }
-pub(super) fn roles(state: &WiiRemoteState) -> Vec<Role> {
+pub(super) fn roles(state: &RuntimeState) -> Vec<Role> {
     let mut roles = vec![Role::Accel, Role::Ir];
-    if state.motion_plus().attached {
+    if state.motion_plus_attached() {
         roles.push(Role::MotionPlus);
     }
     match state.extension() {
@@ -160,12 +161,12 @@ pub(super) fn roles(state: &WiiRemoteState) -> Vec<Role> {
 // wii-c5-report-layouts / wii-kernel consumer decoders. Native units are kept
 // until this explicit consumer conversion. Advertised ABS limits are not clamps.
 // Record: wii-c5-evdev-native-values (source-only decoder/input-core semantics).
-pub(super) fn frame(role: Role, state: &WiiRemoteState) -> ProviderFrame {
+pub(super) fn frame(role: Role, state: &RuntimeState) -> ProviderFrame {
     let NativeControllerRealization::Evdev(spec) = specification(role, state.revision()) else {
         unreachable!()
     };
     let (keys, values): (Vec<bool>, Vec<i32>) = match role {
-        Role::Core => (state.buttons.to_vec(), vec![]),
+        Role::Core => (state.0.buttons.to_vec(), vec![]),
         Role::Accel => (
             vec![],
             state.accelerometer().map(|v| i32::from(v) - 512).to_vec(),
@@ -184,7 +185,7 @@ pub(super) fn frame(role: Role, state: &WiiRemoteState) -> ProviderFrame {
         Role::Nunchuk => {
             let n = match state.extension() {
                 WiiExtension::Nunchuk(n) => n.clone(),
-                _ => super::WiiNunchukState::default(),
+                _ => super::WiiNunchukInputs::default(),
             };
             (
                 vec![n.c, n.z],
@@ -200,7 +201,7 @@ pub(super) fn frame(role: Role, state: &WiiRemoteState) -> ProviderFrame {
         Role::Classic => {
             let c = match state.extension() {
                 WiiExtension::Classic(c) | WiiExtension::ClassicPro(c) => c.clone(),
-                _ => super::WiiClassicState::default(),
+                _ => super::WiiClassicInputs::default(),
             };
             // Consumer keys follow the native button array's order.
             let order = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
@@ -454,10 +455,14 @@ mod tests {
     }
     #[test]
     fn native_mapping_retains_all_keys_and_source_conversions() {
-        let mut s = WiiRemoteState {
-            buttons: [true; 11],
-            ..Default::default()
-        };
+        let mut s = (
+            crate::wii_remote::WiiRemoteInputs {
+                buttons: [true; 11],
+                ..Default::default()
+            },
+            Default::default(),
+            false,
+        );
         let ProviderFrame::Evdev(events) = frame(Role::Core, &s) else {
             unreachable!()
         };
@@ -468,7 +473,7 @@ mod tests {
                 .count(),
             11
         );
-        s.extension = WiiExtension::Classic(super::super::WiiClassicState {
+        s.0.extension = WiiExtension::Classic(super::super::WiiClassicInputs {
             left: [0, 63],
             right: [0, 31],
             triggers: [3, 7],
@@ -490,8 +495,8 @@ mod tests {
             .map(|e| e.value)
             .collect();
         assert_eq!(axes, [-32, 31, -32, 30, 14, 6]);
-        s.motion_plus.gyroscope = [8193, 8194, 8195];
-        s.motion_plus.slow = [true; 3];
+        s.0.motion_plus.gyroscope = [8193, 8194, 8195];
+        s.0.motion_plus.slow = [true; 3];
         let ProviderFrame::Evdev(events) = frame(Role::MotionPlus, &s) else {
             unreachable!()
         };
@@ -507,7 +512,7 @@ mod tests {
 
     #[test]
     fn native_consumer_values_are_not_clipped_to_advertised_abs_bounds() {
-        fn values(role: Role, state: &WiiRemoteState) -> Vec<i32> {
+        fn values(role: Role, state: &RuntimeState) -> Vec<i32> {
             let ProviderFrame::Evdev(events) = frame(role, state) else {
                 unreachable!()
             };
@@ -517,30 +522,30 @@ mod tests {
                 .map(|e| e.value)
                 .collect()
         }
-        let mut state = WiiRemoteState::default();
+        let mut state = RuntimeState::default();
         state.set_accelerometer([0, 512, 1023]).unwrap();
         assert_eq!(values(Role::Accel, &state), [-512, 0, 511]);
-        state.extension = WiiExtension::Nunchuk(super::super::WiiNunchukState {
+        state.0.extension = WiiExtension::Nunchuk(super::super::WiiNunchukInputs {
             stick: [0, 255],
             accelerometer: [0, 512, 1023],
             ..Default::default()
         });
         assert_eq!(values(Role::Nunchuk, &state), [-128, 127, -512, 0, 511]);
-        state.extension = WiiExtension::Classic(super::super::WiiClassicState {
+        state.0.extension = WiiExtension::Classic(super::super::WiiClassicInputs {
             left: [0, 63],
             right: [0, 31],
             triggers: [31, 30],
             ..Default::default()
         });
         assert_eq!(values(Role::Classic, &state), [-32, 31, -32, 30, 60, 62]);
-        state.motion_plus.gyroscope = [0, 8192, 16383];
-        state.motion_plus.slow = [true; 3];
+        state.0.motion_plus.gyroscope = [0, 8192, 16383];
+        state.0.motion_plus.slow = [true; 3];
         assert_eq!(values(Role::MotionPlus, &state), [73719, 0, -73728]);
     }
     #[test]
     fn native_ir_missing_sentinel_keeps_all_slots_distinct_from_visible_edges() {
         for slot in 0..4 {
-            let mut state = WiiRemoteState::default();
+            let mut state = RuntimeState::default();
             let mut points = [None; 4];
             points[slot] = Some(super::super::WiiIrPoint::new(1023, 767).unwrap());
             state.set_ir(points);

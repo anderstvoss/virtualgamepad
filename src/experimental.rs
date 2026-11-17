@@ -21,6 +21,9 @@ pub use gr_controller_runtime::{ControllerRuntime, FrameSink};
 pub use gr_curated_controllers::steam_controller_2026::{
     SteamController2026Inputs, SteamController2026Status,
 };
+pub use gr_curated_controllers::wii_remote::{
+    WiiClassicInputs, WiiMotionPlusInputs, WiiNunchukInputs, WiiRemoteInputs, WiiRemoteStatus,
+};
 pub use gr_curated_controllers::{
     BatteryLevel, BatteryState, ControllerAssociation, CreationOptions, DualSenseAxis,
     DualSenseControl, DualSenseController, DualSenseFeature, DualSenseHidOutput, DualSenseIdentity,

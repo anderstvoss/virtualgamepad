@@ -1,6 +1,7 @@
 //! Native extension packing: wii-c5-extension-identifiers (Dolphin packed
 //! Nunchuk/Classic/MotionPlus source headers). No physical calibration defaults.
-use super::{WiiExtension, WiiRemoteState};
+use super::RuntimeStateExt;
+use super::{RuntimeState, WiiExtension};
 use gr_controller_contract::ControlError;
 pub(super) fn validate(extension: &WiiExtension) -> Result<(), ControlError> {
     let valid = match extension {
@@ -69,7 +70,7 @@ fn accessory(extension: &WiiExtension) -> [u8; 6] {
     }
 }
 #[allow(clippy::cast_possible_truncation)]
-pub(super) fn packet(state: &WiiRemoteState, memory: &mut super::memory::Memory) -> [u8; 6] {
+pub(super) fn packet(state: &RuntimeState, memory: &mut super::memory::Memory) -> [u8; 6] {
     if let Some(mode) = memory.mp_mode {
         let downstream = !matches!(state.extension(), WiiExtension::None);
         let passthrough = matches!(
@@ -122,7 +123,7 @@ mod tests {
     fn packed_nunchuk_preserves_each_native_sensor_bit_and_active_low_buttons() {
         for bit in 0..10 {
             let value = 1_u16 << bit;
-            let n = super::super::WiiNunchukState {
+            let n = super::super::WiiNunchukInputs {
                 accelerometer: [value; 3],
                 stick: [17, 239],
                 c: bit % 2 == 0,
@@ -143,7 +144,7 @@ mod tests {
     #[test]
     fn classic_packing_keeps_every_axis_bit_and_individual_button() {
         for value in 0..32 {
-            let c = super::super::WiiClassicState {
+            let c = super::super::WiiClassicInputs {
                 left: [value * 2, value * 2 + 1],
                 right: [value; 2],
                 triggers: [value; 2],
@@ -164,7 +165,7 @@ mod tests {
         .into_iter()
         .enumerate()
         {
-            let mut c = super::super::WiiClassicState::default();
+            let mut c = super::super::WiiClassicInputs::default();
             c.buttons[index] = true;
             let b = accessory(&WiiExtension::Classic(c));
             assert_eq!(!u16::from_le_bytes([b[4], b[5]]), mask);
@@ -178,14 +179,14 @@ mod tests {
             for driven in [[9000_u16, 7000, 8500], [7000, 9000, 7800]] {
                 for mask in 0..8 {
                     let slow = [mask & 1 != 0, mask & 2 != 0, mask & 4 != 0];
-                    let mut state = WiiRemoteState::default();
+                    let mut state = RuntimeState::default();
                     if mode == 5 {
-                        state.extension =
-                            WiiExtension::Nunchuk(super::super::WiiNunchukState::default());
+                        state.0.extension =
+                            WiiExtension::Nunchuk(super::super::WiiNunchukInputs::default());
                     }
-                    state.motion_plus.attached = true;
-                    state.motion_plus.gyroscope = driven;
-                    state.motion_plus.slow = slow;
+                    state.2 = true;
+                    state.0.motion_plus.gyroscope = driven;
+                    state.0.motion_plus.slow = slow;
                     let mut memory = super::super::memory::Memory::default();
                     memory.mp_mode = Some(mode);
                     for _ in 0..2 {
@@ -217,9 +218,9 @@ mod tests {
     #[test]
     fn motionplus_preserves_fourteen_bits_and_marks_passthrough_loss_explicitly() {
         for bit in 0..14 {
-            let mut state = WiiRemoteState::default();
-            state.motion_plus.gyroscope = [1 << bit; 3];
-            state.motion_plus.slow = [true, false, true];
+            let mut state = RuntimeState::default();
+            state.0.motion_plus.gyroscope = [1 << bit; 3];
+            state.0.motion_plus.slow = [true, false, true];
             let mut memory = super::super::memory::Memory::default();
             memory.mp_mode = Some(4);
             let b = packet(&state, &mut memory);
@@ -240,15 +241,19 @@ mod part_c_tests {
     fn documented_passthrough_moves_preserve_decodable_bits_and_alternate_records() {
         // wii-gap-wiibrew-motionplus-passthrough-field-moves, not physical gyro calibration.
         for value in 0..1024_u16 {
-            let state = WiiRemoteState {
-                extension: WiiExtension::Nunchuk(super::super::WiiNunchukState {
-                    stick: [17, 239],
-                    accelerometer: [value; 3],
-                    c: value & 1 != 0,
-                    z: value & 2 != 0,
-                }),
-                ..WiiRemoteState::default()
-            };
+            let state = (
+                crate::wii_remote::WiiRemoteInputs {
+                    extension: WiiExtension::Nunchuk(super::super::WiiNunchukInputs {
+                        stick: [17, 239],
+                        accelerometer: [value; 3],
+                        c: value & 1 != 0,
+                        z: value & 2 != 0,
+                    }),
+                    ..Default::default()
+                },
+                Default::default(),
+                false,
+            );
             let mut memory = super::super::memory::Memory::default();
             memory.mp_mode = Some(5);
             for _ in 0..2 {
@@ -267,16 +272,20 @@ mod part_c_tests {
             }
         }
         for pressed in 0..15 {
-            let mut classic = super::super::WiiClassicState {
+            let mut classic = super::super::WiiClassicInputs {
                 left: [63, 31],
                 ..Default::default()
             };
             classic.buttons[pressed] = true;
             let original = accessory(&WiiExtension::Classic(classic.clone()));
-            let state = WiiRemoteState {
-                extension: WiiExtension::Classic(classic),
-                ..WiiRemoteState::default()
-            };
+            let state = (
+                crate::wii_remote::WiiRemoteInputs {
+                    extension: WiiExtension::Classic(classic),
+                    ..Default::default()
+                },
+                Default::default(),
+                false,
+            );
             let mut memory = super::super::memory::Memory::default();
             memory.mp_mode = Some(7);
             assert_eq!(packet(&state, &mut memory)[5] & 2, 2);

@@ -1,6 +1,7 @@
 //! Controller-owned bounded memory routing. Records: wii-c5-memory-errors,
 //! wii-dolphin-memory-routing, wii-kernel-extension-init, wii-c5-extension-identifiers.
-use super::{WiiExtension, WiiRemoteState};
+use super::RuntimeStateExt;
+use super::{RuntimeState, WiiExtension};
 use gr_controller_contract::ControlError;
 
 /// Caller-supplied emulated EEPROM window starting at zero. Its length is an
@@ -116,11 +117,11 @@ impl Memory {
         self.mp_inactive_mode = 0;
         self.mp_turn = false;
     }
-    pub(super) fn present(&self, state: &WiiRemoteState) -> bool {
+    pub(super) fn present(&self, state: &RuntimeState) -> bool {
         !matches!(state.extension(), WiiExtension::None)
-            || (state.motion_plus().attached && self.mp_mode.is_some())
+            || (state.motion_plus_attached() && self.mp_mode.is_some())
     }
-    pub(super) fn write(&mut self, state: &WiiRemoteState, p: &[u8]) -> u8 {
+    pub(super) fn write(&mut self, state: &RuntimeState, p: &[u8]) -> u8 {
         let space = (p[0] >> 2) & 3;
         let address = usize::from(u16::from_be_bytes([p[2], p[3]]));
         let data = &p[5..5 + usize::from(p[4])];
@@ -170,7 +171,7 @@ impl Memory {
                 .copy_from_slice(data);
             return 0;
         }
-        if state.motion_plus().attached
+        if state.motion_plus_attached()
             && ((slave == 0x53 && self.mp_mode.is_none())
                 || (slave == 0x52 && self.mp_mode.is_some()))
         {
@@ -231,7 +232,7 @@ impl Memory {
             self.initialized = [true, false];
         }
     }
-    fn motionplus_identity(&self, state: &WiiRemoteState) -> [u8; 6] {
+    fn motionplus_identity(&self, state: &RuntimeState) -> [u8; 6] {
         // Faithful-class consumer constants, not physical readback:
         // wii-gap-plustrace-wiiuse-builtin-id-and-classic-gap and
         // wii-gap-plustrace-cemu-builtin-identity-nonactivation.
@@ -256,7 +257,7 @@ impl Memory {
     }
     pub(super) fn read(
         &self,
-        state: &WiiRemoteState,
+        state: &RuntimeState,
         read: Read,
         count: usize,
     ) -> Result<Vec<u8>, u8> {
@@ -286,7 +287,7 @@ impl Memory {
         if offset + count > 256 {
             return Err(7);
         }
-        if state.motion_plus().attached
+        if state.motion_plus_attached()
             && ((read.slave == 0x53 && self.mp_mode.is_none())
                 || (read.slave == 0x52 && self.mp_mode.is_some()))
         {
@@ -373,7 +374,7 @@ impl Memory {
         }
         Err(7)
     }
-    pub(super) fn read_chunk(&self, state: &WiiRemoteState, read: &mut Read) -> (Vec<u8>, bool) {
+    pub(super) fn read_chunk(&self, state: &RuntimeState, read: &mut Read) -> (Vec<u8>, bool) {
         let count = usize::from(read.remaining.min(16));
         let mut result = vec![0; 21];
         result[..2].copy_from_slice(&super::codec::core(state));

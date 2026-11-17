@@ -90,9 +90,9 @@ pub use gr_curated_controllers::steam_controller_2026::{
     SteamController2026StreamPacket, SteamMotionSample, SteamTrackpadState,
 };
 pub use gr_curated_controllers::wii_remote::{
-    WiiClassicState, WiiEepromImage, WiiExtension, WiiExtensionCalibration, WiiIrPoint,
-    WiiMotionPlusState, WiiNunchukState, WiiRemoteBattery, WiiRemoteButton, WiiRemoteOutputs,
-    WiiRemoteRevision, WiiRemoteState, WiiResourceDisposition,
+    WiiClassicInputs, WiiEepromImage, WiiExtension, WiiExtensionCalibration, WiiIrPoint,
+    WiiMotionPlusInputs, WiiNunchukInputs, WiiRemoteBattery, WiiRemoteButton, WiiRemoteInputs,
+    WiiRemoteOutputs, WiiRemoteRevision, WiiRemoteStatus, WiiResourceDisposition,
 };
 pub use gr_curated_controllers::xbox_series::{
     XboxSeriesBluetoothRumble, XboxSeriesButton, XboxSeriesOutputState, XboxSeriesState,
