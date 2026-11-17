@@ -2,7 +2,7 @@
 //! steam-d9-lizard-sdl-transition and steam-d9-lizard-relative-scaling.
 //! Fractional scaling and overflow splitting are virtual policy; retail filtering
 //! and exact scheduling are not established by the physical captures.
-use super::{SteamController2026Button as Button, SteamController2026State as State};
+use super::{SteamController2026Button as Button, SteamController2026Inputs as State};
 use gr_hid::{Report, ReportType};
 
 #[derive(Debug, Clone, Default)]

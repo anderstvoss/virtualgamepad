@@ -1,4 +1,4 @@
-use super::{SteamController2026Definition, SteamController2026State, descriptor};
+use super::{SteamController2026Definition, SteamController2026Inputs, descriptor};
 use crate::{CreationOptions, common};
 use gr_controller_contract::ControlError;
 use gr_realization_api::{
@@ -282,8 +282,18 @@ impl SteamController2026Controller {
     }
 
     #[must_use]
-    pub fn state(&self) -> &SteamController2026State {
+    pub fn inputs(&self) -> &SteamController2026Inputs {
         self.session.state()
+    }
+
+    /// Live wired protocol metadata, retained after close. Reduced uinput has
+    /// no HID feature channel and returns an all-unknown status view.
+    #[must_use]
+    pub fn status(&self) -> super::SteamController2026Status {
+        self.session.protocol().map_or_else(
+            super::SteamController2026Status::default,
+            super::codec::SteamHidProtocol::status,
+        )
     }
 
     /// Edit an isolated native input candidate as one transaction.
@@ -295,11 +305,11 @@ impl SteamController2026Controller {
     /// Returns the closure's error, a validation error, or `ControlError::Closed`.
     pub fn edit_inputs(
         &mut self,
-        edit: impl FnOnce(&mut SteamController2026State) -> Result<(), ControlError>,
+        edit: impl FnOnce(&mut SteamController2026Inputs) -> Result<(), ControlError>,
     ) -> Result<(), ControlError> {
         self.session.edit_inputs(edit)
     }
-    pub fn set_inputs(&mut self, state: SteamController2026State) -> Result<(), ControlError> {
+    pub fn set_inputs(&mut self, state: SteamController2026Inputs) -> Result<(), ControlError> {
         self.edit_inputs(|current| {
             *current = state;
             Ok(())
@@ -402,6 +412,81 @@ mod tests {
     }
 
     #[test]
+    fn input_values_preserve_protocol_metadata_and_source_timestamps() {
+        use super::super::{SteamController2026Button as Button, SteamController2026Status};
+        use crate::common::session_tests::snapshot_session;
+        let neutral = SteamController2026Inputs::default();
+        assert_eq!(neutral, neutral.clone());
+        assert_eq!(neutral.motion.timestamp_us, 0);
+        assert_eq!(neutral.sticks, [[0; 2]; 2]);
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+        ] {
+            let options = SteamController2026Options::default();
+            let identity = SteamController2026Identity::from_serial("TESTOWNERSHIP").unwrap();
+            let definition =
+                SteamController2026Definition::new(identity.serial().to_owned(), &options);
+            let (session, _) = snapshot_session(definition, target, [true; 3]);
+            let mut controller = SteamController2026Controller {
+                session: Box::new(session),
+                identity,
+            };
+            controller.service(&mut |_| {}).unwrap();
+            let status = controller.status();
+            if target == RealizationTarget::LINUX_UINPUT {
+                assert_eq!(status, SteamController2026Status::default());
+            } else {
+                // Servicing emitted the initial report before the input edit.
+                assert_eq!(status.report_sequence(), Some(1));
+                assert_eq!(status.steam_client_compat(), Some(true));
+                assert_eq!(status.lizard_mode(), Some(false));
+            }
+            let outputs = controller.host_outputs().unwrap();
+            let identity = controller.identity().clone();
+            let mut inputs = neutral.clone();
+            inputs.set_button(Button::A, true);
+            inputs.triggers = [123, 456];
+            if target == RealizationTarget::LINUX_UHID_USB {
+                inputs.motion.timestamp_us = u32::MAX;
+            }
+            controller.set_inputs(inputs.clone()).unwrap();
+            assert_eq!(controller.inputs(), &inputs);
+            assert_eq!(controller.status(), status);
+            controller.commit().unwrap();
+            let accepted_status = controller.status();
+            controller.edit_inputs(|_| Ok(())).unwrap();
+            controller.set_inputs(inputs.clone()).unwrap();
+            assert!(!controller.is_dirty());
+            assert_eq!(controller.status(), accepted_status);
+            assert!(
+                controller
+                    .edit_inputs(|candidate| {
+                        candidate.set_button(Button::B, true);
+                        candidate.triggers[1] = -1;
+                        Ok(())
+                    })
+                    .is_err()
+            );
+            assert_eq!(controller.inputs(), &inputs);
+            assert_eq!(controller.status(), accepted_status);
+            assert!(!controller.is_dirty());
+            controller.neutralize().unwrap();
+            assert_eq!(controller.inputs(), &neutral);
+            assert_eq!(controller.status(), accepted_status);
+            assert_eq!(controller.identity(), &identity);
+            assert_eq!(controller.host_outputs().unwrap(), outputs);
+            controller.close();
+            controller.close();
+            assert_eq!(controller.status(), accepted_status);
+            assert_eq!(
+                controller.set_inputs(neutral.clone()),
+                Err(ControlError::Closed)
+            );
+        }
+    }
+
+    #[test]
     fn input_transactions_validate_final_levels_and_preserve_source_timestamps() {
         use crate::common::session_tests::{check_input_transactions, snapshot_session};
         for target in [
@@ -420,7 +505,7 @@ mod tests {
             controller.service(&mut |_| {}).unwrap();
             check_input_transactions!(
                 controller,
-                |state: &mut SteamController2026State| {
+                |state: &mut SteamController2026Inputs| {
                     state.set_button(super::super::SteamController2026Button::A, true);
                     state.triggers = [123, 456];
                     if target == RealizationTarget::LINUX_UHID_USB {
@@ -428,7 +513,7 @@ mod tests {
                     }
                     Ok(())
                 },
-                |state: &mut SteamController2026State| {
+                |state: &mut SteamController2026Inputs| {
                     state.triggers[1] = -1;
                     Ok(())
                 },
@@ -438,7 +523,7 @@ mod tests {
     }
 
     fn check_input_representability(
-        edit: impl Fn(&mut SteamController2026State),
+        edit: impl Fn(&mut SteamController2026Inputs),
         supported_on_uinput: bool,
     ) {
         use super::super::SteamController2026Button as Button;
@@ -465,7 +550,7 @@ mod tests {
                     if dirty {
                         controller.set_button(Button::A, true).unwrap();
                     }
-                    let before = controller.state().clone();
+                    let before = controller.inputs().clone();
                     let outputs = controller.host_outputs().unwrap();
                     let reports = io.lock().unwrap().sent.len();
                     let mut candidate = before.clone();
@@ -482,7 +567,7 @@ mod tests {
                     };
                     if supported_on_uinput || target == RealizationTarget::LINUX_UHID_USB {
                         assert_eq!(result, Ok(()));
-                        assert_eq!(controller.state(), &candidate);
+                        assert_eq!(controller.inputs(), &candidate);
                         assert!(controller.is_dirty());
                     } else {
                         assert_eq!(
@@ -494,19 +579,19 @@ mod tests {
                                 ]),
                             })
                         );
-                        assert_eq!(controller.state(), &before);
+                        assert_eq!(controller.inputs(), &before);
                         assert_eq!(controller.is_dirty(), dirty);
                     }
                     assert_eq!(io.lock().unwrap().sent.len(), reports);
                     assert_eq!(controller.host_outputs().unwrap(), outputs);
-                    let accepted = controller.state().clone();
+                    let accepted = controller.inputs().clone();
                     controller.close();
                     controller.close();
                     assert_eq!(
                         controller.edit_inputs(|_| panic!("closed edit executed")),
                         Err(ControlError::Closed)
                     );
-                    assert_eq!(controller.state(), &accepted);
+                    assert_eq!(controller.inputs(), &accepted);
                     assert_eq!(io.lock().unwrap().destroys, 1);
                 }
             }

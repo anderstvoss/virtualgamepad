@@ -203,7 +203,7 @@ mod tests {
     use super::*;
     #[test]
     fn native_schema_preserves_all_controls_and_d2_contact_pressure_kinds() {
-        let topology = super::super::SteamController2026State::default().input_topology();
+        let topology = super::super::SteamController2026Inputs::default().input_topology();
         topology.validate().unwrap();
         assert_eq!(
             topology

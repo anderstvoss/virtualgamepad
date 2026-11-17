@@ -1148,7 +1148,7 @@ impl InputEditor for super::editor::SteamEditor {
 }
 
 pub(super) fn apply_steam_event(
-    state: &mut gr_curated_controllers::steam_controller_2026::SteamController2026State,
+    state: &mut gr_curated_controllers::steam_controller_2026::SteamController2026Inputs,
     event: &InputEvent,
 ) -> bool {
     if let Some((button, pressed)) = steam_button(event) {
@@ -1209,7 +1209,7 @@ fn steam_button(
     }
 }
 fn apply_steam_axes(
-    state: &mut gr_curated_controllers::steam_controller_2026::SteamController2026State,
+    state: &mut gr_curated_controllers::steam_controller_2026::SteamController2026Inputs,
     event: &InputEvent,
 ) -> bool {
     match event {

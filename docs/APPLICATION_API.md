@@ -339,3 +339,11 @@ state, and `refresh_motion()` keeps its existing explicit delivery behavior.
 `status().battery()` reads separate controller-owned metadata, retained after
 close. Battery setters remain explicit handle operations; input replacement,
 edits and neutralization preserve that metadata.
+
+`SteamController2026Controller::inputs()` borrows native
+`SteamController2026Inputs`, including the caller's motion source timestamp.
+`status()` returns copyable `SteamController2026Status` with the wired protocol's
+next report sequence, configured compatibility/stream/desktop modes and accepted
+host mapping/lizard/IMU settings. Unknown or unavailable observations are `None`;
+reduced uinput has no HID protocol or feature channel. The status view remains
+readable after close, and input edits cannot replace protocol metadata.
