@@ -71,7 +71,7 @@ pad click remains independent. The demo and xtask construct target-specific
 samples.
 
 Create either realization with
-`create_steam_controller_2026(CreationOptions { target, session }, SteamController2026Options::default())`.
+`create_steam_controller_2026(CreationOptions::new(target), SteamController2026Options::default())`.
 To restore a unit, build `SteamController2026Identity::from_serial(serial)?`
 and supply it through `SteamController2026Options::with_identity`. The handle
 returns the resolved value through `identity()`. Wired UHID uses that serial
