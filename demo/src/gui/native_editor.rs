@@ -1482,7 +1482,7 @@ impl InputEditor for super::editor::XboxSeriesEditor {
 }
 
 pub(super) fn apply_xbox_series_event(
-    state: &mut virtualgamepad::XboxSeriesState,
+    state: &mut virtualgamepad::XboxSeriesInputs,
     event: &InputEvent,
 ) -> bool {
     use virtualgamepad::XboxSeriesButton as Button;
@@ -1537,7 +1537,7 @@ pub(super) fn apply_xbox_series_event(
 #[cfg(test)]
 mod xbox_series_tests {
     use super::*;
-    use virtualgamepad::{RealizationId, XboxSeriesButton, XboxSeriesState};
+    use virtualgamepad::{RealizationId, XboxSeriesButton, XboxSeriesInputs};
 
     #[test]
     fn selector_and_editor_expose_series_native_controls() {
@@ -1553,7 +1553,7 @@ mod xbox_series_tests {
             RealizationId::LINUX_UHID_BLUETOOTH
         );
 
-        let mut state = XboxSeriesState::default();
+        let mut state = XboxSeriesInputs::default();
         assert!(apply_xbox_series_event(
             &mut state,
             &InputEvent::Button {

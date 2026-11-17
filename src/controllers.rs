@@ -14,7 +14,7 @@ use crate::{
     WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton, WiiRemoteOutputEvent,
     WiiRemoteOutputs, WiiRemoteState, WiiResourceDisposition, Xbox360Axis, Xbox360Control,
     Xbox360Inputs, Xbox360OutputEvent, Xbox360Surface, Xbox360Trigger, XboxSeriesButton,
-    XboxSeriesOutputEvent, XboxSeriesOutputState, XboxSeriesState,
+    XboxSeriesInputs, XboxSeriesOutputEvent, XboxSeriesOutputState,
 };
 // The family adapter owns only static dispatch; protocol semantics stay curated.
 trait Family {
@@ -948,8 +948,17 @@ pub struct XboxSeriesController {
 }
 
 impl XboxSeriesController {
-    shared!(state, XboxSeriesState);
-    shared!(edit_inputs, XboxSeriesState);
+    /// Borrow accepted native input levels.
+    #[must_use]
+    pub fn inputs(&self) -> &XboxSeriesInputs {
+        self.controller.inner.inputs()
+    }
+    /// Read selected realization metadata.
+    #[must_use]
+    pub fn status(&self) -> crate::XboxSeriesStatus {
+        self.controller.inner.status()
+    }
+    shared!(edit_inputs, XboxSeriesInputs);
     shared!(host_outputs, XboxSeriesOutputState);
     shared!(surface, crate::ControllerSurface);
     shared!(wants_write);
@@ -966,7 +975,7 @@ impl XboxSeriesController {
     shared!(service, XboxSeriesOutputEvent);
     edits! {
         fn set_digital(update: DigitalControlUpdate);
-        fn set_inputs(state: XboxSeriesState);
+        fn set_inputs(state: XboxSeriesInputs);
         fn set_button(button: XboxSeriesButton, pressed: bool);
     }
 }

@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 use virtualgamepad::{
-    CreationOptions, RealizationId, XboxSeriesButton as B, XboxSeriesOptions, XboxSeriesState,
+    CreationOptions, RealizationId, XboxSeriesButton as B, XboxSeriesInputs, XboxSeriesOptions,
     create_xbox_series,
 };
 
@@ -30,8 +30,8 @@ const BUTTONS: [B; 16] = [
     B::DpadRight,
 ];
 
-fn sample(step: usize, include_guide: bool) -> XboxSeriesState {
-    let mut state = XboxSeriesState::default();
+fn sample(step: usize, include_guide: bool) -> XboxSeriesInputs {
+    let mut state = XboxSeriesInputs::default();
     match step {
         0..32 => state.set_button(BUTTONS[step / 2], step % 2 == 0),
         32..40 => {
@@ -139,7 +139,7 @@ mod tests {
         }
         assert_eq!(sample(40, true).triggers()[0].raw(), 1023);
         assert_eq!(sample(42, true).triggers()[1].raw(), 1023);
-        assert_eq!(sample(44, true), XboxSeriesState::default());
+        assert_eq!(sample(44, true), XboxSeriesInputs::default());
     }
     #[test]
     fn steam_cycle_can_omit_guide_without_losing_other_controls() {

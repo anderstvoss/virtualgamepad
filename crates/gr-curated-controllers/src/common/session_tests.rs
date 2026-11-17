@@ -39,7 +39,7 @@ input_fixture!(
     crate::Xbox360Inputs,
     crate::wii_remote::WiiRemoteState,
     crate::steam_controller_2026::SteamController2026Inputs,
-    crate::xbox_series::XboxSeriesState,
+    crate::xbox_series::XboxSeriesInputs,
 );
 macro_rules! controller_fixture {
     ($($handle:ty => $state:ty),* $(,)?) => {$(
@@ -51,11 +51,17 @@ macro_rules! controller_fixture {
 }
 controller_fixture!(
     crate::wii_remote::WiiRemoteController => crate::wii_remote::WiiRemoteState,
-    crate::xbox_series::XboxSeriesController => crate::xbox_series::XboxSeriesState,
 );
 
 impl ControllerFixture for crate::steam_controller_2026::SteamController2026Controller {
     type State = crate::steam_controller_2026::SteamController2026Inputs;
+    fn test_state(&self) -> &Self::State {
+        self.inputs()
+    }
+}
+
+impl ControllerFixture for crate::xbox_series::XboxSeriesController {
+    type State = crate::xbox_series::XboxSeriesInputs;
     fn test_state(&self) -> &Self::State {
         self.inputs()
     }
@@ -1489,7 +1495,10 @@ pub(crate) fn snapshot_session<D: HidDriver>(
     target: RealizationTarget,
     numbered: [bool; 3],
 ) -> (ControllerSession<D>, Arc<Mutex<Record>>) {
-    if target == RealizationTarget::LINUX_UHID_USB {
+    if matches!(
+        target,
+        RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+    ) {
         let identity = super::test_address(2);
         let (runtime, io) = rig_with_identity(&driver, numbered, identity);
         io.lock()
@@ -1501,7 +1510,7 @@ pub(crate) fn snapshot_session<D: HidDriver>(
                 numbered_feature: numbered[2],
             }));
         (
-            ControllerSession::injected_hid(driver, runtime, identity),
+            ControllerSession::injected_hid(driver, runtime, identity, target),
             io,
         )
     } else {

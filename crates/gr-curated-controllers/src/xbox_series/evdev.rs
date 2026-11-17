@@ -1,4 +1,4 @@
-use super::{XboxSeriesButton as Button, XboxSeriesState as State, definition};
+use super::{XboxSeriesButton as Button, XboxSeriesInputs as State, definition};
 use crate::common::{EV_ABS, EV_FF, EV_KEY, EV_SYN, SYN_REPORT};
 use gr_realization_api::{
     EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization, NativeDeviceIdentity,
