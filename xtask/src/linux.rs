@@ -262,7 +262,7 @@ fn drive_steam_sample(
         .map_err(|error| error.to_string())?;
     steam.commit().map_err(|error| error.to_string())
 }
-fn xbox_series_sample(sample: i16) -> virtualgamepad::XboxSeriesState {
+fn xbox_series_sample(sample: i16) -> virtualgamepad::XboxSeriesInputs {
     use virtualgamepad::XboxSeriesButton as B;
     const BUTTONS: [B; 16] = [
         B::A,
@@ -282,7 +282,7 @@ fn xbox_series_sample(sample: i16) -> virtualgamepad::XboxSeriesState {
         B::DpadLeft,
         B::DpadRight,
     ];
-    let mut state = virtualgamepad::XboxSeriesState::default();
+    let mut state = virtualgamepad::XboxSeriesInputs::default();
     if let Some(button) = usize::try_from(sample / 4)
         .ok()
         .and_then(|index| BUTTONS.get(index))
@@ -824,7 +824,7 @@ mod tests {
 
     #[test]
     fn xbox_series_sweep_includes_share_guide_axes_and_neutral() {
-        use virtualgamepad::{XboxSeriesButton as B, XboxSeriesState, XboxSeriesTrigger};
+        use virtualgamepad::{XboxSeriesButton as B, XboxSeriesInputs, XboxSeriesTrigger};
         assert!(super::xbox_series_sample(32).pressed(B::Guide));
         assert!(!super::xbox_series_sample(32).pressed(B::Share));
         assert!(super::xbox_series_sample(36).pressed(B::Share));
@@ -837,7 +837,7 @@ mod tests {
                 .map(XboxSeriesTrigger::raw),
             [1023; 2]
         );
-        assert_eq!(super::xbox_series_sample(64), XboxSeriesState::default());
+        assert_eq!(super::xbox_series_sample(64), XboxSeriesInputs::default());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use super::{XboxSeriesOutputState, XboxSeriesState, XboxSeriesTrigger, bluetooth, evdev};
+use super::{XboxSeriesInputs, XboxSeriesOutputState, XboxSeriesTrigger, bluetooth, evdev};
 use crate::{
     common,
     registry::{self, ControllerFamily, FamilyOperation, FamilyRealization, FamilySpec},
@@ -339,16 +339,16 @@ impl RealizationControllerDefinition for XboxSeriesDefinition {
 }
 
 impl TargetAwareControllerDriver for XboxSeriesDefinition {
-    type State = XboxSeriesState;
+    type State = XboxSeriesInputs;
     type Frame = ProviderFrame;
 
-    fn neutral_state(&self) -> XboxSeriesState {
-        XboxSeriesState::default()
+    fn neutral_state(&self) -> XboxSeriesInputs {
+        XboxSeriesInputs::default()
     }
 
     fn apply_digital(
         &self,
-        state: &mut XboxSeriesState,
+        state: &mut XboxSeriesInputs,
         update: DigitalControlUpdate,
     ) -> Result<(), ControlError> {
         state.set_digital(update);
@@ -358,7 +358,7 @@ impl TargetAwareControllerDriver for XboxSeriesDefinition {
     fn validate_state(
         &self,
         selection: RealizationSelection,
-        _: &XboxSeriesState,
+        _: &XboxSeriesInputs,
     ) -> Result<(), ControlError> {
         if !matches!(selection.target, UINPUT | UHID_BT) {
             return Err(common::unavailable(selection.target));
@@ -369,7 +369,7 @@ impl TargetAwareControllerDriver for XboxSeriesDefinition {
     fn encode(
         &self,
         selection: RealizationSelection,
-        state: &XboxSeriesState,
+        state: &XboxSeriesInputs,
     ) -> Result<ProviderFrame, ControlError> {
         self.validate_state(selection, state)?;
         Ok(match selection.target {
@@ -380,10 +380,10 @@ impl TargetAwareControllerDriver for XboxSeriesDefinition {
 }
 
 impl common::HidDriver for XboxSeriesDefinition {
-    type Hid = common::SnapshotProtocol<XboxSeriesState, XboxSeriesOutputState>;
+    type Hid = common::SnapshotProtocol<XboxSeriesInputs, XboxSeriesOutputState>;
     const RETRY_NATIVE_REPLIES: bool = false;
 
-    fn neutralize_state(state: &mut XboxSeriesState) {
+    fn neutralize_state(state: &mut XboxSeriesInputs) {
         state.neutralize();
     }
 
@@ -406,7 +406,7 @@ impl common::HidDriver for XboxSeriesDefinition {
 
     fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
         common::SnapshotProtocol::new(
-            XboxSeriesState::default(),
+            XboxSeriesInputs::default(),
             bluetooth::input,
             bluetooth::validate_output,
             std::collections::BTreeMap::new(),

@@ -1,5 +1,5 @@
 use super::{
-    XboxSeriesBluetoothRumble, XboxSeriesButton, XboxSeriesOptions, XboxSeriesState, bluetooth,
+    XboxSeriesBluetoothRumble, XboxSeriesButton, XboxSeriesInputs, XboxSeriesOptions, bluetooth,
     definition::XboxSeriesDefinition, evdev,
 };
 use crate::{
@@ -96,8 +96,16 @@ impl XboxSeriesController {
     }
 
     #[must_use]
-    pub fn state(&self) -> &XboxSeriesState {
+    pub fn inputs(&self) -> &XboxSeriesInputs {
         self.0.state()
+    }
+
+    /// Read selected realization metadata, including after close.
+    #[must_use]
+    pub fn status(&self) -> super::XboxSeriesStatus {
+        super::XboxSeriesStatus {
+            target: self.1.target(),
+        }
     }
 
     pub fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), ControlError> {
@@ -113,11 +121,11 @@ impl XboxSeriesController {
     /// Returns the closure's error, a validation error, or `ControlError::Closed`.
     pub fn edit_inputs(
         &mut self,
-        edit: impl FnOnce(&mut XboxSeriesState) -> Result<(), ControlError>,
+        edit: impl FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>,
     ) -> Result<(), ControlError> {
         self.0.edit_inputs(edit)
     }
-    pub fn set_inputs(&mut self, state: XboxSeriesState) -> Result<(), ControlError> {
+    pub fn set_inputs(&mut self, state: XboxSeriesInputs) -> Result<(), ControlError> {
         self.edit_inputs(|current| {
             *current = state;
             Ok(())
@@ -223,5 +231,81 @@ mod target_validation_tests {
         }
         assert!(require_target(RealizationTarget::LINUX_UINPUT).is_ok());
         assert!(require_target(RealizationTarget::LINUX_UHID_BLUETOOTH).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod input_ownership_tests {
+    use super::*;
+    use crate::common::session_tests::snapshot_session;
+    use gr_controller_contract::TargetAwareControllerDriver;
+
+    #[test]
+    fn input_values_preserve_metadata_outputs_and_lifecycle_on_both_targets() {
+        let neutral = XboxSeriesInputs::default();
+        assert_eq!(neutral, neutral.clone());
+        assert_eq!(neutral.sticks, [[0; 2]; 2]);
+        assert_eq!(
+            neutral.triggers().map(super::super::XboxSeriesTrigger::raw),
+            [0; 2]
+        );
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_BLUETOOTH,
+        ] {
+            let (session, io) =
+                snapshot_session(XboxSeriesDefinition::default(), target, [true, true, false]);
+            let surface = if target == RealizationTarget::LINUX_UINPUT {
+                &super::super::definition::SURFACE
+            } else {
+                &super::super::definition::BLUETOOTH
+            };
+            let mut controller = XboxSeriesController(Box::new(session), surface);
+            controller.service(&mut |_| {}).unwrap();
+            let status = controller.status();
+            assert_eq!(status.target(), target);
+            let outputs = controller.host_outputs().unwrap();
+            let mut inputs = neutral.clone();
+            inputs.set_button(XboxSeriesButton::Guide, true);
+            inputs.set_button(XboxSeriesButton::Share, true);
+            inputs.set_button(XboxSeriesButton::DpadUp, true);
+            inputs.sticks = [[i16::MIN, i16::MAX], [123, -456]];
+            inputs.set_triggers(123, 1023).unwrap();
+            controller.set_inputs(inputs.clone()).unwrap();
+            assert_eq!(controller.inputs(), &inputs);
+            assert_eq!(controller.status(), status);
+            controller.commit().unwrap();
+            let expected = XboxSeriesDefinition::default()
+                .encode(controller.0.selection(), &inputs)
+                .unwrap();
+            assert_eq!(io.lock().unwrap().sent.last(), Some(&expected));
+            controller.edit_inputs(|_| Ok(())).unwrap();
+            controller.set_inputs(inputs.clone()).unwrap();
+            assert!(!controller.is_dirty());
+            assert!(
+                controller
+                    .edit_inputs(|candidate| {
+                        candidate.set_button(XboxSeriesButton::A, true);
+                        candidate.set_triggers(100, 1024)?;
+                        Ok(())
+                    })
+                    .is_err()
+            );
+            assert_eq!(controller.inputs(), &inputs);
+            assert_eq!(controller.status(), status);
+            assert!(!controller.is_dirty());
+            controller.neutralize().unwrap();
+            assert_eq!(controller.inputs(), &neutral);
+            assert_eq!(controller.status(), status);
+            assert_eq!(controller.host_outputs().unwrap(), outputs);
+            controller.close();
+            controller.close();
+            assert_eq!(controller.status(), status);
+            assert_eq!(
+                controller.set_inputs(neutral.clone()),
+                Err(ControlError::Closed)
+            );
+            assert_eq!(io.lock().unwrap().destroys, 1);
+        }
     }
 }

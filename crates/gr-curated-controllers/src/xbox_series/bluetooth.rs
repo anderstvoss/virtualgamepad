@@ -1,4 +1,4 @@
-use super::{XboxSeriesButton as Button, XboxSeriesState};
+use super::{XboxSeriesButton as Button, XboxSeriesInputs};
 use gr_hid::{ReplyError, Report, ReportType};
 use gr_realization_api::{
     NativeControllerRealization, NativeDeviceIdentity, NativeHidRealization, ProviderFrame,
@@ -60,7 +60,7 @@ pub(super) fn realization() -> NativeControllerRealization {
     })
 }
 
-pub(super) fn frame(state: &XboxSeriesState) -> ProviderFrame {
+pub(super) fn frame(state: &XboxSeriesInputs) -> ProviderFrame {
     let mut bytes = Vec::with_capacity(16);
     for axis in state.sticks.into_iter().flatten() {
         bytes.extend((u16::from_le_bytes(axis.to_le_bytes()) ^ 0x8000).to_le_bytes());
@@ -92,7 +92,7 @@ pub(super) fn frame(state: &XboxSeriesState) -> ProviderFrame {
     }
 }
 
-pub(super) fn input(state: &XboxSeriesState, _: u64, _: u8) -> Report {
+pub(super) fn input(state: &XboxSeriesInputs, _: u64, _: u8) -> Report {
     crate::common::logical_input(frame(state))
 }
 
@@ -164,9 +164,9 @@ mod tests {
 
     #[test]
     fn physical_input_shape_keeps_controls_independent_and_endpoints_exact() {
-        let mut state = XboxSeriesState {
+        let mut state = XboxSeriesInputs {
             sticks: [[i16::MIN, 0], [i16::MAX, -1]],
-            ..XboxSeriesState::default()
+            ..XboxSeriesInputs::default()
         };
         state.set_triggers(1023, 756).unwrap();
         state.set_button(Button::DpadUp, true);
@@ -201,7 +201,7 @@ mod tests {
             0,
         );
         protocol.lifecycle(Lifecycle::Open, 0);
-        let state = XboxSeriesState::default();
+        let state = XboxSeriesInputs::default();
         let input = protocol.input(&state, 0).unwrap().remove(0);
         for (kind, id, expected) in [
             (ReportType::Input, Some(1), Ok(input)),
@@ -301,10 +301,10 @@ mod tests {
             numbered_output: true,
             numbered_feature: false,
         };
-        let mut held = XboxSeriesState::default();
+        let mut held = XboxSeriesInputs::default();
         held.set_button(Button::Share, true);
         first.input(&held, 0).unwrap();
-        second.input(&XboxSeriesState::default(), 0).unwrap();
+        second.input(&XboxSeriesInputs::default(), 0).unwrap();
         let get = RequestKind::Get {
             kind: ReportType::Input,
             id: Some(1),
@@ -323,7 +323,7 @@ mod tests {
             assert!(first.input(&held, now).unwrap().is_empty());
             assert_eq!(
                 second
-                    .input(&XboxSeriesState::default(), now)
+                    .input(&XboxSeriesInputs::default(), now)
                     .unwrap()
                     .len(),
                 1

@@ -201,9 +201,9 @@ fn commits_every_key_and_full_axis_domain_with_xpad_hat_orientation() {
         assert_eq!(keys, [(code, 1)]);
         controller.set_button(button, false).unwrap();
     }
-    let mut state = XboxSeriesState {
+    let mut state = XboxSeriesInputs {
         sticks: [[i16::MIN, i16::MAX], [i16::MAX, i16::MIN]],
-        ..XboxSeriesState::default()
+        ..XboxSeriesInputs::default()
     };
     state.set_triggers(1023, 756).unwrap();
     for (x, y) in [
@@ -438,11 +438,11 @@ fn native_input_transactions_roll_back_late_trigger_errors() {
     let mut controller = create(&factory).unwrap();
     check_input_transactions!(
         controller,
-        |state: &mut XboxSeriesState| {
+        |state: &mut XboxSeriesInputs| {
             state.set_button(XboxSeriesButton::A, true);
             state.set_triggers(123, 987)
         },
-        |state: &mut XboxSeriesState| state.set_triggers(12, 1024),
+        |state: &mut XboxSeriesInputs| state.set_triggers(12, 1024),
         factory.record.lock().unwrap().sent.len()
     );
 }
