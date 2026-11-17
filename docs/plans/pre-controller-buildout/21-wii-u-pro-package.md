@@ -13,8 +13,7 @@ supersedes the snapshot freeze in the ground rules.
 `wii-u-pro`. **PR boundaries:** 21a–21g, one independently reviewable PR per step
 (21a in the research repo; 21b–21g in virtualgamepad); no checkpoint branch
 created by this brief.
-**Blocked by:** VG-1b (`docs/spec/input-model-state-and-mutation.md` §9 steps a–e)
-complete; this brief merged to main, owner authorization, adopted research pin,
+**Blocked by:** VG-1b (`docs/spec/input-model-state-and-mutation.md` §9 steps a–e) complete; this brief merged to main, owner authorization, adopted research pin,
 and an eligible Linux host for live acceptance. Retail descriptor/identity
 fidelity and any new host privileges have independent gates below.
 
@@ -90,18 +89,18 @@ the Pro registry lookup at that pin returns not found. Adopt a reviewed
 descendant containing the required records before implementation; this brief
 does not bump the pin.
 
-| Native function / consumer boundary | Source claim IDs (prefix `wiiupro-pa2-` for every suffix in this table) | Bluetooth-bus UHID | uinput |
-| --- | --- | --- | --- |
-| Identity and driver binding | kernel-bluetooth-match; kernel-pro-classification; physical-identity-gap | WIP; source evidence target for Pro classification, physical identity unknown | WIP; source evidence target for evdev shape only; no HID binding/uniq |
-| 17 digital controls including ZL/ZR and stick clicks | kernel-pro-input; sdl-pro-mapping | WIP → source evidence | WIP → source evidence; SDL mapping independently checked |
-| Two sticks, native packing and neutral | kernel-pro-input; kernel-pro-stick-calibration; sdl-pro-report; sdl-pro-mapping; physical-calibration-gap | WIP → source evidence, physical range/calibration unknown | WIP → source evidence, transformed to kernel units; fuzz deviation |
-| Internal Pro classifier, register/init, rate/mode and report 0x3d | kernel-pro-mode; kernel-pro-classification; sdl-pro-detection; sdl-pro-report | WIP → source evidence for verified subset; exact startup/tail/cadence unknown | Not supported (no HID command/report channel) |
-| Binary rumble, four player LEDs | kernel-pro-output-power | WIP → source evidence, physical effect unmeasured | WIP → source evidence for binary FF; LED class/output Not supported |
-| Battery/charging/connected flags and power status | kernel-pro-output-power; sdl-pro-power; physical-calibration-gap | WIP → source evidence for consumer interpretations, not physical voltage or charging | Not supported on host; typed handle metadata only if meaningful |
-| Calibration and persistence | kernel-pro-stick-calibration; physical-calibration-gap | WIP for kernel first-packet heuristic and pro_calib; retail EEPROM/storage unknown | Not supported for driver calibration interface; nominal conversion only |
-| Motion, IR, removable extensions, speaker | kernel-pro-mode; kernel-pro-output-power | Not supported (not the Pro control topology) | Not supported |
-| Exact-owned lifecycle, #166 timing, SDL acceptance | first-uhid-bluetooth; separate-family-shared-code; virtual-acceptance-gap | WIP; source evidence target, virtual host not run | WIP; source evidence target, virtual host not run |
-| Cemu native Wiimote / Dolphin | cemu-native-pro-exclusion; virtual-acceptance-gap | Native Cemu path Not supported at cited revision; generic paths WIP/unknown | Native Cemu Wiimote path Not supported; generic paths WIP/unknown |
+| Native function / consumer boundary | Source claim IDs | Bluetooth-bus UHID | uinput |
+| --- | `wiiupro-pa2----` | --- | --- |
+| Identity and driver binding | `wiiupro-pa2-kernel-bluetooth-match`; `wiiupro-pa2-kernel-pro-classification`; `wiiupro-pa2-physical-identity-gap` | WIP; source evidence target for Pro classification, physical identity unknown | WIP; source evidence target for evdev shape only; no HID binding/uniq |
+| 17 digital controls including ZL/ZR and stick clicks | `wiiupro-pa2-kernel-pro-input`; `wiiupro-pa2-sdl-pro-mapping` | WIP → source evidence | WIP → source evidence; SDL mapping independently checked |
+| Two sticks, native packing and neutral | `wiiupro-pa2-kernel-pro-input`; `wiiupro-pa2-kernel-pro-stick-calibration`; `wiiupro-pa2-sdl-pro-report`; `wiiupro-pa2-sdl-pro-mapping`; `wiiupro-pa2-physical-calibration-gap` | WIP → source evidence, physical range/calibration unknown | WIP → source evidence, transformed to kernel units; fuzz deviation |
+| Internal Pro classifier, register/init, rate/mode and report 0x3d | `wiiupro-pa2-kernel-pro-mode`; `wiiupro-pa2-kernel-pro-classification`; `wiiupro-pa2-sdl-pro-detection`; `wiiupro-pa2-sdl-pro-report` | WIP → source evidence for verified subset; exact startup/tail/cadence unknown | Not supported (no HID command/report channel) |
+| Binary rumble, four player LEDs | `wiiupro-pa2-kernel-pro-output-power` | WIP → source evidence, physical effect unmeasured | WIP → source evidence for binary FF; LED class/output Not supported |
+| Battery/charging/connected flags and power status | `wiiupro-pa2-kernel-pro-output-power`; `wiiupro-pa2-sdl-pro-power`; `wiiupro-pa2-physical-calibration-gap` | WIP → source evidence for consumer interpretations, not physical voltage or charging | Not supported on host; typed handle metadata only if meaningful |
+| Calibration and persistence | `wiiupro-pa2-kernel-pro-stick-calibration`; `wiiupro-pa2-physical-calibration-gap` | WIP for kernel first-packet heuristic and pro_calib; retail EEPROM/storage unknown | Not supported for driver calibration interface; nominal conversion only |
+| Motion, IR, removable extensions, speaker | `wiiupro-pa2-kernel-pro-mode`; `wiiupro-pa2-kernel-pro-output-power` | Not supported (not the Pro control topology) | Not supported |
+| Exact-owned lifecycle, #166 timing, SDL acceptance | `wiiupro-pa2-first-uhid-bluetooth`; `wiiupro-pa2-separate-family-shared-code`; `wiiupro-pa2-virtual-acceptance-gap` | WIP; source evidence target, virtual host not run | WIP; source evidence target, virtual host not run |
+| Cemu native Wiimote / Dolphin | `wiiupro-pa2-cemu-native-pro-exclusion`; `wiiupro-pa2-virtual-acceptance-gap` | Native Cemu path Not supported at cited revision; generic paths WIP/unknown | Native Cemu Wiimote path Not supported; generic paths WIP/unknown |
 
 All listed Pro claims are presently source-supported, inferred or unknown
 research, not implementation acceptance. Categories are **Not supported**,
@@ -332,7 +331,7 @@ and cleanup. Device creation, kernel node existence, SDL discovery,
 probe completion, first report, first valid neutral and removal-to-node-gone
 are distinct observations. Test non-neutral first packet and recalibration
 as a separate qualification, not a substitute for a neutral timing run.
-**Done when:** manifest schema and every row has supported evidence or
+**Done when:** the manifest validates and every row has supported evidence or
 an explicit untested/unavailable reason; kernel, SDL and supported
 output paths have scoped virtual-host results on an eligible host; if the
 #166 oracle or host is not ready, preserve missing observations and leave
