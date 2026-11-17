@@ -3161,8 +3161,9 @@
         "struct.XboxSeriesController.html": {
           "declarations": [
             "pub struct XboxSeriesController { /* private fields */ }",
-            "pub fn state(&self) -> &XboxSeriesState",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesState) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &XboxSeriesInputs",
+            "pub fn status(&self) -> XboxSeriesStatus",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<XboxSeriesOutputState, ControlError>",
             "pub fn surface(&self) -> &'static ControllerSurface",
             "pub fn wants_write(&self) -> bool",
@@ -3178,7 +3179,7 @@
             "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
             "pub fn service( &mut self, callback: &mut dyn FnMut(XboxSeriesOutputEvent), ) -> Result<(), ControllerError>",
             "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: XboxSeriesState) -> Result<(), ControlError>",
+            "pub fn set_inputs( &mut self, state: XboxSeriesInputs, ) -> Result<(), ControlError>",
             "pub fn set_button( &mut self, button: XboxSeriesButton, pressed: bool, ) -> Result<(), ControlError>"
           ],
           "traits": [
@@ -3187,6 +3188,29 @@
             "impl !UnwindSafe for XboxSeriesController",
             "impl Send for XboxSeriesController",
             "impl Unpin for XboxSeriesController"
+          ]
+        },
+        "struct.XboxSeriesInputs.html": {
+          "declarations": [
+            "pub struct XboxSeriesInputs { pub sticks: [[i16; 2]; 2], /* private fields */ }",
+            "pub const fn pressed(&self, button: XboxSeriesButton) -> bool",
+            "pub fn set_button(&mut self, button: XboxSeriesButton, pressed: bool)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub const fn triggers(&self) -> [XboxSeriesTrigger; 2]",
+            "pub fn set_triggers( &mut self, left: u16, right: u16, ) -> Result<(), ControlError>",
+            "pub fn neutralize(&mut self)"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesInputs",
+            "impl Debug for XboxSeriesInputs",
+            "impl Default for XboxSeriesInputs",
+            "impl Eq for XboxSeriesInputs",
+            "impl PartialEq for XboxSeriesInputs",
+            "impl RefUnwindSafe for XboxSeriesInputs",
+            "impl Send for XboxSeriesInputs",
+            "impl Sync for XboxSeriesInputs",
+            "impl Unpin for XboxSeriesInputs",
+            "impl UnwindSafe for XboxSeriesInputs"
           ]
         },
         "struct.XboxSeriesOptions.html": {
@@ -3224,27 +3248,22 @@
             "impl UnwindSafe for XboxSeriesOutputState"
           ]
         },
-        "struct.XboxSeriesState.html": {
+        "struct.XboxSeriesStatus.html": {
           "declarations": [
-            "pub struct XboxSeriesState { pub sticks: [[i16; 2]; 2], /* private fields */ }",
-            "pub const fn pressed(&self, button: XboxSeriesButton) -> bool",
-            "pub fn set_button(&mut self, button: XboxSeriesButton, pressed: bool)",
-            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
-            "pub const fn triggers(&self) -> [XboxSeriesTrigger; 2]",
-            "pub fn set_triggers( &mut self, left: u16, right: u16, ) -> Result<(), ControlError>",
-            "pub fn neutralize(&mut self)"
+            "pub struct XboxSeriesStatus { /* private fields */ }",
+            "pub const fn target(self) -> RealizationId"
           ],
           "traits": [
-            "impl Clone for XboxSeriesState",
-            "impl Debug for XboxSeriesState",
-            "impl Default for XboxSeriesState",
-            "impl Eq for XboxSeriesState",
-            "impl PartialEq for XboxSeriesState",
-            "impl RefUnwindSafe for XboxSeriesState",
-            "impl Send for XboxSeriesState",
-            "impl Sync for XboxSeriesState",
-            "impl Unpin for XboxSeriesState",
-            "impl UnwindSafe for XboxSeriesState"
+            "impl Clone for XboxSeriesStatus",
+            "impl Copy for XboxSeriesStatus",
+            "impl Debug for XboxSeriesStatus",
+            "impl Eq for XboxSeriesStatus",
+            "impl PartialEq for XboxSeriesStatus",
+            "impl RefUnwindSafe for XboxSeriesStatus",
+            "impl Send for XboxSeriesStatus",
+            "impl Sync for XboxSeriesStatus",
+            "impl Unpin for XboxSeriesStatus",
+            "impl UnwindSafe for XboxSeriesStatus"
           ]
         },
         "struct.XboxSeriesTrigger.html": {
@@ -6442,8 +6461,9 @@
         "struct.XboxSeriesController.html": {
           "declarations": [
             "pub struct XboxSeriesController { /* private fields */ }",
-            "pub fn state(&self) -> &XboxSeriesState",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesState) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &XboxSeriesInputs",
+            "pub fn status(&self) -> XboxSeriesStatus",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<XboxSeriesOutputState, ControlError>",
             "pub fn surface(&self) -> &'static ControllerSurface",
             "pub fn wants_write(&self) -> bool",
@@ -6459,7 +6479,7 @@
             "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
             "pub fn service( &mut self, callback: &mut dyn FnMut(XboxSeriesOutputEvent), ) -> Result<(), ControllerError>",
             "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: XboxSeriesState) -> Result<(), ControlError>",
+            "pub fn set_inputs( &mut self, state: XboxSeriesInputs, ) -> Result<(), ControlError>",
             "pub fn set_button( &mut self, button: XboxSeriesButton, pressed: bool, ) -> Result<(), ControlError>"
           ],
           "traits": [
@@ -6468,6 +6488,29 @@
             "impl !UnwindSafe for XboxSeriesController",
             "impl Send for XboxSeriesController",
             "impl Unpin for XboxSeriesController"
+          ]
+        },
+        "struct.XboxSeriesInputs.html": {
+          "declarations": [
+            "pub struct XboxSeriesInputs { pub sticks: [[i16; 2]; 2], /* private fields */ }",
+            "pub const fn pressed(&self, button: XboxSeriesButton) -> bool",
+            "pub fn set_button(&mut self, button: XboxSeriesButton, pressed: bool)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub const fn triggers(&self) -> [XboxSeriesTrigger; 2]",
+            "pub fn set_triggers( &mut self, left: u16, right: u16, ) -> Result<(), ControlError>",
+            "pub fn neutralize(&mut self)"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesInputs",
+            "impl Debug for XboxSeriesInputs",
+            "impl Default for XboxSeriesInputs",
+            "impl Eq for XboxSeriesInputs",
+            "impl PartialEq for XboxSeriesInputs",
+            "impl RefUnwindSafe for XboxSeriesInputs",
+            "impl Send for XboxSeriesInputs",
+            "impl Sync for XboxSeriesInputs",
+            "impl Unpin for XboxSeriesInputs",
+            "impl UnwindSafe for XboxSeriesInputs"
           ]
         },
         "struct.XboxSeriesOptions.html": {
@@ -6505,27 +6548,22 @@
             "impl UnwindSafe for XboxSeriesOutputState"
           ]
         },
-        "struct.XboxSeriesState.html": {
+        "struct.XboxSeriesStatus.html": {
           "declarations": [
-            "pub struct XboxSeriesState { pub sticks: [[i16; 2]; 2], /* private fields */ }",
-            "pub const fn pressed(&self, button: XboxSeriesButton) -> bool",
-            "pub fn set_button(&mut self, button: XboxSeriesButton, pressed: bool)",
-            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
-            "pub const fn triggers(&self) -> [XboxSeriesTrigger; 2]",
-            "pub fn set_triggers( &mut self, left: u16, right: u16, ) -> Result<(), ControlError>",
-            "pub fn neutralize(&mut self)"
+            "pub struct XboxSeriesStatus { /* private fields */ }",
+            "pub const fn target(self) -> RealizationId"
           ],
           "traits": [
-            "impl Clone for XboxSeriesState",
-            "impl Debug for XboxSeriesState",
-            "impl Default for XboxSeriesState",
-            "impl Eq for XboxSeriesState",
-            "impl PartialEq for XboxSeriesState",
-            "impl RefUnwindSafe for XboxSeriesState",
-            "impl Send for XboxSeriesState",
-            "impl Sync for XboxSeriesState",
-            "impl Unpin for XboxSeriesState",
-            "impl UnwindSafe for XboxSeriesState"
+            "impl Clone for XboxSeriesStatus",
+            "impl Copy for XboxSeriesStatus",
+            "impl Debug for XboxSeriesStatus",
+            "impl Eq for XboxSeriesStatus",
+            "impl PartialEq for XboxSeriesStatus",
+            "impl RefUnwindSafe for XboxSeriesStatus",
+            "impl Send for XboxSeriesStatus",
+            "impl Sync for XboxSeriesStatus",
+            "impl Unpin for XboxSeriesStatus",
+            "impl UnwindSafe for XboxSeriesStatus"
           ]
         },
         "struct.XboxSeriesTrigger.html": {

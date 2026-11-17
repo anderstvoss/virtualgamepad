@@ -128,7 +128,7 @@ impl virtualgamepad::ControllerSurfaceInfo for Surface {
         self.0
     }
 }
-pub(super) type XboxSeriesEditor = Editor<virtualgamepad::XboxSeriesState, Surface>;
+pub(super) type XboxSeriesEditor = Editor<virtualgamepad::XboxSeriesInputs, Surface>;
 pub(super) type Xbox360Editor = Editor<Xbox360Inputs, Surface, virtualgamepad::Xbox360Status>;
 pub(super) type DualSenseEditor = Editor<DualSenseInputs, Surface, virtualgamepad::DualSenseStatus>;
 pub(super) type DualShock4Editor =
@@ -194,7 +194,7 @@ impl Controller {
                 c.status(),
             )),
             Self::XboxSeries(c) => ControllerView::XboxSeries(Editor::new(
-                c.state().clone(),
+                c.inputs().clone(),
                 c.surface(),
                 Some(c.diagnostics()),
                 Some(c.association().clone()),
@@ -431,7 +431,7 @@ pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
         .surface;
     match kind {
         super::Kind::XboxSeries => ControllerView::XboxSeries(Editor::new(
-            virtualgamepad::XboxSeriesState::default(),
+            virtualgamepad::XboxSeriesInputs::default(),
             surface,
             None,
             None,

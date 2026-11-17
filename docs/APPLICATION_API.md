@@ -318,8 +318,8 @@ series.close();
 # Ok(()) }
 ```
 
-`XboxSeriesState` uses signed xpad evdev coordinates with positive Y down.
-Trigger positions are 10-bit. `set_triggers` on the state validates both
+`XboxSeriesInputs` uses signed xpad evdev coordinates with positive Y down.
+Trigger positions are 10-bit. `set_triggers` on the inputs validates both
 values. Share and Guide are independent. `XboxSeriesOutputEvent` carries
 conventional force feedback on uinput and native HID output on Bluetooth-bus
 UHID. `host_outputs()` retains the latest two-motor evdev playback or
@@ -349,3 +349,8 @@ next report sequence, configured compatibility/stream/desktop modes and accepted
 host mapping/lizard/IMU settings. Unknown or unavailable observations are `None`;
 reduced uinput has no HID protocol or feature channel. The status view remains
 readable after close, and input edits cannot replace protocol metadata.
+
+`XboxSeriesController::inputs()` borrows `XboxSeriesInputs` for uinput or Bluetooth
+UHID. `status().target()` reads the selected realization, including after close.
+Battery telemetry and caller-visible input clocks are not modeled for this
+family; host rumble remains separate through `host_outputs()`.

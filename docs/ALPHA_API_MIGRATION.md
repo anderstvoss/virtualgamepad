@@ -525,3 +525,33 @@ protocol modes and retained host outputs. No combined session type or worker
 codec is added. The c1 reduced-uinput refusals and existing encoded report fixtures
 remain in force. Demo, xtask, live haptics probe and other compiling callers migrate
 with this PR; no compatibility alias remains.
+
+## VG-1b/d · Xbox Series input-only values
+
+`XboxSeriesInputs` replaces `XboxSeriesState` on both uinput and Bluetooth UHID.
+Native button, stick and trigger domains and payload encodings are unchanged.
+`inputs()` borrows accepted input levels; copyable `XboxSeriesStatus` reports
+selected realization metadata through `target()`, including after close.
+
+| Previous API | Current API |
+| --- | --- |
+| `XboxSeriesState` | `XboxSeriesInputs` |
+| `controller.state()` | `controller.inputs()` |
+| `set_inputs(XboxSeriesState)` | `set_inputs(XboxSeriesInputs)` |
+| `edit_inputs(FnOnce(&mut XboxSeriesState) -> Result<(), ControlError>)` | `edit_inputs(FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>)` |
+
+In each root snapshot feature view, remove the old type and add `XboxSeriesInputs`
+and `XboxSeriesStatus`. Remove the handle's `state()`, add
+`inputs() -> &XboxSeriesInputs` and `status() -> XboxSeriesStatus`, and change both
+mutation signatures above. The public `sticks` field and six native input methods
+move to the input type unchanged. Status adds `target() -> RealizationTarget`.
+Inputs retain default, clone and equality support; status is copyable with clone
+and equality support. Both new types are exported by root and experimental
+modules. Wii and Steam supporting snapshots have zero delta.
+
+This family models no battery telemetry or caller-visible input clock; status
+adds no fabricated values for them. Host rumble stays in `host_outputs()`, separate
+from input edits and selected-target metadata. No combined session type or worker
+codec is added. Demo, xtask, the Xbox Series probe and other compiling users migrate
+together, retaining the existing uinput and Bluetooth report fixtures and cleanup
+regressions. No compatibility alias remains.

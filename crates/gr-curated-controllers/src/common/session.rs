@@ -160,11 +160,12 @@ impl<D: HidDriver> ControllerSession<D> {
         driver: D,
         runtime: Runtime<D::Hid, HidTransport>,
         identity: [u8; 6],
+        target: gr_realization_api::RealizationTarget,
     ) -> Self {
         Self {
             selection: gr_realization_api::RealizationSelection {
                 controller: driver.controller_id(),
-                target: gr_realization_api::RealizationTarget::LINUX_UHID_USB,
+                target,
             },
             backend: Backend::Hid { driver, runtime },
             association: crate::ControllerAssociation::default(),

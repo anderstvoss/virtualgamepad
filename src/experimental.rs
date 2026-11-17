@@ -24,6 +24,7 @@ pub use gr_curated_controllers::steam_controller_2026::{
 pub use gr_curated_controllers::wii_remote::{
     WiiClassicInputs, WiiMotionPlusInputs, WiiNunchukInputs, WiiRemoteInputs, WiiRemoteStatus,
 };
+pub use gr_curated_controllers::xbox_series::{XboxSeriesInputs, XboxSeriesStatus};
 pub use gr_curated_controllers::{
     BatteryLevel, BatteryState, ControllerAssociation, CreationOptions, DualSenseAxis,
     DualSenseControl, DualSenseController, DualSenseFeature, DualSenseHidOutput, DualSenseIdentity,
