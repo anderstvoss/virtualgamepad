@@ -58,3 +58,47 @@ fixture and metadata test do not advertise a production realization.
 The receiver handle outside tests, including any ordinary-root slot or aggregate
 API, is deferred under [#165](https://github.com/anderstvoss/virtualgamepad/issues/165).
 Puck and Joy-Con implementations require their own evidence and scopes.
+
+## Proposed amendment (draft, not accepted)
+
+Owner decisions on the open questions: #165 comment 6960320698 (2026-11-17). The amendment is accepted in principle; it becomes normative when the implementing PRs land.
+
+See the [receiver lifecycle design](../spec/receiver-lifecycle-design.md) for
+evidence, proposed API, validation and open owner questions. No status, existing
+decision or implementation authorization changes until owner review.
+
+- Retain one receiver-owned transport/protocol, typed independently scoped
+  slots and transactional preflight/rollback; declare bounded address scheme,
+  capacity and node-lifetime policy per compiled receiver family, not a global
+  maximum of four. The Puck remains four fixed controller slots.
+- Separate presence from child presentation lifetime. Destroy/recreate on
+  detach/reconnect for Puck, xpad and xone; keep DS4 and DJ nodes through
+  ordinary link loss, remove DJ children on unpair. Do not infer physical
+  capacity or bond persistence from consumer tables.
+- Record a receiver-scoped child presentation incarnation on first publication
+  and allocate a new one only upon destruction and recreation, not retained
+  link loss. Keep ADR-0021 deferred; no general presentation swap layer.
+  Receiver association, protocol address and application player slot differ.
+- Extend ADR-0019's retained topology pattern to receiver slot presence and
+  incarnation; publish typed optional events and, where supported, ADR-0024
+  per-slot accepted output journals. Stream epoch/sequence are independent
+  of topology generation and presentation incarnation; USB/IP journal access
+  remains refused pending separate approval.
+- Fence admitted work by originating slot/session/incarnation before address
+  reuse; preserve immutable pending bytes and required replies, retry only
+  DefinitelyUnsent in the owning boundary. Uncertain is terminal, not a
+  replay. Refuse absent-child mutation by default; no invented native errors,
+  output actuation or queued replay on reconnect.
+- Isolated child loss preserves siblings; primary/shared required transport
+  loss (including a DJ required receiver interface) and uninterpretable
+  shared delivery failure terminate the receiver. Retain diagnostic scope
+  and idempotent reverse cleanup.
+- Use typed receiver-family creation/options and input-only native slot
+  mutation consistent with the post-VG-1b model; explicit capability-limited
+  companions remain required when selected. Future heterogeneous paired
+  children need their own evidence and scope, not implicit desktop devices.
+- Develop deterministic Puck lifecycle first; reduced independent/HID targets
+  are explicitly not shared USB fidelity. Native USB Puck and later Xbox
+  receiver families require #168 feasibility and updated #258 host-audit
+  approval as applicable. No GIP faking, firmware analysis or support-cell
+  promotion from this proposal.
