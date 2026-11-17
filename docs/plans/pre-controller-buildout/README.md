@@ -25,6 +25,16 @@ Each numbered file is a self-contained agent brief. To dispatch one, give an age
 | 14 | [Steam Controller 2026, wired](14-steam-controller-wired-package.md) (checkpoint C6) | #159 | Controller | C1, step 16 = UHID accepted, 11c |
 | 17 | [GameCube USB adapter package](17-gamecube-adapter-package.md) (steps 17a–17e) | #296 | Controller | VG-1b complete; reviewed source records; 17d also new #258 audit/sign-off |
 | 18 | [Switch 1 Joy-Con L/R package](18-joycon-package.md) (steps 18a–18e) | #297 | Controller | VG-1b complete; reviewed source records; host/descriptor gates for live UHID |
+| 19 | [DualSense Edge package](19-dualsense-edge-package.md) (steps 19a–19h) | #170 | Controller | VG-1b complete; reviewed source records; Edge descriptor evidence |
+| 20 | [Switch 2 Pro Controller package](20-switch2-pro-package.md) (steps 20a–20f) | #171 | Controller | VG-1b complete; reviewed source records; USB-level step needs host audit for shipped defaults |
+| 21 | [Wii U Pro Controller package](21-wii-u-pro-package.md) (steps 21a–21g) | #361 | Controller | VG-1b complete; reviewed source records |
+| 22 | [Xbox Elite Series 2 package](22-xbox-elite-2-package.md) (steps 22a–22f) | #356 | Controller | VG-1b complete; reviewed source records; GIP never faked |
+| 23 | [Xbox One controller package](23-xbox-one-package.md) (steps 23a–23h) | #355 | Controller | VG-1b complete; reviewed source records; GIP never faked |
+| 24 | [Xbox Elite Series 1 package](24-xbox-elite-1-package.md) (steps 24a–24e) | #359 | Controller | VG-1b complete; reviewed source records; GIP never faked |
+| 25 | [Switch 2 Joy-Con L/R package](25-switch2-joycon-package.md) (steps 25a–25g) | #362 | Controller | VG-1b complete; reviewed source records; per-half realizations |
+| 26 | [Switch 2 GameCube controller package](26-switch2-gamecube-package.md) (steps 26a–26g) | #360 | Controller | VG-1b complete; 26a research first |
+| 27 | [Xbox Elite Series 3 and Xbox Nano plan](27-xbox-elite-3-and-nano-plan.md) (steps 27a–27h) | #358, #357 | Controller | Evidence-gated: research before any implementation |
+| 28 | [Wii Remote speaker, audio step S1](28-wii-speaker-s1.md) (steps 28a–28e) | #158 | Audio | VG-1b complete; VG-2 (ADR-0024 journal) and the D7 speaker gate; refines brief 16 S1 |
 | 16 | [Audio and haptics buildout](16-audio-haptics-buildout.md) (new checkpoint proposed) | #116, #126, #135, #143, #145 | Audio | S0 option 3 **decided** ([#347](https://github.com/anderstvoss/virtualgamepad/pull/347)); #344 shared stream design/authorization for S1/S2; S1 D7 speaker gate; A0 before live gates; #203 worker recovery separate |
 
 ## Order
