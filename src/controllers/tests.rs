@@ -15,6 +15,15 @@ macro_rules! accepted_inputs {
     ($controller:ident, dualsense) => {
         $controller.inputs()
     };
+    ($controller:ident, xbox360) => {
+        $controller.inputs()
+    };
+    ($controller:ident, switch_pro) => {
+        $controller.inputs()
+    };
+    ($controller:ident, dualshock4) => {
+        $controller.inputs()
+    };
     ($controller:ident, $module:ident) => {
         $controller.state()
     };
@@ -23,12 +32,21 @@ macro_rules! accepted_clock {
     ($controller:ident, dualsense) => {
         $controller.status()
     };
+    ($controller:ident, switch_pro) => {
+        $controller.status()
+    };
+    ($controller:ident, dualshock4) => {
+        $controller.status()
+    };
     ($controller:ident, $module:ident) => {
         $controller.state().clone()
     };
 }
 macro_rules! sample_inputs {
     ($sample:expr, dualsense) => {
+        $sample.inputs()
+    };
+    ($sample:expr, dualshock4) => {
         $sample.inputs()
     };
     ($sample:expr, $module:ident) => {
@@ -2399,7 +2417,6 @@ fn xbox_series_converged_constructors_reject_unavailable_targets_and_audio() {
     use gr_curated_controllers::xbox_series::create_xbox_series as curated;
     for target in [
         RealizationId::LINUX_UHID_USB,
-        RealizationId::LINUX_UHID_BLUETOOTH,
         RealizationId::LINUX_DUMMY_HCD_USB_HID,
         RealizationId::LINUX_USBIP_USB_AUDIO,
     ] {
@@ -2419,12 +2436,17 @@ fn xbox_series_converged_constructors_reject_unavailable_targets_and_audio() {
             Err(gr_realization_api::ProviderError::Unsupported { .. })
         ));
     }
-    let audio = CreationOptions::new(RealizationId::LINUX_UINPUT)
-        .with_audio(crate::AudioOptions::new(crate::AudioExposure::Emulated));
-    assert!(matches!(
-        create_xbox_series(audio, XboxSeriesOptions::default()),
-        Err(ControllerError::Unsupported { .. })
-    ));
+    for target in [
+        RealizationId::LINUX_UINPUT,
+        RealizationId::LINUX_UHID_BLUETOOTH,
+    ] {
+        let audio = CreationOptions::new(target)
+            .with_audio(crate::AudioOptions::new(crate::AudioExposure::Emulated));
+        assert!(matches!(
+            create_xbox_series(audio, XboxSeriesOptions::default()),
+            Err(ControllerError::Unsupported { .. })
+        ));
+    }
 }
 
 mod input_snapshots;

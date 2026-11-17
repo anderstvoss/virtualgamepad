@@ -3,6 +3,9 @@
 #include "sdl3-probe-contract.h"
 
 int main(int argc, char **argv) {
+    const char *step = "arguments";
+    unsigned last_type = 0, last_code = 0;
+    int last_value = 0;
     const char *profile = "diagnostic";
     bool reopen_requested = false, args_valid = argc >= 3 && argc <= 5;
     for (int i = 3; i < argc; ++i) {
@@ -23,7 +26,9 @@ int main(int argc, char **argv) {
     int16_t final_axes[6] = {0};
     bool require_script = strcmp(profile, "--dualsense-script") == 0;
     bool motion_script = strcmp(profile, "--motion-gamepad-script") == 0;
-    bool rumble_script = strcmp(profile, "--gamepad-rumble-script") == 0;
+    bool trigger_script = strcmp(profile, "--gamepad-trigger-rumble-script") == 0;
+    bool trigger_left = false, trigger_right = false, trigger_left_sent = false, trigger_right_sent = false;
+    bool rumble_script = trigger_script || strcmp(profile, "--gamepad-rumble-script") == 0;
     bool gamepad_script = rumble_script || (strcmp(profile, "--gamepad-script") == 0);
     bool require_motion = require_script || motion_script || (strcmp(profile, "--require-motion") == 0);
     bool initialized = false, passed = false, connected = false;
@@ -51,8 +56,10 @@ int main(int argc, char **argv) {
     ProbeAxis axes[6] = {0};
     if (!args_valid || (strcmp(profile, "diagnostic") != 0 && !require_motion && !gamepad_script && !control_script) || !argv[1][0] || !probe_duration(argv[2], &duration)) goto done;
     if (SDL_GAMEPAD_BUTTON_COUNT > 32) { error = "probe button mask capacity exceeded"; goto done; }
+    step = "initialization";
     if (!SDL_Init(SDL_INIT_GAMEPAD | SDL_INIT_SENSOR)) { error = "SDL initialization failed"; goto done; }
     initialized = true;
+    step = "enumeration";
     SDL_JoystickID *joysticks = SDL_GetJoysticks(&joystick_count);
     for (int index = 0; joysticks && index < joystick_count; ++index) {
         if (probe_path_matches(argv[1], SDL_GetJoystickPathForID(joysticks[index]))) ++joystick_matches;
@@ -70,6 +77,7 @@ int main(int argc, char **argv) {
     SDL_GUIDToString(SDL_GetGamepadGUIDForID(selected), guid, sizeof(guid));
     vendor = SDL_GetGamepadVendorForID(selected);
     product = SDL_GetGamepadProductForID(selected);
+    step = "open";
     gamepad = SDL_OpenGamepad(selected);
     if (gamepad == NULL) { error = "selected gamepad open failed"; goto done; }
     probe_opened(&lifecycle, true, false);
@@ -95,11 +103,31 @@ int main(int argc, char **argv) {
     mapping = SDL_GetGamepadMapping(gamepad);
     if (!control_script) rumble = SDL_RumbleGamepad(gamepad, 0x4000, 0x8000, (Uint32)duration);
     if (!control_script) led = SDL_SetGamepadLED(gamepad, 32, 64, 128);
+    step = "neutral-and-controls";
     started = SDL_GetTicks();
     connected = true;
     while (SDL_GetTicks() - started < duration) {
+        if (trigger_script && !trigger_left_sent && SDL_GetTicks() - started >= 100) {
+            trigger_left = SDL_RumbleGamepadTriggers(gamepad, 0x4000, 0, 200);
+            trigger_left_sent = true;
+            printf("{\"record_type\":\"trigger_rumble_submission\",\"side\":\"left\",\"accepted\":%s}\n", trigger_left ? "true" : "false");
+            fflush(stdout);
+        }
+        if (trigger_script && !trigger_right_sent && SDL_GetTicks() - started >= 600) {
+            trigger_right = SDL_RumbleGamepadTriggers(gamepad, 0, 0x8000, 200);
+            trigger_right_sent = true;
+            printf("{\"record_type\":\"trigger_rumble_submission\",\"side\":\"right\",\"accepted\":%s}\n", trigger_right ? "true" : "false");
+            fflush(stdout);
+        }
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            if ((event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || event.type == SDL_EVENT_GAMEPAD_BUTTON_UP) && event.gbutton.which == selected) {
+                last_type = event.type; last_code = event.gbutton.button; last_value = event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+            } else if (event.type == SDL_EVENT_GAMEPAD_AXIS_MOTION && event.gaxis.which == selected) {
+                last_type = event.type; last_code = event.gaxis.axis; last_value = event.gaxis.value;
+            } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED && event.gdevice.which == selected) {
+                last_type = event.type; last_code = 0; last_value = 0;
+            }
             if (event.type == SDL_EVENT_GAMEPAD_REMOVED && event.gdevice.which == selected) connected = false;
             if (event.type == SDL_EVENT_GAMEPAD_SENSOR_UPDATE && event.gsensor.which == selected) {
                 for (int index = 0; index < 2; ++index)
@@ -141,11 +169,14 @@ int main(int argc, char **argv) {
             neutral = neutral && value >= -512 && value <= 512;
         }
         neutral_observed = neutral_observed || neutral;
-        // Poll the initial neutral stream before the harness applies a transition.
+        // Xbox sweeps must not wait for neutral before asking their producer
+        // for its first transition: evdev can initially expose its axis minimum.
+        // This readiness signal means consumer-open/settled, not neutral delivery.
+        // Sony exact-state modes still need their initial neutral stream.
         // Sony HIDAPI drivers compare against a zero-filled previous packet;
         // applying Up (hat 0) before neutral (hat 8) has arrived loses that edge.
-        if ((control_script || strcmp(profile, "diagnostic") == 0) && !mapping_ready && probe_control_ready(SDL_GetTicks() - started, neutral)) {
-            puts("{\"schema_version\":2,\"record_type\":\"mapping_ready\",\"neutral_settle_ms\":100}");
+        if ((control_script || gamepad_script || strcmp(profile, "diagnostic") == 0) && !mapping_ready && probe_control_ready(SDL_GetTicks() - started, gamepad_script || neutral)) {
+            printf("{\"schema_version\":2,\"record_type\":\"mapping_ready\",\"settle_ms\":100,\"initial_neutral_observed\":%s}\n", neutral ? "true" : "false");
             fflush(stdout);
             mapping_ready = true;
             matching_since = 0;
@@ -166,7 +197,9 @@ int main(int argc, char **argv) {
             error = "required sensor observations missing, invalid or nonmonotonic";
         }
     }
+    if (trigger_script && (!trigger_left || !trigger_right)) { passed = false; error = "required independent trigger submissions missing"; }
     if (require_script || motion_script || gamepad_script) {
+        step = "controls-and-output";
         bool controls = neutral_observed && (down_mask & 0x7fff) == 0x7fff && (up_mask & 0x7fff) == 0x7fff && axis_mask == 0x3f && (!require_script || touch_events > 10);
         for (unsigned axis = 0; axis < 6; ++axis)
             controls = controls && probe_axis_swept(&axes[axis], axis >= 4);
@@ -186,13 +219,22 @@ int main(int argc, char **argv) {
                 if (!SDL_GamepadConnected(gamepad)) { passed = false; error = "selected gamepad removed during reopen"; }
                 SDL_CloseGamepad(gamepad);
                 probe_closed(&lifecycle, true);
-            } else { passed = false; error = "selected gamepad reopen failed"; }
+            } else { passed = false; step = "reopen"; error = "selected gamepad reopen failed"; }
         }
     }
     SDL_free(ids);
     if (initialized) SDL_Quit();
     printf("{\"schema_version\":2,\"consumer\":\"SDL\",\"consumer_version\":%d,\"path\":", SDL_GetVersion());
     probe_json_string(argc > 1 ? argv[1] : "");
+    unsigned endpoint_missing = 0;
+    for (unsigned axis = 0; axis < 6; ++axis)
+        if (!probe_axis_swept(&axes[axis], axis >= 4)) endpoint_missing |= 1u << axis;
+    unsigned expected_buttons = available_buttons[15] ? 0xffff : 0x7fff;
+    printf(",\"failure_detail\":{\"step\":"); probe_json_string(passed ? "complete" : step);
+    printf(",\"last_event\":{\"type\":%u,\"code\":%u,\"value\":%d},\"expected_event\":{\"down_missing\":%u,\"up_missing\":%u,\"axis_missing\":%u,\"axis_endpoints_missing\":%u,\"neutral_observed\":%s}}",
+           last_type, last_code, last_value, expected_buttons & ~down_mask,
+           expected_buttons & ~up_mask, 0x3f & ~axis_mask, endpoint_missing,
+           neutral_observed ? "true" : "false");
     printf(",\"enumerated_joysticks\":%d,\"exact_joystick_matches\":%d", joystick_count, joystick_matches);
     printf(",\"consumer_revision\":"); probe_json_string(SDL_GetRevision());
     printf(",\"joystick_buttons\":%d,\"joystick_axes\":%d,\"joystick_hats\":%d", joystick_buttons, joystick_axes, joystick_hats);

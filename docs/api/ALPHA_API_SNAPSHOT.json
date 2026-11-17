@@ -563,7 +563,7 @@
         },
         "enum.MotorRole.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum MotorRole { Left, Right, Strong, Weak, }"
+            "#[non_exhaustive]pub enum MotorRole { Left, Right, Strong, Weak, LeftTrigger, RightTrigger, }"
           ],
           "traits": [
             "impl Clone for MotorRole",
@@ -948,7 +948,7 @@
         },
         "enum.XboxSeriesOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), }"
+            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), HostLifecycle(HostLifecycle), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
           ],
           "traits": [
             "impl Clone for XboxSeriesOutputEvent",
@@ -1654,9 +1654,10 @@
             "pub fn wants_write(&self) -> bool",
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
-            "pub fn state(&self) -> &DualShock4State",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut DualShock4State) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: DualShock4State) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &DualShock4Inputs",
+            "pub fn status(&self) -> DualShock4Status",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut DualShock4Inputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn set_inputs( &mut self, state: DualShock4Inputs, ) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<DualShock4OutputState, ControlError>",
             "pub fn is_dirty(&self) -> bool",
             "pub fn surface(&self) -> &'static DualShock4Surface",
@@ -1704,6 +1705,37 @@
             "impl Sync for DualShock4Identity",
             "impl Unpin for DualShock4Identity",
             "impl UnwindSafe for DualShock4Identity"
+          ]
+        },
+        "struct.DualShock4Inputs.html": {
+          "declarations": [
+            "pub struct DualShock4Inputs { /* private fields */ }",
+            "pub const fn motion(&self) -> DualShock4MotionSample",
+            "pub const fn left_stick(&self) -> (DualShock4Axis, DualShock4Axis)",
+            "pub const fn right_stick(&self) -> (DualShock4Axis, DualShock4Axis)",
+            "pub const fn triggers(&self) -> (DualShock4Trigger, DualShock4Trigger)",
+            "pub const fn touch( &self, slot: DualShock4TouchSlot, ) -> Option<DualShock4TouchContact>",
+            "pub const fn native_pressed(&self, control: DualShock4Control) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub fn set_sticks( &mut self, left: (DualShock4Axis, DualShock4Axis), right: (DualShock4Axis, DualShock4Axis), )",
+            "pub fn set_triggers( &mut self, left: DualShock4Trigger, right: DualShock4Trigger, )",
+            "pub fn set_touch( &mut self, slot: DualShock4TouchSlot, contact: Option<DualShock4TouchContact>, )",
+            "pub fn set_motion(&mut self, motion: DualShock4MotionSample)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, control: DualShock4Control, pressed: bool)"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Inputs",
+            "impl Debug for DualShock4Inputs",
+            "impl Default for DualShock4Inputs",
+            "impl Eq for DualShock4Inputs",
+            "impl PartialEq for DualShock4Inputs",
+            "impl RefUnwindSafe for DualShock4Inputs",
+            "impl Send for DualShock4Inputs",
+            "impl Sync for DualShock4Inputs",
+            "impl Unpin for DualShock4Inputs",
+            "impl UnwindSafe for DualShock4Inputs"
           ]
         },
         "struct.DualShock4MotionSample.html": {
@@ -1758,35 +1790,26 @@
             "impl UnwindSafe for DualShock4OutputState"
           ]
         },
-        "struct.DualShock4State.html": {
+        "struct.DualShock4Status.html": {
           "declarations": [
-            "pub struct DualShock4State { /* private fields */ }",
-            "pub const fn motion(&self) -> DualShock4MotionSample",
-            "pub const fn left_stick(&self) -> (DualShock4Axis, DualShock4Axis)",
-            "pub const fn right_stick(&self) -> (DualShock4Axis, DualShock4Axis)",
-            "pub const fn triggers(&self) -> (DualShock4Trigger, DualShock4Trigger)",
-            "pub const fn touch( &self, slot: DualShock4TouchSlot, ) -> Option<DualShock4TouchContact>",
-            "pub const fn native_pressed(&self, control: DualShock4Control) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
-            "pub fn set_sticks( &mut self, left: (DualShock4Axis, DualShock4Axis), right: (DualShock4Axis, DualShock4Axis), )",
-            "pub fn set_triggers( &mut self, left: DualShock4Trigger, right: DualShock4Trigger, )",
-            "pub fn set_touch( &mut self, slot: DualShock4TouchSlot, contact: Option<DualShock4TouchContact>, )",
-            "pub fn set_motion(&mut self, motion: DualShock4MotionSample)",
-            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
-            "pub fn set_native(&mut self, control: DualShock4Control, pressed: bool)"
+            "pub struct DualShock4Status { /* private fields */ }",
+            "pub const fn battery(self) -> BatteryState",
+            "pub const fn sequence(self) -> u8",
+            "pub const fn sensor_timestamp(self) -> u16",
+            "pub const fn touch_sequence(self) -> u8"
           ],
           "traits": [
-            "impl Clone for DualShock4State",
-            "impl Debug for DualShock4State",
-            "impl Default for DualShock4State",
-            "impl Eq for DualShock4State",
-            "impl PartialEq for DualShock4State",
-            "impl RefUnwindSafe for DualShock4State",
-            "impl Send for DualShock4State",
-            "impl Sync for DualShock4State",
-            "impl Unpin for DualShock4State",
-            "impl UnwindSafe for DualShock4State"
+            "impl Clone for DualShock4Status",
+            "impl Copy for DualShock4Status",
+            "impl Debug for DualShock4Status",
+            "impl Default for DualShock4Status",
+            "impl Eq for DualShock4Status",
+            "impl PartialEq for DualShock4Status",
+            "impl RefUnwindSafe for DualShock4Status",
+            "impl Send for DualShock4Status",
+            "impl Sync for DualShock4Status",
+            "impl Unpin for DualShock4Status",
+            "impl UnwindSafe for DualShock4Status"
           ]
         },
         "struct.DualShock4Surface.html": {
@@ -2361,9 +2384,10 @@
             "pub fn wants_write(&self) -> bool",
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
-            "pub fn state(&self) -> &SwitchProState",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProState) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: SwitchProState) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &SwitchProInputs",
+            "pub fn status(&self) -> SwitchProStatus",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: SwitchProInputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>",
             "pub fn is_dirty(&self) -> bool",
             "pub fn surface(&self) -> &'static SwitchProSurface",
@@ -2406,6 +2430,33 @@
             "impl Sync for SwitchProIdentity",
             "impl Unpin for SwitchProIdentity",
             "impl UnwindSafe for SwitchProIdentity"
+          ]
+        },
+        "struct.SwitchProInputs.html": {
+          "declarations": [
+            "pub struct SwitchProInputs { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
+            "pub const fn right_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
+            "pub const fn motion(&self) -> SwitchProMotionSample",
+            "pub const fn native_pressed(&self, control: SwitchProControl) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub fn set_sticks( &mut self, left: (SwitchProAxis, SwitchProAxis), right: (SwitchProAxis, SwitchProAxis), )",
+            "pub fn set_motion(&mut self, motion: SwitchProMotionSample)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, c: SwitchProControl, p: bool)"
+          ],
+          "traits": [
+            "impl Clone for SwitchProInputs",
+            "impl Debug for SwitchProInputs",
+            "impl Default for SwitchProInputs",
+            "impl Eq for SwitchProInputs",
+            "impl PartialEq for SwitchProInputs",
+            "impl RefUnwindSafe for SwitchProInputs",
+            "impl Send for SwitchProInputs",
+            "impl Sync for SwitchProInputs",
+            "impl Unpin for SwitchProInputs",
+            "impl UnwindSafe for SwitchProInputs"
           ]
         },
         "struct.SwitchProMotionSample.html": {
@@ -2477,31 +2528,24 @@
             "impl UnwindSafe for SwitchProRumble"
           ]
         },
-        "struct.SwitchProState.html": {
+        "struct.SwitchProStatus.html": {
           "declarations": [
-            "pub struct SwitchProState { /* private fields */ }",
-            "pub const fn left_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
-            "pub const fn right_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
-            "pub const fn motion(&self) -> SwitchProMotionSample",
-            "pub const fn native_pressed(&self, control: SwitchProControl) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
-            "pub fn set_sticks( &mut self, left: (SwitchProAxis, SwitchProAxis), right: (SwitchProAxis, SwitchProAxis), )",
-            "pub fn set_motion(&mut self, motion: SwitchProMotionSample)",
-            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
-            "pub fn set_native(&mut self, c: SwitchProControl, p: bool)"
+            "pub struct SwitchProStatus { /* private fields */ }",
+            "pub const fn timer(self) -> u8",
+            "pub const fn stream_enabled(self) -> bool"
           ],
           "traits": [
-            "impl Clone for SwitchProState",
-            "impl Debug for SwitchProState",
-            "impl Default for SwitchProState",
-            "impl Eq for SwitchProState",
-            "impl PartialEq for SwitchProState",
-            "impl RefUnwindSafe for SwitchProState",
-            "impl Send for SwitchProState",
-            "impl Sync for SwitchProState",
-            "impl Unpin for SwitchProState",
-            "impl UnwindSafe for SwitchProState"
+            "impl Clone for SwitchProStatus",
+            "impl Copy for SwitchProStatus",
+            "impl Debug for SwitchProStatus",
+            "impl Default for SwitchProStatus",
+            "impl Eq for SwitchProStatus",
+            "impl PartialEq for SwitchProStatus",
+            "impl RefUnwindSafe for SwitchProStatus",
+            "impl Send for SwitchProStatus",
+            "impl Sync for SwitchProStatus",
+            "impl Unpin for SwitchProStatus",
+            "impl UnwindSafe for SwitchProStatus"
           ]
         },
         "struct.SwitchProSurface.html": {
@@ -2924,9 +2968,10 @@
             "pub fn wants_write(&self) -> bool",
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
-            "pub fn state(&self) -> &Xbox360State",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut Xbox360State) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: Xbox360State) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &Xbox360Inputs",
+            "pub fn status(&self) -> Xbox360Status",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut Xbox360Inputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: Xbox360Inputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<Xbox360OutputState, ControlError>",
             "pub fn surface(&self) -> &'static Xbox360Surface",
             "pub fn is_dirty(&self) -> bool",
@@ -2951,6 +2996,33 @@
             "impl !UnwindSafe for Xbox360Controller",
             "impl Send for Xbox360Controller",
             "impl Unpin for Xbox360Controller"
+          ]
+        },
+        "struct.Xbox360Inputs.html": {
+          "declarations": [
+            "pub struct Xbox360Inputs { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
+            "pub const fn right_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
+            "pub const fn triggers(&self) -> (Xbox360Trigger, Xbox360Trigger)",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub const fn native_pressed(&self, control: Xbox360Control) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub fn set_sticks( &mut self, left: (Xbox360Axis, Xbox360Axis), right: (Xbox360Axis, Xbox360Axis), )",
+            "pub fn set_triggers(&mut self, left: Xbox360Trigger, right: Xbox360Trigger)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, control: Xbox360Control, pressed: bool)"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Inputs",
+            "impl Debug for Xbox360Inputs",
+            "impl Default for Xbox360Inputs",
+            "impl Eq for Xbox360Inputs",
+            "impl PartialEq for Xbox360Inputs",
+            "impl RefUnwindSafe for Xbox360Inputs",
+            "impl Send for Xbox360Inputs",
+            "impl Sync for Xbox360Inputs",
+            "impl Unpin for Xbox360Inputs",
+            "impl UnwindSafe for Xbox360Inputs"
           ]
         },
         "struct.Xbox360Options.html": {
@@ -2986,32 +3058,23 @@
             "impl UnwindSafe for Xbox360OutputState"
           ]
         },
-        "struct.Xbox360State.html": {
+        "struct.Xbox360Status.html": {
           "declarations": [
-            "pub struct Xbox360State { /* private fields */ }",
-            "pub const fn left_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
-            "pub const fn right_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
-            "pub const fn triggers(&self) -> (Xbox360Trigger, Xbox360Trigger)",
-            "pub const fn battery(&self) -> BatteryState",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
-            "pub const fn native_pressed(&self, control: Xbox360Control) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub fn set_sticks( &mut self, left: (Xbox360Axis, Xbox360Axis), right: (Xbox360Axis, Xbox360Axis), )",
-            "pub fn set_triggers(&mut self, left: Xbox360Trigger, right: Xbox360Trigger)",
-            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
-            "pub fn set_native(&mut self, control: Xbox360Control, pressed: bool)"
+            "pub struct Xbox360Status { /* private fields */ }",
+            "pub const fn battery(self) -> BatteryState"
           ],
           "traits": [
-            "impl Clone for Xbox360State",
-            "impl Debug for Xbox360State",
-            "impl Default for Xbox360State",
-            "impl Eq for Xbox360State",
-            "impl PartialEq for Xbox360State",
-            "impl RefUnwindSafe for Xbox360State",
-            "impl Send for Xbox360State",
-            "impl Sync for Xbox360State",
-            "impl Unpin for Xbox360State",
-            "impl UnwindSafe for Xbox360State"
+            "impl Clone for Xbox360Status",
+            "impl Copy for Xbox360Status",
+            "impl Debug for Xbox360Status",
+            "impl Default for Xbox360Status",
+            "impl Eq for Xbox360Status",
+            "impl PartialEq for Xbox360Status",
+            "impl RefUnwindSafe for Xbox360Status",
+            "impl Send for Xbox360Status",
+            "impl Sync for Xbox360Status",
+            "impl Unpin for Xbox360Status",
+            "impl UnwindSafe for Xbox360Status"
           ]
         },
         "struct.Xbox360Surface.html": {
@@ -3050,6 +3113,23 @@
             "impl Sync for Xbox360Trigger",
             "impl Unpin for Xbox360Trigger",
             "impl UnwindSafe for Xbox360Trigger"
+          ]
+        },
+        "struct.XboxSeriesBluetoothRumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesBluetoothRumble",
+            "impl Copy for XboxSeriesBluetoothRumble",
+            "impl Debug for XboxSeriesBluetoothRumble",
+            "impl Eq for XboxSeriesBluetoothRumble",
+            "impl PartialEq for XboxSeriesBluetoothRumble",
+            "impl RefUnwindSafe for XboxSeriesBluetoothRumble",
+            "impl Send for XboxSeriesBluetoothRumble",
+            "impl Sync for XboxSeriesBluetoothRumble",
+            "impl Unpin for XboxSeriesBluetoothRumble",
+            "impl UnwindSafe for XboxSeriesBluetoothRumble"
           ]
         },
         "struct.XboxSeriesController.html": {
@@ -3103,7 +3183,7 @@
         },
         "struct.XboxSeriesOutputState.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesOutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, }"
+            "#[non_exhaustive]pub struct XboxSeriesOutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, pub bluetooth_rumble: Option<XboxSeriesBluetoothRumble>, }"
           ],
           "traits": [
             "impl Clone for XboxSeriesOutputState",
@@ -3738,7 +3818,7 @@
         },
         "enum.MotorRole.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum MotorRole { Left, Right, Strong, Weak, }"
+            "#[non_exhaustive]pub enum MotorRole { Left, Right, Strong, Weak, LeftTrigger, RightTrigger, }"
           ],
           "traits": [
             "impl Clone for MotorRole",
@@ -4123,7 +4203,7 @@
         },
         "enum.XboxSeriesOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), }"
+            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), HostLifecycle(HostLifecycle), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
           ],
           "traits": [
             "impl Clone for XboxSeriesOutputEvent",
@@ -4829,9 +4909,10 @@
             "pub fn wants_write(&self) -> bool",
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
-            "pub fn state(&self) -> &DualShock4State",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut DualShock4State) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: DualShock4State) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &DualShock4Inputs",
+            "pub fn status(&self) -> DualShock4Status",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut DualShock4Inputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn set_inputs( &mut self, state: DualShock4Inputs, ) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<DualShock4OutputState, ControlError>",
             "pub fn is_dirty(&self) -> bool",
             "pub fn surface(&self) -> &'static DualShock4Surface",
@@ -4879,6 +4960,37 @@
             "impl Sync for DualShock4Identity",
             "impl Unpin for DualShock4Identity",
             "impl UnwindSafe for DualShock4Identity"
+          ]
+        },
+        "struct.DualShock4Inputs.html": {
+          "declarations": [
+            "pub struct DualShock4Inputs { /* private fields */ }",
+            "pub const fn motion(&self) -> DualShock4MotionSample",
+            "pub const fn left_stick(&self) -> (DualShock4Axis, DualShock4Axis)",
+            "pub const fn right_stick(&self) -> (DualShock4Axis, DualShock4Axis)",
+            "pub const fn triggers(&self) -> (DualShock4Trigger, DualShock4Trigger)",
+            "pub const fn touch( &self, slot: DualShock4TouchSlot, ) -> Option<DualShock4TouchContact>",
+            "pub const fn native_pressed(&self, control: DualShock4Control) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub fn set_sticks( &mut self, left: (DualShock4Axis, DualShock4Axis), right: (DualShock4Axis, DualShock4Axis), )",
+            "pub fn set_triggers( &mut self, left: DualShock4Trigger, right: DualShock4Trigger, )",
+            "pub fn set_touch( &mut self, slot: DualShock4TouchSlot, contact: Option<DualShock4TouchContact>, )",
+            "pub fn set_motion(&mut self, motion: DualShock4MotionSample)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, control: DualShock4Control, pressed: bool)"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Inputs",
+            "impl Debug for DualShock4Inputs",
+            "impl Default for DualShock4Inputs",
+            "impl Eq for DualShock4Inputs",
+            "impl PartialEq for DualShock4Inputs",
+            "impl RefUnwindSafe for DualShock4Inputs",
+            "impl Send for DualShock4Inputs",
+            "impl Sync for DualShock4Inputs",
+            "impl Unpin for DualShock4Inputs",
+            "impl UnwindSafe for DualShock4Inputs"
           ]
         },
         "struct.DualShock4MotionSample.html": {
@@ -4933,35 +5045,26 @@
             "impl UnwindSafe for DualShock4OutputState"
           ]
         },
-        "struct.DualShock4State.html": {
+        "struct.DualShock4Status.html": {
           "declarations": [
-            "pub struct DualShock4State { /* private fields */ }",
-            "pub const fn motion(&self) -> DualShock4MotionSample",
-            "pub const fn left_stick(&self) -> (DualShock4Axis, DualShock4Axis)",
-            "pub const fn right_stick(&self) -> (DualShock4Axis, DualShock4Axis)",
-            "pub const fn triggers(&self) -> (DualShock4Trigger, DualShock4Trigger)",
-            "pub const fn touch( &self, slot: DualShock4TouchSlot, ) -> Option<DualShock4TouchContact>",
-            "pub const fn native_pressed(&self, control: DualShock4Control) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
-            "pub fn set_sticks( &mut self, left: (DualShock4Axis, DualShock4Axis), right: (DualShock4Axis, DualShock4Axis), )",
-            "pub fn set_triggers( &mut self, left: DualShock4Trigger, right: DualShock4Trigger, )",
-            "pub fn set_touch( &mut self, slot: DualShock4TouchSlot, contact: Option<DualShock4TouchContact>, )",
-            "pub fn set_motion(&mut self, motion: DualShock4MotionSample)",
-            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
-            "pub fn set_native(&mut self, control: DualShock4Control, pressed: bool)"
+            "pub struct DualShock4Status { /* private fields */ }",
+            "pub const fn battery(self) -> BatteryState",
+            "pub const fn sequence(self) -> u8",
+            "pub const fn sensor_timestamp(self) -> u16",
+            "pub const fn touch_sequence(self) -> u8"
           ],
           "traits": [
-            "impl Clone for DualShock4State",
-            "impl Debug for DualShock4State",
-            "impl Default for DualShock4State",
-            "impl Eq for DualShock4State",
-            "impl PartialEq for DualShock4State",
-            "impl RefUnwindSafe for DualShock4State",
-            "impl Send for DualShock4State",
-            "impl Sync for DualShock4State",
-            "impl Unpin for DualShock4State",
-            "impl UnwindSafe for DualShock4State"
+            "impl Clone for DualShock4Status",
+            "impl Copy for DualShock4Status",
+            "impl Debug for DualShock4Status",
+            "impl Default for DualShock4Status",
+            "impl Eq for DualShock4Status",
+            "impl PartialEq for DualShock4Status",
+            "impl RefUnwindSafe for DualShock4Status",
+            "impl Send for DualShock4Status",
+            "impl Sync for DualShock4Status",
+            "impl Unpin for DualShock4Status",
+            "impl UnwindSafe for DualShock4Status"
           ]
         },
         "struct.DualShock4Surface.html": {
@@ -5536,9 +5639,10 @@
             "pub fn wants_write(&self) -> bool",
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
-            "pub fn state(&self) -> &SwitchProState",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProState) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: SwitchProState) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &SwitchProInputs",
+            "pub fn status(&self) -> SwitchProStatus",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: SwitchProInputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>",
             "pub fn is_dirty(&self) -> bool",
             "pub fn surface(&self) -> &'static SwitchProSurface",
@@ -5581,6 +5685,33 @@
             "impl Sync for SwitchProIdentity",
             "impl Unpin for SwitchProIdentity",
             "impl UnwindSafe for SwitchProIdentity"
+          ]
+        },
+        "struct.SwitchProInputs.html": {
+          "declarations": [
+            "pub struct SwitchProInputs { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
+            "pub const fn right_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
+            "pub const fn motion(&self) -> SwitchProMotionSample",
+            "pub const fn native_pressed(&self, control: SwitchProControl) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub fn set_sticks( &mut self, left: (SwitchProAxis, SwitchProAxis), right: (SwitchProAxis, SwitchProAxis), )",
+            "pub fn set_motion(&mut self, motion: SwitchProMotionSample)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, c: SwitchProControl, p: bool)"
+          ],
+          "traits": [
+            "impl Clone for SwitchProInputs",
+            "impl Debug for SwitchProInputs",
+            "impl Default for SwitchProInputs",
+            "impl Eq for SwitchProInputs",
+            "impl PartialEq for SwitchProInputs",
+            "impl RefUnwindSafe for SwitchProInputs",
+            "impl Send for SwitchProInputs",
+            "impl Sync for SwitchProInputs",
+            "impl Unpin for SwitchProInputs",
+            "impl UnwindSafe for SwitchProInputs"
           ]
         },
         "struct.SwitchProMotionSample.html": {
@@ -5652,31 +5783,24 @@
             "impl UnwindSafe for SwitchProRumble"
           ]
         },
-        "struct.SwitchProState.html": {
+        "struct.SwitchProStatus.html": {
           "declarations": [
-            "pub struct SwitchProState { /* private fields */ }",
-            "pub const fn left_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
-            "pub const fn right_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
-            "pub const fn motion(&self) -> SwitchProMotionSample",
-            "pub const fn native_pressed(&self, control: SwitchProControl) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
-            "pub fn set_sticks( &mut self, left: (SwitchProAxis, SwitchProAxis), right: (SwitchProAxis, SwitchProAxis), )",
-            "pub fn set_motion(&mut self, motion: SwitchProMotionSample)",
-            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
-            "pub fn set_native(&mut self, c: SwitchProControl, p: bool)"
+            "pub struct SwitchProStatus { /* private fields */ }",
+            "pub const fn timer(self) -> u8",
+            "pub const fn stream_enabled(self) -> bool"
           ],
           "traits": [
-            "impl Clone for SwitchProState",
-            "impl Debug for SwitchProState",
-            "impl Default for SwitchProState",
-            "impl Eq for SwitchProState",
-            "impl PartialEq for SwitchProState",
-            "impl RefUnwindSafe for SwitchProState",
-            "impl Send for SwitchProState",
-            "impl Sync for SwitchProState",
-            "impl Unpin for SwitchProState",
-            "impl UnwindSafe for SwitchProState"
+            "impl Clone for SwitchProStatus",
+            "impl Copy for SwitchProStatus",
+            "impl Debug for SwitchProStatus",
+            "impl Default for SwitchProStatus",
+            "impl Eq for SwitchProStatus",
+            "impl PartialEq for SwitchProStatus",
+            "impl RefUnwindSafe for SwitchProStatus",
+            "impl Send for SwitchProStatus",
+            "impl Sync for SwitchProStatus",
+            "impl Unpin for SwitchProStatus",
+            "impl UnwindSafe for SwitchProStatus"
           ]
         },
         "struct.SwitchProSurface.html": {
@@ -6099,9 +6223,10 @@
             "pub fn wants_write(&self) -> bool",
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
-            "pub fn state(&self) -> &Xbox360State",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut Xbox360State) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: Xbox360State) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &Xbox360Inputs",
+            "pub fn status(&self) -> Xbox360Status",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut Xbox360Inputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: Xbox360Inputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<Xbox360OutputState, ControlError>",
             "pub fn surface(&self) -> &'static Xbox360Surface",
             "pub fn is_dirty(&self) -> bool",
@@ -6126,6 +6251,33 @@
             "impl !UnwindSafe for Xbox360Controller",
             "impl Send for Xbox360Controller",
             "impl Unpin for Xbox360Controller"
+          ]
+        },
+        "struct.Xbox360Inputs.html": {
+          "declarations": [
+            "pub struct Xbox360Inputs { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
+            "pub const fn right_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
+            "pub const fn triggers(&self) -> (Xbox360Trigger, Xbox360Trigger)",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub const fn native_pressed(&self, control: Xbox360Control) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub fn set_sticks( &mut self, left: (Xbox360Axis, Xbox360Axis), right: (Xbox360Axis, Xbox360Axis), )",
+            "pub fn set_triggers(&mut self, left: Xbox360Trigger, right: Xbox360Trigger)",
+            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
+            "pub fn set_native(&mut self, control: Xbox360Control, pressed: bool)"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Inputs",
+            "impl Debug for Xbox360Inputs",
+            "impl Default for Xbox360Inputs",
+            "impl Eq for Xbox360Inputs",
+            "impl PartialEq for Xbox360Inputs",
+            "impl RefUnwindSafe for Xbox360Inputs",
+            "impl Send for Xbox360Inputs",
+            "impl Sync for Xbox360Inputs",
+            "impl Unpin for Xbox360Inputs",
+            "impl UnwindSafe for Xbox360Inputs"
           ]
         },
         "struct.Xbox360Options.html": {
@@ -6161,32 +6313,23 @@
             "impl UnwindSafe for Xbox360OutputState"
           ]
         },
-        "struct.Xbox360State.html": {
+        "struct.Xbox360Status.html": {
           "declarations": [
-            "pub struct Xbox360State { /* private fields */ }",
-            "pub const fn left_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
-            "pub const fn right_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
-            "pub const fn triggers(&self) -> (Xbox360Trigger, Xbox360Trigger)",
-            "pub const fn battery(&self) -> BatteryState",
-            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
-            "pub const fn native_pressed(&self, control: Xbox360Control) -> bool",
-            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
-            "pub fn set_sticks( &mut self, left: (Xbox360Axis, Xbox360Axis), right: (Xbox360Axis, Xbox360Axis), )",
-            "pub fn set_triggers(&mut self, left: Xbox360Trigger, right: Xbox360Trigger)",
-            "pub fn set_digital(&mut self, update: DigitalControlUpdate)",
-            "pub fn set_native(&mut self, control: Xbox360Control, pressed: bool)"
+            "pub struct Xbox360Status { /* private fields */ }",
+            "pub const fn battery(self) -> BatteryState"
           ],
           "traits": [
-            "impl Clone for Xbox360State",
-            "impl Debug for Xbox360State",
-            "impl Default for Xbox360State",
-            "impl Eq for Xbox360State",
-            "impl PartialEq for Xbox360State",
-            "impl RefUnwindSafe for Xbox360State",
-            "impl Send for Xbox360State",
-            "impl Sync for Xbox360State",
-            "impl Unpin for Xbox360State",
-            "impl UnwindSafe for Xbox360State"
+            "impl Clone for Xbox360Status",
+            "impl Copy for Xbox360Status",
+            "impl Debug for Xbox360Status",
+            "impl Default for Xbox360Status",
+            "impl Eq for Xbox360Status",
+            "impl PartialEq for Xbox360Status",
+            "impl RefUnwindSafe for Xbox360Status",
+            "impl Send for Xbox360Status",
+            "impl Sync for Xbox360Status",
+            "impl Unpin for Xbox360Status",
+            "impl UnwindSafe for Xbox360Status"
           ]
         },
         "struct.Xbox360Surface.html": {
@@ -6225,6 +6368,23 @@
             "impl Sync for Xbox360Trigger",
             "impl Unpin for Xbox360Trigger",
             "impl UnwindSafe for Xbox360Trigger"
+          ]
+        },
+        "struct.XboxSeriesBluetoothRumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesBluetoothRumble",
+            "impl Copy for XboxSeriesBluetoothRumble",
+            "impl Debug for XboxSeriesBluetoothRumble",
+            "impl Eq for XboxSeriesBluetoothRumble",
+            "impl PartialEq for XboxSeriesBluetoothRumble",
+            "impl RefUnwindSafe for XboxSeriesBluetoothRumble",
+            "impl Send for XboxSeriesBluetoothRumble",
+            "impl Sync for XboxSeriesBluetoothRumble",
+            "impl Unpin for XboxSeriesBluetoothRumble",
+            "impl UnwindSafe for XboxSeriesBluetoothRumble"
           ]
         },
         "struct.XboxSeriesController.html": {
@@ -6278,7 +6438,7 @@
         },
         "struct.XboxSeriesOutputState.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesOutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, }"
+            "#[non_exhaustive]pub struct XboxSeriesOutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, pub bluetooth_rumble: Option<XboxSeriesBluetoothRumble>, }"
           ],
           "traits": [
             "impl Clone for XboxSeriesOutputState",

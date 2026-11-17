@@ -1,14 +1,16 @@
 //! Native controls for the standard Xbox Series controller.
 
+mod bluetooth;
 mod controller;
 mod definition;
 mod evdev;
+pub use bluetooth::XboxSeriesBluetoothRumble;
 pub use controller::{XboxSeriesController, XboxSeriesOutputState, create_xbox_series};
 
 pub(crate) use definition::XboxSeriesDefinition;
 use gr_controller_contract::{ControlError, DigitalControlUpdate, DpadDirection, FaceButton};
 
-/// Xbox Series has no per-controller creation settings on uinput.
+/// Xbox Series has no per-controller creation settings.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct XboxSeriesOptions {}
@@ -62,7 +64,7 @@ impl XboxSeriesTrigger {
     }
 }
 
-/// Complete input state for the Xbox Series uinput realization.
+/// Complete input state for the Xbox Series controller.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct XboxSeriesState {
     buttons: [bool; XboxSeriesButton::DpadRight as usize + 1],

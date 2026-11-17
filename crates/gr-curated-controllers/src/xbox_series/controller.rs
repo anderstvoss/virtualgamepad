@@ -1,5 +1,6 @@
 use super::{
-    XboxSeriesButton, XboxSeriesOptions, XboxSeriesState, definition::XboxSeriesDefinition, evdev,
+    XboxSeriesBluetoothRumble, XboxSeriesButton, XboxSeriesOptions, XboxSeriesState, bluetooth,
+    definition::XboxSeriesDefinition, evdev,
 };
 use crate::{
     ControllerAssociation, CreationOptions, common,
@@ -8,64 +9,85 @@ use crate::{
 use gr_controller_contract::{CommitError, ControlError, ControllerSurface, DigitalControlUpdate};
 use gr_realization_api::{ProviderDiagnostics, ProviderError, RawReverseEvent, RealizationTarget};
 
-/// Accepted conventional rumble state from the uinput host.
+/// Accepted reverse rumble state from the selected host transport.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct XboxSeriesOutputState {
     pub revision: u64,
     pub evdev_rumble: Option<RumblePlayback>,
+    pub bluetooth_rumble: Option<XboxSeriesBluetoothRumble>,
 }
 
 impl OutputState for XboxSeriesOutputState {
-    fn apply(&mut self, _: &gr_hid::Report) -> Result<(), gr_hid::ReplyError> {
-        Err(gr_hid::ReplyError::Unsupported)
+    fn apply(&mut self, report: &gr_hid::Report) -> Result<(), gr_hid::ReplyError> {
+        self.bluetooth_rumble = Some(bluetooth::rumble(report)?);
+        self.revision = self.revision.saturating_add(1);
+        Ok(())
     }
 
     fn from_native(playback: NativePlayback) -> Self {
         Self {
             revision: playback.revision,
             evdev_rumble: playback.latest,
+            bluetooth_rumble: None,
         }
     }
 }
 
-/// One active Xbox Series uinput controller.
-pub struct XboxSeriesController(Box<common::ControllerSession<XboxSeriesDefinition>>);
+/// One active Xbox Series controller.
+pub struct XboxSeriesController(
+    Box<common::ControllerSession<XboxSeriesDefinition>>,
+    &'static ControllerSurface,
+);
 
 /// Create an Xbox Series controller using the exact selected realization.
 pub fn create_xbox_series(
     options: CreationOptions,
     _: XboxSeriesOptions,
 ) -> Result<XboxSeriesController, ProviderError> {
-    require_uinput(options.target)?;
+    require_target(options.target)?;
     common::require_linux_platform(options.target)?;
     create(options, XboxSeriesDefinition::default())
 }
 
-fn require_uinput(target: RealizationTarget) -> Result<(), ProviderError> {
-    if target != RealizationTarget::LINUX_UINPUT {
-        return Err(ProviderError::Unsupported {
-            reason: "Xbox Series supports the linux.uinput realization".into(),
-        });
+fn require_target(target: RealizationTarget) -> Result<(), ProviderError> {
+    if matches!(
+        target,
+        RealizationTarget::LINUX_UINPUT | RealizationTarget::LINUX_UHID_BLUETOOTH
+    ) {
+        Ok(())
+    } else {
+        Err(ProviderError::Unsupported {
+            reason: common::unavailable(target).to_string(),
+        })
     }
-    Ok(())
 }
 
 pub(super) fn create(
     options: CreationOptions,
     definition: XboxSeriesDefinition,
 ) -> Result<XboxSeriesController, ProviderError> {
-    let mut session = common::create(definition, evdev::realization(), options)?;
+    use super::definition::{BLUETOOTH, SURFACE};
+    let (realization, surface) = match options.target {
+        RealizationTarget::LINUX_UINPUT => (evdev::realization(), &SURFACE),
+        RealizationTarget::LINUX_UHID_BLUETOOTH => (bluetooth::realization(), &BLUETOOTH),
+        target => {
+            return Err(ProviderError::Unsupported {
+                reason: common::unavailable(target).to_string(),
+            });
+        }
+    };
+    let mut session = common::create(definition, realization, options)?;
     session.commit().map_err(|error| ProviderError::Open {
         reason: error.to_string(),
     })?;
-    Ok(XboxSeriesController(Box::new(session)))
+    Ok(XboxSeriesController(Box::new(session), surface))
 }
 
 impl XboxSeriesController {
     #[must_use]
     pub fn surface(&self) -> &'static ControllerSurface {
-        &super::definition::SURFACE
+        self.1
     }
 
     #[must_use]
@@ -174,5 +196,32 @@ impl XboxSeriesController {
 
     pub fn close(&mut self) {
         self.0.close();
+    }
+}
+
+#[cfg(test)]
+mod target_validation_tests {
+    use super::*;
+
+    #[test]
+    fn realization_rejection_precedes_host_platform_preflight() {
+        for target in [
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            RealizationTarget::LINUX_USBIP_USB_AUDIO,
+        ] {
+            assert!(matches!(
+                create_xbox_series(
+                    CreationOptions {
+                        target,
+                        session: gr_realization_api::RealizationSessionId(7)
+                    },
+                    XboxSeriesOptions::default()
+                ),
+                Err(ProviderError::Unsupported { .. })
+            ));
+        }
+        assert!(require_target(RealizationTarget::LINUX_UINPUT).is_ok());
+        assert!(require_target(RealizationTarget::LINUX_UHID_BLUETOOTH).is_ok());
     }
 }

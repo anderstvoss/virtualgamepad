@@ -712,9 +712,10 @@ fn creation_targets_follow_each_registered_family_and_compiled_factories() {
                 *target != RealizationId::LINUX_USBIP_USB_AUDIO || cfg!(feature = "audio-usbip")
             );
         }
-        if kind != Kind::WiiRemote {
-            assert!(!targets.contains(&RealizationId::LINUX_UHID_BLUETOOTH));
-        }
+        assert_eq!(
+            targets.contains(&RealizationId::LINUX_UHID_BLUETOOTH),
+            matches!(kind, Kind::WiiRemote | Kind::XboxSeries)
+        );
         for target in targets {
             assert_eq!(valid_creation_target(kind, target), target);
         }

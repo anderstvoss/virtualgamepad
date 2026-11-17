@@ -59,18 +59,17 @@ pub enum Xbox360Control {
     RightStickPress,
 }
 
-/// Complete semantic state for an Xbox 360 controller.
+/// Caller-owned native input levels. Battery metadata is separate.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Xbox360State {
+pub struct Xbox360Inputs {
     face: [bool; 4],
     dpad: [bool; 4],
     left: (Xbox360Axis, Xbox360Axis),
     right: (Xbox360Axis, Xbox360Axis),
     triggers: (Xbox360Trigger, Xbox360Trigger),
     buttons: [bool; 7],
-    battery: BatteryState,
 }
-impl Default for Xbox360State {
+impl Default for Xbox360Inputs {
     fn default() -> Self {
         Self {
             face: [false; 4],
@@ -79,11 +78,10 @@ impl Default for Xbox360State {
             right: (Xbox360Axis(0), Xbox360Axis(0)),
             triggers: (Xbox360Trigger(0), Xbox360Trigger(0)),
             buttons: [false; 7],
-            battery: BatteryState::default(),
         }
     }
 }
-impl Xbox360State {
+impl Xbox360Inputs {
     #[must_use]
     pub const fn left_stick(&self) -> (Xbox360Axis, Xbox360Axis) {
         self.left
@@ -95,10 +93,6 @@ impl Xbox360State {
     #[must_use]
     pub const fn triggers(&self) -> (Xbox360Trigger, Xbox360Trigger) {
         self.triggers
-    }
-    #[must_use]
-    pub const fn battery(&self) -> BatteryState {
-        self.battery
     }
     #[must_use]
     pub const fn face_pressed(&self, button: FaceButton) -> bool {
@@ -165,6 +159,34 @@ impl Xbox360State {
             Xbox360Control::LeftStickPress => self.buttons[5] = pressed,
             Xbox360Control::RightStickPress => self.buttons[6] = pressed,
         }
+    }
+}
+/// Accepted controller-owned battery metadata.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Xbox360Status {
+    battery: BatteryState,
+}
+impl Xbox360Status {
+    #[must_use]
+    pub const fn battery(self) -> BatteryState {
+        self.battery
+    }
+}
+/// Supporting runtime/worker state. Applications edit `Xbox360Inputs`.
+#[doc(hidden)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Xbox360SessionState {
+    inputs: Xbox360Inputs,
+    status: Xbox360Status,
+}
+impl Xbox360SessionState {
+    #[must_use]
+    pub const fn inputs(&self) -> &Xbox360Inputs {
+        &self.inputs
+    }
+    #[must_use]
+    pub const fn status(&self) -> Xbox360Status {
+        self.status
     }
 }
 
@@ -597,17 +619,17 @@ impl RealizationControllerDefinition for Xbox360Definition {
     }
 }
 impl TargetAwareControllerDriver for Xbox360Definition {
-    type State = Xbox360State;
+    type State = Xbox360SessionState;
     type Frame = ProviderFrame;
     fn neutral_state(&self) -> Self::State {
-        Xbox360State::default()
+        Xbox360SessionState::default()
     }
     fn apply_digital(
         &self,
         state: &mut Self::State,
         update: DigitalControlUpdate,
     ) -> Result<(), ControlError> {
-        state.set_digital(update);
+        state.inputs.set_digital(update);
         Ok(())
     }
     fn validate_state(
@@ -624,7 +646,7 @@ impl TargetAwareControllerDriver for Xbox360Definition {
         ) {
             return Err(common::unavailable(selection.target));
         }
-        common::validate_hat(state.dpad)?;
+        common::validate_hat(state.inputs.dpad)?;
         Ok(())
     }
     fn encode(
@@ -651,7 +673,7 @@ impl TargetAwareControllerDriver for Xbox360Definition {
             };
         }
         let mut events = Vec::new();
-        for (code, pressed) in [304, 305, 307, 308].into_iter().zip(state.face) {
+        for (code, pressed) in [304, 305, 307, 308].into_iter().zip(state.inputs.face) {
             events.push(EvdevEvent {
                 event_type: common::EV_KEY,
                 code,
@@ -660,7 +682,7 @@ impl TargetAwareControllerDriver for Xbox360Definition {
         }
         for (code, pressed) in [310, 311, 314, 315, 316, 317, 318]
             .into_iter()
-            .zip(state.buttons)
+            .zip(state.inputs.buttons)
         {
             events.push(EvdevEvent {
                 event_type: common::EV_KEY,
@@ -672,42 +694,42 @@ impl TargetAwareControllerDriver for Xbox360Definition {
             EvdevEvent {
                 event_type: common::EV_ABS,
                 code: 0,
-                value: i32::from(state.left.0.raw()),
+                value: i32::from(state.inputs.left.0.raw()),
             },
             EvdevEvent {
                 event_type: common::EV_ABS,
                 code: 1,
-                value: i32::from(state.left.1.raw()),
+                value: i32::from(state.inputs.left.1.raw()),
             },
             EvdevEvent {
                 event_type: common::EV_ABS,
                 code: 2,
-                value: i32::from(state.triggers.0.raw()),
+                value: i32::from(state.inputs.triggers.0.raw()),
             },
             EvdevEvent {
                 event_type: common::EV_ABS,
                 code: 3,
-                value: i32::from(state.right.0.raw()),
+                value: i32::from(state.inputs.right.0.raw()),
             },
             EvdevEvent {
                 event_type: common::EV_ABS,
                 code: 4,
-                value: i32::from(state.right.1.raw()),
+                value: i32::from(state.inputs.right.1.raw()),
             },
             EvdevEvent {
                 event_type: common::EV_ABS,
                 code: 5,
-                value: i32::from(state.triggers.1.raw()),
+                value: i32::from(state.inputs.triggers.1.raw()),
             },
             EvdevEvent {
                 event_type: common::EV_ABS,
                 code: 16,
-                value: i32::from(state.dpad[3]) - i32::from(state.dpad[2]),
+                value: i32::from(state.inputs.dpad[3]) - i32::from(state.inputs.dpad[2]),
             },
             EvdevEvent {
                 event_type: common::EV_ABS,
                 code: 17,
-                value: i32::from(state.dpad[1]) - i32::from(state.dpad[0]),
+                value: i32::from(state.inputs.dpad[1]) - i32::from(state.inputs.dpad[0]),
             },
             EvdevEvent {
                 event_type: common::EV_SYN,
@@ -771,8 +793,13 @@ impl Xbox360Controller {
     }
 
     #[must_use]
-    pub const fn state(&self) -> &Xbox360State {
-        self.0.state()
+    pub const fn inputs(&self) -> &Xbox360Inputs {
+        &self.0.state().inputs
+    }
+    /// Accepted controller-owned battery metadata.
+    #[must_use]
+    pub const fn status(&self) -> Xbox360Status {
+        self.0.state().status
     }
     #[must_use]
     pub fn surface(&self) -> &'static Xbox360Surface {
@@ -796,9 +823,9 @@ impl Xbox360Controller {
     /// Returns the closure's error, a validation error, or `ControlError::Closed`.
     pub fn edit_inputs(
         &mut self,
-        edit: impl FnOnce(&mut Xbox360State) -> Result<(), ControlError>,
+        edit: impl FnOnce(&mut Xbox360Inputs) -> Result<(), ControlError>,
     ) -> Result<(), ControlError> {
-        self.0.edit_inputs(edit)
+        self.0.edit_inputs(|state| edit(&mut state.inputs))
     }
     /// Replace the complete native input state as one validated edit.
     /// Call `commit()` to deliver it. Session metadata is preserved.
@@ -806,7 +833,7 @@ impl Xbox360Controller {
     /// # Errors
     /// Returns a control error if the session is closed or the snapshot cannot
     /// be represented by the selected realization.
-    pub fn set_inputs(&mut self, state: Xbox360State) -> Result<(), ControlError> {
+    pub fn set_inputs(&mut self, state: Xbox360Inputs) -> Result<(), ControlError> {
         self.edit_inputs(|current| {
             *current = state;
             Ok(())
@@ -818,14 +845,14 @@ impl Xbox360Controller {
     /// Enable or hide the semantic battery state without recreating the controller.
     pub fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), ControlError> {
         self.0.update_state(|state| {
-            state.battery.set_exposed(exposed);
+            state.status.battery.set_exposed(exposed);
             Ok(())
         })
     }
     /// Update the semantic battery percentage without recreating the controller.
     pub fn set_battery_level(&mut self, level: BatteryLevel) -> Result<(), ControlError> {
         self.0.update_state(|state| {
-            state.battery.set_level(level);
+            state.status.battery.set_level(level);
             Ok(())
         })
     }
@@ -1022,7 +1049,7 @@ pub fn create_xbox360(
 /// Bind a pre-opened, unprivileged USB worker to the typed controller contract.
 #[must_use]
 pub fn create_xbox360_usb_worker(
-    bridge: Box<dyn common::WorkerBridge<Xbox360State>>,
+    bridge: Box<dyn common::WorkerBridge<Xbox360SessionState>>,
 ) -> Xbox360Controller {
     let selection = RealizationSelection {
         controller: ControllerId::new("virtualgamepad.xbox360"),
@@ -1037,23 +1064,20 @@ pub fn create_xbox360_usb_worker(
 
 impl common::HidDriver for Xbox360Definition {
     fn transition_inputs(previous: &Self::State, next: &mut Self::State) {
-        next.battery = previous.battery;
+        next.status = previous.status;
     }
 
     fn neutralize_state(state: &mut Self::State) {
-        *state = Self::State {
-            battery: state.battery,
-            ..Self::State::default()
-        };
+        state.inputs = Xbox360Inputs::default();
     }
 
-    type Hid = common::SnapshotProtocol<Xbox360State, crate::retained::Xbox360OutputState>;
+    type Hid = common::SnapshotProtocol<Xbox360SessionState, crate::retained::Xbox360OutputState>;
     fn hid_protocol(&self, _: gr_realization_api::RealizationSessionId, _: [u8; 6]) -> Self::Hid {
-        fn encode(state: &Xbox360State, _: u64, _: u8) -> gr_hid::Report {
+        fn encode(state: &Xbox360SessionState, _: u64, _: u8) -> gr_hid::Report {
             common::logical_input(xbox_hid_frame(state))
         }
         common::SnapshotProtocol::new(
-            Xbox360State::default(),
+            Xbox360SessionState::default(),
             encode,
             |_| Err(gr_hid::ReplyError::Unsupported),
             std::collections::BTreeMap::new(),
@@ -1063,19 +1087,19 @@ impl common::HidDriver for Xbox360Definition {
     }
 }
 
-fn xbox_hid_frame(state: &Xbox360State) -> ProviderFrame {
+fn xbox_hid_frame(state: &Xbox360SessionState) -> ProviderFrame {
     let byte = |value: i16| u8::try_from((i32::from(value) + 32_768) >> 8).unwrap_or(0);
     common::hid_gamepad_frame(
-        state.face,
-        state.dpad,
-        &state.buttons,
+        state.inputs.face,
+        state.inputs.dpad,
+        &state.inputs.buttons,
         [
-            byte(state.left.0.raw()),
-            byte(state.left.1.raw()),
-            state.triggers.0.raw(),
-            byte(state.right.0.raw()),
-            byte(state.right.1.raw()),
-            state.triggers.1.raw(),
+            byte(state.inputs.left.0.raw()),
+            byte(state.inputs.left.1.raw()),
+            state.inputs.triggers.0.raw(),
+            byte(state.inputs.right.0.raw()),
+            byte(state.inputs.right.1.raw()),
+            state.inputs.triggers.1.raw(),
         ],
     )
 }
@@ -1183,8 +1207,104 @@ impl crate::registry::ControllerFamily for Xbox360Definition {
 }
 
 #[cfg(test)]
+impl crate::common::session_tests::InputFixture for Xbox360SessionState {
+    type Inputs = Xbox360Inputs;
+    fn test_inputs(&self) -> &Self::Inputs {
+        &self.inputs
+    }
+    fn test_inputs_mut(&mut self) -> &mut Self::Inputs {
+        &mut self.inputs
+    }
+    fn test_into_inputs(self) -> Self::Inputs {
+        self.inputs
+    }
+}
+#[cfg(test)]
+impl crate::common::session_tests::ControllerFixture for Xbox360Controller {
+    type State = Xbox360SessionState;
+    fn test_state(&self) -> &Self::State {
+        self.0.state()
+    }
+}
+#[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::session_tests::ControllerFixture as _;
+
+    #[test]
+    fn input_values_are_independent_of_battery_metadata() {
+        use common::session_tests::input_validation_session;
+        let neutral = Xbox360Inputs::default();
+        assert_eq!(neutral, neutral.clone());
+        assert_eq!(
+            neutral.left_stick(),
+            (Xbox360Axis::new(0), Xbox360Axis::new(0))
+        );
+        assert_eq!(
+            neutral.triggers(),
+            (Xbox360Trigger::new(0), Xbox360Trigger::new(0))
+        );
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            RealizationTarget::LINUX_USBIP_USB_AUDIO,
+        ] {
+            let session = input_validation_session(Xbox360Definition, target, [false; 3]);
+            let mut controller = Xbox360Controller(session);
+            controller.service(&mut |_| {}).unwrap();
+            controller.set_battery_exposed(true).unwrap();
+            controller
+                .set_battery_level(BatteryLevel::new(37).unwrap())
+                .unwrap();
+            let status = controller.status();
+            let outputs = controller.host_outputs();
+            let mut inputs = neutral.clone();
+            inputs.set_native(Xbox360Control::A, true);
+            inputs.set_sticks(
+                (Xbox360Axis::new(i16::MIN), Xbox360Axis::new(i16::MAX)),
+                (Xbox360Axis::new(123), Xbox360Axis::new(-456)),
+            );
+            inputs.set_triggers(Xbox360Trigger::new(17), Xbox360Trigger::new(231));
+            inputs.set_digital(DigitalControlUpdate::Dpad {
+                direction: gr_controller_contract::DpadDirection::Up,
+                pressed: true,
+            });
+            controller.set_inputs(inputs.clone()).unwrap();
+            assert_eq!(controller.inputs(), &inputs);
+            assert_eq!(controller.status(), status);
+            controller.commit().unwrap();
+            controller.edit_inputs(|_| Ok(())).unwrap();
+            controller.set_inputs(inputs.clone()).unwrap();
+            assert!(!controller.is_dirty());
+            assert!(
+                controller
+                    .edit_inputs(|candidate| {
+                        candidate.set_triggers(Xbox360Trigger::new(99), Xbox360Trigger::new(77));
+                        candidate.set_digital(DigitalControlUpdate::Dpad {
+                            direction: gr_controller_contract::DpadDirection::Down,
+                            pressed: true,
+                        });
+                        Ok(())
+                    })
+                    .is_err()
+            );
+            assert_eq!(controller.inputs(), &inputs);
+            assert_eq!(controller.status(), status);
+            assert!(!controller.is_dirty());
+            controller.neutralize().unwrap();
+            assert_eq!(controller.inputs(), &neutral);
+            assert_eq!(controller.status(), status);
+            assert_eq!(controller.host_outputs(), outputs);
+            controller.close();
+            controller.close();
+            assert_eq!(controller.status(), status);
+            assert_eq!(
+                controller.set_inputs(neutral.clone()),
+                Err(ControlError::Closed)
+            );
+        }
+    }
 
     #[test]
     fn native_input_edits_are_transactional_and_unchanged_edits_stay_clean() {
@@ -1211,13 +1331,14 @@ mod tests {
                 .unwrap();
             assert!(
                 controller
-                    .state()
+                    .test_state()
+                    .inputs
                     .dpad_pressed(gr_controller_contract::DpadDirection::Down)
             );
             controller.neutralize().unwrap();
             check_input_transactions!(
                 controller,
-                |state: &mut Xbox360State| {
+                |state: &mut Xbox360Inputs| {
                     state.set_native(Xbox360Control::A, true);
                     state.set_digital(DigitalControlUpdate::Dpad {
                         direction: gr_controller_contract::DpadDirection::Up,
@@ -1225,7 +1346,7 @@ mod tests {
                     });
                     Ok(())
                 },
-                |state: &mut Xbox360State| {
+                |state: &mut Xbox360Inputs| {
                     state.set_digital(DigitalControlUpdate::Dpad {
                         direction: gr_controller_contract::DpadDirection::Down,
                         pressed: true,
@@ -1255,9 +1376,9 @@ mod tests {
             controller.commit().unwrap();
             controller.close();
             controller.close();
-            let accepted = controller.state().clone();
+            let accepted = controller.test_state().clone();
             assert_eq!(controller.neutralize(), Err(ControlError::Closed));
-            assert_eq!(controller.state(), &accepted);
+            assert_eq!(controller.test_state(), &accepted);
         }
     }
 
@@ -1274,30 +1395,35 @@ mod tests {
             controller
                 .0
                 .update_state(|current| {
-                    current.battery.set_exposed(true);
+                    current.status.battery.set_exposed(true);
                     current
+                        .status
                         .battery
                         .set_level(crate::BatteryLevel::new(37).unwrap());
                     Ok(())
                 })
                 .unwrap();
             let axis = Xbox360Axis::new;
-            let snapshot = Xbox360State {
-                face: [true; 4],
-                dpad: [true, false, false, true],
-                left: (axis(i16::MIN), axis(i16::MAX)),
-                right: (axis(i16::MAX), axis(i16::MIN)),
-                buttons: [true; 7],
-                triggers: (Xbox360Trigger::new(255), Xbox360Trigger::new(23)),
-                ..Default::default()
+            let snapshot = Xbox360SessionState {
+                inputs: Xbox360Inputs {
+                    face: [true; 4],
+                    dpad: [true, false, false, true],
+                    left: (axis(i16::MIN), axis(i16::MAX)),
+                    right: (axis(i16::MAX), axis(i16::MIN)),
+                    buttons: [true; 7],
+                    triggers: (Xbox360Trigger::new(255), Xbox360Trigger::new(23)),
+                },
+                status: Xbox360Status::default(),
             };
-            let expected = Xbox360State {
-                battery: controller.state().battery,
-                ..snapshot.clone()
+            let expected = Xbox360SessionState {
+                inputs: (snapshot.clone()).inputs,
+                status: Xbox360Status {
+                    battery: controller.test_state().status.battery,
+                },
             };
             let mut bad = snapshot.clone();
-            bad.face[0] = false;
-            bad.dpad[1] = true;
+            bad.inputs.face[0] = false;
+            bad.inputs.dpad[1] = true;
             let invalid = Some((
                 bad,
                 ControlError::UnsupportedControl {
@@ -1311,7 +1437,7 @@ mod tests {
                 expected,
                 invalid,
                 Xbox360Definition
-                    .encode(controller.0.selection(), controller.state())
+                    .encode(controller.0.selection(), controller.test_state())
                     .unwrap(),
                 &[]
             );
@@ -1349,7 +1475,8 @@ mod tests {
             profile.descriptor,
             gr_controller_wire::STANDARD_GAMEPAD_DESCRIPTOR
         );
-        let ProviderFrame::HidInput { bytes, report_id } = xbox_hid_frame(&Xbox360State::default())
+        let ProviderFrame::HidInput { bytes, report_id } =
+            xbox_hid_frame(&Xbox360SessionState::default())
         else {
             panic!("generic HID input required");
         };
@@ -1376,18 +1503,19 @@ mod tests {
 
     #[test]
     fn neutralization_releases_native_inputs_and_preserves_metadata() {
-        let mut expected = Xbox360State::default();
-        expected.battery.set_exposed(true);
+        let mut expected = Xbox360SessionState::default();
+        expected.status.battery.set_exposed(true);
         expected
+            .status
             .battery
             .set_level(crate::BatteryLevel::new(37).unwrap());
         let mut state = expected.clone();
-        state.face.fill(true);
-        state.dpad.fill(true);
-        state.buttons.fill(true);
-        state.left = (Xbox360Axis(100), Xbox360Axis(200));
-        state.right = (Xbox360Axis(200), Xbox360Axis(100));
-        state.triggers = (Xbox360Trigger(255), Xbox360Trigger(255));
+        state.inputs.face.fill(true);
+        state.inputs.dpad.fill(true);
+        state.inputs.buttons.fill(true);
+        state.inputs.left = (Xbox360Axis(100), Xbox360Axis(200));
+        state.inputs.right = (Xbox360Axis(200), Xbox360Axis(100));
+        state.inputs.triggers = (Xbox360Trigger(255), Xbox360Trigger(255));
         <Xbox360Definition as common::HidDriver>::neutralize_state(&mut state);
         assert_eq!(state, expected);
         <Xbox360Definition as common::HidDriver>::neutralize_state(&mut state);
@@ -1487,9 +1615,9 @@ mod tests {
             controls.iter().map(|(_, code)| *code).collect::<Vec<_>>()
         );
         for (control, expected) in controls {
-            let mut state = Xbox360State::default();
+            let mut state = Xbox360SessionState::default();
             for pressed in [true, false, true, false] {
-                state.set_native(control, pressed);
+                state.inputs.set_native(control, pressed);
                 for target in [
                     RealizationTarget::LINUX_UHID_USB,
                     RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
@@ -1522,40 +1650,47 @@ mod tests {
 
     #[test]
     fn standard_hid_axes_match_unsigned_descriptor_and_trigger_positions() {
-        let axes = |state: &Xbox360State| {
+        let axes = |state: &Xbox360SessionState| {
             let ProviderFrame::HidInput { bytes, .. } = xbox_hid_frame(state) else {
                 panic!("expected HID frame");
             };
             assert_eq!(bytes.len(), 9);
             bytes[3..].to_vec()
         };
-        assert_eq!(axes(&Xbox360State::default()), [128, 128, 0, 128, 128, 0]);
-        let mut state = Xbox360State {
-            left: (Xbox360Axis(i16::MIN), Xbox360Axis(i16::MAX)),
-            right: (Xbox360Axis(i16::MAX), Xbox360Axis(i16::MIN)),
-            triggers: (Xbox360Trigger(17), Xbox360Trigger(231)),
-            ..Xbox360State::default()
+        assert_eq!(
+            axes(&Xbox360SessionState::default()),
+            [128, 128, 0, 128, 128, 0]
+        );
+        let mut state = Xbox360SessionState {
+            inputs: Xbox360Inputs {
+                left: (Xbox360Axis(i16::MIN), Xbox360Axis(i16::MAX)),
+                right: (Xbox360Axis(i16::MAX), Xbox360Axis(i16::MIN)),
+                triggers: (Xbox360Trigger(17), Xbox360Trigger(231)),
+                ..Default::default()
+            },
+            status: Xbox360Status::default(),
         };
         assert_eq!(axes(&state), [0, 255, 17, 255, 0, 231]);
-        state.triggers = (Xbox360Trigger(255), Xbox360Trigger(0));
+        state.inputs.triggers = (Xbox360Trigger(255), Xbox360Trigger(0));
         assert_eq!(axes(&state), [0, 255, 255, 255, 0, 0]);
     }
 
     #[test]
     fn battery_state_is_available_in_the_xbox_controller_model() {
-        let mut state = Xbox360State::default();
-        assert!(!state.battery().is_exposed());
-        state.battery.set_exposed(true);
+        let mut state = Xbox360SessionState::default();
+        assert!(!state.status.battery().is_exposed());
+        state.status.battery.set_exposed(true);
         state
+            .status
             .battery
             .set_level(BatteryLevel::new(42).expect("battery level"));
-        assert!(state.battery().is_exposed());
-        assert_eq!(state.battery().level().percent(), 42);
+        assert!(state.status.battery().is_exposed());
+        assert_eq!(state.status.battery().level().percent(), 42);
     }
 
     #[test]
     fn native_a_and_spatial_south_share_one_physical_button() {
-        let mut state = Xbox360State::default();
+        let mut state = Xbox360SessionState::default();
         Xbox360Definition
             .apply_digital(
                 &mut state,
@@ -1565,9 +1700,9 @@ mod tests {
                 },
             )
             .expect("digital update");
-        assert!(state.face_pressed(FaceButton::South));
-        state.set_native(Xbox360Control::A, false);
-        assert!(!state.face_pressed(FaceButton::South));
+        assert!(state.inputs.face_pressed(FaceButton::South));
+        state.inputs.set_native(Xbox360Control::A, false);
+        assert!(!state.inputs.face_pressed(FaceButton::South));
     }
 
     #[test]
@@ -1602,7 +1737,7 @@ mod tests {
                     controller: Xbox360Definition.controller_id(),
                     target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 },
-                &Xbox360State::default(),
+                &Xbox360SessionState::default(),
             )
             .expect("DummyHcd Xbox HID frame");
         assert!(matches!(frame, ProviderFrame::DummyHcdInput(bytes) if bytes.len() == 9));

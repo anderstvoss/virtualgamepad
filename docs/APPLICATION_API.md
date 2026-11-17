@@ -34,7 +34,8 @@ Choose an exact realization with `CreationOptions::new(target)`. All seven
 families offer `LINUX_UINPUT`. Wii Remote also offers `LINUX_UHID_BLUETOOTH`,
 which uses Bluetooth bus metadata through local UHID. `DualSense`, `DualShock4`,
 Switch Pro, Xbox 360 and Steam Controller 2026 also offer `LINUX_UHID_USB`.
-Xbox Series selects `LINUX_UINPUT` with `XboxSeriesOptions::default()`. Each realization has its own published restrictions
+Xbox Series selects `LINUX_UINPUT` or `LINUX_UHID_BLUETOOTH` with
+`XboxSeriesOptions::default()`. Each realization has its own published restrictions
 and acceptance status. Creation has no automatic fallback.
 
 Use common `CreationOptions` for realization and audio and the matching
@@ -320,6 +321,23 @@ series.close();
 `XboxSeriesState` uses signed xpad evdev coordinates with positive Y down.
 Trigger positions are 10-bit. `set_triggers` on the state validates both
 values. Share and Guide are independent. `XboxSeriesOutputEvent` carries
-conventional force-feedback observations, and the retained state exposes
-the latest accepted strong/weak playback request. The selected surface
-lists the unavailable impulse-trigger motors and other uinput limits.
+conventional force feedback on uinput and native HID output on Bluetooth-bus
+UHID. `host_outputs()` retains the latest two-motor evdev playback or
+four-channel Bluetooth command, including trigger amplitudes and timing bytes.
+The selected surface lists the realization's limitations.
+
+`DualShock4Controller::inputs()` borrows native `DualShock4Inputs` levels.
+`status()` returns copyable `DualShock4Status` battery metadata and accepted
+motion/contact clock positions. Input replacement and edits cannot replace that
+status; `refresh_motion()` keeps its separate explicit clock-advance semantics.
+
+`SwitchProController::inputs()` borrows `SwitchProInputs`; `status()` returns
+copyable `SwitchProStatus` with the accepted motion timer and live host-selected
+stream state. The accepted timer is separate from the existing
+`motion_report_counter()` transport observation. Input edits preserve stream
+state, and `refresh_motion()` keeps its existing explicit delivery behavior.
+
+`Xbox360Controller::inputs()` borrows native `Xbox360Inputs` levels.
+`status().battery()` reads separate controller-owned metadata, retained after
+close. Battery setters remain explicit handle operations; input replacement,
+edits and neutralization preserve that metadata.

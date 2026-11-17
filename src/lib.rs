@@ -95,16 +95,18 @@ pub use gr_curated_controllers::wii_remote::{
     WiiRemoteRevision, WiiRemoteState, WiiResourceDisposition,
 };
 pub use gr_curated_controllers::xbox_series::{
-    XboxSeriesButton, XboxSeriesOutputState, XboxSeriesState, XboxSeriesTrigger,
+    XboxSeriesBluetoothRumble, XboxSeriesButton, XboxSeriesOutputState, XboxSeriesState,
+    XboxSeriesTrigger,
 };
 pub use gr_curated_controllers::{
     BatteryLevel, BatteryState, DualSenseAudioPath, DualSenseAxis, DualSenseControl,
     DualSenseFeature, DualSenseHidOutput, DualSenseInputs, DualSenseStatus, DualSenseSurface,
     DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
-    DualShock4HidOutput, DualShock4MotionSample, DualShock4State, DualShock4Surface,
-    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, SwitchProAxis,
-    SwitchProControl, SwitchProMotionSample, SwitchProRumble, SwitchProState, SwitchProSurface,
-    TouchSlot, Xbox360Axis, Xbox360Control, Xbox360State, Xbox360Surface, Xbox360Trigger,
+    DualShock4HidOutput, DualShock4Inputs, DualShock4MotionSample, DualShock4Status,
+    DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger,
+    MotionSample, SwitchProAxis, SwitchProControl, SwitchProInputs, SwitchProMotionSample,
+    SwitchProRumble, SwitchProStatus, SwitchProSurface, TouchSlot, Xbox360Axis, Xbox360Control,
+    Xbox360Inputs, Xbox360Status, Xbox360Surface, Xbox360Trigger,
 };
 pub use gr_realization_api::{
     ControllerId, ForceFeedbackEffect, ForceFeedbackEvent, RealizationId, RealizationTargetSet,
