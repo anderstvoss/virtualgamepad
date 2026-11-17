@@ -251,8 +251,12 @@ generation. Native extension and `MotionPlus` samples use `WiiNunchukInputs`,
 `WiiClassicInputs` and `WiiMotionPlusInputs`. Detached input values carry levels;
 creation options select revision and live `attach` selects attachment presence.
 `set_inputs` and `edit_inputs` reject extension kind changes and non-neutral
-`MotionPlus` samples while absent. `inputs().input_topology(...)` takes explicit
-`MotionPlus` presence; use `current_topology()` for the live topology. Battery is
+`MotionPlus` samples while absent. After attaching an extension, clear levels
+with `wii.neutralize()`, or clone `wii.inputs()`, call `.neutralize()` on that
+snapshot, then pass it to `set_inputs`. `WiiRemoteInputs::default()` describes no
+extension and is rejected while an extension is attached. Use
+`wii.current_topology()` for live topology. The input value's `projected_input_topology`
+helper is only for detached editor projections with explicit attachment context. Battery is
 owned by the protocol, read through `battery()` or `status().battery()`, and
 remains readable after close. `attach` applies the attachment and `MotionPlus` presence in
 one transaction. Re-read `current_topology()`, `topology_generation()` and

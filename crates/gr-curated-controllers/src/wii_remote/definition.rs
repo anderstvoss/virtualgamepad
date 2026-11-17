@@ -1,5 +1,4 @@
 use super::RuntimeState;
-use super::RuntimeStateExt;
 use crate::common;
 use crate::registry::{
     ControllerFamily, CreationOptionKind, CreationToggle, FamilyOperation, FamilyRealization,
@@ -190,10 +189,10 @@ impl RealizationControllerDefinition for WiiRemoteDefinition {
     }
 }
 impl TargetAwareControllerDriver for WiiRemoteDefinition {
-    type State = RuntimeState;
+    type State = super::WiiRemoteInputs;
     type Frame = ProviderFrame;
     fn neutral_state(&self) -> Self::State {
-        RuntimeState::default()
+        super::WiiRemoteInputs::default()
     }
     fn apply_digital(
         &self,
@@ -212,8 +211,7 @@ impl TargetAwareControllerDriver for WiiRemoteDefinition {
         if !matches!(
             selection.target,
             RealizationTarget::LINUX_UHID_BLUETOOTH | RealizationTarget::LINUX_UINPUT
-        ) || !state.revision().has_identity_evidence()
-        {
+        ) {
             return Err(common::unavailable(selection.target));
         }
         super::extensions::validate(state.extension())
@@ -226,39 +224,11 @@ impl TargetAwareControllerDriver for WiiRemoteDefinition {
         self.validate_state(selection, state)?;
         Ok(super::realizations::frame(
             super::realizations::Role::Core,
-            state,
+            &RuntimeState {
+                inputs: state.clone(),
+                ..RuntimeState::default()
+            },
         ))
-    }
-}
-impl common::HidDriver for WiiRemoteDefinition {
-    fn validate_input_edit(previous: &Self::State, next: &Self::State) -> Result<(), ControlError> {
-        if next.revision() != previous.revision()
-            || next.motion_plus_attached() != previous.motion_plus_attached()
-            || std::mem::discriminant(next.extension())
-                != std::mem::discriminant(previous.extension())
-        {
-            return Err(ControlError::UnsupportedControl {
-                control: "native input edit cannot change Wii identity or attachment",
-            });
-        }
-        if !next.2 && next.0.motion_plus != super::WiiMotionPlusInputs::default() {
-            return Err(ControlError::UnsupportedControl {
-                control: "MotionPlus input requires active attachment",
-            });
-        }
-        Ok(())
-    }
-
-    type Hid = super::codec::WiiProtocol;
-    fn neutralize_state(state: &mut Self::State) {
-        state.neutralize();
-    }
-    fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
-        {
-            let mut p = super::codec::WiiProtocol::default();
-            p.state = RuntimeState::default();
-            p
-        }
     }
 }
 const WII_HID: &[RealizationTarget] = &[RealizationTarget::LINUX_UHID_BLUETOOTH];
@@ -377,14 +347,17 @@ impl TargetAwareControllerDriver for Configured {
         state: &mut Self::State,
         update: DigitalControlUpdate,
     ) -> Result<(), ControlError> {
-        WiiRemoteDefinition.apply_digital(state, update)
+        WiiRemoteDefinition.apply_digital(&mut state.inputs, update)
     }
     fn validate_state(
         &self,
         selection: RealizationSelection,
         state: &Self::State,
     ) -> Result<(), ControlError> {
-        WiiRemoteDefinition.validate_state(selection, state)
+        if !state.revision.has_identity_evidence() {
+            return Err(common::unavailable(selection.target));
+        }
+        WiiRemoteDefinition.validate_state(selection, &state.inputs)
     }
     fn encode(
         &self,
@@ -397,12 +370,28 @@ impl TargetAwareControllerDriver for Configured {
 }
 impl common::HidDriver for Configured {
     fn validate_input_edit(previous: &Self::State, next: &Self::State) -> Result<(), ControlError> {
-        WiiRemoteDefinition::validate_input_edit(previous, next)
+        if next.revision() != previous.revision()
+            || next.motion_plus_attached() != previous.motion_plus_attached()
+            || std::mem::discriminant(next.extension())
+                != std::mem::discriminant(previous.extension())
+        {
+            return Err(ControlError::UnsupportedControl {
+                control: "native input edit cannot change Wii identity or attachment",
+            });
+        }
+        if !next.motion_plus_attached
+            && next.inputs.motion_plus != super::WiiMotionPlusInputs::default()
+        {
+            return Err(ControlError::UnsupportedControl {
+                control: "MotionPlus input requires active attachment",
+            });
+        }
+        Ok(())
     }
 
     type Hid = super::codec::WiiProtocol;
     fn neutralize_state(state: &mut Self::State) {
-        WiiRemoteDefinition::neutralize_state(state);
+        state.neutralize();
     }
     fn open_native(
         &self,
@@ -443,6 +432,29 @@ impl common::HidDriver for Configured {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn public_input_driver_keeps_default_revision_core_frame_encoding() {
+        let mut inputs = super::super::WiiRemoteInputs::default();
+        inputs.set_button(super::super::WiiRemoteButton::A, true);
+        inputs.set_accelerometer([17, 511, 1023]).unwrap();
+        for target in [
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_BLUETOOTH,
+        ] {
+            let selection = RealizationSelection {
+                controller: WiiRemoteDefinition.controller_id(),
+                target,
+            };
+            let runtime = RuntimeState {
+                inputs: inputs.clone(),
+                ..RuntimeState::default()
+            };
+            assert_eq!(
+                WiiRemoteDefinition.encode(selection, &inputs).unwrap(),
+                super::super::realizations::frame(super::super::realizations::Role::Core, &runtime)
+            );
+        }
+    }
     #[test]
     fn family_has_exact_first_realizations_and_no_broker_profile() {
         let entry = crate::registry::FAMILIES

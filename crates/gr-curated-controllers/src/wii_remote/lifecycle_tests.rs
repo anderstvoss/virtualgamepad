@@ -1,4 +1,3 @@
-use super::RuntimeStateExt;
 use super::*;
 use gr_realization_api::*;
 use std::sync::{
@@ -599,7 +598,7 @@ fn extension_init_identity_motionplus_activation_and_passthrough_are_source_mode
 #[test]
 fn neutralization_preserves_topology_and_revision_and_releases_extension_controls() {
     let mut s = RuntimeState::new(WiiRemoteRevision::Tr);
-    s.0.extension = WiiExtension::Nunchuk(WiiNunchukInputs {
+    s.inputs.extension = WiiExtension::Nunchuk(WiiNunchukInputs {
         c: true,
         z: true,
         ..Default::default()
@@ -607,7 +606,7 @@ fn neutralization_preserves_topology_and_revision_and_releases_extension_control
     s.set_button(WiiRemoteButton::A, true);
     s.neutralize();
     assert_eq!(s.revision(), WiiRemoteRevision::Tr);
-    assert!(s.2);
+    assert!(s.motion_plus_attached);
     assert!(!s.pressed(WiiRemoteButton::A));
     assert_eq!(
         s.extension(),
@@ -708,10 +707,7 @@ fn replacement_notifies_consumer_of_both_edges_and_repeated_attachment_keeps_ini
         output(&fake, 0x16, &write(0x52, offset, &[value]));
         c.service(&mut |_| {}).unwrap();
     }
-    assert_eq!(
-        c.session.protocol().unwrap().memory.initialized,
-        [true, true]
-    );
+    assert_eq!(c.session.protocol().memory.initialized, [true, true]);
     let generation = c.topology_generation();
     c.attach(
         WiiExtension::Nunchuk(WiiNunchukInputs {
@@ -723,10 +719,7 @@ fn replacement_notifies_consumer_of_both_edges_and_repeated_attachment_keeps_ini
     .unwrap();
     c.commit().unwrap();
     assert_eq!(c.topology_generation(), generation);
-    assert_eq!(
-        c.session.protocol().unwrap().memory.initialized,
-        [true, true]
-    );
+    assert_eq!(c.session.protocol().memory.initialized, [true, true]);
 }
 
 #[test]
@@ -1050,11 +1043,13 @@ fn battery_metadata_survives_inputs_attachment_neutralization_and_resource_resol
     assert_eq!(controller.runtime_state(), &initial_inputs);
     assert_eq!(controller.battery(), battery);
     assert_eq!(
-        controller.session.protocol().unwrap().status().payload()[5],
+        controller.session.protocol().status().payload()[5],
         battery.raw()
     );
     assert_eq!(fake.0.lock().unwrap().sent.len(), frames);
-    controller.set_inputs(RuntimeState::default().0).unwrap();
+    controller
+        .set_inputs(RuntimeState::default().inputs)
+        .unwrap();
     assert_eq!(controller.battery(), battery);
     controller
         .attach(WiiExtension::Nunchuk(WiiNunchukInputs::default()), true)
@@ -1070,7 +1065,11 @@ fn battery_metadata_survives_inputs_attachment_neutralization_and_resource_resol
     let state = controller.runtime_state().clone();
     let dirty = controller.is_dirty();
     let topology = controller.topology_generation();
-    assert!(controller.set_inputs(RuntimeState::default().0).is_err());
+    assert!(
+        controller
+            .set_inputs(RuntimeState::default().inputs)
+            .is_err()
+    );
     assert_eq!(controller.runtime_state(), &state);
     assert_eq!(controller.is_dirty(), dirty);
     assert_eq!(controller.battery(), battery);

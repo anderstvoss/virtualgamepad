@@ -824,7 +824,8 @@ impl InputEditor for super::editor::WiiRemoteEditor {
         matches!(id.as_str(), "nunchuk" | "classic" | "motion-plus")
     }
     fn current_topology(&self) -> &'static InputTopology {
-        self.state().input_topology(self.motion_plus_attached())
+        self.state()
+            .projected_input_topology(self.motion_plus_attached())
     }
     fn stick_value(&self, id: InputControlId) -> Option<(i32, i32)> {
         use gr_curated_controllers::wii_remote::WiiExtension;

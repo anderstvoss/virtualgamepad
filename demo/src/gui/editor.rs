@@ -1002,11 +1002,15 @@ mod tests {
         };
         editor.select_wii_attachment(WiiExtensionChoice::Nunchuk, true);
         let before = editor.state.clone();
-        let topology = editor.state.input_topology(editor.motion_plus_attached());
+        let topology = editor
+            .state
+            .projected_input_topology(editor.motion_plus_attached());
         editor.select_wii_attachment(WiiExtensionChoice::ClassicPro, false);
         assert_eq!(editor.state, before);
         assert_eq!(
-            editor.state.input_topology(editor.motion_plus_attached()),
+            editor
+                .state
+                .projected_input_topology(editor.motion_plus_attached()),
             topology
         );
         assert_eq!(

@@ -1,4 +1,3 @@
-use super::RuntimeStateExt;
 use super::*;
 use gr_realization_api::*;
 use std::sync::{Arc, Mutex};
@@ -500,7 +499,7 @@ fn native_battery_metadata_is_separate_from_inputs_and_live_attachment() {
     controller.commit().unwrap();
     let input = controller.runtime_state().clone();
     controller.set_battery(WiiRemoteBattery::new(31)).unwrap();
-    controller.set_inputs(input.0).unwrap();
+    controller.set_inputs(input.inputs).unwrap();
     controller.set_accelerometer([100, 200, 300]).unwrap();
     controller.neutralize().unwrap();
     assert_eq!(controller.battery().raw(), 31);

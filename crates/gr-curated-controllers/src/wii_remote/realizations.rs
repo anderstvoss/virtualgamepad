@@ -1,6 +1,5 @@
 //! Controller-owned native interfaces. Record: wii-c5-evdev-consumer-shape.
 //! uinput cannot carry bus5 or fuzz; these deviations are surfaced and tested.
-use super::RuntimeStateExt;
 use super::{RuntimeState, WiiExtension, WiiRemoteRevision};
 use gr_realization_api::{
     EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization, NativeDeviceIdentity,
@@ -166,7 +165,7 @@ pub(super) fn frame(role: Role, state: &RuntimeState) -> ProviderFrame {
         unreachable!()
     };
     let (keys, values): (Vec<bool>, Vec<i32>) = match role {
-        Role::Core => (state.0.buttons.to_vec(), vec![]),
+        Role::Core => (state.inputs.buttons.to_vec(), vec![]),
         Role::Accel => (
             vec![],
             state.accelerometer().map(|v| i32::from(v) - 512).to_vec(),
@@ -455,14 +454,14 @@ mod tests {
     }
     #[test]
     fn native_mapping_retains_all_keys_and_source_conversions() {
-        let mut s = (
-            crate::wii_remote::WiiRemoteInputs {
+        let mut s = RuntimeState {
+            inputs: crate::wii_remote::WiiRemoteInputs {
                 buttons: [true; 11],
                 ..Default::default()
             },
-            super::WiiRemoteRevision::default(),
-            false,
-        );
+            revision: super::WiiRemoteRevision::default(),
+            motion_plus_attached: false,
+        };
         let ProviderFrame::Evdev(events) = frame(Role::Core, &s) else {
             unreachable!()
         };
@@ -473,7 +472,7 @@ mod tests {
                 .count(),
             11
         );
-        s.0.extension = WiiExtension::Classic(super::super::WiiClassicInputs {
+        s.inputs.extension = WiiExtension::Classic(super::super::WiiClassicInputs {
             left: [0, 63],
             right: [0, 31],
             triggers: [3, 7],
@@ -495,8 +494,8 @@ mod tests {
             .map(|e| e.value)
             .collect();
         assert_eq!(axes, [-32, 31, -32, 30, 14, 6]);
-        s.0.motion_plus.gyroscope = [8193, 8194, 8195];
-        s.0.motion_plus.slow = [true; 3];
+        s.inputs.motion_plus.gyroscope = [8193, 8194, 8195];
+        s.inputs.motion_plus.slow = [true; 3];
         let ProviderFrame::Evdev(events) = frame(Role::MotionPlus, &s) else {
             unreachable!()
         };
@@ -525,21 +524,21 @@ mod tests {
         let mut state = RuntimeState::default();
         state.set_accelerometer([0, 512, 1023]).unwrap();
         assert_eq!(values(Role::Accel, &state), [-512, 0, 511]);
-        state.0.extension = WiiExtension::Nunchuk(super::super::WiiNunchukInputs {
+        state.inputs.extension = WiiExtension::Nunchuk(super::super::WiiNunchukInputs {
             stick: [0, 255],
             accelerometer: [0, 512, 1023],
             ..Default::default()
         });
         assert_eq!(values(Role::Nunchuk, &state), [-128, 127, -512, 0, 511]);
-        state.0.extension = WiiExtension::Classic(super::super::WiiClassicInputs {
+        state.inputs.extension = WiiExtension::Classic(super::super::WiiClassicInputs {
             left: [0, 63],
             right: [0, 31],
             triggers: [31, 30],
             ..Default::default()
         });
         assert_eq!(values(Role::Classic, &state), [-32, 31, -32, 30, 60, 62]);
-        state.0.motion_plus.gyroscope = [0, 8192, 16383];
-        state.0.motion_plus.slow = [true; 3];
+        state.inputs.motion_plus.gyroscope = [0, 8192, 16383];
+        state.inputs.motion_plus.slow = [true; 3];
         assert_eq!(values(Role::MotionPlus, &state), [73719, 0, -73728]);
     }
     #[test]

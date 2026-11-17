@@ -573,14 +573,14 @@ unchanged. `WiiExtension` payloads use the renamed accessory input types.
 | `WiiRemoteState::new(revision)` and `state.revision()` | creation options and `controller.status().revision()` |
 | `state.set_attachment(...)` | live `controller.attach(...)` |
 | `state.motion_plus().attached` | `controller.status().motion_plus_attached()` |
-| `state.input_topology()` | `inputs.input_topology(motion_plus_attached)` or live `controller.current_topology()` |
+| `state.input_topology()` | `inputs.projected_input_topology(motion_plus_attached)` or live `controller.current_topology()` |
 
 Each root feature view and the Wii supporting snapshot removes four old types,
 adds the four input types and `WiiRemoteStatus`, removes handle `state()`, adds
 `inputs()` and `status()`, and changes both input mutation signatures. Accessory
 payload declarations follow the renames. Remote input methods retain native
 editing helpers except `new`, `revision` and `set_attachment`; `input_topology`
-now takes a presence boolean. `WiiMotionPlusInputs` removes `attached`, retaining
+is renamed to `projected_input_topology` and takes a presence boolean. `WiiMotionPlusInputs` removes `attached`, retaining
 only gyro and slow-range levels. Status adds four read getters: `revision()`,
 `motion_plus_attached()`, `battery()` and `topology_generation()`. All input types
 and status support default, clone and equality; status is copyable. Handle
@@ -601,3 +601,36 @@ retain accepted bytes. Closed handles reject updates. The demo keeps a detached
 attachment projection separately from input levels and revalidates queued edits
 against live status. Existing EEPROM, host-output, report and cleanup regressions
 remain in force.
+
+
+### Wii review refinements before merge
+
+The private runtime is a named-field struct (`inputs`, `revision`,
+`motion_plus_attached`), with no extension trait or tuple positions. The public
+supporting `WiiRemoteDefinition` driver's associated `State` is now
+`WiiRemoteInputs`; its default core-frame encoding is unchanged. Configured live
+sessions use the private runtime struct. This keeps runtime identity/presence out
+of the public supporting driver state as well as out of application inputs.
+The public-driver regression pins that associated type and its unchanged frame
+encoding. The snapshot guard records trait implementations but does not record
+their associated types.
+
+A protocol-owning session is required at Wii creation. Native sessions store a
+required protocol beside the runtime; HID sessions retain their required runtime
+protocol. Worker sessions cannot inhabit this type. `battery()` accesses the
+required owner directly, without `Option`, `expect` or a panic path, including
+after close. Protocol edits retain the existing transactional clone/validation
+rules. EEPROM and wire encodings remain unchanged.
+
+After attaching an extension, `set_inputs(WiiRemoteInputs::default())` is rejected:
+default inputs describe extension `None`. Use `controller.neutralize()`, or clone
+`controller.inputs()`, call `.neutralize()` on that snapshot, then `set_inputs`.
+Both preserve the extension payload kind and live revision, presence and battery.
+
+Use `controller.current_topology()` for live topology. Rename the detached input
+helper from `input_topology(motion_plus_attached)` to
+`projected_input_topology(motion_plus_attached)`: pending editor attachment context
+can differ from accepted status. The explicit projection name and documentation
+direct live callers to the handle rather than asking them to supply a boolean.
+Both root feature views and the Wii supporting snapshot record this method
+rename; the Steam supporting snapshot is unchanged.

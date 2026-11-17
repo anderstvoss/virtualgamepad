@@ -2040,3 +2040,25 @@ fn worker_input_transactions_preserve_clean_dirty_and_closed_boundaries() {
     check!(create_dualshock4_usb_worker, crate::DualShock4Inputs);
     check!(create_xbox360_usb_worker, crate::Xbox360Inputs);
 }
+
+#[test]
+fn required_protocol_conversion_refuses_workers_and_cleans_up_once() {
+    use gr_controller_contract::RealizationControllerDefinition;
+    for already_closed in [false, true] {
+        let driver = DualSenseDefinition;
+        let selection = gr_realization_api::RealizationSelection {
+            controller: driver.controller_id(),
+            target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
+        };
+        let record = Arc::new(Mutex::new(WorkerRecord::default()));
+        let mut session =
+            ControllerSession::worker(driver, selection, Box::new(FakeWorker(record.clone())));
+        if already_closed {
+            session.close();
+        }
+        let converted =
+            session.require_protocol(|| panic!("worker must not construct a native protocol"));
+        assert!(matches!(converted, Err(ProviderError::Unsupported { .. })));
+        assert_eq!(record.lock().unwrap().closes, 1);
+    }
+}

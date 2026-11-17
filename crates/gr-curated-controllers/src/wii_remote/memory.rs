@@ -1,6 +1,5 @@
 //! Controller-owned bounded memory routing. Records: wii-c5-memory-errors,
 //! wii-dolphin-memory-routing, wii-kernel-extension-init, wii-c5-extension-identifiers.
-use super::RuntimeStateExt;
 use super::{RuntimeState, WiiExtension};
 use gr_controller_contract::ControlError;
 

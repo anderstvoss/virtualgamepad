@@ -1,4 +1,3 @@
-use super::RuntimeStateExt;
 use super::{
     BLUETOOTH, RuntimeState, UINPUT, WiiRemoteButton, WiiRemoteIdentity, WiiRemoteOptions,
 };
@@ -71,7 +70,11 @@ pub(super) fn create(
     } else {
         realizations::hid(revision)
     };
-    let session = common::create(driver, specification, options)?;
+    let session = common::create(driver, specification, options)?.require_protocol(|| {
+        let mut protocol = super::codec::WiiProtocol::default();
+        protocol.state = state.clone();
+        protocol
+    })?;
     let native = if target == RealizationTarget::LINUX_UINPUT {
         Some(super::native::Nodes::new(
             provider,
@@ -83,15 +86,10 @@ pub(super) fn create(
     } else {
         None
     };
-    let protocol = native.as_ref().map(|_| {
-        let mut p = super::codec::WiiProtocol::default();
-        p.state = state.clone();
-        p
-    });
     let live = common::topology::LiveTopology::new(
         &super::topology::MAXIMUM,
         super::topology::current(state.extension(), state.motion_plus_attached()),
-        protocol,
+        None,
     )
     .map_err(|e| ProviderError::Open {
         reason: e.to_string(),
@@ -142,7 +140,7 @@ impl WiiRemoteController {
             && motion_plus == self.runtime_state().motion_plus_attached()
         {
             return self.session.update_state(|state| {
-                state.0.extension = extension;
+                state.inputs.extension = extension;
                 Ok(())
             });
         }
@@ -161,13 +159,13 @@ impl WiiRemoteController {
         let next = extension.clone();
         let native = self.native.is_some();
         let now = self.session.now();
-        self.live.change(
+        self.live.change_owned(
             &mut self.session,
             shape,
             |state| {
-                state.0.extension = extension;
-                state.2 = motion_plus;
-                state.0.motion_plus = super::WiiMotionPlusInputs::default();
+                state.inputs.extension = extension;
+                state.motion_plus_attached = motion_plus;
+                state.inputs.motion_plus = super::WiiMotionPlusInputs::default();
                 Ok(())
             },
             |protocol| {
@@ -212,13 +210,13 @@ impl WiiRemoteController {
     }
     #[must_use]
     pub fn inputs(&self) -> &super::WiiRemoteInputs {
-        &self.session.state().0
+        &self.session.state().inputs
     }
     #[must_use]
     pub fn status(&self) -> super::WiiRemoteStatus {
         super::WiiRemoteStatus {
-            revision: self.runtime_state().1,
-            motion_plus_attached: self.runtime_state().2,
+            revision: self.runtime_state().revision,
+            motion_plus_attached: self.runtime_state().motion_plus_attached,
             battery: self.battery(),
             topology_generation: self.topology_generation(),
         }
@@ -252,9 +250,12 @@ impl WiiRemoteController {
         &mut self,
         edit: impl FnOnce(&mut super::WiiRemoteInputs) -> Result<(), ControlError>,
     ) -> Result<(), ControlError> {
-        self.session.edit_inputs(|state| edit(&mut state.0))
+        self.session.edit_inputs(|state| edit(&mut state.inputs))
     }
     /// Apply this family's native input snapshot without changing attachment or identity.
+    /// To clear attached inputs, call `neutralize()` or clone `inputs()` and
+    /// neutralize the clone. Default inputs have no extension and are rejected
+    /// when an extension is attached.
     pub fn set_inputs(&mut self, state: super::WiiRemoteInputs) -> Result<(), ControlError> {
         self.edit_inputs(|current| {
             *current = state;
@@ -281,16 +282,9 @@ impl WiiRemoteController {
         })
     }
     /// Current raw battery metadata, retained after close.
-    ///
-    /// # Panics
-    /// Panics if the internal construction invariant retaining a protocol is broken.
     #[must_use]
     pub fn battery(&self) -> super::WiiRemoteBattery {
-        self.session
-            .protocol()
-            .or_else(|| self.live.native_protocol())
-            .expect("every Wii realization retains its protocol")
-            .battery
+        self.session.protocol().battery
     }
     /// Update native battery metadata. Call `commit()` to service pending work.
     /// Future status reports carry this value; accepted queued reports retain
@@ -302,7 +296,7 @@ impl WiiRemoteController {
         if battery == self.battery() {
             return Ok(());
         }
-        self.live.change(
+        self.live.change_owned(
             &mut self.session,
             self.live.current_topology(),
             |_| Ok(()),
@@ -330,7 +324,7 @@ impl WiiRemoteController {
         gyroscope: [u16; 3],
         slow: [bool; 3],
     ) -> Result<(), ControlError> {
-        let attached = self.runtime_state().2;
+        let attached = self.runtime_state().motion_plus_attached;
         self.edit_inputs(|state| {
             if !attached || gyroscope.iter().any(|v| *v > 16383) {
                 return Err(ControlError::UnsupportedControl {
@@ -423,12 +417,14 @@ pub(super) enum Storage {
         common::resources::ResourceSession<
             super::definition::Configured,
             common::resources::Resolution<super::WiiEepromImage>,
+            super::codec::WiiProtocol,
+            std::convert::Infallible,
         >,
     ),
-    Native(common::ControllerSession<super::definition::Configured>),
+    Native(common::ProtocolSession<super::definition::Configured>),
 }
 impl std::ops::Deref for Storage {
-    type Target = common::ControllerSession<super::definition::Configured>;
+    type Target = common::ProtocolSession<super::definition::Configured>;
     fn deref(&self) -> &Self::Target {
         match self {
             Self::Hid(r) => &r.session,
@@ -455,13 +451,13 @@ impl Drop for WiiRemoteController {
 impl crate::common::session_tests::InputFixture for super::RuntimeState {
     type Inputs = super::WiiRemoteInputs;
     fn test_inputs(&self) -> &Self::Inputs {
-        &self.0
+        &self.inputs
     }
     fn test_inputs_mut(&mut self) -> &mut Self::Inputs {
-        &mut self.0
+        &mut self.inputs
     }
     fn test_into_inputs(self) -> Self::Inputs {
-        self.0
+        self.inputs
     }
 }
 #[cfg(test)]

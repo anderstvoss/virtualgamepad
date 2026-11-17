@@ -37,9 +37,6 @@ impl<P: gr_hid::Protocol> LiveTopology<P> {
     pub(crate) const fn topology_generation(&self) -> u64 {
         self.generation
     }
-    pub(crate) const fn native_protocol(&self) -> Option<&P> {
-        self.native_protocol.as_ref()
-    }
     /// Validate the shape/counter before running a typed, transactional protocol edit.
     /// Callers retain controller-native attachment rules and bounded status edges.
     pub(crate) fn change<D: HidDriver<Hid = P, State = P::State>>(
@@ -65,6 +62,28 @@ impl<P: gr_hid::Protocol> LiveTopology<P> {
         } else {
             session.update_configuration(neutralize_removed, edit_protocol)?;
         }
+        self.current = next;
+        self.generation = generation;
+        Ok(())
+    }
+    /// Protocol-owning sessions make local protocol access a construction requirement.
+    pub(crate) fn change_owned<D: HidDriver<Hid = P, State = P::State>>(
+        &mut self,
+        session: &mut super::ProtocolSession<D>,
+        next: &'static InputTopology,
+        neutralize_removed: impl FnOnce(&mut D::State) -> Result<(), ControlError>,
+        edit_protocol: impl FnOnce(&mut D::Hid) -> Result<(), gr_hid::Error>,
+    ) -> Result<(), ControlError> {
+        if session.is_closed() {
+            return Err(ControlError::Closed);
+        }
+        validate_subset(self.maximum, next)?;
+        let generation = if self.current == next {
+            self.generation
+        } else {
+            self.generation.checked_add(1).ok_or_else(invalid)?
+        };
+        session.update_owned_configuration(neutralize_removed, edit_protocol)?;
         self.current = next;
         self.generation = generation;
         Ok(())

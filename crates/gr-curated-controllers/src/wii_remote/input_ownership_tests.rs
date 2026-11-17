@@ -89,3 +89,70 @@ fn assert_rejected_candidate(controller: &mut WiiRemoteController, dirty: bool) 
         assert_eq!(controller.is_dirty(), dirty);
     }
 }
+
+#[test]
+fn attached_neutral_snapshots_and_required_protocol_transactions_preserve_metadata() {
+    for mut controller in [
+        lifecycle_tests::ownership_controller(),
+        native_tests::ownership_controller(),
+    ] {
+        controller.set_battery(WiiRemoteBattery::new(211)).unwrap();
+        controller
+            .attach(WiiExtension::Nunchuk(WiiNunchukInputs::default()), true)
+            .unwrap();
+        controller.set_button(WiiRemoteButton::A, true).unwrap();
+        controller
+            .set_motion_plus([100, 200, 300], [true; 3])
+            .unwrap();
+        let populated = controller.inputs().clone();
+        let status = controller.status();
+        let dirty = controller.is_dirty();
+        assert_eq!(
+            controller
+                .inputs()
+                .projected_input_topology(status.motion_plus_attached()),
+            controller.current_topology()
+        );
+        assert!(controller.set_inputs(WiiRemoteInputs::default()).is_err());
+        assert_eq!(controller.inputs(), &populated);
+        assert_eq!(controller.status(), status);
+        assert_eq!(controller.is_dirty(), dirty);
+        for reject_in_closure in [false, true] {
+            assert!(
+                controller
+                    .session
+                    .update_owned_configuration(
+                        |state| {
+                            state.inputs.accelerometer = [1024; 3];
+                            Ok(())
+                        },
+                        |protocol| {
+                            protocol.battery = WiiRemoteBattery::new(1);
+                            if reject_in_closure {
+                                Err(gr_hid::Error::InvalidState)
+                            } else {
+                                Ok(())
+                            }
+                        },
+                    )
+                    .is_err()
+            );
+            assert_eq!(controller.inputs(), &populated);
+            assert_eq!(controller.status(), status);
+            assert_eq!(controller.is_dirty(), dirty);
+            let protocol: &codec::WiiProtocol = controller.session.protocol();
+            assert_eq!(protocol.battery, status.battery());
+        }
+        let mut neutral = controller.inputs().clone();
+        neutral.neutralize();
+        controller.set_inputs(neutral.clone()).unwrap();
+        assert_eq!(controller.inputs(), &neutral);
+        assert_eq!(controller.status(), status);
+        controller.neutralize().unwrap();
+        assert_eq!(controller.inputs(), &neutral);
+        controller.close();
+        let protocol: &codec::WiiProtocol = controller.session.protocol();
+        assert_eq!(protocol.battery, status.battery());
+        assert_eq!(controller.battery(), status.battery());
+    }
+}

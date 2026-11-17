@@ -318,7 +318,7 @@
       "declarations": [
         "pub struct WiiRemoteInputs { /* private fields */ }",
         "pub fn neutralize(&mut self)",
-        "pub fn input_topology( &self, motion_plus_attached: bool, ) -> &'static InputTopology",
+        "pub fn projected_input_topology( &self, motion_plus_attached: bool, ) -> &'static InputTopology",
         "pub const fn pressed(&self, button: WiiRemoteButton) -> bool",
         "pub fn set_button(&mut self, button: WiiRemoteButton, pressed: bool)",
         "pub const fn accelerometer(&self) -> [u16; 3]",

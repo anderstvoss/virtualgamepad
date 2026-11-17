@@ -301,6 +301,9 @@ impl Default for WiiRemoteInputs {
 }
 impl WiiRemoteInputs {
     /// Clear levels while preserving the extension payload kind.
+    /// After attach, clone `WiiRemoteController::inputs()` and neutralize that
+    /// snapshot, or call the handle's `neutralize()`. `Self::default()` has no
+    /// extension and cannot replace inputs while an extension is attached.
     pub fn neutralize(&mut self) {
         self.buttons = [false; 11];
         self.accelerometer = [0; 3];
@@ -314,8 +317,11 @@ impl WiiRemoteInputs {
         self.motion_plus.gyroscope = [8192; 3];
         self.motion_plus.slow = [false; 3];
     }
+    /// Project a detached editor's topology using explicit attachment context.
+    /// For a live handle use `WiiRemoteController::current_topology()` instead;
+    /// it reads accepted attachment metadata without a caller-supplied boolean.
     #[must_use]
-    pub fn input_topology(
+    pub fn projected_input_topology(
         &self,
         motion_plus_attached: bool,
     ) -> &'static gr_controller_contract::InputTopology {
@@ -403,83 +409,57 @@ impl WiiRemoteStatus {
     }
 }
 
-// Supporting runtime representation; no additional public combined family type.
-pub(crate) type RuntimeState = (WiiRemoteInputs, WiiRemoteRevision, bool);
-pub(crate) trait RuntimeStateExt {
-    fn new(revision: WiiRemoteRevision) -> Self;
-    fn revision(&self) -> WiiRemoteRevision;
-    fn motion_plus_attached(&self) -> bool;
-    #[cfg(test)]
-    fn pressed(&self, button: WiiRemoteButton) -> bool;
-    #[cfg(test)]
-    fn set_button(&mut self, button: WiiRemoteButton, pressed: bool);
-    fn accelerometer(&self) -> [u16; 3];
-    #[cfg(test)]
-    fn set_accelerometer(&mut self, values: [u16; 3]) -> Result<(), ControlError>;
-    fn ir(&self) -> &[Option<WiiIrPoint>; 4];
-    #[cfg(test)]
-    fn set_ir(&mut self, points: [Option<WiiIrPoint>; 4]);
-    fn extension(&self) -> &WiiExtension;
-    fn motion_plus(&self) -> &WiiMotionPlusInputs;
-    #[cfg(test)]
-    fn set_extension_values(&mut self, value: WiiExtension) -> Result<(), ControlError>;
-    #[cfg(test)]
-    fn set_motion_plus_values(
-        &mut self,
-        gyroscope: [u16; 3],
-        slow: [bool; 3],
-    ) -> Result<(), ControlError>;
-    fn set_attachment(
-        &mut self,
-        extension: WiiExtension,
-        motion_plus: bool,
-    ) -> Result<(), ControlError>;
-    fn neutralize(&mut self);
+// Private runtime representation: native levels and live identity/presence.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct RuntimeState {
+    inputs: WiiRemoteInputs,
+    revision: WiiRemoteRevision,
+    motion_plus_attached: bool,
 }
-impl RuntimeStateExt for RuntimeState {
+impl RuntimeState {
     fn new(revision: WiiRemoteRevision) -> Self {
-        (
-            WiiRemoteInputs::default(),
+        Self {
+            inputs: WiiRemoteInputs::default(),
             revision,
-            matches!(
+            motion_plus_attached: matches!(
                 revision,
                 WiiRemoteRevision::Tr | WiiRemoteRevision::EarlyIntegratedPlus
             ),
-        )
+        }
     }
     fn revision(&self) -> WiiRemoteRevision {
-        self.1
+        self.revision
     }
     fn motion_plus_attached(&self) -> bool {
-        self.2
+        self.motion_plus_attached
     }
     #[cfg(test)]
     fn pressed(&self, button: WiiRemoteButton) -> bool {
-        self.0.pressed(button)
+        self.inputs.pressed(button)
     }
     #[cfg(test)]
     fn set_button(&mut self, button: WiiRemoteButton, pressed: bool) {
-        self.0.set_button(button, pressed);
+        self.inputs.set_button(button, pressed);
     }
     fn accelerometer(&self) -> [u16; 3] {
-        self.0.accelerometer()
+        self.inputs.accelerometer()
     }
     #[cfg(test)]
     fn set_accelerometer(&mut self, values: [u16; 3]) -> Result<(), ControlError> {
-        self.0.set_accelerometer(values)
+        self.inputs.set_accelerometer(values)
     }
     fn ir(&self) -> &[Option<WiiIrPoint>; 4] {
-        self.0.ir()
+        self.inputs.ir()
     }
     #[cfg(test)]
     fn set_ir(&mut self, points: [Option<WiiIrPoint>; 4]) {
-        self.0.set_ir(points);
+        self.inputs.set_ir(points);
     }
     fn extension(&self) -> &WiiExtension {
-        self.0.extension()
+        self.inputs.extension()
     }
     fn motion_plus(&self) -> &WiiMotionPlusInputs {
-        self.0.motion_plus()
+        self.inputs.motion_plus()
     }
     #[cfg(test)]
     fn set_extension_values(&mut self, value: WiiExtension) -> Result<(), ControlError> {
@@ -488,7 +468,7 @@ impl RuntimeStateExt for RuntimeState {
                 control: "extension kind requires attachment transition",
             });
         }
-        self.0.set_extension_values(value)
+        self.inputs.set_extension_values(value)
     }
     #[cfg(test)]
     fn set_motion_plus_values(
@@ -496,12 +476,12 @@ impl RuntimeStateExt for RuntimeState {
         gyroscope: [u16; 3],
         slow: [bool; 3],
     ) -> Result<(), ControlError> {
-        if !self.2 || gyroscope.iter().any(|v| *v > 16383) {
+        if !self.motion_plus_attached || gyroscope.iter().any(|v| *v > 16383) {
             return Err(ControlError::UnsupportedControl {
                 control: "MotionPlus absent or outside fourteen bits",
             });
         }
-        self.0.set_motion_plus_values(gyroscope, slow)
+        self.inputs.set_motion_plus_values(gyroscope, slow)
     }
     fn set_attachment(
         &mut self,
@@ -510,16 +490,16 @@ impl RuntimeStateExt for RuntimeState {
     ) -> Result<(), ControlError> {
         extensions::validate(&extension)?;
         if std::mem::discriminant(&extension) != std::mem::discriminant(self.extension())
-            || motion_plus != self.2
+            || motion_plus != self.motion_plus_attached
         {
-            self.0.motion_plus = WiiMotionPlusInputs::default();
+            self.inputs.motion_plus = WiiMotionPlusInputs::default();
         }
-        self.0.extension = extension;
-        self.2 = motion_plus;
+        self.inputs.extension = extension;
+        self.motion_plus_attached = motion_plus;
         Ok(())
     }
     fn neutralize(&mut self) {
-        self.0.neutralize();
+        self.inputs.neutralize();
     }
 }
 
