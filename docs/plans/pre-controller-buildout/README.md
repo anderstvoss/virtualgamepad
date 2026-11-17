@@ -23,6 +23,8 @@ Each numbered file is a self-contained agent brief. To dispatch one, give an age
 | 12 | [Windows CI downloads](12-windows-ci-downloads.md) | #150 | Fixes | D8 |
 | 13 | [Wii Remote package](13-wii-remote-package.md) (checkpoint C5) | #158 | Controller | C1, D6, D7; C2 for extensions and EEPROM |
 | 14 | [Steam Controller 2026, wired](14-steam-controller-wired-package.md) (checkpoint C6) | #159 | Controller | C1, step 16 = UHID accepted, 11c |
+| 17 | [GameCube USB adapter package](17-gamecube-adapter-package.md) (steps 17a–17e) | #296 | Controller | VG-1b complete; reviewed source records; 17d also new #258 audit/sign-off |
+| 18 | [Switch 1 Joy-Con L/R package](18-joycon-package.md) (steps 18a–18e) | #297 | Controller | VG-1b complete; reviewed source records; host/descriptor gates for live UHID |
 | 16 | [Audio and haptics buildout](16-audio-haptics-buildout.md) (new checkpoint proposed) | #116, #126, #135, #143, #145 | Audio | S0 option 3 **decided** ([#347](https://github.com/anderstvoss/virtualgamepad/pull/347)); #344 shared stream design/authorization for S1/S2; S1 D7 speaker gate; A0 before live gates; #203 worker recovery separate |
 
 ## Order

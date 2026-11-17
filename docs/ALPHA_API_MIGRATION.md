@@ -336,6 +336,18 @@ The in-repo live probe uses the typed accessor. Revision and attachment remain
 managed by live topology and `attach`, and EEPROM and host outputs retain their
 separate ownership.
 
+## Xbox Series Bluetooth-bus UHID
+
+`create_xbox_series` accepts `LINUX_UHID_BLUETOOTH` with the existing
+options and native input state. The selected surface advertises native
+four-channel Bluetooth HID rumble. `XboxSeriesOutputEvent` adds HID
+lifecycle and raw output observations, and `XboxSeriesOutputState` adds
+`bluetooth_rumble` with native motor amplitudes and timing fields.
+
+The motor-role vocabulary adds `LeftTrigger` and `RightTrigger` for
+native trigger channels. Bluetooth retained magnitudes are logical
+0–100 values, while evdev retained magnitudes stay 0–65535.
+
 ## VG-1b/d · DualSense input-only values
 
 The ordinary root and curated DualSense handle now use `DualSenseInputs` for

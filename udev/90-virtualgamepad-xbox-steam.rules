@@ -1,0 +1,4 @@
+# Optional dev-only Steam visibility override. Install temporarily for manual
+# validation, then remove and reload rules. The 71-rule helper must have
+# validated the opt-in virtual Xbox label; physical devices lack this marker.
+ACTION!="remove", SUBSYSTEM=="input", ENV{VG_INPUT_LAB_XBOX}=="1", ENV{ID_SEAT}="seat0", ENV{LIBINPUT_IGNORE_DEVICE}="0", TAG+="uaccess"
