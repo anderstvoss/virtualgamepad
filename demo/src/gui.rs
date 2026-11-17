@@ -248,7 +248,7 @@ fn draw_wii_revision_selector(ui: &mut egui::Ui, kind: Kind, revision: &mut WiiR
 fn draw_wii_revision_state(ui: &mut egui::Ui, view: &ControllerView) {
     if let ControllerView::WiiRemote(editor) = view {
         ui.label("Revision");
-        ui.label(wii_revision_label(editor.state().revision()));
+        ui.label(wii_revision_label(editor.revision()));
         ui.end_row();
     }
 }

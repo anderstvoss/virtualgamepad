@@ -1,7 +1,7 @@
 //! Address routing and complete-request bounds for caller-imported resources.
 use super::*;
 use crate::wii_remote::{
-    WiiClassicState, WiiEepromImage, WiiExtension, WiiExtensionCalibration, WiiNunchukState,
+    WiiClassicInputs, WiiEepromImage, WiiExtension, WiiExtensionCalibration, WiiNunchukInputs,
 };
 
 fn send(p: &mut WiiProtocol, id: u8, bytes: &[u8]) {
@@ -65,8 +65,8 @@ fn init(p: &mut WiiProtocol) {
 fn missing_imports_keep_exact_error_seven_without_pending_reads() {
     let mut p = WiiProtocol::default();
     for ext in [
-        WiiExtension::Nunchuk(WiiNunchukState::default()),
-        WiiExtension::Classic(WiiClassicState::default()),
+        WiiExtension::Nunchuk(WiiNunchukInputs::default()),
+        WiiExtension::Classic(WiiClassicInputs::default()),
     ] {
         attach(&mut p, ext, true);
         init(&mut p);
@@ -93,7 +93,7 @@ fn a_missing_addressed_block_never_falls_back_to_an_imported_other_device() {
         );
         attach(
             &mut p,
-            WiiExtension::Nunchuk(WiiNunchukState::default()),
+            WiiExtension::Nunchuk(WiiNunchukInputs::default()),
             true,
         );
         init(&mut p);
@@ -119,8 +119,8 @@ fn addressed_device_wins_in_all_modes_and_mp_reads_are_chunked() {
     // MP's active A4 window is its own register bank even in 05 and 07.
     let (mp, n, c) = super::super::calibration::synthetic_blocks();
     for (ext, block, mode) in [
-        (WiiExtension::Nunchuk(WiiNunchukState::default()), n, 5),
-        (WiiExtension::Classic(WiiClassicState::default()), c, 7),
+        (WiiExtension::Nunchuk(WiiNunchukInputs::default()), n, 5),
+        (WiiExtension::Classic(WiiClassicInputs::default()), c, 7),
     ] {
         let mut p = imported();
         // Preserve the pre-shim refusal sequence as the explicit off control.
@@ -159,7 +159,7 @@ fn straddling_requests_fail_whole_without_prefix_or_later_chunks() {
     let mut p = imported();
     attach(
         &mut p,
-        WiiExtension::Nunchuk(WiiNunchukState::default()),
+        WiiExtension::Nunchuk(WiiNunchukInputs::default()),
         true,
     );
     init(&mut p);
@@ -182,7 +182,7 @@ fn detach_hides_imports_reattach_restores_them_and_writes_are_rejected() {
     let (_, n, _) = super::super::calibration::synthetic_blocks();
     attach(
         &mut p,
-        WiiExtension::Nunchuk(WiiNunchukState::default()),
+        WiiExtension::Nunchuk(WiiNunchukInputs::default()),
         false,
     );
     error(&mut p, 0x52, 0x20, 16); // Not initialized.
@@ -194,7 +194,7 @@ fn detach_hides_imports_reattach_restores_them_and_writes_are_rejected() {
     error(&mut p, 0x53, 0x20, 16);
     attach(
         &mut p,
-        WiiExtension::Nunchuk(WiiNunchukState::default()),
+        WiiExtension::Nunchuk(WiiNunchukInputs::default()),
         false,
     );
     init(&mut p);
@@ -220,13 +220,13 @@ fn compat_switches_are_independent_and_f7_never_claims_challenge_readiness() {
             for copy in [false, true] {
                 for (ext, mode, id, block) in [
                     (
-                        WiiExtension::Nunchuk(WiiNunchukState::default()),
+                        WiiExtension::Nunchuk(WiiNunchukInputs::default()),
                         5,
                         [0, 2, 0, 0],
                         n,
                     ),
                     (
-                        WiiExtension::Classic(WiiClassicState::default()),
+                        WiiExtension::Classic(WiiClassicInputs::default()),
                         7,
                         [1, 2, 0, 1],
                         c,
@@ -290,8 +290,8 @@ fn compat_switches_are_independent_and_f7_never_claims_challenge_readiness() {
 fn passthrough_three_banks_never_alias_and_detach_never_serves_a_stale_child() {
     let (mp, n, c) = super::super::calibration::synthetic_blocks();
     for (ext, mode, block) in [
-        (WiiExtension::Nunchuk(WiiNunchukState::default()), 5, n),
-        (WiiExtension::Classic(WiiClassicState::default()), 7, c),
+        (WiiExtension::Nunchuk(WiiNunchukInputs::default()), 5, n),
+        (WiiExtension::Classic(WiiClassicInputs::default()), 7, c),
     ] {
         let mut p = imported();
         attach(&mut p, ext.clone(), true);
@@ -321,7 +321,7 @@ fn passthrough_three_banks_never_alias_and_detach_never_serves_a_stale_child() {
     let mut p = WiiProtocol::default();
     attach(
         &mut p,
-        WiiExtension::Nunchuk(WiiNunchukState::default()),
+        WiiExtension::Nunchuk(WiiNunchukInputs::default()),
         true,
     );
     init(&mut p);
@@ -333,8 +333,8 @@ fn passthrough_three_banks_never_alias_and_detach_never_serves_a_stale_child() {
 #[test]
 fn passthrough_commits_alternate_latest_gyro_and_child_without_dropping_either_edit() {
     for (extension, mode) in [
-        (WiiExtension::Nunchuk(WiiNunchukState::default()), 5),
-        (WiiExtension::Classic(WiiClassicState::default()), 7),
+        (WiiExtension::Nunchuk(WiiNunchukInputs::default()), 5),
+        (WiiExtension::Classic(WiiClassicInputs::default()), 7),
     ] {
         let mut p = imported();
         attach(&mut p, extension, true);
@@ -361,7 +361,7 @@ fn passthrough_commits_alternate_latest_gyro_and_child_without_dropping_either_e
                     .unwrap();
             } else {
                 let next = match state.extension() {
-                    WiiExtension::Nunchuk(_) => WiiExtension::Nunchuk(WiiNunchukState {
+                    WiiExtension::Nunchuk(_) => WiiExtension::Nunchuk(WiiNunchukInputs {
                         stick: [50 + step, 180 - step],
                         accelerometer: [
                             4 * (30 + u16::from(step)),
@@ -371,7 +371,7 @@ fn passthrough_commits_alternate_latest_gyro_and_child_without_dropping_either_e
                         c: step % 2 == 0,
                         z: step % 2 != 0,
                     }),
-                    WiiExtension::Classic(_) => WiiExtension::Classic(WiiClassicState {
+                    WiiExtension::Classic(_) => WiiExtension::Classic(WiiClassicInputs {
                         left: [20 + step, 50 - step],
                         right: [step, 30 - step],
                         triggers: [step, 31 - step],

@@ -738,12 +738,10 @@ mod wii_tests {
                 assert_eq!(family.revision(), revision);
                 assert!(family.eeprom_image().bytes().is_empty());
                 assert_eq!(family, options.wii_compat.clone().with_revision(revision));
-                Ok::<_, String>(gr_curated_controllers::wii_remote::WiiRemoteState::new(
-                    family.revision(),
-                ))
+                Ok::<_, String>(family.revision())
             })
             .unwrap();
-            assert_eq!(state.revision(), revision);
+            assert_eq!(state, revision);
         }
     }
     #[test]

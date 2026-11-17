@@ -224,7 +224,7 @@ impl WiiIrPoint {
 
 /// Nunchuk values remain native; no cross-family normalized gamepad state.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WiiNunchukState {
+pub struct WiiNunchukInputs {
     /// Raw X/Y,0..255; source coordinate midpoint128, not factory calibration.
     pub stick: [u8; 2],
     /// Raw X/Y/Z ten-bit samples,0..1023.
@@ -233,7 +233,7 @@ pub struct WiiNunchukState {
     pub z: bool,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WiiClassicState {
+pub struct WiiClassicInputs {
     /// Raw left X/Y,0..63; source midpoint32.
     pub left: [u8; 2],
     /// Raw right X/Y,0..31; source midpoint16.
@@ -250,15 +250,14 @@ pub struct WiiClassicState {
 pub enum WiiExtension {
     #[default]
     None,
-    Nunchuk(WiiNunchukState),
-    Classic(WiiClassicState),
-    ClassicPro(WiiClassicState),
+    Nunchuk(WiiNunchukInputs),
+    Classic(WiiClassicInputs),
+    ClassicPro(WiiClassicInputs),
 }
 
-/// The bridge and its downstream accessory are independent topology facts.
+/// Caller-owned `MotionPlus` measurements; attachment presence is separate.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WiiMotionPlusState {
-    pub attached: bool,
+pub struct WiiMotionPlusInputs {
     /// Raw pitch/roll/yaw,0..16383; source zero-rate center8192.
     pub gyroscope: [u16; 3],
     /// Slow-range flags in the same pitch/roll/yaw order.
@@ -280,63 +279,53 @@ impl WiiRemoteBattery {
     }
 }
 
-/// Application-owned semantic inputs. Host-owned LEDs and rumble are separate.
+/// Caller-owned native levels. Revision, attachment presence and battery are separate.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WiiRemoteState {
-    revision: WiiRemoteRevision,
+pub struct WiiRemoteInputs {
     buttons: [bool; 11],
     accelerometer: [u16; 3],
     ir: [Option<WiiIrPoint>; 4],
     extension: WiiExtension,
-    motion_plus: WiiMotionPlusState,
+    motion_plus: WiiMotionPlusInputs,
 }
-impl Default for WiiRemoteState {
+impl Default for WiiRemoteInputs {
     fn default() -> Self {
-        Self::new(WiiRemoteRevision::Original)
-    }
-}
-impl WiiRemoteState {
-    #[must_use]
-    pub const fn new(revision: WiiRemoteRevision) -> Self {
         Self {
-            revision,
             buttons: [false; 11],
-            // No invented factory calibration or one-g default. These are
-            // uncalibrated raw inputs; calibrated defaults need their own record.
             accelerometer: [0; 3],
             ir: [None; 4],
             extension: WiiExtension::None,
-            motion_plus: WiiMotionPlusState {
-                attached: matches!(
-                    revision,
-                    WiiRemoteRevision::Tr | WiiRemoteRevision::EarlyIntegratedPlus
-                ),
-                gyroscope: [8192; 3],
-                slow: [false; 3],
-            },
+            motion_plus: WiiMotionPlusInputs::default(),
         }
     }
-    /// Clear inputs while preserving attachment and revision.
+}
+impl WiiRemoteInputs {
+    /// Clear levels while preserving the extension payload kind.
+    /// After attach, clone `WiiRemoteController::inputs()` and neutralize that
+    /// snapshot, or call the handle's `neutralize()`. `Self::default()` has no
+    /// extension and cannot replace inputs while an extension is attached.
     pub fn neutralize(&mut self) {
         self.buttons = [false; 11];
         self.accelerometer = [0; 3];
         self.ir = [None; 4];
         self.extension = match self.extension {
             WiiExtension::None => WiiExtension::None,
-            WiiExtension::Nunchuk(_) => WiiExtension::Nunchuk(WiiNunchukState::default()),
-            WiiExtension::Classic(_) => WiiExtension::Classic(WiiClassicState::default()),
-            WiiExtension::ClassicPro(_) => WiiExtension::ClassicPro(WiiClassicState::default()),
+            WiiExtension::Nunchuk(_) => WiiExtension::Nunchuk(WiiNunchukInputs::default()),
+            WiiExtension::Classic(_) => WiiExtension::Classic(WiiClassicInputs::default()),
+            WiiExtension::ClassicPro(_) => WiiExtension::ClassicPro(WiiClassicInputs::default()),
         };
         self.motion_plus.gyroscope = [8192; 3];
         self.motion_plus.slow = [false; 3];
     }
+    /// Project a detached editor's topology using explicit attachment context.
+    /// For a live handle use `WiiRemoteController::current_topology()` instead;
+    /// it reads accepted attachment metadata without a caller-supplied boolean.
     #[must_use]
-    pub fn input_topology(&self) -> &'static gr_controller_contract::InputTopology {
-        topology::current(self.extension(), self.motion_plus.attached)
-    }
-    #[must_use]
-    pub const fn revision(&self) -> WiiRemoteRevision {
-        self.revision
+    pub fn projected_input_topology(
+        &self,
+        motion_plus_attached: bool,
+    ) -> &'static gr_controller_contract::InputTopology {
+        topology::current(self.extension(), motion_plus_attached)
     }
     #[must_use]
     pub const fn pressed(&self, button: WiiRemoteButton) -> bool {
@@ -369,34 +358,7 @@ impl WiiRemoteState {
     pub const fn extension(&self) -> &WiiExtension {
         &self.extension
     }
-    /// Edit a detached native snapshot's attachment without provider I/O.
-    ///
-    /// Use `WiiRemoteController::attach` to apply a live transition. A shape change
-    /// resets `MotionPlus` samples, matching the live attachment transaction.
-    pub fn set_attachment(
-        &mut self,
-        extension: WiiExtension,
-        motion_plus: bool,
-    ) -> Result<(), ControlError> {
-        extensions::validate(&extension)?;
-        if std::mem::discriminant(&extension) != std::mem::discriminant(&self.extension)
-            || motion_plus != self.motion_plus.attached
-        {
-            self.motion_plus = WiiMotionPlusState {
-                attached: motion_plus,
-                gyroscope: [8192; 3],
-                slow: [false; 3],
-            };
-        }
-        self.extension = extension;
-        Ok(())
-    }
     pub fn set_extension_values(&mut self, value: WiiExtension) -> Result<(), ControlError> {
-        if std::mem::discriminant(&value) != std::mem::discriminant(&self.extension) {
-            return Err(ControlError::UnsupportedControl {
-                control: "extension kind requires attachment transition",
-            });
-        }
         extensions::validate(&value)?;
         self.extension = value;
         Ok(())
@@ -406,9 +368,9 @@ impl WiiRemoteState {
         gyroscope: [u16; 3],
         slow: [bool; 3],
     ) -> Result<(), ControlError> {
-        if !self.motion_plus.attached || gyroscope.iter().any(|v| *v > 16383) {
+        if gyroscope.iter().any(|v| *v > 16383) {
             return Err(ControlError::UnsupportedControl {
-                control: "MotionPlus absent or outside fourteen bits",
+                control: "MotionPlus raw value outside fourteen bits",
             });
         }
         self.motion_plus.gyroscope = gyroscope;
@@ -416,8 +378,128 @@ impl WiiRemoteState {
         Ok(())
     }
     #[must_use]
-    pub const fn motion_plus(&self) -> &WiiMotionPlusState {
+    pub const fn motion_plus(&self) -> &WiiMotionPlusInputs {
         &self.motion_plus
+    }
+}
+/// Copyable controller-owned metadata. Live attachment changes use `attach()`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WiiRemoteStatus {
+    revision: WiiRemoteRevision,
+    motion_plus_attached: bool,
+    battery: WiiRemoteBattery,
+    topology_generation: u64,
+}
+impl WiiRemoteStatus {
+    #[must_use]
+    pub const fn revision(self) -> WiiRemoteRevision {
+        self.revision
+    }
+    #[must_use]
+    pub const fn motion_plus_attached(self) -> bool {
+        self.motion_plus_attached
+    }
+    #[must_use]
+    pub const fn battery(self) -> WiiRemoteBattery {
+        self.battery
+    }
+    #[must_use]
+    pub const fn topology_generation(self) -> u64 {
+        self.topology_generation
+    }
+}
+
+// Private runtime representation: native levels and live identity/presence.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct RuntimeState {
+    inputs: WiiRemoteInputs,
+    revision: WiiRemoteRevision,
+    motion_plus_attached: bool,
+}
+impl RuntimeState {
+    fn new(revision: WiiRemoteRevision) -> Self {
+        Self {
+            inputs: WiiRemoteInputs::default(),
+            revision,
+            motion_plus_attached: matches!(
+                revision,
+                WiiRemoteRevision::Tr | WiiRemoteRevision::EarlyIntegratedPlus
+            ),
+        }
+    }
+    fn revision(&self) -> WiiRemoteRevision {
+        self.revision
+    }
+    fn motion_plus_attached(&self) -> bool {
+        self.motion_plus_attached
+    }
+    #[cfg(test)]
+    fn pressed(&self, button: WiiRemoteButton) -> bool {
+        self.inputs.pressed(button)
+    }
+    #[cfg(test)]
+    fn set_button(&mut self, button: WiiRemoteButton, pressed: bool) {
+        self.inputs.set_button(button, pressed);
+    }
+    fn accelerometer(&self) -> [u16; 3] {
+        self.inputs.accelerometer()
+    }
+    #[cfg(test)]
+    fn set_accelerometer(&mut self, values: [u16; 3]) -> Result<(), ControlError> {
+        self.inputs.set_accelerometer(values)
+    }
+    fn ir(&self) -> &[Option<WiiIrPoint>; 4] {
+        self.inputs.ir()
+    }
+    #[cfg(test)]
+    fn set_ir(&mut self, points: [Option<WiiIrPoint>; 4]) {
+        self.inputs.set_ir(points);
+    }
+    fn extension(&self) -> &WiiExtension {
+        self.inputs.extension()
+    }
+    fn motion_plus(&self) -> &WiiMotionPlusInputs {
+        self.inputs.motion_plus()
+    }
+    #[cfg(test)]
+    fn set_extension_values(&mut self, value: WiiExtension) -> Result<(), ControlError> {
+        if std::mem::discriminant(&value) != std::mem::discriminant(self.extension()) {
+            return Err(ControlError::UnsupportedControl {
+                control: "extension kind requires attachment transition",
+            });
+        }
+        self.inputs.set_extension_values(value)
+    }
+    #[cfg(test)]
+    fn set_motion_plus_values(
+        &mut self,
+        gyroscope: [u16; 3],
+        slow: [bool; 3],
+    ) -> Result<(), ControlError> {
+        if !self.motion_plus_attached || gyroscope.iter().any(|v| *v > 16383) {
+            return Err(ControlError::UnsupportedControl {
+                control: "MotionPlus absent or outside fourteen bits",
+            });
+        }
+        self.inputs.set_motion_plus_values(gyroscope, slow)
+    }
+    fn set_attachment(
+        &mut self,
+        extension: WiiExtension,
+        motion_plus: bool,
+    ) -> Result<(), ControlError> {
+        extensions::validate(&extension)?;
+        if std::mem::discriminant(&extension) != std::mem::discriminant(self.extension())
+            || motion_plus != self.motion_plus_attached
+        {
+            self.inputs.motion_plus = WiiMotionPlusInputs::default();
+        }
+        self.inputs.extension = extension;
+        self.motion_plus_attached = motion_plus;
+        Ok(())
+    }
+    fn neutralize(&mut self) {
+        self.inputs.neutralize();
     }
 }
 
@@ -456,15 +538,11 @@ mod tests {
         assert!(WiiRemoteRevision::Original.has_identity_evidence());
         assert!(WiiRemoteRevision::Tr.has_identity_evidence());
         assert!(!WiiRemoteRevision::EarlyIntegratedPlus.has_identity_evidence());
-        assert!(!WiiRemoteState::default().motion_plus().attached);
-        assert!(
-            WiiRemoteState::new(WiiRemoteRevision::Tr)
-                .motion_plus()
-                .attached
-        );
+        assert!(!RuntimeState::default().motion_plus_attached());
+        assert!(RuntimeState::new(WiiRemoteRevision::Tr).motion_plus_attached());
         assert_ne!(
-            WiiRemoteState::new(WiiRemoteRevision::EarlyIntegratedPlus),
-            WiiRemoteState::new(WiiRemoteRevision::Tr)
+            RuntimeState::new(WiiRemoteRevision::EarlyIntegratedPlus),
+            RuntimeState::new(WiiRemoteRevision::Tr)
         );
     }
     #[test]
@@ -477,14 +555,14 @@ mod tests {
         }
         assert!(WiiIrPoint::new(1024, 0).is_err());
         assert!(WiiIrPoint::new(0, 768).is_err());
-        let mut state = WiiRemoteState::default();
+        let mut state = RuntimeState::default();
         let point = WiiIrPoint::new(1023, 767).unwrap();
         state.set_ir([None, Some(point), None, Some(point)]);
         assert_eq!(state.ir(), &[None, Some(point), None, Some(point)]);
     }
     #[test]
     fn rejected_sensor_edit_preserves_state_and_buttons_are_independent() {
-        let mut state = WiiRemoteState::default();
+        let mut state = RuntimeState::default();
         state.set_accelerometer([0, 511, 1023]).unwrap();
         let before = state.clone();
         assert!(state.set_accelerometer([0, 1024, 0]).is_err());
@@ -513,7 +591,7 @@ pub use calibration::WiiExtensionCalibration;
 mod topology;
 
 // Source coordinate midpoints, not factory calibration values.
-impl Default for WiiNunchukState {
+impl Default for WiiNunchukInputs {
     fn default() -> Self {
         Self {
             stick: [128; 2],
@@ -523,7 +601,7 @@ impl Default for WiiNunchukState {
         }
     }
 }
-impl Default for WiiClassicState {
+impl Default for WiiClassicInputs {
     fn default() -> Self {
         Self {
             left: [32; 2],
@@ -545,14 +623,16 @@ mod native_tests;
 #[cfg(all(test, target_os = "linux"))]
 mod live_tests;
 
-impl Default for WiiMotionPlusState {
+impl Default for WiiMotionPlusInputs {
     fn default() -> Self {
         // wii-kernel-motionplus-pass-through: nonrotating raw center is8192,
         // independent of physical calibration or fast/slow selection.
         Self {
-            attached: false,
             gyroscope: [8192; 3],
             slow: [false; 3],
         }
     }
 }
+
+#[cfg(test)]
+mod input_ownership_tests;

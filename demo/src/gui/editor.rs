@@ -82,12 +82,14 @@ impl WiiExtensionChoice {
         }
     }
     fn extension(self) -> Result<gr_curated_controllers::wii_remote::WiiExtension, String> {
-        use gr_curated_controllers::wii_remote::{WiiClassicState, WiiExtension, WiiNunchukState};
+        use gr_curated_controllers::wii_remote::{
+            WiiClassicInputs, WiiExtension, WiiNunchukInputs,
+        };
         Ok(match self {
             Self::None => WiiExtension::None,
-            Self::Nunchuk => WiiExtension::Nunchuk(WiiNunchukState::default()),
-            Self::Classic => WiiExtension::Classic(WiiClassicState::default()),
-            Self::ClassicPro => WiiExtension::ClassicPro(WiiClassicState::default()),
+            Self::Nunchuk => WiiExtension::Nunchuk(WiiNunchukInputs::default()),
+            Self::Classic => WiiExtension::Classic(WiiClassicInputs::default()),
+            Self::ClassicPro => WiiExtension::ClassicPro(WiiClassicInputs::default()),
             Self::Unknown => return Err("extension requires a declared native editor".into()),
         })
     }
@@ -132,8 +134,21 @@ pub(super) type DualSenseEditor = Editor<DualSenseInputs, Surface, virtualgamepa
 pub(super) type DualShock4Editor =
     Editor<DualShock4Inputs, Surface, virtualgamepad::DualShock4Status>;
 pub(super) type SwitchProEditor = Editor<SwitchProInputs, Surface, virtualgamepad::SwitchProStatus>;
+#[derive(Clone, Copy, Default)]
+pub(super) struct WiiEditorMetadata {
+    revision: virtualgamepad::WiiRemoteRevision,
+    motion_plus_attached: bool,
+}
+impl WiiEditorMetadata {
+    fn from_status(status: virtualgamepad::WiiRemoteStatus) -> Self {
+        Self {
+            revision: status.revision(),
+            motion_plus_attached: status.motion_plus_attached(),
+        }
+    }
+}
 pub(super) type WiiRemoteEditor =
-    Editor<gr_curated_controllers::wii_remote::WiiRemoteState, Surface>;
+    Editor<gr_curated_controllers::wii_remote::WiiRemoteInputs, Surface, WiiEditorMetadata>;
 pub(super) type SteamEditor = Editor<
     gr_curated_controllers::steam_controller_2026::SteamController2026Inputs,
     Surface,
@@ -214,21 +229,22 @@ impl Controller {
                 c.status(),
             )),
             Self::WiiRemote(c) => ControllerView::WiiRemote(Editor::new(
-                c.state().clone(),
+                c.inputs().clone(),
                 c.surface(),
                 None,
                 None,
-                (),
+                WiiEditorMetadata::from_status(c.status()),
             )),
         }
     }
 }
 fn prepare_wii_input(
-    current: &gr_curated_controllers::wii_remote::WiiRemoteState,
+    current: &gr_curated_controllers::wii_remote::WiiRemoteInputs,
+    motion_plus_attached: bool,
     event: &super::InputEvent,
-) -> Result<gr_curated_controllers::wii_remote::WiiRemoteState, String> {
+) -> Result<gr_curated_controllers::wii_remote::WiiRemoteInputs, String> {
     let mut state = current.clone();
-    if super::native_editor::apply_wii_event(&mut state, event) {
+    if super::native_editor::apply_wii_event(&mut state, motion_plus_attached, event) {
         Ok(state)
     } else {
         Err("input is unavailable in the retained Wii topology or outside its native range".into())
@@ -236,6 +252,12 @@ fn prepare_wii_input(
 }
 
 impl WiiRemoteEditor {
+    pub(super) fn revision(&self) -> virtualgamepad::WiiRemoteRevision {
+        self.metadata.revision
+    }
+    pub(super) fn motion_plus_attached(&self) -> bool {
+        self.metadata.motion_plus_attached
+    }
     fn queue_wii_edit(&mut self, edit: Edit) -> Result<(), String> {
         // A refused topology/IR edit leaves the existing batch serviceable.
         if self.edits.len() == EDIT_LIMIT {
@@ -244,7 +266,11 @@ impl WiiRemoteEditor {
         self.queue(edit)
     }
     pub(super) fn edit_wii(&mut self, event: &super::InputEvent) {
-        if !super::native_editor::apply_wii_event(&mut self.state, event) {
+        if !super::native_editor::apply_wii_event(
+            &mut self.state,
+            self.metadata.motion_plus_attached,
+            event,
+        ) {
             return;
         }
         let event = event.clone();
@@ -255,7 +281,7 @@ impl WiiRemoteEditor {
             };
             // A preceding attach can fail after GUI preflight. Apply the event to
             // the worker's retained topology, never an optimistic whole-state copy.
-            match prepare_wii_input(c.state(), &event) {
+            match prepare_wii_input(c.inputs(), c.status().motion_plus_attached(), &event) {
                 Ok(state) => c.set_inputs(state).map_err(|e| e.to_string()),
                 Err(error) => {
                     record_wii_result(&feedback, "Input", &Err(error));
@@ -271,8 +297,16 @@ impl WiiRemoteEditor {
     ) -> Result<(), String> {
         let mut candidate = self.state.clone();
         candidate
-            .set_attachment(value.clone(), mp)
+            .set_extension_values(value.clone())
             .map_err(|e| e.to_string())?;
+        if std::mem::discriminant(candidate.extension())
+            != std::mem::discriminant(self.state.extension())
+            || mp != self.metadata.motion_plus_attached
+        {
+            candidate
+                .set_motion_plus_values([8192; 3], [false; 3])
+                .map_err(|e| e.to_string())?;
+        }
         let feedback = self.feedback.clone();
         self.queue_wii_edit(Box::new(move |c| {
             let Controller::WiiRemote(c) = c else {
@@ -284,6 +318,7 @@ impl WiiRemoteEditor {
             Ok(())
         }))?;
         self.state = candidate;
+        self.metadata.motion_plus_attached = mp;
         Ok(())
     }
     pub(super) fn select_wii_attachment(&mut self, choice: WiiExtensionChoice, bridge: bool) {
@@ -338,7 +373,7 @@ impl WiiRemoteEditor {
     pub(super) fn wii_topology_name(&self) -> String {
         let extension = WiiExtensionChoice::from_extension(self.state.extension());
         let mut name = "Wii Remote".to_owned();
-        if self.state.motion_plus().attached {
+        if self.metadata.motion_plus_attached {
             name.push_str(" + MotionPlus");
         }
         if extension != WiiExtensionChoice::None {
@@ -360,7 +395,7 @@ impl WiiRemoteEditor {
                 super::input_clusters::card(ui, "Attachment", |ui| {
                     let mut extension = WiiExtensionChoice::from_extension(self.state.extension());
                     let before = extension;
-                    let mut mp = self.state.motion_plus().attached;
+                    let mut mp = self.metadata.motion_plus_attached;
                     let old_mp = mp;
                     ui.label("Extension");
                     ui.horizontal_wrapped(|ui| {
@@ -424,11 +459,11 @@ pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
             virtualgamepad::DualShock4Status::default(),
         )),
         super::Kind::WiiRemote => ControllerView::WiiRemote(Editor::new(
-            gr_curated_controllers::wii_remote::WiiRemoteState::default(),
+            gr_curated_controllers::wii_remote::WiiRemoteInputs::default(),
             surface,
             None,
             None,
-            (),
+            WiiEditorMetadata::default(),
         )),
         super::Kind::Steam => ControllerView::Steam(Editor::new(
             gr_curated_controllers::steam_controller_2026::SteamController2026Inputs::default(),
@@ -451,7 +486,11 @@ pub(super) fn neutral_wii_view(revision: super::WiiRemoteRevision) -> Controller
     let ControllerView::WiiRemote(mut editor) = neutral_view(super::Kind::WiiRemote) else {
         unreachable!()
     };
-    editor.state = gr_curated_controllers::wii_remote::WiiRemoteState::new(revision);
+    editor.metadata.revision = revision;
+    editor.metadata.motion_plus_attached = matches!(
+        revision,
+        super::WiiRemoteRevision::Tr | super::WiiRemoteRevision::EarlyIntegratedPlus
+    );
     ControllerView::WiiRemote(editor)
 }
 impl ControllerView {
@@ -909,7 +948,7 @@ mod tests {
 
     #[test]
     fn w6_inputs_after_native_attach_failure_use_retained_topology() {
-        use gr_curated_controllers::wii_remote::{WiiRemoteButton, WiiRemoteState};
+        use gr_curated_controllers::wii_remote::{WiiRemoteButton, WiiRemoteInputs};
         let ControllerView::WiiRemote(mut editor) = neutral_view(super::super::Kind::WiiRemote)
         else {
             unreachable!()
@@ -925,18 +964,19 @@ mod tests {
         );
         // A worker attach failure retains the old state. A later accessory event
         // cannot restore the optimistic shape; core events still work afterward.
-        let retained = WiiRemoteState::default();
-        assert!(prepare_wii_input(&retained, &accessory).is_err());
+        let retained = WiiRemoteInputs::default();
+        assert!(prepare_wii_input(&retained, false, &accessory).is_err());
         let core = super::super::InputEvent::Button {
             id: virtualgamepad::InputControlId::new("a"),
             pressed: true,
         };
-        let pressed = prepare_wii_input(&retained, &core).unwrap();
+        let pressed = prepare_wii_input(&retained, false, &core).unwrap();
         assert!(pressed.pressed(WiiRemoteButton::A));
         assert_eq!(pressed.extension(), retained.extension());
         assert_eq!(pressed.motion_plus(), retained.motion_plus());
         let released = prepare_wii_input(
             &pressed,
+            false,
             &super::super::InputEvent::Button {
                 id: virtualgamepad::InputControlId::new("a"),
                 pressed: false,
@@ -962,10 +1002,17 @@ mod tests {
         };
         editor.select_wii_attachment(WiiExtensionChoice::Nunchuk, true);
         let before = editor.state.clone();
-        let topology = editor.state.input_topology();
+        let topology = editor
+            .state
+            .projected_input_topology(editor.motion_plus_attached());
         editor.select_wii_attachment(WiiExtensionChoice::ClassicPro, false);
         assert_eq!(editor.state, before);
-        assert_eq!(editor.state.input_topology(), topology);
+        assert_eq!(
+            editor
+                .state
+                .projected_input_topology(editor.motion_plus_attached()),
+            topology
+        );
         assert_eq!(
             WiiExtensionChoice::from_extension(editor.state.extension()),
             WiiExtensionChoice::Nunchuk
@@ -1019,16 +1066,18 @@ mod tests {
     }
     #[test]
     fn wii_attachment_projection_precedes_same_frame_native_edits() {
-        use gr_curated_controllers::wii_remote::{WiiClassicState, WiiExtension, WiiNunchukState};
+        use gr_curated_controllers::wii_remote::{
+            WiiClassicInputs, WiiExtension, WiiNunchukInputs,
+        };
         let ControllerView::WiiRemote(mut editor) = neutral_view(super::super::Kind::WiiRemote)
         else {
             unreachable!()
         };
         editor
-            .attach_wii(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+            .attach_wii(WiiExtension::Nunchuk(WiiNunchukInputs::default()), true)
             .unwrap();
         assert!(matches!(editor.state.extension(), WiiExtension::Nunchuk(_)));
-        assert!(editor.state.motion_plus().attached);
+        assert!(editor.motion_plus_attached());
         editor.edit_wii(&super::super::InputEvent::Axis1 {
             id: virtualgamepad::InputControlId::new("nunchuk.accel.x"),
             value: 321,
@@ -1047,7 +1096,7 @@ mod tests {
         let before = editor.state.clone();
         assert!(
             editor
-                .attach_wii(WiiExtension::ClassicPro(WiiClassicState::default()), false)
+                .attach_wii(WiiExtension::ClassicPro(WiiClassicInputs::default()), false)
                 .is_err()
         );
         for _ in editor.edits.len()..EDIT_LIMIT {

@@ -1,5 +1,5 @@
 use super::{
-    BLUETOOTH, UINPUT, WiiRemoteButton, WiiRemoteIdentity, WiiRemoteOptions, WiiRemoteState,
+    BLUETOOTH, RuntimeState, UINPUT, WiiRemoteButton, WiiRemoteIdentity, WiiRemoteOptions,
 };
 use crate::{CreationOptions, common};
 use gr_controller_contract::{CommitError, ControlError, ControllerSurface, DigitalControlUpdate};
@@ -7,7 +7,6 @@ use gr_realization_api::{ProviderError, RawReverseEvent, RealizationTarget};
 
 pub struct WiiRemoteController {
     identity: WiiRemoteIdentity,
-    battery: super::WiiRemoteBattery,
     pub(super) live: common::topology::LiveTopology<super::codec::WiiProtocol>,
     pub(super) session: Box<Storage>,
     pub(super) native: Option<super::native::Nodes>,
@@ -58,7 +57,7 @@ pub(super) fn create(
         common::require_linux_platform(target)?;
     }
     let identity = identity.map_or_else(generate_identity, Ok)?;
-    let state = WiiRemoteState::new(revision);
+    let state = RuntimeState::new(revision);
     let driver = Configured {
         image,
         options: compat,
@@ -71,7 +70,11 @@ pub(super) fn create(
     } else {
         realizations::hid(revision)
     };
-    let session = common::create(driver, specification, options)?;
+    let session = common::create(driver, specification, options)?.require_protocol(|| {
+        let mut protocol = super::codec::WiiProtocol::default();
+        protocol.state = state.clone();
+        protocol
+    })?;
     let native = if target == RealizationTarget::LINUX_UINPUT {
         Some(super::native::Nodes::new(
             provider,
@@ -83,15 +86,10 @@ pub(super) fn create(
     } else {
         None
     };
-    let protocol = native.as_ref().map(|_| {
-        let mut p = super::codec::WiiProtocol::default();
-        p.state = state.clone();
-        p
-    });
     let live = common::topology::LiveTopology::new(
         &super::topology::MAXIMUM,
-        super::topology::current(state.extension(), state.motion_plus().attached),
-        protocol,
+        super::topology::current(state.extension(), state.motion_plus_attached()),
+        None,
     )
     .map_err(|e| ProviderError::Open {
         reason: e.to_string(),
@@ -107,7 +105,6 @@ pub(super) fn create(
     };
     Ok(WiiRemoteController {
         identity,
-        battery: super::WiiRemoteBattery::default(),
         session: Box::new(storage),
         live,
         native,
@@ -138,15 +135,16 @@ impl WiiRemoteController {
         if self.session.is_closed() {
             return Err(ControlError::Closed);
         }
-        if std::mem::discriminant(&extension) == std::mem::discriminant(self.state().extension())
-            && motion_plus == self.state().motion_plus().attached
+        if std::mem::discriminant(&extension)
+            == std::mem::discriminant(self.runtime_state().extension())
+            && motion_plus == self.runtime_state().motion_plus_attached()
         {
             return self.session.update_state(|state| {
-                state.extension = extension;
+                state.inputs.extension = extension;
                 Ok(())
             });
         }
-        let mut candidate = self.state().clone();
+        let mut candidate = self.runtime_state().clone();
         candidate.set_attachment(extension.clone(), motion_plus)?;
         let prepared = if let Some(nodes) = &self.native {
             nodes
@@ -161,15 +159,13 @@ impl WiiRemoteController {
         let next = extension.clone();
         let native = self.native.is_some();
         let now = self.session.now();
-        self.live.change(
+        self.live.change_owned(
             &mut self.session,
             shape,
             |state| {
-                state.extension = extension;
-                state.motion_plus = super::WiiMotionPlusState {
-                    attached: motion_plus,
-                    ..Default::default()
-                };
+                state.inputs.extension = extension;
+                state.motion_plus_attached = motion_plus;
+                state.inputs.motion_plus = super::WiiMotionPlusInputs::default();
                 Ok(())
             },
             |protocol| {
@@ -209,8 +205,21 @@ impl WiiRemoteController {
         })
     }
     #[must_use]
-    pub fn state(&self) -> &WiiRemoteState {
+    pub(super) fn runtime_state(&self) -> &RuntimeState {
         self.session.state()
+    }
+    #[must_use]
+    pub fn inputs(&self) -> &super::WiiRemoteInputs {
+        &self.session.state().inputs
+    }
+    #[must_use]
+    pub fn status(&self) -> super::WiiRemoteStatus {
+        super::WiiRemoteStatus {
+            revision: self.runtime_state().revision,
+            motion_plus_attached: self.runtime_state().motion_plus_attached,
+            battery: self.battery(),
+            topology_generation: self.topology_generation(),
+        }
     }
     #[must_use]
     pub fn surface(&self) -> &'static ControllerSurface {
@@ -239,12 +248,15 @@ impl WiiRemoteController {
     /// Returns the closure's error, a validation error, or `ControlError::Closed`.
     pub fn edit_inputs(
         &mut self,
-        edit: impl FnOnce(&mut WiiRemoteState) -> Result<(), ControlError>,
+        edit: impl FnOnce(&mut super::WiiRemoteInputs) -> Result<(), ControlError>,
     ) -> Result<(), ControlError> {
-        self.session.edit_inputs(edit)
+        self.session.edit_inputs(|state| edit(&mut state.inputs))
     }
     /// Apply this family's native input snapshot without changing attachment or identity.
-    pub fn set_inputs(&mut self, state: WiiRemoteState) -> Result<(), ControlError> {
+    /// To clear attached inputs, call `neutralize()` or clone `inputs()` and
+    /// neutralize the clone. Default inputs have no extension and are rejected
+    /// when an extension is attached.
+    pub fn set_inputs(&mut self, state: super::WiiRemoteInputs) -> Result<(), ControlError> {
         self.edit_inputs(|current| {
             *current = state;
             Ok(())
@@ -271,8 +283,8 @@ impl WiiRemoteController {
     }
     /// Current raw battery metadata, retained after close.
     #[must_use]
-    pub const fn battery(&self) -> super::WiiRemoteBattery {
-        self.battery
+    pub fn battery(&self) -> super::WiiRemoteBattery {
+        self.session.protocol().battery
     }
     /// Update native battery metadata. Call `commit()` to service pending work.
     /// Future status reports carry this value; accepted queued reports retain
@@ -281,10 +293,10 @@ impl WiiRemoteController {
         if self.session.is_closed() {
             return Err(ControlError::Closed);
         }
-        if battery == self.battery {
+        if battery == self.battery() {
             return Ok(());
         }
-        self.live.change(
+        self.live.change_owned(
             &mut self.session,
             self.live.current_topology(),
             |_| Ok(()),
@@ -293,7 +305,6 @@ impl WiiRemoteController {
                 Ok(())
             },
         )?;
-        self.battery = battery;
         Ok(())
     }
     pub fn set_extension(&mut self, value: super::WiiExtension) -> Result<(), ControlError> {
@@ -313,8 +324,9 @@ impl WiiRemoteController {
         gyroscope: [u16; 3],
         slow: [bool; 3],
     ) -> Result<(), ControlError> {
+        let attached = self.runtime_state().motion_plus_attached;
         self.edit_inputs(|state| {
-            if !state.motion_plus.attached || gyroscope.iter().any(|v| *v > 16383) {
+            if !attached || gyroscope.iter().any(|v| *v > 16383) {
                 return Err(ControlError::UnsupportedControl {
                     control: "MotionPlus absent or raw value outside fourteen bits",
                 });
@@ -405,12 +417,14 @@ pub(super) enum Storage {
         common::resources::ResourceSession<
             super::definition::Configured,
             common::resources::Resolution<super::WiiEepromImage>,
+            super::codec::WiiProtocol,
+            std::convert::Infallible,
         >,
     ),
-    Native(common::ControllerSession<super::definition::Configured>),
+    Native(common::ProtocolSession<super::definition::Configured>),
 }
 impl std::ops::Deref for Storage {
-    type Target = common::ControllerSession<super::definition::Configured>;
+    type Target = common::ProtocolSession<super::definition::Configured>;
     fn deref(&self) -> &Self::Target {
         match self {
             Self::Hid(r) => &r.session,
@@ -430,5 +444,26 @@ impl std::ops::DerefMut for Storage {
 impl Drop for WiiRemoteController {
     fn drop(&mut self) {
         self.close();
+    }
+}
+
+#[cfg(test)]
+impl crate::common::session_tests::InputFixture for super::RuntimeState {
+    type Inputs = super::WiiRemoteInputs;
+    fn test_inputs(&self) -> &Self::Inputs {
+        &self.inputs
+    }
+    fn test_inputs_mut(&mut self) -> &mut Self::Inputs {
+        &mut self.inputs
+    }
+    fn test_into_inputs(self) -> Self::Inputs {
+        self.inputs
+    }
+}
+#[cfg(test)]
+impl crate::common::session_tests::ControllerFixture for WiiRemoteController {
+    type State = super::RuntimeState;
+    fn test_state(&self) -> &Self::State {
+        self.runtime_state()
     }
 }

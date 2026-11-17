@@ -16,15 +16,13 @@ fn fixture(name: &str) -> Vec<u8> {
 fn every_legal_data_mode_matches_its_independent_research_fixture() {
     for &(mode, _) in MODES {
         assert_eq!(
-            data(mode, &WiiRemoteState::default(), false)
-                .unwrap()
-                .wire(),
+            data(mode, &RuntimeState::default(), false).unwrap().wire(),
             fixture(&format!("wii-c5-neutral-{mode:02x}"))
         );
     }
     for reserved in 0x38..=0x3c {
         assert_eq!(
-            data(reserved, &WiiRemoteState::default(), false),
+            data(reserved, &RuntimeState::default(), false),
             Err(Error::InvalidState)
         );
     }
@@ -44,7 +42,7 @@ fn every_core_button_is_independent_of_embedded_acceleration() {
         (WiiRemoteButton::Minus, [0, 16]),
         (WiiRemoteButton::Home, [0, 128]),
     ] {
-        let mut state = WiiRemoteState::default();
+        let mut state = RuntimeState::default();
         state.set_button(button, true);
         state.set_accelerometer([1023, 511, 255]).unwrap();
         let report = data(0x31, &state, false).unwrap();
@@ -57,7 +55,7 @@ fn every_core_button_is_independent_of_embedded_acceleration() {
 }
 #[test]
 fn basic_ir_packs_coordinates_and_invisible_slots_without_conflating_them() {
-    let mut state = WiiRemoteState::default();
+    let mut state = RuntimeState::default();
     state.set_ir([
         Some(WiiIrPoint::new(1023, 767).unwrap()),
         Some(WiiIrPoint::new(0, 0).unwrap()),
@@ -107,7 +105,7 @@ fn each_declared_output_gets_exact_required_report_or_transport_error() {
             Reply::Set(Ok(())),
             "id {id:02x}"
         );
-        let reports = protocol.input(&WiiRemoteState::default(), 1).unwrap();
+        let reports = protocol.input(&RuntimeState::default(), 1).unwrap();
         let replies: Vec<_> = reports
             .into_iter()
             .filter(|r| matches!(r.id(), Some(0x20..=0x22)))
@@ -189,7 +187,7 @@ fn retained_outputs_survive_more_than_observation_queue_capacity() {
     for i in 0..100_u8 {
         p.output(output(0x11, &[((i & 15) << 4) | (i & 1)]), u64::from(i))
             .unwrap();
-        p.input(&WiiRemoteState::default(), u64::from(i)).unwrap();
+        p.input(&RuntimeState::default(), u64::from(i)).unwrap();
     }
     assert_eq!(p.outputs.leds, [true, true, false, false]);
     assert!(p.outputs.rumble);
@@ -215,7 +213,7 @@ fn queue_saturation_is_explicit_and_stop_clears_protocol_work() {
     assert_eq!(p.output(output(0x15, &[0]), 0), Err(Error::Transport));
     p.lifecycle(Lifecycle::Stop, 1);
     p.lifecycle(Lifecycle::Stop, 1);
-    assert!(p.input(&WiiRemoteState::default(), 1).unwrap().is_empty());
+    assert!(p.input(&RuntimeState::default(), 1).unwrap().is_empty());
     assert_eq!(p.deadline(), None);
     assert!(p.pending.is_empty());
 }
@@ -231,7 +229,7 @@ fn unknown_report_numbering_is_not_accepted_as_a_valid_session() {
         0,
     );
     assert_eq!(
-        p.validate(&WiiRemoteState::default()),
+        p.validate(&RuntimeState::default()),
         Err(Error::InvalidState)
     );
 }
@@ -344,7 +342,7 @@ fn transport_requests_are_replied_in_the_same_poll_and_cleanup_is_idempotent() {
 }
 #[test]
 fn interleaved_acceleration_preserves_the_two_z_halves_and_alternates_modes() {
-    let mut state = WiiRemoteState::default();
+    let mut state = RuntimeState::default();
     state.set_accelerometer([1023, 511, 1023]).unwrap();
     assert_eq!(
         &data(0x3e, &state, false).unwrap().payload()[..3],
@@ -364,7 +362,7 @@ fn interleaved_acceleration_preserves_the_two_z_halves_and_alternates_modes() {
 fn ir_enable_cannot_accept_a_transition_that_strands_its_reply() {
     let mut p = WiiProtocol::default();
     p.output(output(0x12, &[0, 0x33]), 0).unwrap();
-    let mut state = WiiRemoteState::default();
+    let mut state = RuntimeState::default();
     state.set_ir([Some(WiiIrPoint::new(1, 2).unwrap()), None, None, None]);
     p.input(&state, 0).unwrap(); // IR is still disabled, so no blob metadata needed.
     let before = p.clone();
@@ -386,10 +384,10 @@ fn register_write(slave: u8, offset: u8, value: u8) -> Report {
 
 #[test]
 fn motion_plus_changes_reprobe_initialized_downstream_extensions() {
-    use crate::wii_remote::{WiiClassicState, WiiExtension, WiiNunchukState};
+    use crate::wii_remote::{WiiClassicInputs, WiiExtension, WiiNunchukInputs};
     for (extension, passthrough) in [
-        (WiiExtension::Nunchuk(WiiNunchukState::default()), 5),
-        (WiiExtension::Classic(WiiClassicState::default()), 7),
+        (WiiExtension::Nunchuk(WiiNunchukInputs::default()), 5),
+        (WiiExtension::Classic(WiiClassicInputs::default()), 7),
     ] {
         let mut p = WiiProtocol::default();
         p.change_attachment(extension.clone(), false, 7).unwrap();
@@ -433,10 +431,10 @@ fn motion_plus_changes_reprobe_initialized_downstream_extensions() {
 
 #[test]
 fn plain_attachment_add_and_remove_keep_single_status_edges() {
-    use crate::wii_remote::{WiiExtension, WiiNunchukState};
+    use crate::wii_remote::{WiiExtension, WiiNunchukInputs};
     let mut p = WiiProtocol::default();
     for (extension, flag) in [
-        (WiiExtension::Nunchuk(WiiNunchukState::default()), 2),
+        (WiiExtension::Nunchuk(WiiNunchukInputs::default()), 2),
         (WiiExtension::None, 0),
     ] {
         p.change_attachment(extension, false, 3).unwrap();
@@ -452,14 +450,14 @@ fn plain_attachment_add_and_remove_keep_single_status_edges() {
 
 #[test]
 fn stopped_attachment_edits_restart_with_one_current_status_and_no_backlog() {
-    use crate::wii_remote::{WiiExtension, WiiNunchukState};
+    use crate::wii_remote::{WiiExtension, WiiNunchukInputs};
     let mut p = WiiProtocol::default();
     p.lifecycle(Lifecycle::Stop, 1);
     for i in 0..100 {
         let extension = if i % 2 == 0 {
             WiiExtension::None
         } else {
-            WiiExtension::Nunchuk(WiiNunchukState::default())
+            WiiExtension::Nunchuk(WiiNunchukInputs::default())
         };
         p.change_attachment(extension, i % 3 == 0, 2).unwrap();
     }
@@ -534,7 +532,7 @@ fn raw_battery_status_and_queued_bytes_survive_input_replacement() {
         assert_eq!(accepted.payload()[5], raw);
         assert_eq!(accepted.payload()[2] & 1, u8::from(raw < 32));
         protocol.battery = WiiRemoteBattery::new(raw.wrapping_add(1));
-        let mut inputs = WiiRemoteState::default();
+        let mut inputs = RuntimeState::default();
         inputs.set_button(WiiRemoteButton::A, true);
         let reports = protocol.input(&inputs, 1).unwrap();
         assert!(reports.contains(&accepted));

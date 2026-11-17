@@ -1,8 +1,8 @@
 //! Plus-only identity policy; source constants are not physical readback.
 use super::*;
 use crate::wii_remote::{
-    Compat, WiiClassicState, WiiEepromImage, WiiExtension, WiiExtensionCalibration,
-    WiiNunchukState, WiiRemoteRevision,
+    Compat, WiiClassicInputs, WiiEepromImage, WiiExtension, WiiExtensionCalibration,
+    WiiNunchukInputs, WiiRemoteRevision,
 };
 
 fn protocol(revision: WiiRemoteRevision, external: bool) -> WiiProtocol {
@@ -21,7 +21,7 @@ fn protocol(revision: WiiRemoteRevision, external: bool) -> WiiProtocol {
             ..Default::default()
         },
     );
-    p.state = WiiRemoteState::new(revision);
+    p.state = RuntimeState::new(revision);
     p.state.set_attachment(WiiExtension::None, true).unwrap();
     p
 }
@@ -140,13 +140,13 @@ fn plus_shims_keep_original_scope_and_distinct_calibration_banks() {
     let (mp, n, c) = super::super::calibration::synthetic_blocks();
     for (extension, mode, child, child_id) in [
         (
-            WiiExtension::Nunchuk(WiiNunchukState::default()),
+            WiiExtension::Nunchuk(WiiNunchukInputs::default()),
             5,
             n,
             [0, 2, 0, 0],
         ),
         (
-            WiiExtension::Classic(WiiClassicState::default()),
+            WiiExtension::Classic(WiiClassicInputs::default()),
             7,
             c,
             [1, 2, 0, 1],

@@ -1,7 +1,7 @@
 //! Owner-approved compat edge, not evidence of physical activation status.
 use super::*;
 use crate::wii_remote::{
-    Compat, WiiClassicState, WiiEepromImage, WiiExtension, WiiNunchukState, WiiRemoteRevision,
+    Compat, WiiClassicInputs, WiiEepromImage, WiiExtension, WiiNunchukInputs, WiiRemoteRevision,
 };
 
 fn tick(p: &mut WiiProtocol) -> Vec<Report> {
@@ -31,7 +31,7 @@ fn protocol(revision: WiiRemoteRevision, extension: WiiExtension, enabled: bool)
             ..Default::default()
         },
     );
-    p.state = WiiRemoteState::new(revision);
+    p.state = RuntimeState::new(revision);
     p.change_attachment(extension, true, 1).unwrap();
     tick(&mut p);
     write(&mut p, 0x53, 0xf0, 0x55);
@@ -71,8 +71,8 @@ fn activation_edge_matrix_preserves_pause_resend_and_alternation() {
     for revision in [WiiRemoteRevision::Original, WiiRemoteRevision::Tr] {
         for enabled in [false, true] {
             for (extension, mode) in [
-                (WiiExtension::Nunchuk(WiiNunchukState::default()), 5),
-                (WiiExtension::Classic(WiiClassicState::default()), 7),
+                (WiiExtension::Nunchuk(WiiNunchukInputs::default()), 5),
+                (WiiExtension::Classic(WiiClassicInputs::default()), 7),
             ] {
                 let mut p = protocol(revision, extension, enabled);
                 let reports = write(&mut p, 0x53, 0xfe, mode);
@@ -104,7 +104,7 @@ fn active_mode_switch_and_stop_keep_status_pair_atomic() {
         for enabled in [false, true] {
             let mut p = protocol(
                 revision,
-                WiiExtension::Nunchuk(WiiNunchukState::default()),
+                WiiExtension::Nunchuk(WiiNunchukInputs::default()),
                 enabled,
             );
             write(&mut p, 0x53, 0xfe, 5);
@@ -149,7 +149,7 @@ fn active_mode_switch_and_stop_keep_status_pair_atomic() {
     }
     let mut p = protocol(
         WiiRemoteRevision::Original,
-        WiiExtension::Nunchuk(WiiNunchukState::default()),
+        WiiExtension::Nunchuk(WiiNunchukInputs::default()),
         true,
     );
     send(&mut p, 0x12, &[0, 0x37]);

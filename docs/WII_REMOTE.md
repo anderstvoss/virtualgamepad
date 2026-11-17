@@ -120,9 +120,18 @@ and typed IR editing. Battery metadata uses `controller.battery()` and
 `controller.set_battery(WiiRemoteBattery::new(raw))` on the root and curated
 handles. The raw byte is separate from input snapshots and survives input edits,
 attachment changes and neutralization. EEPROM configuration uses the supporting
-API. Detached editors can use `WiiRemoteState::set_attachment` to
-project a queued transition before same-frame native edits. This changes only
-the snapshot; live nodes still require `WiiRemoteController::attach`. Wii
+API. `inputs()` borrows `WiiRemoteInputs`; copyable `status()` reports revision,
+MotionPlus presence, battery and topology generation. The protocol owns battery
+and retains its last accepted value after close. Detached editors keep attachment
+presence separately from native input levels and can project extension payloads
+with `WiiRemoteInputs::set_extension_values` before same-frame edits. Live nodes
+still require `WiiRemoteController::attach`; input transactions reject attachment
+kind changes and non-neutral MotionPlus samples while absent. To clear attached
+levels use `controller.neutralize()`, or clone `controller.inputs()`, neutralize
+the clone and pass it to `set_inputs`. Default inputs describe extension `None`
+and cannot clear levels on an attached extension. Live callers should read
+`controller.current_topology()`; `inputs().projected_input_topology(...)` only projects a
+detached editor's topology with explicit attachment context. Wii
 association and provider diagnostics are explicitly unavailable in the demo
 ordinary-root lab view. Interactive desktop/game acceptance remains untested.
 

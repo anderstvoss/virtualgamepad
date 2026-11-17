@@ -812,7 +812,7 @@
         },
         "enum.WiiExtension.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum WiiExtension { None, Nunchuk(WiiNunchukState), Classic(WiiClassicState), ClassicPro(WiiClassicState), }"
+            "#[non_exhaustive]pub enum WiiExtension { None, Nunchuk(WiiNunchukInputs), Classic(WiiClassicInputs), ClassicPro(WiiClassicInputs), }"
           ],
           "traits": [
             "impl Clone for WiiExtension",
@@ -2690,21 +2690,21 @@
             "impl UnwindSafe for TypedInput"
           ]
         },
-        "struct.WiiClassicState.html": {
+        "struct.WiiClassicInputs.html": {
           "declarations": [
-            "pub struct WiiClassicState { pub left: [u8; 2], pub right: [u8; 2], pub triggers: [u8; 2], pub buttons: [bool; 15], }"
+            "pub struct WiiClassicInputs { pub left: [u8; 2], pub right: [u8; 2], pub triggers: [u8; 2], pub buttons: [bool; 15], }"
           ],
           "traits": [
-            "impl Clone for WiiClassicState",
-            "impl Debug for WiiClassicState",
-            "impl Default for WiiClassicState",
-            "impl Eq for WiiClassicState",
-            "impl PartialEq for WiiClassicState",
-            "impl RefUnwindSafe for WiiClassicState",
-            "impl Send for WiiClassicState",
-            "impl Sync for WiiClassicState",
-            "impl Unpin for WiiClassicState",
-            "impl UnwindSafe for WiiClassicState"
+            "impl Clone for WiiClassicInputs",
+            "impl Debug for WiiClassicInputs",
+            "impl Default for WiiClassicInputs",
+            "impl Eq for WiiClassicInputs",
+            "impl PartialEq for WiiClassicInputs",
+            "impl RefUnwindSafe for WiiClassicInputs",
+            "impl Send for WiiClassicInputs",
+            "impl Sync for WiiClassicInputs",
+            "impl Unpin for WiiClassicInputs",
+            "impl UnwindSafe for WiiClassicInputs"
           ]
         },
         "struct.WiiEepromImage.html": {
@@ -2770,38 +2770,38 @@
             "impl UnwindSafe for WiiIrPoint"
           ]
         },
-        "struct.WiiMotionPlusState.html": {
+        "struct.WiiMotionPlusInputs.html": {
           "declarations": [
-            "pub struct WiiMotionPlusState { pub attached: bool, pub gyroscope: [u16; 3], pub slow: [bool; 3], }"
+            "pub struct WiiMotionPlusInputs { pub gyroscope: [u16; 3], pub slow: [bool; 3], }"
           ],
           "traits": [
-            "impl Clone for WiiMotionPlusState",
-            "impl Debug for WiiMotionPlusState",
-            "impl Default for WiiMotionPlusState",
-            "impl Eq for WiiMotionPlusState",
-            "impl PartialEq for WiiMotionPlusState",
-            "impl RefUnwindSafe for WiiMotionPlusState",
-            "impl Send for WiiMotionPlusState",
-            "impl Sync for WiiMotionPlusState",
-            "impl Unpin for WiiMotionPlusState",
-            "impl UnwindSafe for WiiMotionPlusState"
+            "impl Clone for WiiMotionPlusInputs",
+            "impl Debug for WiiMotionPlusInputs",
+            "impl Default for WiiMotionPlusInputs",
+            "impl Eq for WiiMotionPlusInputs",
+            "impl PartialEq for WiiMotionPlusInputs",
+            "impl RefUnwindSafe for WiiMotionPlusInputs",
+            "impl Send for WiiMotionPlusInputs",
+            "impl Sync for WiiMotionPlusInputs",
+            "impl Unpin for WiiMotionPlusInputs",
+            "impl UnwindSafe for WiiMotionPlusInputs"
           ]
         },
-        "struct.WiiNunchukState.html": {
+        "struct.WiiNunchukInputs.html": {
           "declarations": [
-            "pub struct WiiNunchukState { pub stick: [u8; 2], pub accelerometer: [u16; 3], pub c: bool, pub z: bool, }"
+            "pub struct WiiNunchukInputs { pub stick: [u8; 2], pub accelerometer: [u16; 3], pub c: bool, pub z: bool, }"
           ],
           "traits": [
-            "impl Clone for WiiNunchukState",
-            "impl Debug for WiiNunchukState",
-            "impl Default for WiiNunchukState",
-            "impl Eq for WiiNunchukState",
-            "impl PartialEq for WiiNunchukState",
-            "impl RefUnwindSafe for WiiNunchukState",
-            "impl Send for WiiNunchukState",
-            "impl Sync for WiiNunchukState",
-            "impl Unpin for WiiNunchukState",
-            "impl UnwindSafe for WiiNunchukState"
+            "impl Clone for WiiNunchukInputs",
+            "impl Debug for WiiNunchukInputs",
+            "impl Default for WiiNunchukInputs",
+            "impl Eq for WiiNunchukInputs",
+            "impl PartialEq for WiiNunchukInputs",
+            "impl RefUnwindSafe for WiiNunchukInputs",
+            "impl Send for WiiNunchukInputs",
+            "impl Sync for WiiNunchukInputs",
+            "impl Unpin for WiiNunchukInputs",
+            "impl UnwindSafe for WiiNunchukInputs"
           ]
         },
         "struct.WiiRemoteBattery.html": {
@@ -2828,14 +2828,15 @@
           "declarations": [
             "pub struct WiiRemoteController { /* private fields */ }",
             "pub const fn identity(&self) -> WiiRemoteIdentity",
-            "pub const fn battery(&self) -> WiiRemoteBattery",
+            "pub fn battery(&self) -> WiiRemoteBattery",
             "pub fn current_topology(&self) -> &'static InputTopology",
             "pub fn topology_generation(&self) -> u64",
             "pub fn attach( &mut self, extension: WiiExtension, motion_plus: bool, ) -> Result<(), ControlError>",
             "pub fn resource_dirty(&self) -> bool",
             "pub fn resolve_resource( &mut self, choice: WiiResourceDisposition, ) -> Result<Option<&WiiEepromImage>, ControlError>",
-            "pub fn state(&self) -> &WiiRemoteState",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut WiiRemoteState) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &WiiRemoteInputs",
+            "pub fn status(&self) -> WiiRemoteStatus",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut WiiRemoteInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<WiiRemoteOutputs, ControlError>",
             "pub fn surface(&self) -> &'static ControllerSurface",
             "pub fn wants_write(&self) -> bool",
@@ -2851,7 +2852,7 @@
             "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
             "pub fn service( &mut self, callback: &mut dyn FnMut(WiiRemoteOutputEvent), ) -> Result<(), ControllerError>",
             "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: WiiRemoteState) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: WiiRemoteInputs) -> Result<(), ControlError>",
             "pub fn set_button( &mut self, button: WiiRemoteButton, pressed: bool, ) -> Result<(), ControlError>",
             "pub fn set_accelerometer( &mut self, values: [u16; 3], ) -> Result<(), ControlError>",
             "pub fn set_ir( &mut self, points: [Option<WiiIrPoint>; 4], ) -> Result<(), ControlError>",
@@ -2885,6 +2886,35 @@
             "impl Sync for WiiRemoteIdentity",
             "impl Unpin for WiiRemoteIdentity",
             "impl UnwindSafe for WiiRemoteIdentity"
+          ]
+        },
+        "struct.WiiRemoteInputs.html": {
+          "declarations": [
+            "pub struct WiiRemoteInputs { /* private fields */ }",
+            "pub fn neutralize(&mut self)",
+            "pub fn projected_input_topology( &self, motion_plus_attached: bool, ) -> &'static InputTopology",
+            "pub const fn pressed(&self, button: WiiRemoteButton) -> bool",
+            "pub fn set_button(&mut self, button: WiiRemoteButton, pressed: bool)",
+            "pub const fn accelerometer(&self) -> [u16; 3]",
+            "pub fn set_accelerometer( &mut self, values: [u16; 3], ) -> Result<(), ControlError>",
+            "pub const fn ir(&self) -> &[Option<WiiIrPoint>; 4]",
+            "pub fn set_ir(&mut self, points: [Option<WiiIrPoint>; 4])",
+            "pub const fn extension(&self) -> &WiiExtension",
+            "pub fn set_extension_values( &mut self, value: WiiExtension, ) -> Result<(), ControlError>",
+            "pub fn set_motion_plus_values( &mut self, gyroscope: [u16; 3], slow: [bool; 3], ) -> Result<(), ControlError>",
+            "pub const fn motion_plus(&self) -> &WiiMotionPlusInputs"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteInputs",
+            "impl Debug for WiiRemoteInputs",
+            "impl Default for WiiRemoteInputs",
+            "impl Eq for WiiRemoteInputs",
+            "impl PartialEq for WiiRemoteInputs",
+            "impl RefUnwindSafe for WiiRemoteInputs",
+            "impl Send for WiiRemoteInputs",
+            "impl Sync for WiiRemoteInputs",
+            "impl Unpin for WiiRemoteInputs",
+            "impl UnwindSafe for WiiRemoteInputs"
           ]
         },
         "struct.WiiRemoteOptions.html": {
@@ -2936,36 +2966,26 @@
             "impl UnwindSafe for WiiRemoteOutputs"
           ]
         },
-        "struct.WiiRemoteState.html": {
+        "struct.WiiRemoteStatus.html": {
           "declarations": [
-            "pub struct WiiRemoteState { /* private fields */ }",
-            "pub const fn new(revision: WiiRemoteRevision) -> WiiRemoteState",
-            "pub fn neutralize(&mut self)",
-            "pub fn input_topology(&self) -> &'static InputTopology",
-            "pub const fn revision(&self) -> WiiRemoteRevision",
-            "pub const fn pressed(&self, button: WiiRemoteButton) -> bool",
-            "pub fn set_button(&mut self, button: WiiRemoteButton, pressed: bool)",
-            "pub const fn accelerometer(&self) -> [u16; 3]",
-            "pub fn set_accelerometer( &mut self, values: [u16; 3], ) -> Result<(), ControlError>",
-            "pub const fn ir(&self) -> &[Option<WiiIrPoint>; 4]",
-            "pub fn set_ir(&mut self, points: [Option<WiiIrPoint>; 4])",
-            "pub const fn extension(&self) -> &WiiExtension",
-            "pub fn set_attachment( &mut self, extension: WiiExtension, motion_plus: bool, ) -> Result<(), ControlError>",
-            "pub fn set_extension_values( &mut self, value: WiiExtension, ) -> Result<(), ControlError>",
-            "pub fn set_motion_plus_values( &mut self, gyroscope: [u16; 3], slow: [bool; 3], ) -> Result<(), ControlError>",
-            "pub const fn motion_plus(&self) -> &WiiMotionPlusState"
+            "pub struct WiiRemoteStatus { /* private fields */ }",
+            "pub const fn revision(self) -> WiiRemoteRevision",
+            "pub const fn motion_plus_attached(self) -> bool",
+            "pub const fn battery(self) -> WiiRemoteBattery",
+            "pub const fn topology_generation(self) -> u64"
           ],
           "traits": [
-            "impl Clone for WiiRemoteState",
-            "impl Debug for WiiRemoteState",
-            "impl Default for WiiRemoteState",
-            "impl Eq for WiiRemoteState",
-            "impl PartialEq for WiiRemoteState",
-            "impl RefUnwindSafe for WiiRemoteState",
-            "impl Send for WiiRemoteState",
-            "impl Sync for WiiRemoteState",
-            "impl Unpin for WiiRemoteState",
-            "impl UnwindSafe for WiiRemoteState"
+            "impl Clone for WiiRemoteStatus",
+            "impl Copy for WiiRemoteStatus",
+            "impl Debug for WiiRemoteStatus",
+            "impl Default for WiiRemoteStatus",
+            "impl Eq for WiiRemoteStatus",
+            "impl PartialEq for WiiRemoteStatus",
+            "impl RefUnwindSafe for WiiRemoteStatus",
+            "impl Send for WiiRemoteStatus",
+            "impl Sync for WiiRemoteStatus",
+            "impl Unpin for WiiRemoteStatus",
+            "impl UnwindSafe for WiiRemoteStatus"
           ]
         },
         "struct.Xbox360Axis.html": {
@@ -4112,7 +4132,7 @@
         },
         "enum.WiiExtension.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum WiiExtension { None, Nunchuk(WiiNunchukState), Classic(WiiClassicState), ClassicPro(WiiClassicState), }"
+            "#[non_exhaustive]pub enum WiiExtension { None, Nunchuk(WiiNunchukInputs), Classic(WiiClassicInputs), ClassicPro(WiiClassicInputs), }"
           ],
           "traits": [
             "impl Clone for WiiExtension",
@@ -5990,21 +6010,21 @@
             "impl UnwindSafe for TypedInput"
           ]
         },
-        "struct.WiiClassicState.html": {
+        "struct.WiiClassicInputs.html": {
           "declarations": [
-            "pub struct WiiClassicState { pub left: [u8; 2], pub right: [u8; 2], pub triggers: [u8; 2], pub buttons: [bool; 15], }"
+            "pub struct WiiClassicInputs { pub left: [u8; 2], pub right: [u8; 2], pub triggers: [u8; 2], pub buttons: [bool; 15], }"
           ],
           "traits": [
-            "impl Clone for WiiClassicState",
-            "impl Debug for WiiClassicState",
-            "impl Default for WiiClassicState",
-            "impl Eq for WiiClassicState",
-            "impl PartialEq for WiiClassicState",
-            "impl RefUnwindSafe for WiiClassicState",
-            "impl Send for WiiClassicState",
-            "impl Sync for WiiClassicState",
-            "impl Unpin for WiiClassicState",
-            "impl UnwindSafe for WiiClassicState"
+            "impl Clone for WiiClassicInputs",
+            "impl Debug for WiiClassicInputs",
+            "impl Default for WiiClassicInputs",
+            "impl Eq for WiiClassicInputs",
+            "impl PartialEq for WiiClassicInputs",
+            "impl RefUnwindSafe for WiiClassicInputs",
+            "impl Send for WiiClassicInputs",
+            "impl Sync for WiiClassicInputs",
+            "impl Unpin for WiiClassicInputs",
+            "impl UnwindSafe for WiiClassicInputs"
           ]
         },
         "struct.WiiEepromImage.html": {
@@ -6070,38 +6090,38 @@
             "impl UnwindSafe for WiiIrPoint"
           ]
         },
-        "struct.WiiMotionPlusState.html": {
+        "struct.WiiMotionPlusInputs.html": {
           "declarations": [
-            "pub struct WiiMotionPlusState { pub attached: bool, pub gyroscope: [u16; 3], pub slow: [bool; 3], }"
+            "pub struct WiiMotionPlusInputs { pub gyroscope: [u16; 3], pub slow: [bool; 3], }"
           ],
           "traits": [
-            "impl Clone for WiiMotionPlusState",
-            "impl Debug for WiiMotionPlusState",
-            "impl Default for WiiMotionPlusState",
-            "impl Eq for WiiMotionPlusState",
-            "impl PartialEq for WiiMotionPlusState",
-            "impl RefUnwindSafe for WiiMotionPlusState",
-            "impl Send for WiiMotionPlusState",
-            "impl Sync for WiiMotionPlusState",
-            "impl Unpin for WiiMotionPlusState",
-            "impl UnwindSafe for WiiMotionPlusState"
+            "impl Clone for WiiMotionPlusInputs",
+            "impl Debug for WiiMotionPlusInputs",
+            "impl Default for WiiMotionPlusInputs",
+            "impl Eq for WiiMotionPlusInputs",
+            "impl PartialEq for WiiMotionPlusInputs",
+            "impl RefUnwindSafe for WiiMotionPlusInputs",
+            "impl Send for WiiMotionPlusInputs",
+            "impl Sync for WiiMotionPlusInputs",
+            "impl Unpin for WiiMotionPlusInputs",
+            "impl UnwindSafe for WiiMotionPlusInputs"
           ]
         },
-        "struct.WiiNunchukState.html": {
+        "struct.WiiNunchukInputs.html": {
           "declarations": [
-            "pub struct WiiNunchukState { pub stick: [u8; 2], pub accelerometer: [u16; 3], pub c: bool, pub z: bool, }"
+            "pub struct WiiNunchukInputs { pub stick: [u8; 2], pub accelerometer: [u16; 3], pub c: bool, pub z: bool, }"
           ],
           "traits": [
-            "impl Clone for WiiNunchukState",
-            "impl Debug for WiiNunchukState",
-            "impl Default for WiiNunchukState",
-            "impl Eq for WiiNunchukState",
-            "impl PartialEq for WiiNunchukState",
-            "impl RefUnwindSafe for WiiNunchukState",
-            "impl Send for WiiNunchukState",
-            "impl Sync for WiiNunchukState",
-            "impl Unpin for WiiNunchukState",
-            "impl UnwindSafe for WiiNunchukState"
+            "impl Clone for WiiNunchukInputs",
+            "impl Debug for WiiNunchukInputs",
+            "impl Default for WiiNunchukInputs",
+            "impl Eq for WiiNunchukInputs",
+            "impl PartialEq for WiiNunchukInputs",
+            "impl RefUnwindSafe for WiiNunchukInputs",
+            "impl Send for WiiNunchukInputs",
+            "impl Sync for WiiNunchukInputs",
+            "impl Unpin for WiiNunchukInputs",
+            "impl UnwindSafe for WiiNunchukInputs"
           ]
         },
         "struct.WiiRemoteBattery.html": {
@@ -6128,14 +6148,15 @@
           "declarations": [
             "pub struct WiiRemoteController { /* private fields */ }",
             "pub const fn identity(&self) -> WiiRemoteIdentity",
-            "pub const fn battery(&self) -> WiiRemoteBattery",
+            "pub fn battery(&self) -> WiiRemoteBattery",
             "pub fn current_topology(&self) -> &'static InputTopology",
             "pub fn topology_generation(&self) -> u64",
             "pub fn attach( &mut self, extension: WiiExtension, motion_plus: bool, ) -> Result<(), ControlError>",
             "pub fn resource_dirty(&self) -> bool",
             "pub fn resolve_resource( &mut self, choice: WiiResourceDisposition, ) -> Result<Option<&WiiEepromImage>, ControlError>",
-            "pub fn state(&self) -> &WiiRemoteState",
-            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut WiiRemoteState) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
+            "pub fn inputs(&self) -> &WiiRemoteInputs",
+            "pub fn status(&self) -> WiiRemoteStatus",
+            "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut WiiRemoteInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<WiiRemoteOutputs, ControlError>",
             "pub fn surface(&self) -> &'static ControllerSurface",
             "pub fn wants_write(&self) -> bool",
@@ -6151,7 +6172,7 @@
             "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
             "pub fn service( &mut self, callback: &mut dyn FnMut(WiiRemoteOutputEvent), ) -> Result<(), ControllerError>",
             "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
-            "pub fn set_inputs(&mut self, state: WiiRemoteState) -> Result<(), ControlError>",
+            "pub fn set_inputs(&mut self, state: WiiRemoteInputs) -> Result<(), ControlError>",
             "pub fn set_button( &mut self, button: WiiRemoteButton, pressed: bool, ) -> Result<(), ControlError>",
             "pub fn set_accelerometer( &mut self, values: [u16; 3], ) -> Result<(), ControlError>",
             "pub fn set_ir( &mut self, points: [Option<WiiIrPoint>; 4], ) -> Result<(), ControlError>",
@@ -6185,6 +6206,35 @@
             "impl Sync for WiiRemoteIdentity",
             "impl Unpin for WiiRemoteIdentity",
             "impl UnwindSafe for WiiRemoteIdentity"
+          ]
+        },
+        "struct.WiiRemoteInputs.html": {
+          "declarations": [
+            "pub struct WiiRemoteInputs { /* private fields */ }",
+            "pub fn neutralize(&mut self)",
+            "pub fn projected_input_topology( &self, motion_plus_attached: bool, ) -> &'static InputTopology",
+            "pub const fn pressed(&self, button: WiiRemoteButton) -> bool",
+            "pub fn set_button(&mut self, button: WiiRemoteButton, pressed: bool)",
+            "pub const fn accelerometer(&self) -> [u16; 3]",
+            "pub fn set_accelerometer( &mut self, values: [u16; 3], ) -> Result<(), ControlError>",
+            "pub const fn ir(&self) -> &[Option<WiiIrPoint>; 4]",
+            "pub fn set_ir(&mut self, points: [Option<WiiIrPoint>; 4])",
+            "pub const fn extension(&self) -> &WiiExtension",
+            "pub fn set_extension_values( &mut self, value: WiiExtension, ) -> Result<(), ControlError>",
+            "pub fn set_motion_plus_values( &mut self, gyroscope: [u16; 3], slow: [bool; 3], ) -> Result<(), ControlError>",
+            "pub const fn motion_plus(&self) -> &WiiMotionPlusInputs"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteInputs",
+            "impl Debug for WiiRemoteInputs",
+            "impl Default for WiiRemoteInputs",
+            "impl Eq for WiiRemoteInputs",
+            "impl PartialEq for WiiRemoteInputs",
+            "impl RefUnwindSafe for WiiRemoteInputs",
+            "impl Send for WiiRemoteInputs",
+            "impl Sync for WiiRemoteInputs",
+            "impl Unpin for WiiRemoteInputs",
+            "impl UnwindSafe for WiiRemoteInputs"
           ]
         },
         "struct.WiiRemoteOptions.html": {
@@ -6236,36 +6286,26 @@
             "impl UnwindSafe for WiiRemoteOutputs"
           ]
         },
-        "struct.WiiRemoteState.html": {
+        "struct.WiiRemoteStatus.html": {
           "declarations": [
-            "pub struct WiiRemoteState { /* private fields */ }",
-            "pub const fn new(revision: WiiRemoteRevision) -> WiiRemoteState",
-            "pub fn neutralize(&mut self)",
-            "pub fn input_topology(&self) -> &'static InputTopology",
-            "pub const fn revision(&self) -> WiiRemoteRevision",
-            "pub const fn pressed(&self, button: WiiRemoteButton) -> bool",
-            "pub fn set_button(&mut self, button: WiiRemoteButton, pressed: bool)",
-            "pub const fn accelerometer(&self) -> [u16; 3]",
-            "pub fn set_accelerometer( &mut self, values: [u16; 3], ) -> Result<(), ControlError>",
-            "pub const fn ir(&self) -> &[Option<WiiIrPoint>; 4]",
-            "pub fn set_ir(&mut self, points: [Option<WiiIrPoint>; 4])",
-            "pub const fn extension(&self) -> &WiiExtension",
-            "pub fn set_attachment( &mut self, extension: WiiExtension, motion_plus: bool, ) -> Result<(), ControlError>",
-            "pub fn set_extension_values( &mut self, value: WiiExtension, ) -> Result<(), ControlError>",
-            "pub fn set_motion_plus_values( &mut self, gyroscope: [u16; 3], slow: [bool; 3], ) -> Result<(), ControlError>",
-            "pub const fn motion_plus(&self) -> &WiiMotionPlusState"
+            "pub struct WiiRemoteStatus { /* private fields */ }",
+            "pub const fn revision(self) -> WiiRemoteRevision",
+            "pub const fn motion_plus_attached(self) -> bool",
+            "pub const fn battery(self) -> WiiRemoteBattery",
+            "pub const fn topology_generation(self) -> u64"
           ],
           "traits": [
-            "impl Clone for WiiRemoteState",
-            "impl Debug for WiiRemoteState",
-            "impl Default for WiiRemoteState",
-            "impl Eq for WiiRemoteState",
-            "impl PartialEq for WiiRemoteState",
-            "impl RefUnwindSafe for WiiRemoteState",
-            "impl Send for WiiRemoteState",
-            "impl Sync for WiiRemoteState",
-            "impl Unpin for WiiRemoteState",
-            "impl UnwindSafe for WiiRemoteState"
+            "impl Clone for WiiRemoteStatus",
+            "impl Copy for WiiRemoteStatus",
+            "impl Debug for WiiRemoteStatus",
+            "impl Default for WiiRemoteStatus",
+            "impl Eq for WiiRemoteStatus",
+            "impl PartialEq for WiiRemoteStatus",
+            "impl RefUnwindSafe for WiiRemoteStatus",
+            "impl Send for WiiRemoteStatus",
+            "impl Sync for WiiRemoteStatus",
+            "impl Unpin for WiiRemoteStatus",
+            "impl UnwindSafe for WiiRemoteStatus"
           ]
         },
         "struct.Xbox360Axis.html": {

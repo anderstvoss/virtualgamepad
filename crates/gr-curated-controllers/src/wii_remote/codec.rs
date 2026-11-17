@@ -1,6 +1,6 @@
 //! Wii C5 source-only compatibility codec. Every wire table is anchored in
 //! wii-c5-report-layouts / wii-c5-memory-errors / wii-c5-synthetic-fixtures.
-use super::{WiiRemoteOutputs, WiiRemoteState};
+use super::{RuntimeState, WiiRemoteOutputs};
 use gr_hid::{
     Command, Delivery, Error, Lifecycle, Protocol, Reply, ReplyError, Report, ReportType,
     RequestKind,
@@ -38,7 +38,7 @@ struct SpeakerControl {
 
 #[derive(Clone)]
 pub(crate) struct WiiProtocol {
-    pub(super) state: WiiRemoteState,
+    pub(super) state: RuntimeState,
     pub(super) battery: super::WiiRemoteBattery,
     pub(super) outputs: WiiRemoteOutputs,
     mode: u8,
@@ -58,7 +58,7 @@ pub(crate) struct WiiProtocol {
 impl Default for WiiProtocol {
     fn default() -> Self {
         Self {
-            state: WiiRemoteState::default(),
+            state: RuntimeState::default(),
             battery: super::WiiRemoteBattery::default(),
             outputs: WiiRemoteOutputs::default(),
             mode: 0x30,
@@ -80,8 +80,8 @@ fn input(id: u8, payload: Vec<u8>) -> Report {
 }
 /// Core bits and embedded raw acceleration are source layout, not normalized axes.
 /// Record: wii-c5-report-layouts (Dolphin data report/header; Linux module decoder).
-pub(super) fn core(state: &WiiRemoteState) -> [u8; 2] {
-    let b = state.buttons;
+pub(super) fn core(state: &RuntimeState) -> [u8; 2] {
+    let b = state.inputs.buttons;
     [
         u8::from(b[0])
             | (u8::from(b[1]) << 1)
@@ -97,9 +97,9 @@ pub(super) fn core(state: &WiiRemoteState) -> [u8; 2] {
     ]
 }
 #[allow(clippy::cast_possible_truncation)] // Source protocol packs ten-bit coordinates into bytes.
-fn basic_ir(state: &WiiRemoteState) -> [u8; 10] {
+fn basic_ir(state: &RuntimeState) -> [u8; 10] {
     let mut bytes = [0xff; 10];
-    for (pair, points) in state.ir.chunks_exact(2).enumerate() {
+    for (pair, points) in state.inputs.ir.chunks_exact(2).enumerate() {
         for (slot, point) in points.iter().enumerate() {
             let (x, y) = point.map_or((1023, 1023), super::WiiIrPoint::coordinates);
             let base = pair * 5;
@@ -120,20 +120,20 @@ fn basic_ir(state: &WiiRemoteState) -> [u8; 10] {
 /// point-size/intensity have no physical evidence: only the no-point shape is
 /// supported for interleaved modes; visible points are rejected instead of lost.
 #[allow(clippy::cast_possible_truncation)]
-pub(super) fn data(mode: u8, state: &WiiRemoteState, ir: bool) -> Result<Report, Error> {
+pub(super) fn data(mode: u8, state: &RuntimeState, ir: bool) -> Result<Report, Error> {
     let length = MODES
         .iter()
         .find(|(id, _)| *id == mode)
         .ok_or(Error::InvalidState)?
         .1;
-    if matches!(mode, 0x3e | 0x3f) && ir && state.ir.iter().any(Option::is_some) {
+    if matches!(mode, 0x3e | 0x3f) && ir && state.inputs.ir.iter().any(Option::is_some) {
         return Err(Error::InvalidState);
     }
     let mut bytes = vec![0; length];
     if mode != 0x3d {
         bytes[..2].copy_from_slice(&core(state));
     }
-    let [x, y, z] = state.accelerometer;
+    let [x, y, z] = state.inputs.accelerometer;
     if matches!(mode, 0x31 | 0x33 | 0x35 | 0x37) {
         bytes[0] |= ((x & 3) as u8) << 5;
         bytes[1] |= (((y >> 1) & 1) as u8) << 5 | (((z >> 1) & 1) as u8) << 6;
@@ -153,7 +153,7 @@ pub(super) fn data(mode: u8, state: &WiiRemoteState, ir: bool) -> Result<Report,
             bytes[5..17].fill(0xff);
             // Point size is not part of the typed point-set contract. Extended
             // visible blobs are deliberately refused until a typed size exists.
-            if ir && state.ir.iter().any(Option::is_some) {
+            if ir && state.inputs.ir.iter().any(Option::is_some) {
                 return Err(Error::InvalidState);
             }
         }
@@ -209,8 +209,8 @@ impl WiiProtocol {
         motion_plus: bool,
     ) -> Result<(), Error> {
         super::extensions::validate(&extension).map_err(|_| Error::InvalidState)?;
-        self.state.extension = extension;
-        self.state.motion_plus.attached = motion_plus;
+        self.state.inputs.extension = extension;
+        self.state.motion_plus_attached = motion_plus;
         self.memory.reset_extension();
         Ok(())
     }
@@ -413,15 +413,15 @@ impl WiiProtocol {
     }
 }
 impl Protocol for WiiProtocol {
-    type State = WiiRemoteState;
+    type State = RuntimeState;
     type Output = RawReverseEvent;
     fn neutral(&self) -> Self::State {
-        WiiRemoteState::new(self.state.revision())
+        RuntimeState::new(self.state.revision())
     }
     fn validate(&self, state: &Self::State) -> Result<(), Error> {
         if !self.valid
             || !state.revision().has_identity_evidence()
-            || state.accelerometer.iter().any(|v| *v > 1023)
+            || state.inputs.accelerometer.iter().any(|v| *v > 1023)
         {
             return Err(Error::InvalidState);
         }

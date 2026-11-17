@@ -25,7 +25,7 @@ use gr_realization_api::{
     RealizationTarget,
 };
 pub use session::WorkerBridge;
-pub(crate) use session::{ControllerSession, HidDriver, creation_identity};
+pub(crate) use session::{ControllerSession, HidDriver, ProtocolSession, creation_identity};
 
 pub(crate) const CONVENTIONAL_RUMBLE: [gr_controller_contract::OutputSurface; 1] =
     [gr_controller_contract::OutputSurface {

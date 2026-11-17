@@ -94,7 +94,7 @@ fn attachment_choices_drive_six_live_shapes_and_retain_classic_pro_refusals() {
                 WiiExtensionChoice::from_extension(view.state().extension()),
                 choice
             );
-            assert_eq!(view.state().motion_plus().attached, bridge);
+            assert_eq!(view.motion_plus_attached(), bridge);
             let modules: Vec<_> = view
                 .current_topology()
                 .custom_modules()
@@ -450,6 +450,7 @@ fn wii_motion_uses_declared_sensor_ranges_and_round_trips_native_values() {
         let before = view.state().clone();
         assert!(!native_editor::apply_wii_event(
             &mut before.clone(),
+            view.motion_plus_attached(),
             &InputEvent::Motion {
                 id: remote,
                 gyroscope: gyro,

@@ -1,6 +1,6 @@
 //! Optional evdev nodes remain controller-owned, with prepare-before-install.
 use super::{
-    WiiEepromImage, WiiRemoteRevision, WiiRemoteState,
+    RuntimeState, WiiEepromImage, WiiRemoteRevision,
     definition::Configured,
     realizations::{self, Role},
 };
@@ -25,7 +25,7 @@ impl Nodes {
         revision: WiiRemoteRevision,
         selection: RealizationSelection,
         association: crate::ControllerAssociation,
-        state: &WiiRemoteState,
+        state: &RuntimeState,
     ) -> Result<Self, ProviderError> {
         let mut owned = Self {
             provider,
@@ -38,7 +38,7 @@ impl Nodes {
         owned.install(prepared, state);
         Ok(owned)
     }
-    pub(super) fn prepare(&self, state: &WiiRemoteState) -> Result<Vec<Owned>, ProviderError> {
+    pub(super) fn prepare(&self, state: &RuntimeState) -> Result<Vec<Owned>, ProviderError> {
         let mut prepared = Vec::new();
         for role in realizations::roles(state) {
             if self
@@ -67,7 +67,7 @@ impl Nodes {
         }
         Ok(prepared)
     }
-    pub(super) fn install(&mut self, prepared: Vec<Owned>, state: &WiiRemoteState) {
+    pub(super) fn install(&mut self, prepared: Vec<Owned>, state: &RuntimeState) {
         let roles = realizations::roles(state);
         self.companions.retain_mut(|(role, session)| {
             let keep = roles.contains(role);
@@ -87,7 +87,7 @@ impl Nodes {
             })
             .collect();
     }
-    pub(super) fn commit(&mut self, state: &WiiRemoteState) -> Result<(), CommitError> {
+    pub(super) fn commit(&mut self, state: &RuntimeState) -> Result<(), CommitError> {
         for (_, session) in &mut self.companions {
             if session.state() != state {
                 session
