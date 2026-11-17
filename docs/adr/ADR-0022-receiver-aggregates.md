@@ -61,6 +61,8 @@ Puck and Joy-Con implementations require their own evidence and scopes.
 
 ## Proposed amendment (draft, not accepted)
 
+Owner decisions on the open questions: #165 comment 6960320698 (2026-11-17). The amendment is accepted in principle; it becomes normative when the implementing PRs land.
+
 See the [receiver lifecycle design](../spec/receiver-lifecycle-design.md) for
 evidence, proposed API, validation and open owner questions. No status, existing
 decision or implementation authorization changes until owner review.

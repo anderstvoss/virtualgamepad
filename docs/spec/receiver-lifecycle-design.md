@@ -1,9 +1,11 @@
 # Receiver lifecycle design (#165)
 
-**Status: proposed for owner decision, not accepted.** This document proposes an
-amendment to [ADR-0022](../adr/ADR-0022-receiver-aggregates.md). No implementation,
-API authorization, support-cell promotion, physical observation or host run
-follows from this draft.
+**Status: accepted in principle by the owner (2026-11-17), not yet normative.**
+This document proposes an amendment to
+[ADR-0022](../adr/ADR-0022-receiver-aggregates.md); see section 6 for the owner
+decisions. Implementation remains post-Alpha 2 and waits for VG-1b. No
+implementation, API authorization, support-cell promotion, physical observation
+or host run follows from this draft.
 
 ## Evidence baseline
 
@@ -108,12 +110,10 @@ input-only `<Family>Inputs` (SteamController2026Inputs after its migration),
 edits are pure until commit/service; do not overwrite pending bytes, battery,
 identity, protocol clocks, presentation, attachments or outputs with an input
 snapshot. An unavailable slot rejects active edits (including stale handles)
-without dirtying siblings. Retained-node loss gates active input; recommended
+without dirtying siblings. Retained-node loss gates active input; the accepted
 neutral safety policy is a vg decision, not evidence that DS4 emits a neutral
-sample. Resume from neutral for a new occupant/incarnation and require an
-explicit fresh snapshot rather than inheriting stale held controls. If a family
-later proves safe continuity for the same retained occupant, its policy may
-retain desired semantic levels separately; never emit them while unavailable.
+sample. A new occupant or presentation starts from neutral; require fresh input
+rather than replaying held controls, including after retained-node link loss.
 
 ### 3.2 Presence and presentation state machine
 
@@ -188,7 +188,7 @@ pending attach; repeated close is idempotent.
   epoch only under the accepted journal continuity contract. Never compare a
   topology generation to a journal sequence or infer one from the other.
 
-Recommendation: keep the receiver-specific incarnation rule in ADR-0022;
+Owner decision: keep the receiver-specific incarnation rule in ADR-0022;
 do not revive general ADR-0021/D3 or implement logical controller presentation
 swap. Reopen ADR-0021 only on evidence that a logical controller needs
 replacement of its whole presentation while retaining semantic resources
@@ -197,14 +197,15 @@ ADR-0021 nor promises provider visibility of host-only re-registration.
 
 ### 3.4 Application events, state and journal
 
-Expose retained topology and generation first (ADR-0019 pattern). Optional
-typed lifecycle observations can signal attach, unavailable-retained,
+Expose retained topology and generation first (ADR-0019 pattern). After VG-2,
+optional typed lifecycle observations can signal attach, unavailable-retained,
 reconnected, removed, terminal and companion changes with receiver/slot
 association, before/after presence and generation/token. A slow reader can
 recover current availability/shape from one pollable snapshot; cannot infer
 missed intermediate edges. Do not depend on callbacks to service host requests.
 
-Use ADR-0024 typed per-slot command journal at semantic acceptance, plus
+After VG-2, use the ADR-0024 typed in-process per-slot command journal at
+semantic acceptance, plus
 explicit lifecycle/rejected diagnostic discriminants when supported. A
 receiver-level status or diagnostic belongs to receiver ownership, not a
 fabricated controller accepted command. Each command is scoped to its slot
@@ -280,8 +281,8 @@ diagnostics must retain scope even across later reconnect.
 
 ### 3.6 Companion rules
 
-Optional desktop roles are explicit family options, required once selected:
-all preflight before opens; rollback new roles, preserve unrelated siblings;
+Optional desktop roles are explicit family options, off by default and required
+once selected: all preflight before opens; rollback new roles, preserve unrelated siblings;
 neutral/release keys and pointer state on loss/close where possible, then
 dispose of owned roles. LizardOnly suppresses native reports while retaining
 native semantics according to the family policy, not a RealizationId, and
@@ -306,33 +307,36 @@ or OpenPuck compatibility identity into a receiver or rely on unclassified
 | --- | --- |
 | Puck reduced independent wired UHID/uinput | Explicitly reduced playable per-controller target only, without a common receiver identity/topology; no automatic fallback. The already existing wired constructor is separate; only offer a new receiver-owned reduced target if owner approves precise metadata/refusals. |
 | Puck reduced receiver-ID UHID | Kernel/evdev or custom-driver experiment only. Pinned [SDL Linux HIDAPI](https://github.com/libsdl-org/SDL/blob/531acc0a76cf910b7616b2c5f63de2c5b3a4ba0a/src/hidapi/linux/hid.c#L779-L830) lacks a real USB parent/interface number on plain UHID; [SDL Triton](https://github.com/libsdl-org/SDL/blob/531acc0a76cf910b7616b2c5f63de2c5b3a4ba0a/src/joystick/hidapi/SDL_hidapi_steam_triton.c#L439-L456) accepts receiver interfaces 2–5. Native SDL Puck enumeration cannot be fixed by report payload alone (correction 6748258725). Steam client unknown. |
-| Puck faithful USB-level | Select only after #168 proves real descriptor/control/interface/interrupt behavior including exact positive/negative GET/SET replies. Current fixed HID gadget/f_hid is not adequate; dummy_hcd remains unavailable/off, not authorization to enable it. Full USB/IP device is a candidate, not existing composite support. Independent consumer bind tests for kernel and SDL, separate Steam test. |
+| Puck faithful USB-level | Select only after #168 proves real descriptor/control/interface/interrupt behavior including exact positive/negative GET/SET replies. Following the brief 17 owner precedent, USB/IP is the production target for a USB-level receiver, and `dummy_hcd` is a secondary experimental path used as needed. The current fixed HID gadget/f_hid is not adequate; neither target is existing validated composite support. Independent consumer bind tests for kernel and SDL, separate Steam test. |
 | Xbox 360 receiver (later) | Four-interface xpad receiver needs modeled vendor-specific USB endpoints; SDL evdev is downstream. Reduced standalone uinput/HID is not xpad receiver. Require descriptors, provider and #258 amendment before production. |
 | Xbox Wireless Adapter (later, conditional) | Dynamic xone association and USB/GIP need USB-level proof; out-of-tree xone is distinct from stock xpad. No GIP synthesis/fake, no firmware inspection, no receiver support if evidence or lawful capability missing. Firmware prerequisite gap **needs private analysis**. Reduced standalone xpad-shaped uinput is not adapter fidelity. #168 and owner authorization remain gates. |
 | DS4 / DJ (comparison only) | DS4 retained-node parser-level UHID candidate, not real USB receiver proof; DJ UHID may model one child only, not shared composite receiver grouping. Full fidelity needs USB evidence and separate scope/audit. |
 
 The #258 audit sign-off (comment 6777536122) covers its existing surfaces as
-written, not future provider grants. Any new receiver host setup (Puck
-included) must have audited exact mechanism, who/required status, privilege,
+written, not future provider grants. Per the owner's 2026-11-11 rule, dev and
+test host setup needs no per-change sign-off. Only receiver host setup that ships
+as a release or default surface needs a #258 audit amendment and owner sign-off
+before release: document the exact mechanism, who/required status, privilege,
 scope/persistence, security and real-device impact, cleanup/reversibility,
-alternatives/default and evidence, then fresh owner sign-off before release.
-Keep test/dev provisioning explicit and off by default; no broad hidraw ACL,
-implicit module setup or broker/worker protocol change. Do not enable
-dummy_hcd or USB/IP merely because a source-only paper describes feasibility.
-No RF, bond provisioning or real pairing operation is authorized.
+alternatives/default and evidence. Keep test/dev provisioning explicit and off
+by default; USB/IP is the production target, with `dummy_hcd` secondary for
+experiments as needed (brief 17 precedent). No broad hidraw ACL, implicit module
+setup or broker/worker protocol change. Neither path is validated by a source-only
+paper. No RF, bond provisioning or real pairing operation is authorized.
 
 ## 5. Ordered implementation / PR boundaries (all proposed; not run)
 
-Each PR is independently reviewable. Wait for owner decision on this draft
-and VG-1b family input/migration work before public API changes; no work on
-its branches. Keep acceptance/fidelity separate from deterministic code.
+Each PR is independently reviewable. The owner accepted the design in principle;
+implementation remains post-Alpha 2 and waits for VG-1b family input/migration
+work (including Steam step d), without touching its branches. Keep acceptance/
+fidelity separate from deterministic code.
 
 | PR / dependency | Scope and deterministic test oracle (NOT RUN) | Snapshot / migration |
 | --- | --- | --- |
 | 1 — regression seam | Extend existing synthetic fixture before production: 0, 1, 4 and family-specific larger/dynamic bounds without global four; invalid/duplicate addresses, exhaustion before preflight; both destroy/recreate and retained-link-loss (including DJ unpair/re-pair and DS4 probe absent); exact generation/epoch changes, duplicate/coalesced transitions, neutral gating, preserved siblings, rollback/cleanup and required companion failures. Keep existing regressions. | Internal only; expect no public snapshot change; verify. |
 | 2 — ownership and fences | Factor only proven receiver lifecycle mechanism into production-internal family-owned seam, bounded route generations and fair servicing. Exercise absent SET/GET and one-way output, required reply queued at detach, definitely-unsent same-route retry, stale address/occupant reuse barrier, safe cancellation vs uncertainty, in-flight shared fault, DJ-like required receiver interface loss, primary error classification, sibling successful output retained despite local error, reverse close/Drop. Inject failures at each prepare/cleanup point. | Internal only, no supported receiver registry advertisement or IPC; verify snapshot unchanged. |
-| 3 — typed Puck-facing API and reduced test target | After VG-1b Steam migration and owner decision, typed creation/options/slot views and pollable topology, retained diagnostics and in-process journal semantics for supported target. Fixture or explicit reduced test-only target, no faithful Puck support. Tests: one validator path, absent/closed/stale slot edits, neutralize and metadata preservation, independent repeated accepted commands vs retries, explicit journal gaps/reader lag/terminal drain/stream epoch separation, callback failure not starving required replies, no alias/fallback or implicit wired conversion. If no reduced product target approved, keep API internal until PR 4. | Regenerate root `docs/api/ALPHA_API_SNAPSHOT.json` and affected Steam `docs/api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json`; curated/root compiling consumers migrated in same change, exact delta in `docs/ALPHA_API_MIGRATION.md`, no alpha compatibility aliases. |
-| 4 — Puck USB provider / package, after #168 evidence | Separate provider feasibility and approved host-audit amendment from slot protocol implementation. Begin with fake USB event/endpoint adapter and evidence-backed native descriptors/ID/status/reply routing tests, no speculative bytes. Test zero-slot listener, valid attach/status, GET/SET success and negative reply, independent slot routing, bounded simultaneous churn, per-slot lizard policy, shared failure and cleanup after denied access. Any worker wire change/journal needs separate approval. | Explicit manifest/surface/refusal and docs only in later implementation PRs; regen only affected API snapshots. No change to current wired realization meanings. |
+| 3 — typed Puck-facing API and reduced test target | After VG-1b Steam migration, typed creation/options/slot views, retained pollable topology and diagnostics first; optional typed lifecycle events and per-slot in-process journal are a separate follow-up after VG-2. Fixture or explicit reduced test-only target, no faithful Puck support. Tests: one validator path, absent/closed/stale slot edits, neutralize and metadata preservation, no alias/fallback or implicit wired conversion; in the later follow-up, independent repeated accepted commands vs retries, explicit journal gaps/reader lag/terminal drain/stream epoch separation and callback failure not starving required replies. If no reduced product target approved, keep API internal until PR 4. | Regenerate root `docs/api/ALPHA_API_SNAPSHOT.json` and affected Steam `docs/api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json`; curated/root compiling consumers migrated in same change, exact delta in `docs/ALPHA_API_MIGRATION.md`, no alpha compatibility aliases. |
+| 4 — Puck USB provider / package, after #168 evidence | Separate USB/IP provider feasibility (secondary `dummy_hcd` experiments as needed) from slot protocol implementation; dev/test setup needs no per-change sign-off, but shipping release/default host setup needs an approved audit amendment. Begin with fake USB event/endpoint adapter and evidence-backed native descriptors/ID/status/reply routing tests, no speculative bytes. Test zero-slot listener, valid attach/status, GET/SET success and negative reply, independent slot routing, bounded simultaneous churn, per-slot lizard policy, shared failure and cleanup after denied access. Any worker wire change/journal needs separate approval. | Explicit manifest/surface/refusal and docs only in later implementation PRs; regen only affected API snapshots. No change to current wired realization meanings. |
 | 5 — consumer and physical gate | Run denied/privileged setup, teardown and host tests below on exact candidate, fix issues with focused deterministic regressions; separate support matrix change after evidence and owner approval. | Publish only reviewed non-identifying evidence; no automatic support promotion or release gate changes. |
 | 6 — later USB receiver families | Separate issue/PR per Xbox 360 then conditional XWA; no new common abstractions without actual need. Add dynamic and retained policies only as justified. GIP never faked. DS4/DJ comparison cases remain deterministic patterns until separately selected. | Each new family gets scoped snapshots, migration, capability/limitation documentation and host audit. |
 
@@ -354,7 +358,8 @@ its branches. Keep acceptance/fidelity separate from deterministic code.
   delivery, queue cancellation and physical execution. Unplug/reset and
   required shared-interface fault versus one isolated slot loss, repeated
   close, deny permissions, no leaked handles/nodes or global host-policy
-  changes. Host setup must be approved; no unsafe driver unbind on real hardware.
+  changes. Test setup is explicit and off by default; no per-change dev/test
+  sign-off is required, and no unsafe driver unbind on real hardware.
 - Benchmark exact creation/first-valid-neutral/removal with #166 oracle when
   available; no timing inference from source. Steam on x86-64 remains #144;
   SDL bind does not imply Steam acceptance. xpad/xone later need their own
@@ -362,39 +367,46 @@ its branches. Keep acceptance/fidelity separate from deterministic code.
   Preserve failed/unknown and distinguish deterministic, virtual consumer,
   physical and transport evidence.
 
-## 6. Open questions for Anders (recommended answers)
+## 6. Owner decisions (2026-11-17)
 
-1. **Generalized metadata now or Puck-only maximum?** Approve family-declared
-   address/capacity and node-lifetime policy with fixed Puck implementation;
-   do not create generalized arbitrary USB composition or expose unsupported
-   capacities/families.
-2. **Slot presentation epochs vs D3?** Approve receiver-scoped child
-   incarnation token only on creation/recreation; keep ADR-0021 Deferred.
-   Reopen only on demonstrated whole-presentation replacement.
-3. **Application lifecycle visibility?** Approve retained receiver topology
-   snapshot/generation plus optional typed lifecycle events and ADR-0024
-   in-process per-slot journal when supported. Keep stream epoch separate,
-   closed-history bounded and worker journal refused until separately approved.
-4. **Absent output and stale work?** Approve no child command acceptance/
-   replay to absent/reused route by default; only evidence-backed
-   receiver-local commands, preserve required replies and immutable ordering,
-   explicit proven cancellation or terminal owning failure boundary.
-5. **Input/state across reconnect?** Approve neutral input on new occupant or
-   presentation; retain association/native metadata only where proven; gate
-   retained-loss input, do not automatically replay held inputs. Identity,
-   player assignment and protocol clocks are never input snapshot data.
-6. **Puck first realization scope?** Approve synthetic lifecycle first and
-   explicit reduced kernel/evdev experiments only (wired reduced independent
-   devices remain distinct); require #168 USB provider proof and #258
-   amendment before native Puck SDL/Steam claims. No implicit fallback.
-7. **Failure and companion boundary?** Approve slot-local failure where proven
-   isolated; shared required interface loss/unscopable uncertainty terminal
-   receiver-wide. Companions explicit, required once selected; no generic
-   DJ heterogeneous runtime or default desktop exposure.
-8. **Later receiver sequencing?** Approve Xbox 360 USB-level after Puck and
-   host audit, then XWA only if #168 evidence and owner authorize a non-faked
-   GIP path; otherwise leave XWA unsupported. DS4/DJ policy fixtures now,
-   production families only after separate scope and evidence.
+Source of truth: [#165 comment 6960320698](https://github.com/anderstvoss/virtualgamepad/issues/165#issuecomment-6960320698).
+The owner accepted all eight recommended answers with the two amendments in Q6.
+
+1. **Slot declaration.** Each receiver family declares its own address scheme,
+   capacity and node-lifetime policy (destroy/recreate or retain through link
+   loss). Puck has four fixed slots; there is no global four-slot maximum or
+   generic arbitrary USB/HID composition.
+2. **Reconnect tracking.** A receiver-scoped per-slot presentation token changes
+   only when a child presentation is destroyed and recreated, under ADR-0022.
+   ADR-0021 stays Deferred (D3 closed 2026-11-09) and reopens only on evidence of
+   whole-presentation replacement.
+3. **Application visibility.** First expose a retained receiver topology snapshot
+   and generation (ADR-0019); add optional typed lifecycle events and per-slot
+   ADR-0024 in-process journal entries later, after VG-2. Topology generation and
+   stream epoch remain separate; USB/IP worker journal stays refused pending
+   separate approval.
+4. **Output to absent slots.** Refuse by default; never queue or replay output
+   to a later occupant. Required replies retain their original order and session.
+   Allow only proven cancellation or terminate the owning failure boundary;
+   uncertain delivery is never retried.
+5. **Inputs across reconnect.** New occupants or presentations start neutral;
+   held inputs are never replayed, and input is gated while link is lost.
+   Identity, player assignment and protocol clocks are never input-snapshot data.
+6. **Puck first realization.** Synthetic lifecycle tests and explicitly reduced
+   kernel/evdev experiments come first; native Puck support in SDL and Steam
+   requires a USB-level device proven under #168. Following brief 17, USB/IP is
+   the production target and `dummy_hcd` is secondary and experimental, used as
+   needed. Per the 2026-11-11 owner rule, dev/test host setup needs no per-change
+   sign-off; only release/default host setup needs an audit amendment and owner
+   sign-off.
+7. **Failure classification.** A proven-isolated slot failure stays slot-local;
+   shared required interface loss or unscopable uncertain delivery terminates the
+   receiver (Logitech DJ case). Companions are explicit, required once selected,
+   and off by default; no generic DJ heterogeneous runtime.
+8. **Sequencing.** The Xbox 360 USB-level receiver follows Puck and its host audit.
+   Xbox Wireless Adapter requires #168 evidence and an owner-approved non-faked
+   GIP path, or remains unsupported. DS4 dongle and Logitech DJ remain
+   deterministic policy fixtures until separately scoped.
 
 ## Scope exclusions and validation of this draft
 
