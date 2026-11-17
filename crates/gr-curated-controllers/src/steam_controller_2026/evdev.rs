@@ -1,4 +1,4 @@
-use super::{SteamController2026Button as Button, SteamController2026State as State};
+use super::{SteamController2026Button as Button, SteamController2026Inputs as State};
 use crate::common::{EV_ABS, EV_FF, EV_KEY, EV_SYN, SYN_REPORT};
 use gr_realization_api::{
     EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization, NativeDeviceIdentity,

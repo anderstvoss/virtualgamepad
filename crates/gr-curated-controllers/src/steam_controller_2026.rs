@@ -6,10 +6,10 @@
 //!
 //! ```
 //! use gr_curated_controllers::steam_controller_2026::{
-//!     SteamController2026Button, SteamController2026State,
+//!     SteamController2026Button, SteamController2026Inputs,
 //!     SteamMotionSample, SteamTrackpadState,
 //! };
-//! let mut state = SteamController2026State::default();
+//! let mut state = SteamController2026Inputs::default();
 //! state.set_button(SteamController2026Button::Menu, true);
 //! state.pads[0] = SteamTrackpadState {
 //!     position: [-100, 200], pressure: 123, touch: true, click: false,
@@ -21,7 +21,7 @@
 //! };
 //! assert!(state.pressed(SteamController2026Button::Menu));
 //! state.neutralize();
-//! assert_eq!(state, SteamController2026State::default());
+//! assert_eq!(state, SteamController2026Inputs::default());
 //! ```
 
 #[allow(dead_code)]
@@ -133,10 +133,60 @@ pub struct SteamMotionSample {
     /// Raw quaternion W/X/Y/Z tail in 0x42; zero is not an orientation claim.
     pub quaternion: [i16; 4],
 }
+/// Read-only wired protocol metadata. Reduced uinput has no HID protocol:
+/// its status fields are `None`, rather than fabricated wire counters or modes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SteamController2026Status {
+    report_sequence: Option<u8>,
+    steam_client_compat: Option<bool>,
+    haptic_streaming: Option<bool>,
+    lizard_mode: Option<bool>,
+    mappings: Option<bool>,
+    lizard_setting: Option<bool>,
+    imu_mode: Option<u16>,
+}
+impl SteamController2026Status {
+    /// Next wired report sequence; transport generation advances it.
+    #[must_use]
+    pub const fn report_sequence(self) -> Option<u8> {
+        self.report_sequence
+    }
+    /// Configured wired compatibility profile.
+    #[must_use]
+    pub const fn steam_client_compat(self) -> Option<bool> {
+        self.steam_client_compat
+    }
+    /// Configured opt-in wired haptic stream support.
+    #[must_use]
+    pub const fn haptic_streaming(self) -> Option<bool> {
+        self.haptic_streaming
+    }
+    /// Configured opt-in desktop report support.
+    #[must_use]
+    pub const fn lizard_mode(self) -> Option<bool> {
+        self.lizard_mode
+    }
+    /// Last accepted host mapping intent; None means unobserved.
+    #[must_use]
+    pub const fn mappings(self) -> Option<bool> {
+        self.mappings
+    }
+    /// Last accepted host lizard setting; None means unobserved.
+    #[must_use]
+    pub const fn lizard_setting(self) -> Option<bool> {
+        self.lizard_setting
+    }
+    /// Last accepted host IMU setting; None means unobserved.
+    #[must_use]
+    pub const fn imu_mode(self) -> Option<u16> {
+        self.imu_mode
+    }
+}
+
 /// Application-owned native inputs; default is raw zero with no calibration claim.
 /// Records: `steam-c6-input-buttons`, `steam-c6-input-scaling`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct SteamController2026State {
+pub struct SteamController2026Inputs {
     buttons: u32,
     /// Left/right sticks, each native signed X/Y.
     pub sticks: [[i16; 2]; 2],
@@ -152,7 +202,7 @@ pub struct SteamController2026State {
     /// Native motion and timestamp, without consumer transforms.
     pub motion: SteamMotionSample,
 }
-impl SteamController2026State {
+impl SteamController2026Inputs {
     /// Native control schema. This does not advertise a constructible realization.
     #[must_use]
     pub const fn input_topology(&self) -> &'static gr_controller_contract::InputTopology {

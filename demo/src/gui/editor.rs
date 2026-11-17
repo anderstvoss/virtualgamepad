@@ -134,8 +134,11 @@ pub(super) type DualShock4Editor =
 pub(super) type SwitchProEditor = Editor<SwitchProInputs, Surface, virtualgamepad::SwitchProStatus>;
 pub(super) type WiiRemoteEditor =
     Editor<gr_curated_controllers::wii_remote::WiiRemoteState, Surface>;
-pub(super) type SteamEditor =
-    Editor<gr_curated_controllers::steam_controller_2026::SteamController2026State, Surface>;
+pub(super) type SteamEditor = Editor<
+    gr_curated_controllers::steam_controller_2026::SteamController2026Inputs,
+    Surface,
+    virtualgamepad::SteamController2026Status,
+>;
 pub(super) enum ControllerView {
     Xbox(Xbox360Editor),
     XboxSeries(XboxSeriesEditor),
@@ -203,9 +206,13 @@ impl Controller {
                 Some(c.association().clone()),
                 c.status(),
             )),
-            Self::Steam(c) => {
-                ControllerView::Steam(Editor::new(c.state().clone(), c.surface(), None, None, ()))
-            }
+            Self::Steam(c) => ControllerView::Steam(Editor::new(
+                c.inputs().clone(),
+                c.surface(),
+                None,
+                None,
+                c.status(),
+            )),
             Self::WiiRemote(c) => ControllerView::WiiRemote(Editor::new(
                 c.state().clone(),
                 c.surface(),
@@ -424,11 +431,11 @@ pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
             (),
         )),
         super::Kind::Steam => ControllerView::Steam(Editor::new(
-            gr_curated_controllers::steam_controller_2026::SteamController2026State::default(),
+            gr_curated_controllers::steam_controller_2026::SteamController2026Inputs::default(),
             surface,
             None,
             None,
-            (),
+            virtualgamepad::SteamController2026Status::default(),
         )),
         super::Kind::SwitchPro => ControllerView::SwitchPro(Editor::new(
             SwitchProInputs::default(),
@@ -1085,7 +1092,7 @@ impl SteamEditor {
     }
     fn queue_steam_state(
         &mut self,
-        next: gr_curated_controllers::steam_controller_2026::SteamController2026State,
+        next: gr_curated_controllers::steam_controller_2026::SteamController2026Inputs,
     ) {
         if next == self.state {
             return;

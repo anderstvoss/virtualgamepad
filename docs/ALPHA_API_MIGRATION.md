@@ -485,3 +485,43 @@ Battery setters remain separate runtime updates, while input edits and
 neutralization preserve accepted metadata. No input clock is invented for this
 family. Worker, root-audio, demo and test consumers migrate in the same PR with
 no compatibility alias.
+
+## VG-1b/d · Steam Controller 2026 input-only values
+
+`SteamController2026Inputs` replaces `SteamController2026State`. Its native input
+fields, including caller-supplied `motion.timestamp_us`, retain their domains and
+encoding. `inputs()` borrows accepted levels. Copyable `SteamController2026Status`
+reads the live wired protocol's counter and mode metadata.
+
+| Previous API | Current API |
+| --- | --- |
+| `SteamController2026State` | `SteamController2026Inputs` |
+| `controller.state()` | `controller.inputs()` |
+| `set_inputs(SteamController2026State)` | `set_inputs(SteamController2026Inputs)` |
+| `edit_inputs(FnOnce(&mut SteamController2026State) -> Result<(), ControlError>)` | `edit_inputs(FnOnce(&mut SteamController2026Inputs) -> Result<(), ControlError>)` |
+
+In both root snapshot feature views and the Steam supporting snapshot, remove
+the old type and add `SteamController2026Inputs` and `SteamController2026Status`.
+Remove the handle's `state()`, add `inputs() -> &SteamController2026Inputs` and
+`status() -> SteamController2026Status`, and change both mutation signatures above.
+The six public native fields and four input methods move to the renamed input
+type unchanged. Status adds seven read accessors: `report_sequence()`,
+`steam_client_compat()`, `haptic_streaming()`, `lizard_mode()`, `mappings()`,
+`lizard_setting()` and `imu_mode()`. Both value types support defaults, clone and
+equality; status is also copyable. The root and experimental modules export both
+new types. The Wii supporting snapshot has zero delta.
+
+The report sequence is the next wired transport sequence, independent of the
+caller-owned source timestamp. Compatibility, haptic-stream and desktop support
+are configured protocol modes; mappings, lizard setting and IMU mode are retained
+accepted host intent, with unknown settings represented by `None`. Desktop
+support opt-in and the host's lizard setting are separate observations. Reduced
+uinput has no HID protocol or feature channel, so all status fields are `None`.
+There is no fabricated battery value or wire counter for that realization.
+
+The protocol remains the metadata owner; the status view is read-only and remains
+readable after close. Input replacement, rejection and neutralization preserve
+protocol modes and retained host outputs. No combined session type or worker
+codec is added. The c1 reduced-uinput refusals and existing encoded report fixtures
+remain in force. Demo, xtask, live haptics probe and other compiling callers migrate
+with this PR; no compatibility alias remains.

@@ -147,7 +147,7 @@ impl RealizationControllerDefinition for SteamController2026Definition {
 // 0..32767. ControlError carries an unsigned value, so identify the offending
 // 16-bit wire word explicitly rather than pretending a negative value is clamped.
 pub(super) fn validate_trigger_values(
-    state: &super::SteamController2026State,
+    state: &super::SteamController2026Inputs,
 ) -> Result<(), ControlError> {
     for (value, control) in state.triggers.into_iter().zip([
         "steam left trigger raw word (negative signed input; expected 0..32767)",
@@ -165,7 +165,7 @@ pub(super) fn validate_trigger_values(
 }
 
 impl TargetAwareControllerDriver for SteamController2026Definition {
-    type State = super::SteamController2026State;
+    type State = super::SteamController2026Inputs;
     type Frame = ProviderFrame;
 
     fn neutral_state(&self) -> Self::State {
@@ -370,7 +370,7 @@ mod tests {
             };
             for side in 0..2 {
                 for value in [-1, i16::MIN] {
-                    let mut state = super::super::SteamController2026State::default();
+                    let mut state = super::super::SteamController2026Inputs::default();
                     state.triggers[side] = value;
                     let before = state.clone();
                     let error = definition.validate_state(selection, &state).unwrap_err();
@@ -387,7 +387,7 @@ mod tests {
                 }
             }
             for triggers in [[0, 0], [0, i16::MAX], [i16::MAX, 0], [i16::MAX, i16::MAX]] {
-                let state = super::super::SteamController2026State {
+                let state = super::super::SteamController2026Inputs {
                     triggers,
                     ..Default::default()
                 };
@@ -426,7 +426,7 @@ mod tests {
             controller: strict.controller_id(),
             target: RealizationTarget::LINUX_UINPUT,
         };
-        let mut state = super::super::SteamController2026State::default();
+        let mut state = super::super::SteamController2026Inputs::default();
         state.set_button(super::super::SteamController2026Button::A, true);
         state.sticks[1] = [1000, -2000];
         state.pads[0].touch = true;

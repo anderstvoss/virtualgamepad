@@ -81,9 +81,9 @@ pub(super) enum Controller {
 // pose; their individual necessity was not isolated. API raw-zero defaults stay.
 fn steam_demo_neutral(
     target: virtualgamepad::RealizationId,
-) -> gr_curated_controllers::steam_controller_2026::SteamController2026State {
+) -> gr_curated_controllers::steam_controller_2026::SteamController2026Inputs {
     let mut state =
-        gr_curated_controllers::steam_controller_2026::SteamController2026State::default();
+        gr_curated_controllers::steam_controller_2026::SteamController2026Inputs::default();
     if target == virtualgamepad::RealizationId::LINUX_UHID_USB {
         state.motion.accelerometer = [0, 0, 16384];
         state.motion.quaternion = [i16::MAX, 0, 0, 0];
@@ -644,9 +644,9 @@ mod steam_tests {
     #[test]
     fn demo_neutral_has_a_synthetic_pose_without_changing_api_defaults() {
         use gr_curated_controllers::steam_controller_2026::{
-            SteamController2026State, SteamMotionSample,
+            SteamController2026Inputs, SteamMotionSample,
         };
-        let api = SteamController2026State::default();
+        let api = SteamController2026Inputs::default();
         assert_eq!(api.motion, SteamMotionSample::default());
         assert_eq!(api.motion.quaternion, [0; 4]);
         assert_eq!(

@@ -38,7 +38,7 @@ input_fixture!(
     crate::SwitchProInputs,
     crate::Xbox360Inputs,
     crate::wii_remote::WiiRemoteState,
-    crate::steam_controller_2026::SteamController2026State,
+    crate::steam_controller_2026::SteamController2026Inputs,
     crate::xbox_series::XboxSeriesState,
 );
 macro_rules! controller_fixture {
@@ -51,9 +51,15 @@ macro_rules! controller_fixture {
 }
 controller_fixture!(
     crate::wii_remote::WiiRemoteController => crate::wii_remote::WiiRemoteState,
-    crate::steam_controller_2026::SteamController2026Controller => crate::steam_controller_2026::SteamController2026State,
     crate::xbox_series::XboxSeriesController => crate::xbox_series::XboxSeriesState,
 );
+
+impl ControllerFixture for crate::steam_controller_2026::SteamController2026Controller {
+    type State = crate::steam_controller_2026::SteamController2026Inputs;
+    fn test_state(&self) -> &Self::State {
+        self.inputs()
+    }
+}
 
 #[derive(Default)]
 struct WorkerRecord<S> {

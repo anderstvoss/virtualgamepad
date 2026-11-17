@@ -4,7 +4,7 @@
 use super::streaming::{
     SteamController2026StreamOutputs, SteamController2026StreamPacket, StreamState,
 };
-use super::{Battery, SteamController2026State as State};
+use super::{Battery, SteamController2026Inputs as State};
 use gr_hid::{
     Command, Delivery, Error, Lifecycle, Protocol, Reply, ReplyError, Report, ReportType,
     RequestKind,
@@ -636,6 +636,18 @@ impl SteamHidProtocol {
         };
         protocol.sync_outputs();
         protocol
+    }
+
+    pub(super) fn status(&self) -> super::SteamController2026Status {
+        super::SteamController2026Status {
+            report_sequence: Some(self.protocol.sequence),
+            steam_client_compat: Some(self.protocol.steam_client_compat),
+            haptic_streaming: Some(self.protocol.stream.outputs.enabled),
+            lizard_mode: Some(self.protocol.desktop.enabled),
+            mappings: self.protocol.outputs.mappings,
+            lizard_setting: self.protocol.outputs.lizard,
+            imu_mode: self.protocol.outputs.imu,
+        }
     }
 
     fn sync_outputs(&mut self) {

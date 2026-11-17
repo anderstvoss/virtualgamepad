@@ -85,9 +85,9 @@ pub use gr_controller_contract::{
     TriggerInputKind, TriggerStack, TypedInput,
 };
 pub use gr_curated_controllers::steam_controller_2026::{
-    SteamController2026Button, SteamController2026Haptic, SteamController2026Outputs,
-    SteamController2026State, SteamController2026StreamOutputs, SteamController2026StreamPacket,
-    SteamMotionSample, SteamTrackpadState,
+    SteamController2026Button, SteamController2026Haptic, SteamController2026Inputs,
+    SteamController2026Outputs, SteamController2026Status, SteamController2026StreamOutputs,
+    SteamController2026StreamPacket, SteamMotionSample, SteamTrackpadState,
 };
 pub use gr_curated_controllers::wii_remote::{
     WiiClassicState, WiiEepromImage, WiiExtension, WiiExtensionCalibration, WiiIrPoint,

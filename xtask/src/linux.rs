@@ -199,7 +199,7 @@ fn bound_driver(node: &Path) -> Option<String> {
 fn steam_sample(
     sample: i16,
     target: virtualgamepad::RealizationId,
-) -> virtualgamepad::SteamController2026State {
+) -> virtualgamepad::SteamController2026Inputs {
     use virtualgamepad::SteamController2026Button as B;
     const BUTTONS: [B; 22] = [
         B::A,
@@ -225,7 +225,7 @@ fn steam_sample(
         B::RightTrigger,
         B::LeftTrigger,
     ];
-    let mut state = virtualgamepad::SteamController2026State::default();
+    let mut state = virtualgamepad::SteamController2026Inputs::default();
     let wired = target == virtualgamepad::RealizationId::LINUX_UHID_USB;
     if wired {
         state.motion.timestamp_us = u32::from(u16::from_ne_bytes(sample.to_ne_bytes())) * 10_000;

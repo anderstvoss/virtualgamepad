@@ -8,8 +8,8 @@ use crate::{
     DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
     DualShock4Inputs, DualShock4MotionSample, DualShock4OutputEvent, DualShock4Surface,
     DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
-    ServiceReadiness, SteamController2026Button, SteamController2026OutputEvent,
-    SteamController2026Outputs, SteamController2026State, SwitchProAxis, SwitchProControl,
+    ServiceReadiness, SteamController2026Button, SteamController2026Inputs,
+    SteamController2026OutputEvent, SteamController2026Outputs, SwitchProAxis, SwitchProControl,
     SwitchProInputs, SwitchProMotionSample, SwitchProOutputEvent, SwitchProSurface, TouchSlot,
     WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton, WiiRemoteOutputEvent,
     WiiRemoteOutputs, WiiRemoteState, WiiResourceDisposition, Xbox360Axis, Xbox360Control,
@@ -893,8 +893,17 @@ impl SteamController2026Controller {
         self.controller.inner.identity()
     }
 
-    shared!(state, SteamController2026State);
-    shared!(edit_inputs, SteamController2026State);
+    /// Borrow accepted native input levels, including the caller's source timestamp.
+    #[must_use]
+    pub fn inputs(&self) -> &SteamController2026Inputs {
+        self.controller.inner.inputs()
+    }
+    /// Read wired protocol counters and mode metadata.
+    #[must_use]
+    pub fn status(&self) -> crate::SteamController2026Status {
+        self.controller.inner.status()
+    }
+    shared!(edit_inputs, SteamController2026Inputs);
     shared!(host_outputs, SteamController2026Outputs);
     shared!(surface, crate::ControllerSurface);
     shared!(wants_write);
@@ -911,7 +920,7 @@ impl SteamController2026Controller {
     shared!(service, SteamController2026OutputEvent);
     edits! {
         fn set_digital(update: DigitalControlUpdate);
-        fn set_inputs(state: SteamController2026State);
+        fn set_inputs(state: SteamController2026Inputs);
         fn set_button(button: SteamController2026Button, pressed: bool);
     }
 }
