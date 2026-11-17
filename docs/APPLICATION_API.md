@@ -318,8 +318,8 @@ series.close();
 # Ok(()) }
 ```
 
-`XboxSeriesState` uses signed xpad evdev coordinates with positive Y down.
-Trigger positions are 10-bit. `set_triggers` on the state validates both
+`XboxSeriesInputs` uses signed xpad evdev coordinates with positive Y down.
+Trigger positions are 10-bit. `set_triggers` on the inputs validates both
 values. Share and Guide are independent. `XboxSeriesOutputEvent` carries
 conventional force feedback on uinput and native HID output on Bluetooth-bus
 UHID. `host_outputs()` retains the latest two-motor evdev playback or
