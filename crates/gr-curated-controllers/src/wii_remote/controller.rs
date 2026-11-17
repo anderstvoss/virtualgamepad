@@ -281,6 +281,9 @@ impl WiiRemoteController {
         })
     }
     /// Current raw battery metadata, retained after close.
+    ///
+    /// # Panics
+    /// Panics if the internal construction invariant retaining a protocol is broken.
     #[must_use]
     pub fn battery(&self) -> super::WiiRemoteBattery {
         self.session

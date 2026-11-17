@@ -251,7 +251,7 @@ mod part_c_tests {
                     }),
                     ..Default::default()
                 },
-                Default::default(),
+                crate::wii_remote::WiiRemoteRevision::default(),
                 false,
             );
             let mut memory = super::super::memory::Memory::default();
@@ -283,7 +283,7 @@ mod part_c_tests {
                     extension: WiiExtension::Classic(classic),
                     ..Default::default()
                 },
-                Default::default(),
+                crate::wii_remote::WiiRemoteRevision::default(),
                 false,
             );
             let mut memory = super::super::memory::Memory::default();

@@ -77,6 +77,10 @@ impl NativeProviderSession for Fake {
         Ok(())
     }
 }
+pub(super) fn ownership_controller() -> WiiRemoteController {
+    create(WiiEepromImage::default()).0
+}
+
 fn create(image: WiiEepromImage) -> (WiiRemoteController, Fake) {
     create_with_options(image, Compat::default())
 }

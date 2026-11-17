@@ -460,7 +460,7 @@ mod tests {
                 buttons: [true; 11],
                 ..Default::default()
             },
-            Default::default(),
+            super::WiiRemoteRevision::default(),
             false,
         );
         let ProviderFrame::Evdev(events) = frame(Role::Core, &s) else {

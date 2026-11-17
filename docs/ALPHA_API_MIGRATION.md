@@ -555,3 +555,49 @@ from input edits and selected-target metadata. No combined session type or worke
 codec is added. Demo, xtask, the Xbox Series probe and other compiling users migrate
 together, retaining the existing uinput and Bluetooth report fixtures and cleanup
 regressions. No compatibility alias remains.
+
+
+## VG-1b/d · Wii input-only values and metadata
+
+`WiiRemoteInputs`, `WiiMotionPlusInputs`, `WiiNunchukInputs` and
+`WiiClassicInputs` replace the four corresponding `*State` types on root,
+curated, experimental and Wii supporting surfaces. No compatibility aliases or
+public combined session type remain. Native input domains and report bytes are
+unchanged. `WiiExtension` payloads use the renamed accessory input types.
+
+| Previous API | Current API |
+| --- | --- |
+| `controller.state()` | `controller.inputs() -> &WiiRemoteInputs` |
+| `set_inputs(WiiRemoteState)` | `set_inputs(WiiRemoteInputs)` |
+| `edit_inputs(FnOnce(&mut WiiRemoteState) -> Result<(), ControlError>)` | `edit_inputs(FnOnce(&mut WiiRemoteInputs) -> Result<(), ControlError>)` |
+| `WiiRemoteState::new(revision)` and `state.revision()` | creation options and `controller.status().revision()` |
+| `state.set_attachment(...)` | live `controller.attach(...)` |
+| `state.motion_plus().attached` | `controller.status().motion_plus_attached()` |
+| `state.input_topology()` | `inputs.input_topology(motion_plus_attached)` or live `controller.current_topology()` |
+
+Each root feature view and the Wii supporting snapshot removes four old types,
+adds the four input types and `WiiRemoteStatus`, removes handle `state()`, adds
+`inputs()` and `status()`, and changes both input mutation signatures. Accessory
+payload declarations follow the renames. Remote input methods retain native
+editing helpers except `new`, `revision` and `set_attachment`; `input_topology`
+now takes a presence boolean. `WiiMotionPlusInputs` removes `attached`, retaining
+only gyro and slow-range levels. Status adds four read getters: `revision()`,
+`motion_plus_attached()`, `battery()` and `topology_generation()`. All input types
+and status support default, clone and equality; status is copyable. Handle
+`battery()` is no longer `const`, because it reads live protocol state. The Steam
+supporting snapshot has zero delta.
+
+Detached `set_extension_values` validates the native payload domain; live input
+transactions also require the existing extension kind. Detached MotionPlus
+setters validate fourteen-bit samples; live transactions also reject non-neutral
+samples when MotionPlus is absent. Only `attach` changes live presence, companion
+nodes and topology generation. Neutralizing inputs preserves the extension
+payload kind and live metadata. Revision stays in creation options.
+
+The protocol is the single owner of battery for both UHID and uinput. Status
+reads that owner and retains the last accepted value after close. Attachment,
+neutralization and input replacement preserve battery; queued status reports
+retain accepted bytes. Closed handles reject updates. The demo keeps a detached
+attachment projection separately from input levels and revalidates queued edits
+against live status. Existing EEPROM, host-output, report and cleanup regressions
+remain in force.

@@ -108,6 +108,10 @@ impl NativeProviderSession for Session {
         Ok(())
     }
 }
+pub(super) fn ownership_controller() -> WiiRemoteController {
+    create(&Factory::default())
+}
+
 fn create(factory: &Factory) -> WiiRemoteController {
     controller::create(
         crate::CreationOptions {

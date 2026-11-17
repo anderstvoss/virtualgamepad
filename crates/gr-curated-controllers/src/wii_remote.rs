@@ -255,7 +255,7 @@ pub enum WiiExtension {
     ClassicPro(WiiClassicInputs),
 }
 
-/// Caller-owned MotionPlus measurements; attachment presence is separate.
+/// Caller-owned `MotionPlus` measurements; attachment presence is separate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WiiMotionPlusInputs {
     /// Raw pitch/roll/yaw,0..16383; source zero-rate center8192.
@@ -300,7 +300,7 @@ impl Default for WiiRemoteInputs {
     }
 }
 impl WiiRemoteInputs {
-    /// Clear inputs while preserving attachment and revision.
+    /// Clear levels while preserving the extension payload kind.
     pub fn neutralize(&mut self) {
         self.buttons = [false; 11];
         self.accelerometer = [0; 3];
@@ -653,3 +653,6 @@ impl Default for WiiMotionPlusInputs {
         }
     }
 }
+
+#[cfg(test)]
+mod input_ownership_tests;
