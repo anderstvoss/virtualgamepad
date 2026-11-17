@@ -90,7 +90,7 @@ descendant containing the required records before implementation; this brief
 does not bump the pin.
 
 | Native function / consumer boundary | Source claim IDs | Bluetooth-bus UHID | uinput |
-| --- | `wiiupro-pa2----` | --- | --- |
+| --- | --- | --- | --- |
 | Identity and driver binding | `wiiupro-pa2-kernel-bluetooth-match`; `wiiupro-pa2-kernel-pro-classification`; `wiiupro-pa2-physical-identity-gap` | WIP; source evidence target for Pro classification, physical identity unknown | WIP; source evidence target for evdev shape only; no HID binding/uniq |
 | 17 digital controls including ZL/ZR and stick clicks | `wiiupro-pa2-kernel-pro-input`; `wiiupro-pa2-sdl-pro-mapping` | WIP → source evidence | WIP → source evidence; SDL mapping independently checked |
 | Two sticks, native packing and neutral | `wiiupro-pa2-kernel-pro-input`; `wiiupro-pa2-kernel-pro-stick-calibration`; `wiiupro-pa2-sdl-pro-report`; `wiiupro-pa2-sdl-pro-mapping`; `wiiupro-pa2-physical-calibration-gap` | WIP → source evidence, physical range/calibration unknown | WIP → source evidence, transformed to kernel units; fuzz deviation |
