@@ -64,7 +64,7 @@ id = "player-indicators"
 [[functions]]
 id = "hd-rumble"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "not-supported", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "evdev FF_RUMBLE carries two magnitudes, not native Switch frequency/amplitude encoding; conventional rumble is distinct." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 
