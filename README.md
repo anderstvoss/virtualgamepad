@@ -14,26 +14,32 @@ validated.
 
 ## Controllers and realizations
 
-| Controller | `linux.uinput` | `linux.uhid.usb` | Emulated audio (opt-in) |
-| --- | --- | --- | --- |
-| DualSense | WIP | WIP | UHID/PipeWire, USB/IP |
-| DualShock 4 | WIP | WIP | UHID/PipeWire, USB/IP |
-| Switch Pro | WIP | WIP | — |
-| Xbox 360 (standard HID, not XInput) | WIP | WIP | UHID/PipeWire, USB/IP |
+| Controller | `linux.uinput` | `linux.uhid.usb` | `linux.uhid.bluetooth` | Emulated audio (opt-in) | Actual Bluetooth |
+| --- | --- | --- | --- | --- | --- |
+| DualSense | WIP | WIP | Undeclared | UHID/PipeWire, USB/IP (WIP) | Deferred |
+| DualShock 4 | WIP | WIP | Undeclared | UHID/PipeWire, USB/IP (WIP) | Deferred |
+| Switch Pro | WIP | WIP | Undeclared | Undeclared | Deferred |
+| Xbox 360 (standard HID, not XInput) | WIP | WIP | Undeclared | UHID/PipeWire, USB/IP (WIP) | Deferred |
+| Wii Remote | WIP | Undeclared (fixture only) | WIP | Undeclared | Deferred |
+| Steam Controller (2026), wired | WIP (reduced) | WIP | Undeclared | Undeclared | Deferred |
+| Xbox Series | WIP (reduced) | Undeclared | WIP | Undeclared | Deferred |
 
 - `linux.uinput`: Linux evdev controls through `/dev/uinput`.
 - `linux.uhid.usb`: a HID device with USB bus metadata through `/dev/uhid`. It is
   not an actual USB device.
+- `linux.uhid.bluetooth`: local HID with Bluetooth bus metadata through UHID;
+  it does not provide radio discovery, pairing or BlueZ integration. Actual
+  Bluetooth is deferred (#164).
 - `linux.usbip.usb-audio`: opt-in composite HID/UAC2 device through a root-owned
-  local broker.
-- `linux.dummy_hcd.usb-hid`: unavailable; creation is rejected before any
-  resources are opened.
+  local broker, declared only for DualSense, DualShock 4 and Xbox 360.
+- `linux.dummy_hcd.usb-hid`: declared for DualSense, DualShock 4, Switch Pro
+  and Xbox 360, but creation is refused before resources are opened.
 
-No cell is promoted beyond WIP yet; see the [support matrix](docs/CONTROLLER_SUPPORT.md)
-for the status definitions. The ordinary root includes all seven families,
-including [Wii Remote](docs/WII_REMOTE.md) with uinput and Bluetooth-bus UHID,
-Steam Controller 2026 with uinput and wired UHID, and Xbox Series with uinput
-and Bluetooth-bus UHID.
+No implemented cell is promoted beyond WIP; undeclared cells are not compiled
+production targets. See the [support matrix](docs/CONTROLLER_SUPPORT.md) for
+status definitions and restrictions. The ordinary root includes all seven
+families above; the Steam Puck/receiver is deferred, not part of the wired
+Steam realization.
 
 ## Usage
 
