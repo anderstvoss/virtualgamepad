@@ -108,10 +108,10 @@ ACK, decoder, queue, mixer, PipeWire sink or playback. Transport success is not
 speaker-audio acceptance. This is an explicit deviation while playback remains
 gated by D7 and Brief 16 step S1. No S1 playback work is included. Uinput has no HID output
 report or addressed register channel; its existing native rumble is unchanged.
-Evidence: `wii-gap-wiibrew-speaker-control-reports`,
-`audio-wii-dolphin-control-and-stream-reports`,
-`wii-gap-wiibrew-speaker-init-config-registers`, and
-`audio-wii-dolphin-speaker-register-model`. The speaker-enabled status flag
+Evidence: [wii-gap-wiibrew-speaker-control-reports](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/wii-gap-wiibrew-speaker-control-reports.json),
+[audio-wii-dolphin-control-and-stream-reports](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-control-and-stream-reports.json),
+[wii-gap-wiibrew-speaker-init-config-registers](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/wii-gap-wiibrew-speaker-init-config-registers.json), and
+[audio-wii-dolphin-speaker-register-model](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-speaker-register-model.json). The speaker-enabled status flag
 `0x04` cites `wii-gap-wiibrew-status-20-resend`; it retains accepted enable
 intent and does not establish audio playback. No public API is added.
 
@@ -160,6 +160,19 @@ The final input/status contract and neutralization rules are recorded in
 - Speaker support remains a later separately gated realization under D7 and
   Brief 16 step S1 and ADR-0023. USB-bus UHID is a fixture-only experiment, outside this production
   package. Actual Bluetooth remains deferred to #164.
+
+For Brief 16 S1 (planned; not run in this audit), the pinned Dolphin-source
+records [audio-wii-dolphin-pcm-adpcm-rate](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-pcm-adpcm-rate.json) and
+[audio-wii-dolphin-yamaha-adpcm-nibbles](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-yamaha-adpcm-nibbles.json) describe the emulator's
+sample decoding and state, not a physical Wii Remote timing reference.
+See the [Dolphin speaker implementation, lines 22–139](https://github.com/dolphin-emu/dolphin/blob/e1d35f666cc35f6ead55d32ea2679df44d04da72/Source/Core/Core/HW/WiimoteEmu/Speaker.cpp#L22-L139)
+and [output handling, lines 362–399](https://github.com/dolphin-emu/dolphin/blob/e1d35f666cc35f6ead55d32ea2679df44d04da72/Source/Core/Core/HW/WiimoteEmu/EmuSubroutines.cpp#L362-L399).
+[audio-wii-dolphin-real-speaker-gate](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-real-speaker-gate.json) and
+[audio-wii-dolphin-real-speaker-pacing](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-real-speaker-pacing.json) concern Dolphin forwarding and
+input pacing, not hardware speaker acceptance. Keep
+[audio-wii-dolphin-volume-range-discrepancy](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-volume-range-discrepancy.json) unresolved and
+[audio-wii-speaker-physical-acceptance-unknown](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-speaker-physical-acceptance-unknown.json) unknown.
+The existing control ACK evidence does not qualify decoded or delivered PCM.
 
 ## Bounded host evidence
 
