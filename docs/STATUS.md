@@ -14,7 +14,8 @@ gate and evidence records are in [history/alpha-1](history/alpha-1/README.md).
 - Opt-in emulated audio (UHID/PipeWire and USB/IP) as functional WIP; seven scoped
   broker security/recovery phases passed (#115).
 
-Every [support matrix](CONTROLLER_SUPPORT.md) cell is still WIP. Smoke checks and
+Every implemented path in the [support matrix](CONTROLLER_SUPPORT.md) is still
+WIP. Undeclared/deferred targets are not shipping realizations. Smoke checks and
 an API freeze do not promote a cell.
 
 ## Known limitations
@@ -52,7 +53,7 @@ is tracked under [#365](https://github.com/anderstvoss/virtualgamepad/issues/365
 [comment 6792411358](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358).
 The [Alpha 2 release-notes draft](release/ALPHA_2_RELEASE_NOTES_DRAFT.md)
 and [release checklist](release/ALPHA_2_CHECKLIST.md) are provisional;
-they do not authorize a tag or publication. All cells in the
+they do not authorize a tag or publication. All implemented paths in the
 [support matrix](CONTROLLER_SUPPORT.md) remain WIP.
 
 | Checkpoint | Merged PR and exact `main` merge SHA | Disposition |
@@ -86,8 +87,11 @@ Follow-on core changes on `main`:
 - [#350](https://github.com/anderstvoss/virtualgamepad/pull/350) ·
   `abcdaf8c4f35167cbd65610d86c3c637b3136b5a`: USB/IP worker
   retained-output *snapshots*, not a continuous host-output stream;
-  a **real USB/IP validation on kalux is an Alpha 2 gate**, still unrun as
-  of the draft baseline ([#365 decision](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358)).
+  the **real USB/IP validation on kalux passed** on candidate
+  `324d250bb01a5ddbfc1dd189513d4c9160429ee1` ([recorded #365 result](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6969740517)).
+  All three #350 verdicts passed (live snapshots, FINAL after close, stale-worker
+  reinstall refusal); the candidate pair was restored and root API smoke passed.
+  A separate lower-level raw broker smoke failure remains recorded for investigation.
 - **VG-1** [#352](https://github.com/anderstvoss/virtualgamepad/pull/352) ·
   `c5d8340d3b4c00a756f2d6611ae380be4af82071`: whole-state
   `set_inputs` for the original four families. [#348](https://github.com/anderstvoss/virtualgamepad/pull/348)
