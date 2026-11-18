@@ -169,7 +169,7 @@ fresh physical path each time. Uinput has neither a USB controller-info channel
 nor a unique-ID setter. The identity behavior is source-backed by
 `swpro-l0-consumer-sdl-open-order`, `swpro-l0-device-info02-fields`,
 `swpro-l0-consumer-sdl-mac-serial-guid` and `swpro-l0-consumer-linux-mac-uniq`.
-The [SDL USB status address-order claim](https://github.com/anderstvoss/controller-protocol-research/blob/ab74f66274589a7229633f0fe8654490c3d19a12/records/claim/swpro-l0-consumer-sdl-usb-status-address-order.json)
+The [SDL USB status address-order claim](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/swpro-l0-consumer-sdl-usb-status-address-order.json)
 records the exact reversal. Live identity acceptance remains WIP.
 
 ## Post-106 extension seams
