@@ -27,3 +27,4 @@ Each record states its own status and scope.
 - [ADR-0023: Controller-owned bounded in-band subsystems](ADR-0023-controller-subsystems.md)
 - [ADR-0024: Controller-owned typed, bounded, loss-aware host-output stream](ADR-0024-host-output-stream.md)
 - [ADR-0025: Native input levels and transactional edits](ADR-0025-input-model.md)
+- [ADR-0026: Broker service and client protocol](ADR-0026-broker-service-and-client-protocol.md)
