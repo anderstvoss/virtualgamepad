@@ -4,8 +4,8 @@
 //! an SDL probe-complete timestamp counts as a consumer report.
 use std::collections::BTreeMap;
 use virtualgamepad::{
-    DualSenseInputs, DualShock4State, SteamController2026State, SwitchProState, WiiRemoteState,
-    Xbox360State, XboxSeriesState,
+    DualSenseInputs, DualShock4Inputs, SteamController2026Inputs, SwitchProInputs, WiiRemoteInputs,
+    Xbox360Inputs, XboxSeriesInputs,
 };
 
 /// Exact creation-to-kernel-node binding established by the observer. None of
@@ -31,17 +31,17 @@ impl DeviceIdentity {
     }
 }
 
-/// Decoded input state, never an API submission. Each neutral state is taken
-/// from the same family-native default used by the corresponding encoder.
+/// Decoded input-only levels, never an API submission. Each neutral reference
+/// uses the family-native input default used by the corresponding encoder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeInput {
     DualSense(DualSenseInputs),
-    DualShock4(DualShock4State),
-    SwitchPro(SwitchProState),
-    Xbox360(Xbox360State),
-    WiiRemote(WiiRemoteState),
-    SteamController2026(SteamController2026State),
-    XboxSeries(XboxSeriesState),
+    DualShock4(DualShock4Inputs),
+    SwitchPro(SwitchProInputs),
+    Xbox360(Xbox360Inputs),
+    WiiRemote(WiiRemoteInputs),
+    SteamController2026(SteamController2026Inputs),
+    XboxSeries(XboxSeriesInputs),
 }
 
 /// A complete *consumer-observed* evdev state snapshot, not one `EV_SYN` delta.
@@ -95,38 +95,38 @@ impl NeutralReference {
         let (family, source, input) = match family {
             "virtualgamepad.dualsense" => (
                 "virtualgamepad.dualsense",
-                "DualSenseDefinition::neutral_state / DualSenseSessionState::default().inputs / DualSenseInputs::default",
+                "DualSenseDefinition::neutral_state / DualSenseInputs::default",
                 NativeInput::DualSense(DualSenseInputs::default()),
             ),
             "virtualgamepad.dualshock4" => (
                 "virtualgamepad.dualshock4",
-                "DualShock4Definition::neutral_state / DualShock4State::default",
-                NativeInput::DualShock4(DualShock4State::default()),
+                "DualShock4Definition::neutral_state / DualShock4Inputs::default",
+                NativeInput::DualShock4(DualShock4Inputs::default()),
             ),
             "virtualgamepad.switch-pro" => (
                 "virtualgamepad.switch-pro",
-                "SwitchProDefinition::neutral_state / SwitchProState::default",
-                NativeInput::SwitchPro(SwitchProState::default()),
+                "SwitchProDefinition::neutral_state / SwitchProInputs::default",
+                NativeInput::SwitchPro(SwitchProInputs::default()),
             ),
             "virtualgamepad.xbox360" => (
                 "virtualgamepad.xbox360",
-                "Xbox360Definition::neutral_state / Xbox360State::default",
-                NativeInput::Xbox360(Xbox360State::default()),
+                "Xbox360Definition::neutral_state / Xbox360Inputs::default",
+                NativeInput::Xbox360(Xbox360Inputs::default()),
             ),
             "virtualgamepad.wii-remote" => (
                 "virtualgamepad.wii-remote",
-                "WiiRemoteDefinition::neutral_state / WiiRemoteState::default (Original revision)",
-                NativeInput::WiiRemote(WiiRemoteState::default()),
+                "WiiRemoteDefinition::neutral_state / WiiRemoteInputs::default (Original revision, no extension)",
+                NativeInput::WiiRemote(WiiRemoteInputs::default()),
             ),
             "virtualgamepad.steam-controller-2026" => (
                 "virtualgamepad.steam-controller-2026",
-                "SteamController2026Definition::neutral_state / SteamController2026State::default",
-                NativeInput::SteamController2026(SteamController2026State::default()),
+                "SteamController2026Definition::neutral_state / SteamController2026Inputs::default",
+                NativeInput::SteamController2026(SteamController2026Inputs::default()),
             ),
             "virtualgamepad.xbox-series" => (
                 "virtualgamepad.xbox-series",
-                "XboxSeriesDefinition::neutral_state / XboxSeriesState::default",
-                NativeInput::XboxSeries(XboxSeriesState::default()),
+                "XboxSeriesDefinition::neutral_state / XboxSeriesInputs::default",
+                NativeInput::XboxSeries(XboxSeriesInputs::default()),
             ),
             _ => return None,
         };
@@ -579,6 +579,42 @@ mod tests {
         assert!(NeutralReference::native("unknown").is_none());
     }
     #[test]
+    fn native_references_use_input_only_defaults() {
+        for (family, expected) in [
+            (
+                "virtualgamepad.dualsense",
+                NativeInput::DualSense(DualSenseInputs::default()),
+            ),
+            (
+                "virtualgamepad.dualshock4",
+                NativeInput::DualShock4(DualShock4Inputs::default()),
+            ),
+            (
+                "virtualgamepad.switch-pro",
+                NativeInput::SwitchPro(SwitchProInputs::default()),
+            ),
+            (
+                "virtualgamepad.xbox360",
+                NativeInput::Xbox360(Xbox360Inputs::default()),
+            ),
+            (
+                "virtualgamepad.wii-remote",
+                NativeInput::WiiRemote(WiiRemoteInputs::default()),
+            ),
+            (
+                "virtualgamepad.steam-controller-2026",
+                NativeInput::SteamController2026(SteamController2026Inputs::default()),
+            ),
+            (
+                "virtualgamepad.xbox-series",
+                NativeInput::XboxSeries(XboxSeriesInputs::default()),
+            ),
+        ] {
+            let reference = NeutralReference::native(family).unwrap();
+            assert_eq!(reference.expected, InputReport::Native(expected), "{family}");
+        }
+    }
+    #[test]
     fn all_checked_in_wire_neutral_fixtures_match_and_mutations_fail() {
         for (family, report_id) in [
             ("virtualgamepad.dualsense", 1),
@@ -622,7 +658,14 @@ mod tests {
                 Outcome::NonNeutralFirst
             );
         }
-        assert!(NeutralReference::fixture("virtualgamepad.xbox360", 1).is_none());
+        for family in [
+            "virtualgamepad.dualshock4",
+            "virtualgamepad.switch-pro",
+            "virtualgamepad.xbox360",
+            "virtualgamepad.xbox-series",
+        ] {
+            assert!(NeutralReference::fixture(family, 1).is_none());
+        }
     }
     #[test]
     fn interleaved_other_creation_is_ignored_even_if_report_is_neutral() {
@@ -655,7 +698,7 @@ mod tests {
         let mut owned = owned();
         owned.family_id = "virtualgamepad.xbox-series".into();
         let reference = NeutralReference::native("virtualgamepad.xbox-series").unwrap();
-        let mut pressed = XboxSeriesState::default();
+        let mut pressed = XboxSeriesInputs::default();
         pressed.set_button(virtualgamepad::XboxSeriesButton::A, true);
         let mut events = prefix(&owned);
         events.push(event(

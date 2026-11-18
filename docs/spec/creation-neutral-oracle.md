@@ -67,23 +67,36 @@ sysfs identity at open. There is no device capture adapter in this PR.
 ## Neutral sources and interpretation
 
 `xtask/src/neutral_oracle.rs` contains a seven-family matcher table. Its native
-reference states use the controller-native `Default` that the existing
-`*Definition::neutral_state()` encoder path uses. These typed values represent
-**decoded, normalized consumer input**, not an application snapshot or outgoing
-API commit. Full-state equality is suitable for deterministic canonical
-fixtures; a host decoder must normalize or exclude changing non-input metadata
-before constructing this representation. In particular, do not conclude that
-a legitimate neutral packet with an advancing timestamp is non-neutral.
+references use input-only `<Family>Inputs::default()` values, matching the input
+portion of the existing `*Definition::neutral_state()` encoder path. These
+typed values represent **decoded, normalized consumer input**, not an application
+snapshot or outgoing API commit. The separate `<Family>Status` read views are
+not part of native equality. Full-input equality is suitable for deterministic
+canonical fixtures; a host decoder must normalize or exclude changing
+non-input metadata before constructing this representation. Steam's
+caller-owned motion timestamp remains an input field; a semantic decoder must
+handle advancing report timestamps appropriately rather than infer activity
+from them alone.
 
 | Family | Reference in checked-in source | Additional checked-in neutral wire fixture |
 | --- | --- | --- |
 | DualSense | `DualSenseDefinition::neutral_state` (session default), `DualSenseInputs::default` | `tests/fixtures/protocol-research/ds-neutral.hex` (0x01) |
-| DualShock 4 | `DualShock4Definition::neutral_state`, `DualShock4State::default`, `ds4_evdev_frame` / `ds4_frame` | No dedicated neutral hex; `ds4-active-layout.hex` is **not** neutral |
-| Switch Pro | `SwitchProDefinition::neutral_state`, `SwitchProState::default`, `switch_pro.rs` encoding | No neutral hex |
-| Xbox 360 | `Xbox360Definition::neutral_state`, `Xbox360State::default`, `xbox_hid_frame` / evdev encoder | No neutral hex |
-| Wii Remote | `WiiRemoteDefinition::neutral_state`, `WiiRemoteState::default` (Original revision) | `wii-c5-neutral-{30..37,3d..3f}.hex` (exact canonical fixture comparison; matching a report ID to the active Wii mode still requires the host adapter) |
-| Steam Controller 2026 | `SteamController2026Definition::neutral_state`, `SteamController2026State::default` | `steam-c6-neutral-42.hex`, `-45.hex`, `-47.hex` |
-| Xbox Series | `XboxSeriesDefinition::neutral_state`, `XboxSeriesState::default`, `xbox_series/definition.rs` | `xbox-series-xpad-evdev-golden.json` supplies capability layout **but no neutral frames**, so it cannot by itself prove neutral |
+| DualShock 4 | `DualShock4Definition::neutral_state`, `DualShock4Inputs::default`, `ds4_evdev_frame` / `ds4_frame` | No dedicated neutral hex; `ds4-active-layout.hex` is **not** neutral |
+| Switch Pro | `SwitchProDefinition::neutral_state`, `SwitchProInputs::default`, `switch_pro.rs` encoding | No neutral hex |
+| Xbox 360 | `Xbox360Definition::neutral_state`, `Xbox360Inputs::default`, `xbox_hid_frame` / evdev encoder | No neutral hex |
+| Wii Remote | `WiiRemoteDefinition::neutral_state`, `WiiRemoteInputs::default` (Original revision, no extension) | `wii-c5-neutral-{30..37,3d..3f}.hex` (exact canonical fixture comparison; matching a report ID to the active Wii mode still requires the host adapter) |
+| Steam Controller 2026 | `SteamController2026Definition::neutral_state`, `SteamController2026Inputs::default` | `steam-c6-neutral-42.hex`, `-45.hex`, `-47.hex` |
+| Xbox Series | `XboxSeriesDefinition::neutral_state`, `XboxSeriesInputs::default`, `xbox_series/definition.rs` | `xbox-series-xpad-evdev-golden.json` supplies capability layout **but no neutral frames**, so it cannot by itself prove neutral |
+
+The Wii native reference covers the Original revision with **no extension
+attached**. Revision is live metadata, not an input field. After an extension
+is attached, `WiiRemoteInputs::default()` cannot replace the live inputs; the
+adapter must use `current_topology()` to select an appropriate attached
+reference (not implemented here).
+
+**Known wire-fixture gaps:** DualShock 4, Switch Pro, Xbox 360 and Xbox Series
+have no checked-in dedicated neutral wire fixture. Their native input defaults
+are still available; a missing wire reference must remain unavailable.
 
 The raw-HID fixture matcher is **exact canonical fixture equivalence**. It is
 not a replacement for a semantic HID decoder: changing sequence, sensor time,
