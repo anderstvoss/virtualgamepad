@@ -255,10 +255,7 @@ mod tests {
                 bytes: bytes.clone(),
             };
             let decoded = XboxSeriesBluetoothRumble::decode(Some(3), &bytes).unwrap();
-            assert_eq!(
-                event.rumble(),
-                Some(XboxSeriesRumble::Bluetooth(decoded))
-            );
+            assert_eq!(event.rumble(), Some(XboxSeriesRumble::Bluetooth(decoded)));
             assert_eq!(
                 [
                     decoded.left_trigger,
@@ -269,7 +266,12 @@ mod tests {
                 motors
             );
             assert_eq!(
-                (decoded.motor_mask, decoded.duration, decoded.delay, decoded.repeat),
+                (
+                    decoded.motor_mask,
+                    decoded.duration,
+                    decoded.delay,
+                    decoded.repeat
+                ),
                 (mask, 255, 3, 2)
             );
             assert_eq!(
@@ -454,10 +456,22 @@ mod tests {
             repetitions: 1,
         };
         for event in [uploaded, erased, triggered] {
-            assert!(XboxSeriesOutputEvent::ForceFeedback(event).rumble().is_none());
-            assert!(DualShock4OutputEvent::ForceFeedback(event).rumble().is_none());
+            assert!(
+                XboxSeriesOutputEvent::ForceFeedback(event)
+                    .rumble()
+                    .is_none()
+            );
+            assert!(
+                DualShock4OutputEvent::ForceFeedback(event)
+                    .rumble()
+                    .is_none()
+            );
             assert!(Xbox360OutputEvent::ForceFeedback(event).rumble().is_none());
-            assert!(WiiRemoteOutputEvent::ForceFeedback(event).rumble().is_none());
+            assert!(
+                WiiRemoteOutputEvent::ForceFeedback(event)
+                    .rumble()
+                    .is_none()
+            );
         }
     }
 }
