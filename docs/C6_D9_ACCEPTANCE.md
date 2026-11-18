@@ -293,6 +293,18 @@ C8 classifies these scoped kernel/ABS observations as `virtual-live`.
 The manual Steam results below are separate owner observations. Source evidence
 and historical run provenance remain intact.
 
+The #304 observations are now linked to the formal research records at the
+adopted corpus revision `a67781e2412eceea9440d20dbb350ad5d3352c25`:
+
+- [`steam-d9-virtual-kernel-evdev-decoding`](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/steam-d9-virtual-kernel-evdev-decoding.json): scoped per-control decoding.
+- [`steam-d9-virtual-kernel-abs-ioctl`](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/steam-d9-virtual-kernel-abs-ioctl.json): registration attributes and reduced-uinput limitations.
+- [`steam-d9-virtual-kernel-mode-gate`](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/steam-d9-virtual-kernel-mode-gate.json): initial mode gate and isolated-consumer prerequisites.
+- [`steam-d9-virtual-kernel-evdev`](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/experiment/steam-d9-virtual-kernel-evdev.json): the historical virtual host experiment, including repeated close and owned-node cleanup.
+
+This adoption does not rerun the experiment or extend its scope to physical
+calibration, output delivery, Steam client acceptance, or the N1/N4 timing run.
+The existing support categories and historical run revisions are unchanged.
+
 ### Manual Steam baseline (owner screenshots, 2026-11-04)
 
 Stable Client, Steam version `1792618285`, API `SteamClient023`.
