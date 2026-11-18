@@ -860,3 +860,13 @@ VG-1b final merge ledger: a #353 `2890223`; b #363 `5bea7a0`; c1 #364
 `8cd1000`, #375 `26168b3`, #387 `685479b`, #389 `edeea68`, #390 `a0398b7`.
 Step e records this consumer/documentation completion; its merge SHA belongs in
 the closing #322 status after owner merge, not as a predicted SHA here.
+
+### Wii speaker S1 decode-only (Alpha 2)
+
+The Wii supporting API adds `WiiSpeakerDecoder::decode` and the six typed
+`WiiSpeaker*` control, configuration, format, data, disposition and output
+records. No ordinary-root API removal or addition, no changed retained outputs,
+and no journal, playback or transport API. Decode is a pure value transition;
+callers must advance it at the later journal acceptance boundary. Do not treat
+optional raw observations as an authoritative stream. Wii supporting snapshot:
+23 → 30 items; root and Steam unchanged.

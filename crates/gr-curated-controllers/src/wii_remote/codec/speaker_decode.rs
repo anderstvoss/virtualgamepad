@@ -147,7 +147,7 @@ impl WiiSpeakerDecoder {
             WiiSpeakerDataDisposition::Empty
         } else if configuration.divisor == 0 {
             WiiSpeakerDataDisposition::Unconfigured
-        } else if let WiiSpeakerFormat::Unknown(_) = configuration.format {
+        } else if matches!(configuration.format, WiiSpeakerFormat::Unknown(_)) {
             WiiSpeakerDataDisposition::UnknownFormat
         } else {
             for &byte in &raw[1..=usize::from(length)] {
@@ -186,7 +186,6 @@ impl WiiSpeakerDecoder {
     /// ignored 0x18 reports return records with original bytes and disposition.
     /// The caller owns transaction acceptance and must not reconstruct an
     /// authoritative history from lossy observation callbacks.
-    #[must_use]
     pub fn decode(self, id: u8, raw: &[u8]) -> Option<(Self, WiiSpeakerOutput)> {
         let mut next = self;
         let output = match id {
@@ -275,7 +274,11 @@ mod tests {
         next
     }
 
-    fn packet(s: WiiSpeakerDecoder, length: u8, data: &[u8]) -> (WiiSpeakerDecoder, WiiSpeakerData) {
+    fn packet(
+        s: WiiSpeakerDecoder,
+        length: u8,
+        data: &[u8],
+    ) -> (WiiSpeakerDecoder, WiiSpeakerData) {
         let mut raw = [0; 21];
         raw[0] = (length << 3) | 7;
         raw[1..1 + data.len()].copy_from_slice(data);
@@ -344,6 +347,9 @@ mod tests {
         let s = control(configure(WiiSpeakerDecoder::default(), 0, 2000), 0x14, 6);
         let (s, first) = packet(s, 1, &[0x07]);
         assert_eq!(first.samples, [15, 253]);
+        let s = control(control(s, 0x19, 6), 0x19, 2);
+        let s = control(control(s, 0x14, 2), 0x14, 6);
+        let s = write(s, 5, &[0]); // Zero volume still advances the decoder.
         let preserved = configure(s, 0x40, 6000);
         let (preserved, pcm) = packet(preserved, 1, &[0x80]);
         assert_eq!(pcm.samples, [-32768]);
