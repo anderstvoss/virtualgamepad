@@ -823,7 +823,7 @@ fn detached_attachment_projection_matches_live_state_and_rejects_atomically() {
         (WiiExtension::Classic(WiiClassicInputs::default()), false),
         (WiiExtension::None, false),
     ] {
-        projected.set_attachment(extension.clone(), mp).unwrap();
+        projected.project_attachment(extension.clone(), mp).unwrap();
         c.attach(extension, mp).unwrap();
         assert_eq!(&projected, c.runtime_state());
         if mp {
@@ -836,7 +836,7 @@ fn detached_attachment_projection_matches_live_state_and_rejects_atomically() {
     let before = projected.clone();
     assert!(
         projected
-            .set_attachment(WiiExtension::ClassicPro(WiiClassicInputs::default()), true)
+            .project_attachment(WiiExtension::ClassicPro(WiiClassicInputs::default()), true)
             .is_err()
     );
     assert_eq!(projected, before);

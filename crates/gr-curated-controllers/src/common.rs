@@ -228,7 +228,7 @@ pub(crate) fn create<D>(
 where
     D: HidDriver,
 {
-    create_with_identity(driver, realization, options, None)
+    create_restored(driver, realization, options, None)
 }
 
 pub(crate) fn require_linux_platform(target: RealizationTarget) -> Result<(), ProviderError> {
@@ -352,7 +352,7 @@ fn steam_lab_root(
     }
 }
 
-pub(crate) fn create_with_identity<D: HidDriver>(
+pub(crate) fn create_restored<D: HidDriver>(
     driver: D,
     realization: NativeControllerRealization,
     options: CreationOptions,

@@ -4,6 +4,12 @@ Use `create_xbox_series(CreationOptions::new(RealizationId::LINUX_UINPUT),
 XboxSeriesOptions::default())` at the ordinary root. The curated package uses
 the same two-argument shape with its supporting `CreationOptions`.
 
+`inputs()` borrows `XboxSeriesInputs`; `set_inputs` and `edit_inputs` accept
+that same native value type on both realizations. Copyable `XboxSeriesStatus`
+contains only `target()`: the family models no battery or input clock telemetry.
+Read retained rumble separately through `host_outputs()`; neutralization preserves
+selected-target metadata and host outputs. See [ADR-0025](adr/ADR-0025-input-model.md).
+
 | Realization | Scope |
 | --- | --- |
 | `linux.uinput` | One gamepad with the Linux xpad evdev layout. It exposes A/B/X/Y, bumpers, View/Menu/Guide/Share, stick clicks, the D-pad hat, four signed stick axes and two 10-bit triggers. Conventional force feedback carries strong and weak main-motor playback. |

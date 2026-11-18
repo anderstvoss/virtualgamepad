@@ -2,7 +2,7 @@
 
 Status: accepted API and deterministic contract; live consumer association pending.
 
-The original constructor names below are historical. C7 carries forward this
+C7 carries forward the original explicit-construction
 identity contract through `DualSenseOptions::with_identity` and
 `DualShock4Options::with_identity`. See the [alpha migration notes](../ALPHA_API_MIGRATION.md).
 
@@ -22,8 +22,8 @@ feature's wire order, and the existing local/unicast flag constraint is retained
 The application owns storage and logical slot policy. There is no registry, file
 format dependency, database, new runtime dependency or implicit persistence.
 
-Add `create_dualsense_with_identity` and `create_dualshock4_with_identity`. These
-explicit constructors support USB/UHID only. Pairing feature bytes and the
+Use the two-argument Sony constructors with the family option builders above.
+Explicit identity restoration supports USB/UHID only. Pairing feature bytes and the
 controller-defined UHID `uniq` value remain stable for a supplied identity.
 Physical-path instance labels always receive a fresh process/creation suffix.
 Every creation builds a new personality, neutral semantic state, clock origin,
@@ -32,7 +32,7 @@ removal; no kernel object is cached to conceal disconnect/reconnect.
 
 Existing constructors retain their fresh-per-creation behavior and transport
 labels. Callers choosing persistence should generate/store an identity and use
-its explicit constructor from the first creation. The current default is preserved
+the explicit family identity option from the first creation. The current default is preserved
 for compatibility, not declared a permanent persistence policy.
 
 Use distinct identities for concurrently connected logical controllers. Deliberate

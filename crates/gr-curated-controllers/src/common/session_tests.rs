@@ -234,9 +234,9 @@ fn rig<D: HidDriver>(
     driver: &D,
     numbered: [bool; 3],
 ) -> (Runtime<D::Hid, HidTransport>, Arc<Mutex<Record>>) {
-    rig_with_identity(driver, numbered, [2, 1, 2, 3, 4, 5])
+    rig_with_address(driver, numbered, [2, 1, 2, 3, 4, 5])
 }
-fn rig_with_identity<D: HidDriver>(
+fn rig_with_address<D: HidDriver>(
     driver: &D,
     numbered: [bool; 3],
     identity: [u8; 6],
@@ -432,7 +432,7 @@ fn switch_restored_identity_is_shared_by_both_host_probe_replies() {
     );
     for identity in [identity, distinct, identity] {
         let (mut runtime, io) =
-            rig_with_identity(&SwitchProDefinition, [true, true, false], identity.bytes());
+            rig_with_address(&SwitchProDefinition, [true, true, false], identity.bytes());
         let mut subcommand = vec![0; 63];
         subcommand[9] = 2;
         io.lock().unwrap().events.extend([
@@ -1152,7 +1152,7 @@ where
     D::State: PartialEq + std::fmt::Debug,
 {
     let identity = [2, 1, 2, 3, 4, 5];
-    let (mut first, one) = rig_with_identity(driver, [true; 3], identity);
+    let (mut first, one) = rig_with_address(driver, [true; 3], identity);
     first.service(0).unwrap();
     let initial_input = one.lock().unwrap().sent.first().unwrap().clone();
     let neutral = first.state().clone();
@@ -1202,7 +1202,7 @@ where
     assert_eq!(one.lock().unwrap().destroys, 1);
     assert!(first.service(3).is_err());
 
-    let (mut second, two) = rig_with_identity(driver, [true; 3], identity);
+    let (mut second, two) = rig_with_address(driver, [true; 3], identity);
     assert_eq!(second.state(), &neutral);
     second.service(0).unwrap();
     let recreated_input = two.lock().unwrap().sent.first().cloned();
@@ -1488,7 +1488,7 @@ pub(crate) fn snapshot_session<D: HidDriver>(
         RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
     ) {
         let identity = super::test_address(2);
-        let (runtime, io) = rig_with_identity(&driver, numbered, identity);
+        let (runtime, io) = rig_with_address(&driver, numbered, identity);
         io.lock()
             .unwrap()
             .events

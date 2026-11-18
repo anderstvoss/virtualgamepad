@@ -200,7 +200,7 @@ fn service(owner: &mut Owned) {
     owner.session.drain(&mut |_| {}).unwrap();
 }
 fn image(owner: &Owned) -> &Image {
-    &owner.session.protocol().unwrap().resources.image
+    &owner.session.optional_protocol().unwrap().resources.image
 }
 
 #[test]
@@ -239,7 +239,7 @@ fn working_images_are_independent_and_reference_is_immutable() {
     assert_eq!(image(&first).0[32], 0x99);
     assert_eq!(image(&second), &Image::reference());
     assert_eq!(&image(&first).0[..32], &Image::reference().0[..32]);
-    let mut clone = first.session.protocol().unwrap().clone();
+    let mut clone = first.session.optional_protocol().unwrap().clone();
     clone.resources.image.0[33] = 0x11;
     assert_ne!(clone.resources.image, image(&first).clone());
 }
@@ -329,7 +329,7 @@ fn calibration_and_identity_survive_restore_while_volatile_state_resets() {
         .unwrap()
         .clone();
     let restored = create(Some(&snapshot.0), Arc::default()).unwrap();
-    let protocol = restored.session.protocol().unwrap();
+    let protocol = restored.session.optional_protocol().unwrap();
     assert_eq!(protocol.resources.generations, 0);
     assert_eq!(protocol.resources.volatile, [0; 8]);
     assert_eq!(protocol.resources.image, snapshot);
@@ -346,7 +346,10 @@ fn host_write_is_accepted_once_before_identical_ack_retry_and_dirty_is_sticky() 
     set(&record, 0x61, &[32, 0x99]);
     service(&mut owner);
     assert_eq!(image(&owner).0[32], 0x99);
-    assert_eq!(owner.session.protocol().unwrap().resources.writes, 1);
+    assert_eq!(
+        owner.session.optional_protocol().unwrap().resources.writes,
+        1
+    );
     assert!(owner.resource_dirty());
     service(&mut owner);
     let attempts: Vec<_> = record
@@ -359,7 +362,10 @@ fn host_write_is_accepted_once_before_identical_ack_retry_and_dirty_is_sticky() 
         .collect();
     assert_eq!(attempts.len(), 2);
     assert_eq!(attempts[0], attempts[1]);
-    assert_eq!(owner.session.protocol().unwrap().resources.writes, 1);
+    assert_eq!(
+        owner.session.optional_protocol().unwrap().resources.writes,
+        1
+    );
     assert!(!owner.session.is_dirty());
     assert!(owner.resource_dirty());
     set(&record, 0x61, &[32, 0x5a]);
@@ -399,7 +405,10 @@ fn rejected_protocol_and_input_candidates_cannot_leak_or_undo_accepted_writes() 
     assert!(owner.session.drain(&mut |_| {}).is_err());
     assert!(!owner.session.is_closed());
     assert_eq!(image(&owner), &before);
-    assert_eq!(owner.session.protocol().unwrap().resources.writes, 1);
+    assert_eq!(
+        owner.session.optional_protocol().unwrap().resources.writes,
+        1
+    );
 }
 #[test]
 fn queued_input_retry_keeps_bytes_across_resource_and_attachment_edits() {
@@ -447,7 +456,10 @@ fn uncertain_ack_and_failed_cleanup_keep_exact_terminal_snapshot_and_diagnostics
     set(&record, 0x61, &[32, 0x99]);
     assert!(owner.session.drain(&mut |_| {}).is_err());
     assert!(owner.session.is_closed());
-    assert_eq!(owner.session.protocol().unwrap().resources.writes, 1);
+    assert_eq!(
+        owner.session.optional_protocol().unwrap().resources.writes,
+        1
+    );
     assert!(
         owner
             .session
@@ -549,7 +561,7 @@ fn explicit_discard_wins_and_failed_caller_export_preserves_kept_snapshot() {
 #[test]
 fn reply_deadline_retains_prior_write_without_duplicate_mutation() {
     let (owner, record) = fresh();
-    let protocol = owner.session.protocol().unwrap().clone();
+    let protocol = owner.session.optional_protocol().unwrap().clone();
     let transport = gr_provider_linux_uhid::HidTransport::from_session(
         Box::new(Fake(record.clone())),
         RealizationSessionId(7),
@@ -597,7 +609,10 @@ fn full_input_queue_rejects_candidate_without_erasing_accepted_resource_write() 
     assert!(owner.session.drain(&mut |_| {}).is_err());
     assert!(!owner.session.is_closed());
     assert_eq!(image(&owner), &before);
-    assert_eq!(owner.session.protocol().unwrap().resources.writes, 1);
+    assert_eq!(
+        owner.session.optional_protocol().unwrap().resources.writes,
+        1
+    );
 }
 
 #[test]

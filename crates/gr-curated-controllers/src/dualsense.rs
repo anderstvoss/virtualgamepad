@@ -1786,7 +1786,7 @@ pub fn create_dualsense(
     {
         spec.unique_id = identity.unique_id();
     }
-    let mut controller = common::create_with_identity(
+    let mut controller = common::create_restored(
         DualSenseDefinition,
         realization,
         options,

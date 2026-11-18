@@ -145,7 +145,7 @@ impl WiiRemoteController {
             });
         }
         let mut candidate = self.runtime_state().clone();
-        candidate.set_attachment(extension.clone(), motion_plus)?;
+        candidate.project_attachment(extension.clone(), motion_plus)?;
         let prepared = if let Some(nodes) = &self.native {
             nodes
                 .prepare(&candidate)

@@ -5,7 +5,8 @@
 > [`12358d71d762fb438cbf01f5b120986279a8540d`](https://github.com/anderstvoss/virtualgamepad/commit/12358d71d762fb438cbf01f5b120986279a8540d).
 > Alpha 2 release tracking: [#365](https://github.com/anderstvoss/virtualgamepad/issues/365), with Anders's
 > [explicit gate decisions](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358).
-> The merged VG-1b list in the paired draft **stops at this SHA**.
+> The paired draft's VG-1b section is reconciled through #390 (`a0398b7`);
+> step e still requires owner merge. Other release evidence retains its baseline.
 > Modelled on [Alpha 1's release review](../history/alpha-1/ALPHA_FINAL_REVIEW.md)
 > and [remediation disposition](../history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
 > The eventual **release commit**, not this docs branch/PR head, owns final evidence.
@@ -15,20 +16,22 @@
 - [ ] Confirm [#322 phase 2](https://github.com/anderstvoss/virtualgamepad/issues/322)
   close condition: VG-1b **a–e** are merged to `main`, and the #304 Steam
   kernel observations are recorded through [research #122 merge](https://github.com/anderstvoss/controller-protocol-research/commit/261e7bec4351a6969563893a2092198a183ab8c9) (merged upstream
-  on 2026-11-11; do not infer vg adoption). VG-1b d/e remain outstanding.
+  on 2026-11-11; do not infer vg adoption). VG-1b a–d are merged; step e awaits owner merge.
 - [ ] Decide whether to bump the `protocol-research` pin before tagging
   (vg pin [`eba02ad`](https://github.com/anderstvoss/controller-protocol-research/commit/eba02ad610e264a2518a699394255cc7f1d670dd), research main
   [`73a6fc6`](https://github.com/anderstvoss/controller-protocol-research/commit/73a6fc6724c3fbf9b6cbbf5aaa21822978c42c4f) 22 commits ahead,
   including research #122 with the #304 record); a bump needs local
   fixture regeneration (`python3 scripts/check-protocol-research.py --write`)
   and verification (`python3 scripts/check-protocol-research.py`).
-- [ ] **TODO(VG-1b e):** after step e merges, review the final
-  `docs/ALPHA_API_MIGRATION.md` ledger, `docs/APPLICATION_API.md`,
-  per-controller documentation, all three API snapshots and changes since
-  the draft baseline. Consolidate exact PR/SHA links, removed APIs,
-  migration examples, and intentional behavioral differences in
-  [these release notes](ALPHA_2_RELEASE_NOTES_DRAFT.md). Do **not** edit
-  the local agent's input sections or migration ledger as part of this draft PR.
+- [ ] After owner merge of step e, verify its merge SHA on `main` and the
+  [final consumer table](../ALPHA_API_MIGRATION.md#alpha1--alpha2-final-consumer-table),
+  [Accepted ADR-0025](../adr/ADR-0025-input-model.md), application/per-controller
+  guides, generated inventory and three unchanged step-d API snapshots. The
+  [paired notes](ALPHA_2_RELEASE_NOTES_DRAFT.md#vg-1b-final-merge-ledger)
+  list every a–d PR and merge SHA. Record e's actual SHA at closeout; do not infer
+  it from this docs branch or mark the gate passed before merge. Removed API names
+  and the final input/status, motion-tick and Wii migration examples are in the
+  canonical ledger.
 - [ ] Verify [C5 #233](https://github.com/anderstvoss/virtualgamepad/pull/233),
   [C6 #301](https://github.com/anderstvoss/virtualgamepad/pull/301),
   [C7 #329](https://github.com/anderstvoss/virtualgamepad/pull/329),
@@ -117,8 +120,8 @@
   dummy_hcd, XInput/GIP and unsupported Xbox Series features.
 - [ ] Refresh this checklist and
   [Alpha 2 draft release notes](ALPHA_2_RELEASE_NOTES_DRAFT.md) against
-  **the final release commit**; remove all `TODO(VG-1b e)` placeholders
-  only after the actual final ledger is available.
+  **the final release commit**; verify the final VG-1b ledger and actual step-e
+  merge before signing off the API migration.
 
 ## Release-owner decisions and publication
 

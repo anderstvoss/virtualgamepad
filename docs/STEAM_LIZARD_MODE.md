@@ -1,6 +1,6 @@
 # Wired Steam desktop mode
 
-`SteamController2026Options::lizard_mode` enables the captured desktop
+`SteamController2026Options::with_lizard_mode(true)` enables the captured desktop
 mouse/keyboard mapping on `linux.uhid.usb`. Its default is `false` by the owner's decision;
 [#311](https://github.com/anderstvoss/virtualgamepad/issues/311) tracks possible
 refinement later. The demo's Advanced
@@ -29,6 +29,11 @@ values are not converted using a guessed threshold. Controls that produced no
 desktop report in the individual capture windows have no invented mapping.
 
 ## Host state
+
+`SteamController2026Status::lizard_mode()` reads configured desktop-report
+support; `lizard_setting()` reads the last accepted host intent. Both are `None`
+on reduced uinput. Native controls stay in `SteamController2026Inputs` through
+`inputs()`, `set_inputs` and `edit_inputs`.
 
 With the creation option off, neither report 0x40 nor 0x41 is emitted. With it on,
 unknown initial mapping/mouse state is treated as enabled: the startup capture

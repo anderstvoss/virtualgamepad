@@ -84,6 +84,11 @@ to spatial South; selecting by label is an explicit application choice.
 through `controller.status()`. Battery updates use the handle setters, and
 `refresh_motion()` explicitly advances and commits a motion sample.
 
+Every family uses `inputs()` and a copyable `status()` read view. Xbox Series
+status exposes only `target()`; no battery or input clock is invented for it.
+See [ADR-0025](adr/ADR-0025-input-model.md) and the
+[final migration table](ALPHA_API_MIGRATION.md#alpha1--alpha2-final-consumer-table).
+
 Rejected edits preserve accepted state. Failed commits preserve retryable dirty
 state where delivery remains retryable. `neutralize()` edits semantic input;
 commit it to send. Neutralization does not erase identity, battery metadata,

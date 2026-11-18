@@ -1,6 +1,11 @@
 # Pre-alpha API refinement migration
 
 This is a deliberate breaking candidate update before the final alpha freeze.
+Start with the [final alpha.1 → alpha.2 consumer table](#alpha1--alpha2-final-consumer-table).
+The PR sections below are chronological history: intermediate combined state
+closures and standalone identity/image/options constructors are superseded by
+the final table. This ledger distinguishes snapshot changes from behavior-only
+changes and does not imply new hardware qualification.
 
 - Inspect topology descriptors and `ControllerSurface` through same-named
   accessors (`topology.sticks()`, `stick.id()`, `surface.restrictions()`). Small
@@ -37,6 +42,142 @@ Post-GUI audit: the empty root `audio-alsa` feature is removed. ALSA host-device
 routing belongs to the demo's `audio-alsa` feature, whose defaults are unchanged.
 Library users enable `audio-pipewire` for local UHID audio or `audio-usbip` for the
 WIP composite; ALSA routing does not add a library realization.
+
+## Historical capability and supporting-API ledger
+
+These entries were checked against the introducing main commits and their
+checked-in snapshots, then against current code for final defaults. Both root
+feature views receive each stated root delta; supporting scopes are separate.
+
+### #225 · Typed capabilities and retained outputs (`3e241e9`)
+
+Root 110 → 122 pages: add `DisplayFormat`, `InputKind`, `LedKind`, `MotorRole`,
+`OutputKind`, `SpeakerFormat`, `TypedInput`, `RumblePlayback`,
+`DualSenseOutputState`, `DualShock4OutputState`, `SwitchProOutputState` and
+`Xbox360OutputState`. `TypedInput` exposes `id()`, `title()` and `kind()`.
+`InputTopology::typed_inputs()` and `ControllerSurface::output_kinds()` describe
+native capabilities. `InputTopologyError` becomes non-exhaustive and adds
+`InvalidTypedInput(InputControlId)`; downstream matches need a wildcard.
+The four original handles add `host_outputs() -> Result<FamilyOutputState,
+ControlError>`. `RumblePlayback` retains `strong: u16`, `weak: u16` and
+`repetitions: u32`. Read retained outputs instead of reconstructing accepted
+state from optional service events. #350 later adds USB/IP recovery with no
+snapshot delta.
+
+### #233 / #250 · Initial Wii supporting API and resources (`714958d` / `0c36691`)
+
+C5 #233 introduces the production family. #250 first records twenty supporting
+pages: `WiiExtension`, `WiiRemoteButton`, `WiiRemoteRevision`, `WiiResourceDisposition`, `create_wii_remote`, `create_wii_remote_with_image`, `ir_kind`, `BLUETOOTH`, `TOPOLOGY`, `UINPUT`, `WiiClassicState`, `WiiEepromImage`, `WiiExtensionCalibration`, `WiiIrPoint`, `WiiMotionPlusState`, `WiiNunchukState`, `WiiRemoteController`, `WiiRemoteDefinition`, `WiiRemoteOutputs`, `WiiRemoteState`.
+The historical constructors accept target/session, with an image/revision path.
+`WiiExtensionCalibration::import` initially takes optional MotionPlus `[u8; 32]`
+and Nunchuk/Classic `[u8; 16]` blocks; `WiiEepromImage::with_extension_calibration`
+attaches checked caller-provided resources. These are not synthesized factory
+calibration. Uinput refuses the addressed-memory resource path. #319 replaces
+the constructor and positional import shapes; #390 replaces the input names.
+
+### #256 · Wii passthrough creation options (`1c810c5`)
+
+Supporting 20 → 22 pages: add `WiiRemoteCreationOptions` and
+`create_wii_remote_with_options`. Its public booleans
+`motionplus_passthrough_id_mirror` and `motionplus_passthrough_calibration_copy`
+both default to true. #319 later replaces public option fields with builders.
+
+### #263 · Wii inactive identity option (`29e4724`)
+
+Add `WiiRemoteCreationOptions::motionplus_inactive_id_external_style: bool`,
+default false. This compatibility behavior applies to the Tr revision, not a
+new controller identity or inferred physical capability. No page-count change.
+
+### #264 · Wii activation status edge (`f40ea45`)
+
+Add `motionplus_activation_reattach_status: bool`, default true, to the historical
+creation options. It controls the activation-from-inactive reattach status edge
+when a child is present. #319 retains it as an explicit family option builder.
+
+### #301 · Initial wired Steam supporting surface (`ad80ae6`)
+
+C6 first records eleven supporting pages: `STEAM_CONTROLLER_2026_ID`, `SteamController2026Button`, `SteamController2026Haptic`, `create_steam_controller_2026`, `create_steam_controller_2026_with_options`, `SteamController2026Controller`, `SteamController2026CreationOptions`, `SteamController2026Outputs`, `SteamController2026State`, `SteamMotionSample`, `SteamTrackpadState`.
+The target/session constructors support wired UHID and reduced uinput; historical
+`SteamController2026CreationOptions` has `serial: Option<String>`, default None
+for a generated per-instance identity. Native input, motion and trackpad domains
+remain family-specific. Subsequent PRs add live options, outputs and scheduling;
+#319 and #387 establish the final constructor and input/status names.
+
+### #305 · Steam client compatibility option (`f3b5412`)
+
+Add `steam_client_compat: bool` to historical creation options, initially false.
+It selects the recorded wired HID compatibility profile; uinput has no feature
+channel. #307 (`baf9d4e`) changes this default to true without a snapshot delta.
+The current `SteamController2026Options::default()` keeps compatibility on.
+
+### #306 · Steam haptic PCM compatibility stream (`bc95936`)
+
+Supporting 11 → 13 pages: add `SteamController2026StreamPacket` and
+`SteamController2026StreamOutputs`. Add opt-in `haptic_streaming: bool` (default
+false), `SteamController2026Haptic::Stream(Box<SteamController2026StreamPacket>)`
+and `SteamController2026Outputs::streaming`. Packets are `Configure { operation,
+target, mode }` (u8 fields), `Mono { target: u8, data: Vec<u8> }` and
+`Stereo { left: Vec<u8>, right: Vec<u8> }`, decoded by `from_output`.
+Retained stream fields are `enabled: bool`, `configured: [bool; 4]`,
+`buffered_bytes: [u16; 4]`, `received_bytes: [u64; 4]`,
+`overrun_bytes: [u64; 4]` and `last_packet: Option<SteamController2026StreamPacket>`.
+These compatibility payload paths remain until the separately scoped typed
+stream migration under ADR-0024; step e does not implement that migration.
+
+### #308 · Steam retained LED intent (`f7fec82`)
+
+Add `led_brightness: Option<u16>`, `led_override: Option<bool>` and
+`led_rgbw: Option<[u8; 4]>` to `SteamController2026Outputs`, without new pages.
+Unknown/unobserved intent is None; brightness/color payloads are native values.
+
+### #310 · Steam desktop support option (`547be27`)
+
+Add `lizard_mode: bool` to historical creation options, default false. The final
+`SteamController2026Options::with_lizard_mode` builder still defaults to false;
+compatibility remains true and haptic streaming false. Configured desktop-report
+support and the host's last accepted lizard setting are separate status reads,
+`lizard_mode()` and `lizard_setting()`. Reduced uinput has no desktop HID channel.
+
+### #314 · Complete Wii resource export (`38cef2b`)
+
+Add `WiiEepromImage::extension_calibration() -> &WiiExtensionCalibration` and
+calibration readers `motion_plus() -> Option<[u8; 32]>`,
+`nunchuk() -> Option<[u8; 16]>`, `classic() -> Option<[u8; 16]>`.
+Export all imported blocks with the EEPROM bytes; no snapshot page-count change.
+
+### #319 · Curated Wii and Steam constructor convergence (`12295d4`)
+
+Both supporting families converge on `create_<family>(CreationOptions,
+<Family>Options) -> Result<FamilyController, ProviderError>` before C7 root
+promotion. Remove `create_wii_remote_with_image`, `create_wii_remote_with_options`,
+`WiiRemoteCreationOptions`, `create_steam_controller_2026_with_options` and
+`SteamController2026CreationOptions`; add `WiiRemoteOptions`, `WiiRemoteIdentity`,
+`SteamController2026Options`, `SteamController2026Identity` and handle `identity()`.
+Wii supporting 22 → 21 pages; Steam stays at 13; root unchanged.
+
+Wii builder/reader pairs cover `revision`, `eeprom_image`, `identity`,
+`motionplus_passthrough_id_mirror`, `motionplus_passthrough_calibration_copy`,
+`motionplus_inactive_id_external_style`, `motionplus_activation_reattach_status`.
+Defaults are Original revision, empty EEPROM, no restored identity, and true,
+true, false, true for the four compatibility flags. Steam pairs cover `identity`,
+`steam_client_compat`, `haptic_streaming`, `lizard_mode`, with None, true, false,
+false defaults. Each builder uses the `with_` prefix; read through the matching
+name. Wii identity uses `from_bytes`, `generate`, `bytes`; Steam uses
+`from_serial`, `generate`, `serial`. Validation is fallible; no fallback identity.
+
+Replace positional `WiiExtensionCalibration::import` with fallible
+`with_motion_plus`, `with_nunchuk`, `with_classic`, keeping the three readers from
+#314. The old standalone constructors and public option fields are historical.
+
+### #320 · Steam scheduling and extensibility (`bf8564e`)
+
+Add handle `next_service_in() -> Option<Duration>`, `wants_write() -> bool`,
+`is_dirty() -> bool`, `dropped_output_events() -> u64`.
+`SteamController2026Haptic`, `SteamController2026Outputs` and
+`SteamController2026StreamOutputs` become non-exhaustive: use wildcard matching
+and do not construct the output structs using external literals. Supporting page
+count remains 13. Observe readiness, deadlines and write interest independently
+of input edits; output loss is not a count of lost required replies.
 
 ## C7 step 20a · Curated controller creation
 
@@ -115,6 +256,15 @@ Wii attachment change.
 The Wii and Steam supporting snapshots are unchanged. No existing ordinary-root
 declaration is removed or renamed in this step.
 
+C7 #329 (`692f41b`) adds exactly these root pages (historical names at
+promotion; the d entries below record their final replacements):
+
+- Wii (17): `WiiExtension`, `WiiRemoteButton`, `WiiRemoteOutputEvent`, `WiiRemoteRevision`, `WiiResourceDisposition`, `create_wii_remote`, `WiiClassicState`, `WiiEepromImage`, `WiiExtensionCalibration`, `WiiIrPoint`, `WiiMotionPlusState`, `WiiNunchukState`, `WiiRemoteController`, `WiiRemoteIdentity`, `WiiRemoteOptions`, `WiiRemoteOutputs`, `WiiRemoteState`.
+- Steam (13): `SteamController2026Button`, `SteamController2026Haptic`, `SteamController2026OutputEvent`, `SteamController2026StreamPacket`, `create_steam_controller_2026`, `SteamController2026Controller`, `SteamController2026Identity`, `SteamController2026Options`, `SteamController2026Outputs`, `SteamController2026State`, `SteamController2026StreamOutputs`, `SteamMotionSample`, `SteamTrackpadState`.
+
+Together with five family option/identity pages and removal of the two standalone
+Sony identity constructors, root grows 122 → 155 pages (+35 / −2).
+
 ## C9 step 15a · Xbox Series native types
 
 The curated crate adds `xbox_series::{XboxSeriesOptions, XboxSeriesState,
@@ -148,7 +298,7 @@ D-pad edits. The compiled registry adds Xbox Series with no USB worker,
 audio subsystem or creation toggles. Existing family signatures and the
 separate Wii and Steam snapshots are unchanged.
 
-## USB/IP retained host outputs (#203)
+## USB/IP retained host outputs (#350, tracking #203)
 
 - The existing DualSense, DualShock 4, and Xbox 360 `host_outputs()` getters now
   return typed snapshots on the USB/IP realization. Read after `service()` for
@@ -161,7 +311,7 @@ separate Wii and Steam snapshots are unchanged.
   requires private retained-output operation v1. Ordinary-root API signatures
   and the reviewed signature snapshots are unchanged.
 
-## VG-1 · Whole-state input replacement
+## VG-1 · Whole-state input replacement (#352, source #348)
 
 Each of these methods is available on the ordinary root handle and its
 curated counterpart. Each takes the named state by value and returns
@@ -232,7 +382,10 @@ additions, removals or signature changes.
   `CommitError`, matching Switch Pro's refresh operation. After backpressure,
   retry with `commit()` to deliver the accepted sample at its current clock.
 
-## VG-1b/b · Transactional native input edits
+## VG-1b/b · Transactional native input edits (#363)
+
+This section records the intermediate combined-state closure shape; step d
+supersedes it with input-only types. Use the final consumer table for new code.
 
 All seven curated and ordinary-root controller handles add
 `edit_inputs(&mut self, edit: impl FnOnce(&mut FamilyState) -> Result<(), ControlError>) -> Result<(), ControlError>`.
@@ -336,7 +489,7 @@ The in-repo live probe uses the typed accessor. Revision and attachment remain
 managed by live topology and `attach`, and EEPROM and host outputs retain their
 separate ownership.
 
-## Xbox Series Bluetooth-bus UHID
+## Xbox Series Bluetooth-bus UHID (#369, `5f83165`)
 
 `create_xbox_series` accepts `LINUX_UHID_BLUETOOTH` with the existing
 options and native input state. The selected surface advertises native
@@ -347,6 +500,16 @@ lifecycle and raw output observations, and `XboxSeriesOutputState` adds
 The motor-role vocabulary adds `LeftTrigger` and `RightTrigger` for
 native trigger channels. Bluetooth retained magnitudes are logical
 0–100 values, while evdev retained magnitudes stay 0–65535.
+
+`XboxSeriesBluetoothRumble` is non-exhaustive and has eight u8 fields:
+`motor_mask`, `left_trigger`, `right_trigger`, `strong`, `weak`, `duration`,
+`delay`, `repeat`. Four motor amplitudes use logical 0–100 units; `duration`
+and `delay` use descriptor-defined 10 ms ticks; `repeat` is a raw count and
+`motor_mask` selects channels. `XboxSeriesOutputState::bluetooth_rumble` is
+`Option<XboxSeriesBluetoothRumble>`. The exact added output variants are
+`HostLifecycle(HostLifecycle)` and `HidOutput { report_id: Option<u8>, bytes:
+Vec<u8> }`; `ForceFeedback` remains. This is local Bluetooth-bus emulation,
+not radio pairing. Motor role variants are `LeftTrigger` and `RightTrigger`.
 
 ## VG-1b/d · DualSense input-only values
 
@@ -486,7 +649,7 @@ neutralization preserve accepted metadata. No input clock is invented for this
 family. Worker, root-audio, demo and test consumers migrate in the same PR with
 no compatibility alias.
 
-## VG-1b/d · Steam Controller 2026 input-only values
+## VG-1b/d · Steam Controller 2026 input-only values (#387, `685479b`)
 
 `SteamController2026Inputs` replaces `SteamController2026State`. Its native input
 fields, including caller-supplied `motion.timestamp_us`, retain their domains and
@@ -526,7 +689,7 @@ codec is added. The c1 reduced-uinput refusals and existing encoded report fixtu
 remain in force. Demo, xtask, live haptics probe and other compiling callers migrate
 with this PR; no compatibility alias remains.
 
-## VG-1b/d · Xbox Series input-only values
+## VG-1b/d · Xbox Series input-only values (#389, `edeea68`)
 
 `XboxSeriesInputs` replaces `XboxSeriesState` on both uinput and Bluetooth UHID.
 Native button, stick and trigger domains and payload encodings are unchanged.
@@ -557,7 +720,7 @@ together, retaining the existing uinput and Bluetooth report fixtures and cleanu
 regressions. No compatibility alias remains.
 
 
-## VG-1b/d · Wii input-only values and metadata
+## VG-1b/d · Wii input-only values (#390, `a0398b7`) and metadata
 
 `WiiRemoteInputs`, `WiiMotionPlusInputs`, `WiiNunchukInputs` and
 `WiiClassicInputs` replace the four corresponding `*State` types on root,
@@ -634,3 +797,66 @@ can differ from accepted status. The explicit projection name and documentation
 direct live callers to the handle rather than asking them to supply a boolean.
 Both root feature views and the Wii supporting snapshot record this method
 rename; the Steam supporting snapshot is unchanged.
+
+
+## Alpha.1 → alpha.2 final consumer table
+
+All seven root and curated handles use the same native input types and
+transactional final-state validation. These are the final names, superseding the
+combined `<Family>State` closures from #363 and historical standalone constructors.
+No compatibility aliases remain. Step e adds no public API delta; all three
+snapshots stay byte-identical to the end of step d (root 172, Wii 23, Steam 14).
+
+| Family | Caller input type | Copyable status read view |
+| --- | --- | --- |
+| DualSense | `DualSenseInputs` | `DualSenseStatus`: battery, input sequence, sensor timestamp |
+| DualShock 4 | `DualShock4Inputs` | `DualShock4Status`: battery, sequence, sensor timestamp, touch sequence |
+| Switch Pro | `SwitchProInputs` | `SwitchProStatus`: accepted timer, live stream mode |
+| Xbox 360 | `Xbox360Inputs` | `Xbox360Status`: battery |
+| Steam Controller 2026 | `SteamController2026Inputs` | `SteamController2026Status`: optional protocol sequence and modes; caller motion timestamp stays input |
+| Xbox Series | `XboxSeriesInputs` | `XboxSeriesStatus`: selected `target()` only |
+| Wii Remote | `WiiRemoteInputs` | `WiiRemoteStatus`: revision, MotionPlus presence, battery, topology generation |
+
+| Consumer task | Final alpha.2 API and semantics |
+| --- | --- |
+| Create a family | `create_<family>(CreationOptions, <Family>Options)`; restore identity with a family option builder. The old constructors with identity/image/options suffixes are historical. |
+| Read accepted levels / metadata | `controller.inputs()` borrows inputs; `controller.status()` returns a small copyable view. Every realized family has both, including target-only Xbox Series status. |
+| Replace levels | `set_inputs(<Family>Inputs)`; clone accepted inputs when preserving attachment-dependent payload shape. |
+| Edit several fields | `edit_inputs(|inputs| -> Result<(), ControlError> { ... })`; intermediate values may be invalid, but the final candidate must pass all native/realization/topology rules. No external side effects in closures. |
+| Edit one native field | Family setters use the same final-state transaction as replacement, edits and neutralization. Rejection preserves accepted inputs, metadata, dirty work and pending bytes. |
+| Release held controls | `neutralize()`, then `commit()`; preserve live metadata and host outputs. Wii attached inputs can also be cloned, neutralized and passed to `set_inputs`. Default Wii inputs have extension None and are rejected when an extension is attached. |
+| Produce an explicit motion sample | Sony `refresh_motion()` advances the accepted clocks even for equal motion, then commits. Switch Pro retains its realization/stream-specific refresh behavior and HID cadence. Retry an accepted sample with `commit()` after backpressure; do not refresh again merely to retry. |
+| Manage Wii battery | `battery()` / `set_battery(WiiRemoteBattery::new(raw))`; read raw byte with `.raw()` or `status().battery()`. Metadata survives input edits, attach, neutralize and close. Old `set_battery_raw` is removed. |
+| Read Wii live / projected topology | Live `current_topology()` uses accepted attachment metadata. Detached editors use `projected_input_topology(bool)` with explicit pending presence. Only live `attach()` changes companions and topology generation. |
+| Deliver or service | Call `commit()` explicitly and service readiness/deadlines independently. Input levels coalesce: press/release before commit may disappear. There is no input event queue or guarantee of atomic host observation. |
+
+```rust,no_run
+use virtualgamepad::{ControlError, DualSenseController, WiiRemoteController};
+fn update(sony: &mut DualSenseController, wii: &mut WiiRemoteController)
+    -> Result<(), ControlError>
+{
+    let candidate = sony.inputs().clone();
+    sony.set_inputs(candidate)?;
+    sony.edit_inputs(|inputs| { *inputs = Default::default(); Ok(()) })?;
+    let mut neutral = wii.inputs().clone();
+    neutral.neutralize();
+    wii.set_inputs(neutral)?;
+    let _accepted_topology = wii.current_topology();
+    Ok(()) // The caller commits and services each handle explicitly.
+}
+```
+
+Behavior-only changes with no snapshot delta: #307 (`baf9d4e`) enables Steam
+client compatibility by default; #350 (`abcdaf8`) recovers retained host outputs
+for the three USB/IP worker families and refuses outdated workers; #364
+(`77ec6e3`) rejects unsupported non-neutral IMU/contact/pressure input on reduced
+Steam uinput. These are acceptance/refusal and retention changes, not additional
+input APIs. USB/IP retained snapshots are not a typed host-output event stream.
+
+The accepted input contract is [ADR-0025](adr/ADR-0025-input-model.md).
+VG-1's main-introducing PR is #352 (`c5d8340`), which lands #348's delta.
+VG-1b final merge ledger: a #353 `2890223`; b #363 `5bea7a0`; c1 #364
+`77ec6e3`; c2 #366 `b41c82d`; d #370 `f27e611`, #371 `031dd11`, #374
+`8cd1000`, #375 `26168b3`, #387 `685479b`, #389 `edeea68`, #390 `a0398b7`.
+Step e records this consumer/documentation completion; its merge SHA belongs in
+the closing #322 status after owner merge, not as a predicted SHA here.

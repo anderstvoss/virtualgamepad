@@ -290,7 +290,7 @@ impl SteamController2026Controller {
     /// no HID feature channel and returns an all-unknown status view.
     #[must_use]
     pub fn status(&self) -> super::SteamController2026Status {
-        self.session.protocol().map_or_else(
+        self.session.optional_protocol().map_or_else(
             super::SteamController2026Status::default,
             super::codec::SteamHidProtocol::status,
         )

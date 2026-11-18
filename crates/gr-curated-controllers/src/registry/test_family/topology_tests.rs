@@ -208,7 +208,7 @@ fn rejected_protocol_edit_is_atomic_before_state_neutralization_or_generation() 
     ); // candidate validation rejects held absent control
     assert_eq!(session.state(), &state);
     assert_eq!(session.is_dirty(), dirty);
-    assert!(session.protocol().unwrap().attached);
+    assert!(session.optional_protocol().unwrap().attached);
     assert_eq!(view.topology_generation(), 1);
 }
 #[test]

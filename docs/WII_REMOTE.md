@@ -134,6 +134,9 @@ and cannot clear levels on an attached extension. Live callers should read
 detached editor's topology with explicit attachment context. Wii
 association and provider diagnostics are explicitly unavailable in the demo
 ordinary-root lab view. Interactive desktop/game acceptance remains untested.
+The final input/status contract and neutralization rules are recorded in
+[ADR-0025](adr/ADR-0025-input-model.md) and the
+[consumer migration table](ALPHA_API_MIGRATION.md#alpha1--alpha2-final-consumer-table).
 
 ## Realization limits
 
