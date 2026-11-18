@@ -1,4 +1,5 @@
 import importlib.util
+import re
 import tempfile
 import subprocess
 import sys
@@ -90,3 +91,18 @@ class InventoryTests(unittest.TestCase):
             (other/'struct.Read.html').write_text('<pre class="rust item-decl">pub struct Read;</pre>'
                                                 '<h3 class="code-header">impl Send for Read</h3>')
             self.assertNotEqual(inventory.public_surface(root), inventory.public_surface(other))
+
+
+    def test_generated_documentation_links_resolve_from_the_saved_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'index.html').write_text('<a href="struct.Read.html">Read</a>')
+            (root/'struct.Read.html').write_text('<pre class="rust item-decl">pub struct Read;</pre>')
+            text = inventory.render(root)
+            targets = re.findall(r'\]\(([^)]+)\)', text)
+            self.assertTrue(targets)
+            output_directory = MODULE.parent.parent/'docs/api'
+            for target in targets:
+                if '://' not in target and not target.startswith('#'):
+                    with self.subTest(target=target):
+                        self.assertTrue((output_directory/target.split('#')[0]).is_file())

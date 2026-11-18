@@ -357,11 +357,11 @@ Follows the 2026-11-07 API reassessment after C5 and C6, and the merged first pa
 
 - **20a. Curated layer for DualSense, DualShock 4, Switch Pro and Xbox 360:**
   - `create_<family>(CreationOptions, <Family>Options)` with `#[non_exhaustive]` builder options, and typed identity in the options
-  - remove the `_with_identity` constructors
+  - remove the standalone identity constructors
   - fill the registry `subsystems`, `persistent_resources`, `refused_operations` and `creation_toggles` lists
 - **20b. Ordinary root:**
   - the same constructor shape for the root families
-  - remove the root `_with_identity` constructors
+  - remove the root standalone identity constructors
   - one identity rule for all families, with Switch Pro restorable from the root
   - one place in `src/controllers.rs` for a family's options and identity types
   - update examples, UI tests, docs, the changelog and migration notes

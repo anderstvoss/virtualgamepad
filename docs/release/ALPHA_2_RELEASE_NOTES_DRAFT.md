@@ -2,10 +2,11 @@
 
 > Prepared against `main` at
 > [`12358d71d762fb438cbf01f5b120986279a8540d`](https://github.com/anderstvoss/virtualgamepad/commit/12358d71d762fb438cbf01f5b120986279a8540d).
-> Merged VG-1b changes are listed **through this exact commit**;
+> The VG-1b section is reconciled through #390 (`a0398b7`); other evidence
+> retains this draft baseline. Step e awaits owner merge;
 > see [Alpha 2 release tracking #365](https://github.com/anderstvoss/virtualgamepad/issues/365) and
 > [Anders's gate decisions](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358).
-> **Not final:** remaining VG-1b d-family splits and e, release-commit
+> **Not final:** step-e owner merge, release-commit
 > qualification and maintainer authorization remain outstanding. The #304
 > kernel observations are recorded upstream in [research #122 merge](https://github.com/anderstvoss/controller-protocol-research/commit/261e7bec4351a6969563893a2092198a183ab8c9). Preserve
 > [Alpha 1's published notes](../ALPHA_RELEASE_NOTES.md); do not replace them.
@@ -74,7 +75,7 @@ supporting-crate SPI. Merged changes to review:
   [#327](https://github.com/anderstvoss/virtualgamepad/pull/327),
   [#328](https://github.com/anderstvoss/virtualgamepad/pull/328)):
   `create_<family>(CreationOptions, <Family>Options)` shape; remove legacy
-  `_with_identity` constructors; root Wii and Steam handles; identity API
+  standalone identity-restoration constructors; root Wii and Steam handles; identity API
   changes. See [the migration ledger](../ALPHA_API_MIGRATION.md).
 - [C9 #342](https://github.com/anderstvoss/virtualgamepad/pull/342):
   Xbox Series as the seventh root/curated family.
@@ -106,14 +107,34 @@ supporting-crate SPI. Merged changes to review:
   (`8cd1000a308eac682eca43d766b0f1a1f71a6f1e`), and
   [Xbox 360 #375](https://github.com/anderstvoss/virtualgamepad/pull/375)
   (`26168b3f291090f9e44bc1e6abd7cd3431dffee9`) also landed input-only
-  type/status splits. Steam, Xbox Series and Wii residue remain outstanding,
-  followed by step e.
+  type/status splits. [Steam #387](https://github.com/anderstvoss/virtualgamepad/pull/387),
+  [Xbox Series #389](https://github.com/anderstvoss/virtualgamepad/pull/389) and
+  [Wii #390](https://github.com/anderstvoss/virtualgamepad/pull/390) complete step d.
+  Step e reconciles consumers and documentation and awaits owner merge.
 
-**TODO(VG-1b e):** reconcile the remaining d-family splits and e,
-including final merged PR links, API snapshot deltas, removed types,
-updated constructors/methods and concrete migration examples. Copy verified
-facts from the final `docs/ALPHA_API_MIGRATION.md` ledger *after* step e;
-do not guess final names or promote unmerged code.
+### VG-1b final merge ledger
+
+| PR | Verified main merge SHA |
+| --- | --- |
+| [#353](https://github.com/anderstvoss/virtualgamepad/pull/353) | `2890223d79d6a5ec53778e8d588737e20e4a3fb6` |
+| [#363](https://github.com/anderstvoss/virtualgamepad/pull/363) | `5bea7a097f66c9526fae45ea32b5a8a936029580` |
+| [#364](https://github.com/anderstvoss/virtualgamepad/pull/364) | `77ec6e39457ddf123ef732ac0e28237307e05f8c` |
+| [#366](https://github.com/anderstvoss/virtualgamepad/pull/366) | `b41c82da593f179ad2933098dedb4dd658e2aaf0` |
+| [#370](https://github.com/anderstvoss/virtualgamepad/pull/370) | `f27e6114f742b5044b4ca735ae17b4d20807f654` |
+| [#371](https://github.com/anderstvoss/virtualgamepad/pull/371) | `031dd11696badb267e1c3c2b3e962316dfba7f1c` |
+| [#374](https://github.com/anderstvoss/virtualgamepad/pull/374) | `8cd1000a308eac682eca43d766b0f1a1f71a6f1e` |
+| [#375](https://github.com/anderstvoss/virtualgamepad/pull/375) | `26168b3f291090f9e44bc1e6abd7cd3431dffee9` |
+| [#387](https://github.com/anderstvoss/virtualgamepad/pull/387) | `685479bf69041d1da77452bc67f43acfbf6fb1ca` |
+| [#389](https://github.com/anderstvoss/virtualgamepad/pull/389) | `edeea686d80ff38cabf7bb3547e250d6b71a57b9` |
+| [#390](https://github.com/anderstvoss/virtualgamepad/pull/390) | `a0398b75010ba134839379f0c0dc87fba77cab1f` |
+
+Step e has no new public API delta: the final snapshots contain root 172, Wii 23
+and Steam 14 pages. Its actual PR/merge SHA is recorded in #322 closeout after
+owner merge. The [final migration table](../ALPHA_API_MIGRATION.md#alpha1--alpha2-final-consumer-table)
+is authoritative for removed combined input types and legacy constructors,
+final native `<Family>Inputs`, and independent metadata/status reads. There are
+no compatibility aliases or new input event queues. These source changes do not
+qualify hardware, host permissions or the remaining release gates.
 
 ## Host setup and permissions
 
@@ -200,9 +221,30 @@ The #369 Xbox driver lab helper, xpadneo rule wrapper, Xbox additions to the inp
 3. Update callers for VG-1 whole-state mutations and VG-1b transactional
    validation/refusal semantics; preserve explicit `commit()`/`service()`
    and do not infer host-visible atomic input edges.
-4. **TODO(VG-1b e):** insert the final input-only type and metadata
-   migration examples, removed names and snapshot references after
-   the implementing agent's step-e ledger is merged.
+4. Use `controller.inputs()` and copyable `controller.status()`; `set_inputs`
+   and `edit_inputs` take final native input types. Read battery/clocks through
+   status, and use Sony `refresh_motion()` for an explicit equal-value sample
+   tick. With Wii, use typed `battery()` / `set_battery(WiiRemoteBattery::new(raw))`
+   and live `current_topology()`; `projected_input_topology(bool)` is for detached
+   editors. To neutralize an attached extension, call `neutralize()` or clone
+   accepted inputs, neutralize the clone, then `set_inputs`. Default Wii inputs
+   describe no extension. For example:
+
+   ```rust,no_run
+   use virtualgamepad::{ControlError, WiiRemoteController};
+   fn clear_attached(wii: &mut WiiRemoteController) -> Result<(), ControlError> {
+       let mut neutral = wii.inputs().clone();
+       neutral.neutralize();
+       wii.set_inputs(neutral)?;
+       let _live = wii.current_topology();
+       Ok(()) // Commit and service explicitly in the caller.
+   }
+   ```
+
+   See [the consumer table and historical removed-name ledger](../ALPHA_API_MIGRATION.md#alpha1--alpha2-final-consumer-table)
+   and snapshots under `docs/api/`. Steam's source timestamp remains input;
+   configured desktop support differs from accepted host intent. Step e awaits
+   owner merge and does not close the other Alpha 2 gates.
 5. Where USB/IP is explicitly enabled, reinstall an outdated worker to
    match the #350 worker-control protocol; use the existing signed-off
    host setup procedures. Review the final

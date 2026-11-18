@@ -483,7 +483,7 @@ impl RuntimeState {
         }
         self.inputs.set_motion_plus_values(gyroscope, slow)
     }
-    fn set_attachment(
+    fn project_attachment(
         &mut self,
         extension: WiiExtension,
         motion_plus: bool,

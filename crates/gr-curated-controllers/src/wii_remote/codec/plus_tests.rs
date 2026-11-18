@@ -22,7 +22,9 @@ fn protocol(revision: WiiRemoteRevision, external: bool) -> WiiProtocol {
         },
     );
     p.state = RuntimeState::new(revision);
-    p.state.set_attachment(WiiExtension::None, true).unwrap();
+    p.state
+        .project_attachment(WiiExtension::None, true)
+        .unwrap();
     p
 }
 fn send(p: &mut WiiProtocol, id: u8, payload: &[u8]) -> Vec<Report> {

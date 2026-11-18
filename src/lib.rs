@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![doc = include_str!("../docs/history/alpha-1/REMOVED_IDENTITY_API.md")]
 #![doc = include_str!("../docs/APPLICATION_API.md")]
 #![doc = include_str!("../tests/ui/alpha_api_boundaries.md")]
 #![doc = concat!("\nController-family boundaries:\n\n```compile_fail,E0308\n", include_str!("../tests/ui/dualsense_rejects_xbox_native_control.rs"), "\n```\n\n```compile_fail,E0599\n", include_str!("../tests/ui/xbox_has_no_touch_surface.rs"), "\n```\n")]
@@ -38,9 +39,6 @@
 //! ```compile_fail
 //! use virtualgamepad::RealizationId;
 //! let ambiguous = RealizationId::Uhid;
-//! ```
-//! ```compile_fail,E0432
-//! use virtualgamepad::{create_dualsense_with_identity, create_dualshock4_with_identity};
 //! ```
 //! ```compile_fail,E0061
 //! use virtualgamepad::{create_dualsense, CreationOptions, RealizationId};

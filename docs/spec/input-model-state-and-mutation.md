@@ -280,11 +280,13 @@ For the planned GameCube adapter and Joy-Con (#296/#297), write their own accept
 
 ---
 
-## Appendix A — Proposed ADR text (accepted direction, not yet an ADR file)
+## Appendix A — Accepted ADR
+
+The final merged decision is [ADR-0025: Native input levels and transactional edits](../adr/ADR-0025-input-model.md). The wording below is the historical assessment draft.
 
 **Title:** Native input levels and transactional edits
 
-**Status:** Accepted direction; ADR file to be added with the VG-1b implementation.
+**Status:** Accepted; see ADR-0025 for the final input/status shape and uniform status-view decision.
 
 **Context:** Seven realized families expose family-native setter APIs; a full-state replacement API is present in three families on main and proposed for four more in VG-1. Stateless forwarding needs whole-snapshot replacement; interactive applications need small edits; protocol counters and attachment state must not be accidentally overwritten. ADR-0004 separates semantic edits from report delivery, ADR-0011 defines neutralization, ADR-0014 provides a fallible cloned protocol edit precedent, ADR-0020 distinguishes host-output levels and edges, and ADR-0023 reserves typed native subsystems.
 
@@ -292,4 +294,4 @@ For the planned GameCube adapter and Joy-Con (#296/#297), write their own accept
 
 **Consequences:** Mirroring and interactive control both remain first-class. Snapshot and mutation paths cannot disagree on validity, clock behavior or realization refusal. Pure level editing coalesces intermediate edges; edge/sample occurrence requires separate explicit design. Alpha migration may rename public state shapes. Tests prove each family/target's transition, clock, loss/retry, topology and output-isolation behavior under deterministic fake providers before live qualification.
 
-**Owner decision:** All nine answers were accepted on 2026-11-10 ([#322 decision](https://github.com/anderstvoss/virtualgamepad/issues/322#issuecomment-6780450118)). This appendix remains proposed **wording** for a future ADR file; no ADR file or Rust implementation ships in this assessment.
+**Owner decision:** All nine answers were accepted on 2026-11-10 ([#322 decision](https://github.com/anderstvoss/virtualgamepad/issues/322#issuecomment-6780450118)). The draft wording above is retained as assessment history; ADR-0025 records the final merged implementation contract.

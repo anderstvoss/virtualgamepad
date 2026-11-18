@@ -133,7 +133,8 @@ source-backed trigger/contact and range corrections.
 The demo currently uses the existing fresh-per-creation constructors. It does not
 exercise the optional Sony identity-restoration API. An embedding test can generate
 and save a `DualSenseIdentity` or `DualShock4Identity`, create with the corresponding
-`create_*_with_identity` function, close completely, then recreate with the same
+two-argument constructor and `DualSenseOptions::with_identity` or
+`DualShock4Options::with_identity`, close completely, then recreate with the same
 identity. Record actual removal, fresh physical-path identity, stable pairing/uniq
 and consumer association separately. Use a different identity for each concurrently
 connected logical controller. No physical DualSense is required for deterministic

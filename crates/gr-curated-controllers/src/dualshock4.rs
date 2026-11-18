@@ -1509,7 +1509,7 @@ pub fn create_dualshock4(
     {
         spec.unique_id = identity.unique_id();
     }
-    let mut c = common::create_with_identity(
+    let mut c = common::create_restored(
         DualShock4Definition,
         realization,
         options,

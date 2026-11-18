@@ -34,6 +34,14 @@ metadata or an explicit negative reply. All creation entrypoints reject this
 transport before host construction; permissions or module preparation cannot
 enable it. Existing protocol prototypes remain historical/test evidence.
 
+## Application input API
+
+Every realized family exposes native `<Family>Inputs`, borrowed `inputs()`,
+copyable `<Family>Status` through `status()`, and transactional `set_inputs`,
+`edit_inputs`, targeted setters and `neutralize()`. This naming does not change
+any support classification below. See [the final migration table](ALPHA_API_MIGRATION.md#alpha1--alpha2-final-consumer-table)
+and [ADR-0025](adr/ADR-0025-input-model.md).
+
 ## Status definitions and promotion
 
 - **N/A:** explicitly not planned for this controller/realization, with a reason.

@@ -233,9 +233,6 @@ impl<D: HidDriver> ControllerSession<D> {
             feedback: self.feedback,
         })
     }
-    pub(crate) fn protocol(&self) -> Option<&D::Hid> {
-        self.optional_protocol()
-    }
 }
 
 pub(crate) type ProtocolSession<D> =

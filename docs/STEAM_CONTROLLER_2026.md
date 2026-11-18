@@ -25,26 +25,23 @@ Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
   imports the public hex fixture and writes a text Rust byte array for compile-time
   inclusion (the repository forbids binary artifacts). Rust tests bind those bytes to the hex fixture and parse every
   declared report ID/length. No descriptor item is edited, reordered or synthesized.
-- **14a supporting API approved:** [owner decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6492166698)
-  permits `SteamController2026State`, `SteamController2026Button`,
-  `SteamTrackpadState` and `SteamMotionSample` in the supporting module.
-  A [follow-up owner decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6492492101)
-  approves its separate supporting snapshot/check, mirroring Wii's. The checker
-  records the four native types, the supporting ID constant, and state
-  declarations, fields, variants, methods and traits;
-  changes fail until explicitly reviewed and refreshed with `--write` using
-  fresh documentation builds. `--doc-root` infers the Steam supporting docs next
-  to the root docs; `--steam-doc-root` can select them explicitly. At that step
-  the supporting module exposed native state only. The
-  [owner decision on the follow-up](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6502745647)
-  keeps exactly these public items: `SteamController2026State`,
-  `SteamController2026Button`, `SteamTrackpadState`, `SteamMotionSample` and
-  `STEAM_CONTROLLER_2026_ID`, with the state methods including
-  `SteamController2026State::input_topology()`. The `FamilySpec` constant stays
-  internal wiring in `gr_controller_wire::registry::STEAM_CONTROLLER_2026`;
-  the supporting module does not re-export it. Root and Wii
-  snapshots remain byte-identical. For a Steam-only `--write` refresh, verify
-  that the root and Wii snapshot diffs are empty before committing.
+- **14a supporting API approved:** the [owner decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6492166698)
+  established the initial native input surface. Its current value types are
+  `SteamController2026Inputs`, `SteamController2026Button`, `SteamTrackpadState`
+  and `SteamMotionSample`. The [follow-up snapshot decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6492492101)
+  and [initial public-item decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6502745647)
+  describe that historical stage, before live controllers, options and outputs
+  were approved. They are not a five-item limit on the final API. The current
+  supporting contract is the complete 14-page reviewed snapshot linked above,
+  including `SteamController2026Status`, the controller, options, identity,
+  retained outputs, haptics and stream packets. Native topology is described by
+  `SteamController2026Inputs::input_topology()`; `FamilySpec` stays internal in
+  `gr_controller_wire::registry::STEAM_CONTROLLER_2026`.
+  The checker records declarations, fields, variants, methods and traits; changes
+  require review and fresh documentation builds. `--doc-root` infers supporting
+  docs beside root docs; `--steam-doc-root` can select them explicitly. A
+  Steam-only API change must leave root and Wii snapshot diffs empty unless its
+  root exports also change.
 - **14c API:** the [owner decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6616502032)
   approved the controller, creation options and retained haptic types. The
   [current decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6646272685)
@@ -345,3 +342,14 @@ stability. Kernel decoding/ABS cells remain qualified separately.
 
 Wired desktop mouse/keyboard compatibility is opt-in through `lizard_mode`; see
 [desktop mapping and limits](STEAM_LIZARD_MODE.md). Reduced uinput is unchanged.
+
+## Native input and status views
+
+Use `inputs()` for accepted `SteamController2026Inputs` and `status()` for
+copyable `SteamController2026Status`. `set_inputs` and `edit_inputs` validate
+native levels against the selected realization before accepting the final
+candidate. The motion timestamp stays caller-supplied. `Status::lizard_mode()`
+is configured desktop-report support; `Status::lizard_setting()` is the last
+accepted host intent. Read these methods on `SteamController2026Status`.
+Reduced uinput has no protocol metadata channel, so status fields are `None`.
+See the [final consumer table](ALPHA_API_MIGRATION.md#alpha1--alpha2-final-consumer-table).

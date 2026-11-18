@@ -92,7 +92,7 @@ Follow-on core changes on `main`:
   `c5d8340d3b4c00a756f2d6611ae380be4af82071`: whole-state
   `set_inputs` for the original four families. [#348](https://github.com/anderstvoss/virtualgamepad/pull/348)
   was initially stacked on the audio branch; #352 brought the change onto `main`.
-- **VG-1b in progress** ([#322](https://github.com/anderstvoss/virtualgamepad/issues/322),
+- **VG-1b a–d merged; e awaiting owner merge** ([#322](https://github.com/anderstvoss/virtualgamepad/issues/322),
   [input-model spec](spec/input-model-state-and-mutation.md)):
   step a [#353](https://github.com/anderstvoss/virtualgamepad/pull/353) ·
   `2890223d79d6a5ec53778e8d588737e20e4a3fb6` (validation/clocks);
@@ -110,11 +110,16 @@ Follow-on core changes on `main`:
   step d/DualShock 4 [#371](https://github.com/anderstvoss/virtualgamepad/pull/371) · `031dd11696badb267e1c3c2b3e962316dfba7f1c`;
   step d/Switch Pro [#374](https://github.com/anderstvoss/virtualgamepad/pull/374) · `8cd1000a308eac682eca43d766b0f1a1f71a6f1e`;
   step d/Xbox 360 [#375](https://github.com/anderstvoss/virtualgamepad/pull/375) · `26168b3f291090f9e44bc1e6abd7cd3431dffee9`.
-  Steam, Xbox Series and Wii residue remain outstanding, followed by step e.
-  **TODO(VG-1b e):** after the local agent's final ledger lands,
-  refresh the Alpha 2 API-delta summary and remove this placeholder.
-  Do not edit the active migration ledger or application/per-controller input
-  sections in this release-prep lane.
+  step d/Steam [#387](https://github.com/anderstvoss/virtualgamepad/pull/387) · `685479bf69041d1da77452bc67f43acfbf6fb1ca`;
+  step d/Xbox Series [#389](https://github.com/anderstvoss/virtualgamepad/pull/389) · `edeea686d80ff38cabf7bb3547e250d6b71a57b9`;
+  step d/Wii [#390](https://github.com/anderstvoss/virtualgamepad/pull/390) · `a0398b75010ba134839379f0c0dc87fba77cab1f`.
+  Step e completes the [migration ledger](ALPHA_API_MIGRATION.md#alpha1--alpha2-final-consumer-table),
+  final `<Family>Inputs` / `inputs()` / copyable `status()` guidance, the generated
+  inventory and [Accepted ADR-0025](adr/ADR-0025-input-model.md). It remains an
+  owner-merge gate; no step-e merge SHA or Alpha 2 completion is claimed here.
+  Removed combined input types and standalone constructors have no aliases;
+  `set_inputs` and `edit_inputs` share the final-state validator. See the ledger
+  for attached Wii neutralization and live/projected topology examples.
 
 [Phase 2 #322](https://github.com/anderstvoss/virtualgamepad/issues/322)
 closes only after **VG-1b steps a–e** and the Steam #304 kernel observations

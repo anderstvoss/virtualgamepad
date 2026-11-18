@@ -941,13 +941,13 @@ impl SwitchProController {
     #[must_use]
     pub fn stream_enabled(&self) -> bool {
         self.0
-            .protocol()
+            .optional_protocol()
             .map_or(self.0.state().1.stream_enabled, |p| p.stream_enabled)
     }
     #[must_use]
     pub fn motion_report_counter(&self) -> u8 {
         self.0
-            .protocol()
+            .optional_protocol()
             .map_or(self.0.state().1.timer, |p| p.timer)
     }
 
@@ -1323,7 +1323,7 @@ fn create_switch_pro_configured(
     let realization = build_realization(identity);
     let is_dummy_hcd = o.target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID;
     let mut controller = if o.target == RealizationTarget::LINUX_UHID_USB {
-        common::create_with_identity(SwitchProDefinition, realization, o, Some(identity.bytes()))?
+        common::create_restored(SwitchProDefinition, realization, o, Some(identity.bytes()))?
     } else {
         common::create(SwitchProDefinition, realization, o)?
     };
