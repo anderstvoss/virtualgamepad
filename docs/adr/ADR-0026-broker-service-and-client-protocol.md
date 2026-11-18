@@ -67,7 +67,8 @@ nonblocking executor must schedule such calls off its critical loop. Service
 mode service() pumps bounded IPC with no blocking wait, delivers optional
 callbacks on the caller, and exposes a borrowed client socket fd and write
 interest/deadlines. It never owns the provider fd. Cache read-only views from
-validated responses/updates; retained data may lag until service, and stale
+validated responses/updates; initialize before returning the typed handle,
+including required client-side audio components. Retained data may lag until service, and stale
 data cannot authorize edits. Direct also retains its existing provider-specific
 limits. Report unsupported operations/targets explicitly, never degrade.
 
@@ -104,8 +105,8 @@ extracting private shared owner implementation if needed.
 
 Audio is not silently lost. USB/IP worker remains the protocol owner and
 private PCM transport; service may bridge only typed existing PCM sample
-operations on explicitly selected NativeClient endpoints, bounded independently
-of HID. Caller-session PipeWire cannot be accessed by a system UID by default:
+operations (including the current Samples mode and, when selected, the
+NativeClient bridge), bounded independently of HID. Caller-session PipeWire cannot be accessed by a system UID by default:
 keep the session graph/bridge on caller side, with a typed sample bridge and
 required-component failure propagation, not access to another user's socket or
 a daemon-wide sound grant. This is a proposed integration requiring local
@@ -185,7 +186,7 @@ UHID/uinput service startup from helper unavailability. Bound idle admission,
 partial setup, worker termination, and stop/drain. Diagnose the existing
 kalux "owned endpoint remained open" failure
 ([#365](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6969844490),
-[#350](https://github.com/anderstvoss/virtualgamepad/issues/350#issuecomment-6969735929)):
+[#350](https://github.com/anderstvoss/virtualgamepad/pull/350#issuecomment-6969735929)):
 trace all broker/worker/client descriptor duplicates including ancillary handoff;
 consume any buffered final frame then observe EOF/HUP; independently verify
 worker exit, matched kernel port free, node removal, record reconciliation and
