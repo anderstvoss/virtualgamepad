@@ -61,15 +61,15 @@
 - [ ] Review the [support matrix](../CONTROLLER_SUPPORT.md), compiled registry,
   per-function manifests, limitations and future-family issue exclusions.
   Do not promote WIP cells without qualifying evidence.
-- [ ] **ALPHA 2 RELEASE GATE — real USB/IP run on kalux for #350.**
-  [Anders requires this run](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358) before
-  Alpha 2. Run it locally on kalux and verify all three distinct cases:
-  (1) live `host_outputs()` snapshots update **while the device is in service**;
-  (2) the **FINAL** retained snapshot arrives **after close**; and
-  (3) opening against a **stale installed worker** fails with the required
-  **reinstall guidance**. Record actual client/worker SHAs, results and failure
-  details. **Not yet run** at this draft baseline; socket-pair/synthetic tests
-  do not satisfy this gate.
+- [x] **ALPHA 2 RELEASE GATE — real USB/IP run on kalux for #350: PASS** on
+  candidate `324d250bb01a5ddbfc1dd189513d4c9160429ee1`, per the [recorded #365 result](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6969740517).
+  (1) Live `host_outputs()` snapshots updated **while the device was in service**;
+  (2) the **FINAL** retained snapshot arrived **after close**; and
+  (3) opening against a **stale installed worker** failed with the required
+  **reinstall guidance**. The linked report records hashes, results and
+  restoration; a separate lower-level raw broker smoke failure remains
+  documented for investigation. This is evidence for the named candidate, not
+  qualification of a later release commit.
 - [ ] Leave **VG-2/#344 and ADR-0024** on the audio track; do not gate Alpha 2
   on the separately planned loss-aware stream.
 
