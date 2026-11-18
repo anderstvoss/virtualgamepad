@@ -860,3 +860,13 @@ VG-1b final merge ledger: a #353 `2890223`; b #363 `5bea7a0`; c1 #364
 `8cd1000`, #375 `26168b3`, #387 `685479b`, #389 `edeea68`, #390 `a0398b7`.
 Step e records this consumer/documentation completion; its merge SHA belongs in
 the closing #322 status after owner merge, not as a predicted SHA here.
+
+### #365 · Typed rumble observations (c4-rumble-records)
+
+- Xbox Series: add `XboxSeriesRumble`, `XboxSeriesOutputEvent::rumble()`, and pure `XboxSeriesRumble::decode()` / `XboxSeriesBluetoothRumble::decode()`; four-channel native report versus two-channel FF. No trigger emulation.
+- DualShock 4: add `DualShock4Rumble`, `DualShock4OutputEvent::rumble()`, and `DualShock4Rumble::decode()`; preserve both validity flags and distinguish no update from stop. Bluetooth parsing is source-only.
+- Xbox 360: add `Xbox360Rumble`, `Xbox360OutputEvent::rumble()`, and source-only `Xbox360Rumble::decode_xusb()`; existing standard HID does not admit XUSB outputs.
+- Wii Remote: add `WiiRemoteRumble`, `WiiRemoteOutputEvent::rumble()`, and `WiiRemoteRumble::decode()`; binary intent from shared bit or conventional FF.
+
+Existing events, raw payloads, FF effect types and retained snapshots are unchanged.
+These additive ordinary-root declarations do not change protocol admission or qualify physical output.

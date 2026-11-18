@@ -80,8 +80,8 @@ id = "live-player-led-control"
 [[functions]]
 id = "rumble"
 [functions.cells]
-"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = ["wii-c5-evdev-consumer-shape"], reason = "Conventional upload/erase ACKs and retained playback tested; both channels collapse to one native binary motor." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::tests::malformed_outputs_are_atomic_and_identical_values_do_not_advance_revision", evidence = ["wii-c5-report-layouts"], reason = "Raw interrupt rumble and combined LED/rumble acceptance tested. No physical motor-delivery claim." }
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = ["wii-c5-evdev-consumer-shape", "wii-kernel-outputs-battery"], reason = "Conventional upload/erase ACKs and retained playback tested; both channels collapse to one native binary motor. Decode sub-check: ff_rumble_decode_preserves_native_effect_and_stop_semantics; source only." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::tests::malformed_outputs_are_atomic_and_identical_values_do_not_advance_revision", evidence = ["wii-c5-report-layouts", "wii-gap-wiibrew-rumble-bit-retention"], reason = "Raw interrupt rumble and combined LED/rumble acceptance tested. No physical motor-delivery claim. Decode sub-check: wii_shared_rumble_decode; source only." }
 
 [[functions]]
 id = "live-rumble-consumer"

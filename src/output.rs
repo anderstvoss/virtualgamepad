@@ -1,4 +1,7 @@
 //! Controller-native observations. Required protocol requests never belong to callers.
+mod rumble;
+pub use rumble::{DualShock4Rumble, WiiRemoteRumble, Xbox360Rumble, XboxSeriesRumble};
+
 use crate::{
     ControllerError, DualSenseHidOutput, DualShock4HidOutput, ForceFeedbackEvent, SwitchProRumble,
 };
