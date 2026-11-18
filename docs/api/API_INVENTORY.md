@@ -433,7 +433,7 @@ impl UnwindSafe for DpadPresentation
 
 ### `DualSenseAudioPath`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 #[non_exhaustive]pub enum DualSenseAudioPath { HeadphonesStereo, HeadphonesDualMono, HeadphonesLeftSpeakerRight, SpeakerRightOnly, }
@@ -459,7 +459,7 @@ impl UnwindSafe for DualSenseAudioPath
 
 ### `DualSenseControl`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 pub enum DualSenseControl { Show 13 variants Cross, Circle, Square, Triangle, L1, R1, Create, Options, PlayStation, TouchpadClick, MicrophoneMute, LeftStickPress, RightStickPress, }
@@ -485,7 +485,7 @@ impl UnwindSafe for DualSenseControl
 
 ### `DualSenseFeature`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 pub enum DualSenseFeature { Touch, Motion, Lightbar, AdaptiveTriggers, Audio, }
@@ -511,7 +511,7 @@ impl UnwindSafe for DualSenseFeature
 
 ### `DualSenseHidOutput`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 #[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }
@@ -561,7 +561,7 @@ impl UnwindSafe for DualSenseOutputEvent
 
 ### `DualShock4Control`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
 
 ```rust
 pub enum DualShock4Control { Cross, Circle, Square, Triangle, L1, R1, Share, Options, PlayStation, TouchpadClick, LeftStickPress, RightStickPress, }
@@ -587,7 +587,7 @@ impl UnwindSafe for DualShock4Control
 
 ### `DualShock4HidOutput`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
 
 ```rust
 #[non_exhaustive]pub enum DualShock4HidOutput { UsbOutput { raw: Vec<u8>, right_motor: u8, left_motor: u8, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }
@@ -637,7 +637,7 @@ impl UnwindSafe for DualShock4OutputEvent
 
 ### `DualShock4TouchSlot`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
 
 ```rust
 pub enum DualShock4TouchSlot { First, Second, }
@@ -1025,7 +1025,7 @@ impl UnwindSafe for SpeakerFormat
 
 ### `SteamController2026Button`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/steam_controller_2026.rs.html`
 
 ```rust
 #[non_exhaustive]pub enum SteamController2026Button { Show 22 variants A, B, X, Y, Qam, RightStick, Menu, R4, R5, RightShoulder, Down, Right, Left, Up, View, LeftStick, Steam, L4, L5, LeftShoulder, RightTrigger, LeftTrigger, }
@@ -1051,7 +1051,7 @@ impl UnwindSafe for SteamController2026Button
 
 ### `SteamController2026Haptic`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/steam_controller_2026/codec.rs.html`
 
 ```rust
 #[non_exhaustive]pub enum SteamController2026Haptic { Stream(Box<SteamController2026StreamPacket>), Rumble { kind: u8, intensity: u16, left_speed: u16, left_gain: u8, right_speed: u16, right_gain: u8, }, Pulse { side: u8, on_us: u16, off_us: u16, count: u16, }, Command { side: u8, command: u8, gain_db: i8, }, Lfo { side: u8, gain_db: i8, frequency: u16, duration_ms: u16, lfo_frequency: u16, depth: u8, }, Sweep { side: u8, gain_db: i8, duration_ms: u16, start: u16, end: u16, }, Script { side: u8, script: u8, gain_db: i8, }, }
@@ -1101,7 +1101,7 @@ impl UnwindSafe for SteamController2026OutputEvent
 
 ### `SteamController2026StreamPacket`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/steam_controller_2026/streaming.rs.html`
 
 ```rust
 pub enum SteamController2026StreamPacket { Configure { operation: u8, target: u8, mode: u8, }, Mono { target: u8, data: Vec<u8>, }, Stereo { left: Vec<u8>, right: Vec<u8>, }, }
@@ -1127,7 +1127,7 @@ impl UnwindSafe for SteamController2026StreamPacket
 
 ### `SwitchProControl`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
 
 ```rust
 pub enum SwitchProControl { Show 14 variants B, A, Y, X, L, R, Zl, Zr, Minus, Plus, Home, Capture, LeftStickPress, RightStickPress, }
@@ -1179,7 +1179,7 @@ impl UnwindSafe for SwitchProOutputEvent
 
 ### `TouchSlot`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 pub enum TouchSlot { First, Second, }
@@ -1257,7 +1257,7 @@ impl UnwindSafe for TriggerInputKind
 
 ### `WiiExtension`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote.rs.html`
 
 ```rust
 #[non_exhaustive]pub enum WiiExtension { None, Nunchuk(WiiNunchukInputs), Classic(WiiClassicInputs), ClassicPro(WiiClassicInputs), }
@@ -1283,7 +1283,7 @@ impl UnwindSafe for WiiExtension
 
 ### `WiiRemoteButton`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote.rs.html`
 
 ```rust
 #[non_exhaustive]pub enum WiiRemoteButton { Left, Right, Up, Down, Plus, Minus, One, Two, A, B, Home, }
@@ -1334,7 +1334,7 @@ impl UnwindSafe for WiiRemoteOutputEvent
 
 ### `WiiRemoteRevision`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote.rs.html`
 
 ```rust
 #[non_exhaustive]pub enum WiiRemoteRevision { Original, EarlyIntegratedPlus, Tr, }
@@ -1362,7 +1362,7 @@ impl UnwindSafe for WiiRemoteRevision
 
 ### `WiiResourceDisposition`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote/memory.rs.html`
 
 ```rust
 pub enum WiiResourceDisposition { KeepSnapshot, Discard, }
@@ -1388,7 +1388,7 @@ impl UnwindSafe for WiiResourceDisposition
 
 ### `Xbox360Control`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/xbox360.rs.html`
 
 ```rust
 pub enum Xbox360Control { A, B, X, Y, LeftShoulder, RightShoulder, Back, Start, Guide, LeftStickPress, RightStickPress, }
@@ -1439,7 +1439,7 @@ impl UnwindSafe for Xbox360OutputEvent
 
 ### `XboxSeriesButton`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/xbox_series.rs.html`
 
 ```rust
 #[non_exhaustive]pub enum XboxSeriesButton { Show 16 variants A, B, X, Y, LeftShoulder, RightShoulder, View, Menu, Guide, Share, LeftStickPress, RightStickPress, DpadUp, DpadDown, DpadLeft, DpadRight, }
@@ -1719,7 +1719,7 @@ impl UnwindSafe for AuxiliaryButtonInput
 
 ### `BatteryLevel`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/lib.rs.html`
 
 ```rust
 pub struct BatteryLevel(/* private fields */);
@@ -1747,7 +1747,7 @@ impl UnwindSafe for BatteryLevel
 
 ### `BatteryState`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/lib.rs.html`
 
 ```rust
 pub struct BatteryState { /* private fields */ }
@@ -2111,7 +2111,7 @@ impl UnwindSafe for DpadCluster
 
 ### `DualSenseAxis`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 pub struct DualSenseAxis(/* private fields */);
@@ -2190,7 +2190,7 @@ impl !UnwindSafe for DualSenseController
 
 ### `DualSenseIdentity`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 pub struct DualSenseIdentity(/* private fields */);
@@ -2220,7 +2220,7 @@ impl UnwindSafe for DualSenseIdentity
 
 ### `DualSenseInputs`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 pub struct DualSenseInputs { /* private fields */ }
@@ -2260,7 +2260,7 @@ impl UnwindSafe for DualSenseInputs
 
 ### `DualSenseOptions`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct DualSenseOptions { /* private fields */ }
@@ -2286,7 +2286,7 @@ impl UnwindSafe for DualSenseOptions
 
 ### `DualSenseOutputState`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/retained.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct DualSenseOutputState {Show 13 fields pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, pub motors: Option<[u8; 2]>, pub right_trigger: Option<[u8; 11]>, pub left_trigger: Option<[u8; 11]>, pub mute_led: Option<u8>, pub microphone_muted: Option<bool>, pub audio_path: Option<DualSenseAudioPath>, pub speaker_volume: Option<u8>, pub microphone_volume: Option<u8>, pub speaker_preamp: Option<u8>, pub player_leds: Option<u8>, pub lightbar_rgb: Option<[u8; 3]>, }
@@ -2312,7 +2312,7 @@ impl UnwindSafe for DualSenseOutputState
 
 ### `DualSenseStatus`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 pub struct DualSenseStatus { /* private fields */ }
@@ -2342,7 +2342,7 @@ impl UnwindSafe for DualSenseStatus
 
 ### `DualSenseSurface`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 pub struct DualSenseSurface { /* private fields */ }
@@ -2370,7 +2370,7 @@ impl UnwindSafe for DualSenseSurface
 
 ### `DualSenseTouchContact`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 pub struct DualSenseTouchContact { /* private fields */ }
@@ -2400,7 +2400,7 @@ impl UnwindSafe for DualSenseTouchContact
 
 ### `DualSenseTrigger`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 pub struct DualSenseTrigger(/* private fields */);
@@ -2428,7 +2428,7 @@ impl UnwindSafe for DualSenseTrigger
 
 ### `DualShock4Axis`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
 
 ```rust
 pub struct DualShock4Axis(/* private fields */);
@@ -2503,7 +2503,7 @@ impl !UnwindSafe for DualShock4Controller
 
 ### `DualShock4Identity`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
 
 ```rust
 pub struct DualShock4Identity(/* private fields */);
@@ -2533,7 +2533,7 @@ impl UnwindSafe for DualShock4Identity
 
 ### `DualShock4Inputs`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
 
 ```rust
 pub struct DualShock4Inputs { /* private fields */ }
@@ -2573,7 +2573,7 @@ impl UnwindSafe for DualShock4Inputs
 
 ### `DualShock4MotionSample`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
 
 ```rust
 pub struct DualShock4MotionSample { pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], }
@@ -2599,7 +2599,7 @@ impl UnwindSafe for DualShock4MotionSample
 
 ### `DualShock4Options`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct DualShock4Options { /* private fields */ }
@@ -2625,7 +2625,7 @@ impl UnwindSafe for DualShock4Options
 
 ### `DualShock4OutputState`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/retained.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct DualShock4OutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, pub motors: Option<[u8; 2]>, pub lightbar_rgb: Option<[u8; 3]>, pub blink: Option<[u8; 2]>, }
@@ -2651,7 +2651,7 @@ impl UnwindSafe for DualShock4OutputState
 
 ### `DualShock4Status`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
 
 ```rust
 pub struct DualShock4Status { /* private fields */ }
@@ -2682,7 +2682,7 @@ impl UnwindSafe for DualShock4Status
 
 ### `DualShock4Surface`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
 
 ```rust
 pub struct DualShock4Surface { /* private fields */ }
@@ -2710,7 +2710,7 @@ impl UnwindSafe for DualShock4Surface
 
 ### `DualShock4TouchContact`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
 
 ```rust
 pub struct DualShock4TouchContact { /* private fields */ }
@@ -2740,7 +2740,7 @@ impl UnwindSafe for DualShock4TouchContact
 
 ### `DualShock4Trigger`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
 
 ```rust
 pub struct DualShock4Trigger(/* private fields */);
@@ -2975,7 +2975,7 @@ impl UnwindSafe for MotionInput
 
 ### `MotionSample`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 pub struct MotionSample { pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], }
@@ -3171,7 +3171,7 @@ impl UnwindSafe for RumbleEffect
 
 ### `RumblePlayback`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/retained.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct RumblePlayback { pub strong: u16, pub weak: u16, pub repetitions: u32, }
@@ -3238,7 +3238,7 @@ impl !UnwindSafe for SteamController2026Controller
 
 ### `SteamController2026Identity`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/steam_controller_2026/controller.rs.html`
 
 ```rust
 pub struct SteamController2026Identity { /* private fields */ }
@@ -3266,7 +3266,7 @@ impl UnwindSafe for SteamController2026Identity
 
 ### `SteamController2026Inputs`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/steam_controller_2026.rs.html`
 
 ```rust
 pub struct SteamController2026Inputs { pub sticks: [[i16; 2]; 2], pub triggers: [i16; 2], pub pads: [SteamTrackpadState; 2], pub stick_touch: [bool; 2], pub grip_touch: [bool; 2], pub motion: SteamMotionSample, /* private fields */ }
@@ -3296,7 +3296,7 @@ impl UnwindSafe for SteamController2026Inputs
 
 ### `SteamController2026Options`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/steam_controller_2026/controller.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct SteamController2026Options { /* private fields */ }
@@ -3330,7 +3330,7 @@ impl UnwindSafe for SteamController2026Options
 
 ### `SteamController2026Outputs`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/steam_controller_2026/codec.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct SteamController2026Outputs { pub revision: u64, pub haptics: [Option<SteamController2026Haptic>; 6], pub streaming: SteamController2026StreamOutputs, pub led_brightness: Option<u16>, pub led_override: Option<bool>, pub led_rgbw: Option<[u8; 4]>, }
@@ -3356,7 +3356,7 @@ impl UnwindSafe for SteamController2026Outputs
 
 ### `SteamController2026Status`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/steam_controller_2026.rs.html`
 
 ```rust
 pub struct SteamController2026Status { /* private fields */ }
@@ -3390,7 +3390,7 @@ impl UnwindSafe for SteamController2026Status
 
 ### `SteamController2026StreamOutputs`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/steam_controller_2026/streaming.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct SteamController2026StreamOutputs { pub enabled: bool, pub configured: [bool; 4], pub buffered_bytes: [u16; 4], pub received_bytes: [u64; 4], pub overrun_bytes: [u64; 4], pub last_packet: Option<SteamController2026StreamPacket>, }
@@ -3416,7 +3416,7 @@ impl UnwindSafe for SteamController2026StreamOutputs
 
 ### `SteamMotionSample`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/steam_controller_2026.rs.html`
 
 ```rust
 pub struct SteamMotionSample { pub timestamp_us: u32, pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], pub quaternion: [i16; 4], }
@@ -3442,7 +3442,7 @@ impl UnwindSafe for SteamMotionSample
 
 ### `SteamTrackpadState`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/steam_controller_2026.rs.html`
 
 ```rust
 pub struct SteamTrackpadState { pub position: [i16; 2], pub pressure: u16, pub touch: bool, pub click: bool, }
@@ -3501,7 +3501,7 @@ impl UnwindSafe for StickInput
 
 ### `SwitchProAxis`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
 
 ```rust
 pub struct SwitchProAxis(/* private fields */);
@@ -3574,7 +3574,7 @@ impl !UnwindSafe for SwitchProController
 
 ### `SwitchProIdentity`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
 
 ```rust
 pub struct SwitchProIdentity(/* private fields */);
@@ -3603,7 +3603,7 @@ impl UnwindSafe for SwitchProIdentity
 
 ### `SwitchProInputs`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
 
 ```rust
 pub struct SwitchProInputs { /* private fields */ }
@@ -3639,7 +3639,7 @@ impl UnwindSafe for SwitchProInputs
 
 ### `SwitchProMotionSample`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
 
 ```rust
 pub struct SwitchProMotionSample { pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], }
@@ -3665,7 +3665,7 @@ impl UnwindSafe for SwitchProMotionSample
 
 ### `SwitchProOptions`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }
@@ -3691,7 +3691,7 @@ impl UnwindSafe for SwitchProOptions
 
 ### `SwitchProOutputState`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/retained.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct SwitchProOutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, pub motor_words: Option<[[u8; 4]; 2]>, pub player_lights: Option<u8>, }
@@ -3717,7 +3717,7 @@ impl UnwindSafe for SwitchProOutputState
 
 ### `SwitchProRumble`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
 
 ```rust
 pub struct SwitchProRumble { pub packet_counter: u8, pub left: [u8; 4], pub right: [u8; 4], }
@@ -3743,7 +3743,7 @@ impl UnwindSafe for SwitchProRumble
 
 ### `SwitchProStatus`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
 
 ```rust
 pub struct SwitchProStatus { /* private fields */ }
@@ -3772,7 +3772,7 @@ impl UnwindSafe for SwitchProStatus
 
 ### `SwitchProSurface`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
 
 ```rust
 pub struct SwitchProSurface { /* private fields */ }
@@ -3942,7 +3942,7 @@ impl UnwindSafe for TypedInput
 
 ### `WiiClassicInputs`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote.rs.html`
 
 ```rust
 pub struct WiiClassicInputs { pub left: [u8; 2], pub right: [u8; 2], pub triggers: [u8; 2], pub buttons: [bool; 15], }
@@ -3968,7 +3968,7 @@ impl UnwindSafe for WiiClassicInputs
 
 ### `WiiEepromImage`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote/memory.rs.html`
 
 ```rust
 pub struct WiiEepromImage { /* private fields */ }
@@ -3998,7 +3998,7 @@ impl UnwindSafe for WiiEepromImage
 
 ### `WiiExtensionCalibration`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote/calibration.rs.html`
 
 ```rust
 pub struct WiiExtensionCalibration { /* private fields */ }
@@ -4030,7 +4030,7 @@ impl UnwindSafe for WiiExtensionCalibration
 
 ### `WiiIrPoint`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote.rs.html`
 
 ```rust
 pub struct WiiIrPoint { /* private fields */ }
@@ -4058,7 +4058,7 @@ impl UnwindSafe for WiiIrPoint
 
 ### `WiiMotionPlusInputs`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote.rs.html`
 
 ```rust
 pub struct WiiMotionPlusInputs { pub gyroscope: [u16; 3], pub slow: [bool; 3], }
@@ -4084,7 +4084,7 @@ impl UnwindSafe for WiiMotionPlusInputs
 
 ### `WiiNunchukInputs`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote.rs.html`
 
 ```rust
 pub struct WiiNunchukInputs { pub stick: [u8; 2], pub accelerometer: [u16; 3], pub c: bool, pub z: bool, }
@@ -4110,7 +4110,7 @@ impl UnwindSafe for WiiNunchukInputs
 
 ### `WiiRemoteBattery`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote.rs.html`
 
 ```rust
 pub struct WiiRemoteBattery(/* private fields */);
@@ -4191,7 +4191,7 @@ impl !UnwindSafe for WiiRemoteController
 
 ### `WiiRemoteIdentity`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote.rs.html`
 
 ```rust
 pub struct WiiRemoteIdentity(/* private fields */);
@@ -4220,7 +4220,7 @@ impl UnwindSafe for WiiRemoteIdentity
 
 ### `WiiRemoteInputs`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote.rs.html`
 
 ```rust
 pub struct WiiRemoteInputs { /* private fields */ }
@@ -4258,7 +4258,7 @@ impl UnwindSafe for WiiRemoteInputs
 
 ### `WiiRemoteOptions`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct WiiRemoteOptions { /* private fields */ }
@@ -4298,7 +4298,7 @@ impl UnwindSafe for WiiRemoteOptions
 
 ### `WiiRemoteOutputs`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote.rs.html`
 
 ```rust
 pub struct WiiRemoteOutputs { pub revision: u64, pub leds: [bool; 4], pub rumble: bool, }
@@ -4325,7 +4325,7 @@ impl UnwindSafe for WiiRemoteOutputs
 
 ### `WiiRemoteStatus`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/wii_remote.rs.html`
 
 ```rust
 pub struct WiiRemoteStatus { /* private fields */ }
@@ -4356,7 +4356,7 @@ impl UnwindSafe for WiiRemoteStatus
 
 ### `Xbox360Axis`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/xbox360.rs.html`
 
 ```rust
 pub struct Xbox360Axis(/* private fields */);
@@ -4429,7 +4429,7 @@ impl !UnwindSafe for Xbox360Controller
 
 ### `Xbox360Inputs`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/xbox360.rs.html`
 
 ```rust
 pub struct Xbox360Inputs { /* private fields */ }
@@ -4465,7 +4465,7 @@ impl UnwindSafe for Xbox360Inputs
 
 ### `Xbox360Options`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/xbox360.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct Xbox360Options {}
@@ -4489,7 +4489,7 @@ impl UnwindSafe for Xbox360Options
 
 ### `Xbox360OutputState`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/retained.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct Xbox360OutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, }
@@ -4515,7 +4515,7 @@ impl UnwindSafe for Xbox360OutputState
 
 ### `Xbox360Status`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/xbox360.rs.html`
 
 ```rust
 pub struct Xbox360Status { /* private fields */ }
@@ -4543,7 +4543,7 @@ impl UnwindSafe for Xbox360Status
 
 ### `Xbox360Surface`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/xbox360.rs.html`
 
 ```rust
 pub struct Xbox360Surface { /* private fields */ }
@@ -4571,7 +4571,7 @@ impl UnwindSafe for Xbox360Surface
 
 ### `Xbox360Trigger`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/xbox360.rs.html`
 
 ```rust
 pub struct Xbox360Trigger(/* private fields */);
@@ -4599,7 +4599,7 @@ impl UnwindSafe for Xbox360Trigger
 
 ### `XboxSeriesBluetoothRumble`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/xbox_series/bluetooth.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }
@@ -4665,7 +4665,7 @@ impl !UnwindSafe for XboxSeriesController
 
 ### `XboxSeriesInputs`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/xbox_series.rs.html`
 
 ```rust
 pub struct XboxSeriesInputs { pub sticks: [[i16; 2]; 2], /* private fields */ }
@@ -4697,7 +4697,7 @@ impl UnwindSafe for XboxSeriesInputs
 
 ### `XboxSeriesOptions`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/xbox_series.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct XboxSeriesOptions {}
@@ -4724,7 +4724,7 @@ impl UnwindSafe for XboxSeriesOptions
 
 ### `XboxSeriesOutputState`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/xbox_series/controller.rs.html`
 
 ```rust
 #[non_exhaustive]pub struct XboxSeriesOutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, pub bluetooth_rumble: Option<XboxSeriesBluetoothRumble>, }
@@ -4750,7 +4750,7 @@ impl UnwindSafe for XboxSeriesOutputState
 
 ### `XboxSeriesStatus`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/xbox_series.rs.html`
 
 ```rust
 pub struct XboxSeriesStatus { /* private fields */ }
@@ -4777,7 +4777,7 @@ impl UnwindSafe for XboxSeriesStatus
 
 ### `XboxSeriesTrigger`
 
-Owner/source: `source unavailable`
+Owner/source: `../src/gr_curated_controllers/xbox_series.rs.html`
 
 ```rust
 pub struct XboxSeriesTrigger(/* private fields */);
