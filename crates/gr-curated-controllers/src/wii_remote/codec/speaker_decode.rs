@@ -300,10 +300,7 @@ mod tests {
     fn configuration_formats_rates_and_activation_order() {
         // Consumer startup order: libogc mute/enable, CWiid enable/mute.
         // The final 0x08 write is recorded, not a fabricated hardware latch.
-        for (order, divisor, rate) in [
-            ([0x19, 0x14], 2000, 3000),
-            ([0x14, 0x19], 3072, 1953),
-        ] {
+        for (order, divisor, rate) in [([0x19, 0x14], 2000, 3000), ([0x14, 0x19], 3072, 1953)] {
             let mut s = WiiSpeakerDecoder::default();
             for id in order {
                 s = control(s, id, 6);
@@ -349,11 +346,11 @@ mod tests {
         assert_eq!(first.samples, [15, 253]);
         let s = control(control(s, 0x19, 6), 0x19, 2);
         let s = control(control(s, 0x14, 2), 0x14, 6);
-        let s = write(s, 5, &[0]); // Zero volume still advances the decoder.
         let preserved = configure(s, 0x40, 6000);
         let (preserved, pcm) = packet(preserved, 1, &[0x80]);
         assert_eq!(pcm.samples, [-32768]);
         let preserved = configure(preserved, 0, 3072);
+        let preserved = write(preserved, 5, &[0]); // Zero volume still decodes.
         let (next, second) = packet(preserved, 1, &[0x8f]);
         assert_eq!(second.samples, [215, -296]);
         assert_eq!(next.step, 654);
