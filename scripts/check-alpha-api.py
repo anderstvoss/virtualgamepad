@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Build and compare the ordinary root API with the reviewed alpha snapshot."""
 import argparse
-import difflib
 import importlib.util
 import json
 import os
@@ -109,13 +108,6 @@ def main():
         WII_BASELINE.write_text(json.dumps(wii, indent=2, sort_keys=True) + '\n')
         STEAM_BASELINE.write_text(json.dumps(steam, indent=2, sort_keys=True) + '\n')
     elif any(json.loads(BASELINE.read_text())['views'].get(view) != data for view, data in views.items()):
-        expected = json.loads(BASELINE.read_text())['views']
-        for view, data in views.items():
-            if expected.get(view) != data:
-                print(''.join(difflib.unified_diff(
-                    json.dumps(expected.get(view), indent=2, sort_keys=True).splitlines(keepends=True),
-                    json.dumps(data, indent=2, sort_keys=True).splitlines(keepends=True),
-                    fromfile=f'expected/{view}', tofile=f'actual/{view}')))
         parser.exit(1, 'Alpha root API changed. Review necessity and migration notes before refreshing the snapshot.\n')
     elif not WII_BASELINE.exists() or json.loads(WII_BASELINE.read_text()) != wii:
         parser.exit(1, 'Wii supporting API changed. Review the imported-resource API before refreshing the snapshot.\n')

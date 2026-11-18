@@ -3240,7 +3240,7 @@
         "struct.XboxSeriesBluetoothRumble.html": {
           "declarations": [
             "#[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }",
-            "pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<XboxSeriesBluetoothRumble>"
+            "pub fn decode( report_id: Option<u8>, payload: &[u8], ) -> Option<XboxSeriesBluetoothRumble>"
           ],
           "traits": [
             "impl Clone for XboxSeriesBluetoothRumble",
@@ -6637,7 +6637,7 @@
         "struct.XboxSeriesBluetoothRumble.html": {
           "declarations": [
             "#[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }",
-            "pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<XboxSeriesBluetoothRumble>"
+            "pub fn decode( report_id: Option<u8>, payload: &[u8], ) -> Option<XboxSeriesBluetoothRumble>"
           ],
           "traits": [
             "impl Clone for XboxSeriesBluetoothRumble",
