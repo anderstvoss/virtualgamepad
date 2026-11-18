@@ -6,6 +6,8 @@ use std::{collections::BTreeMap, time::Instant};
 #[cfg(target_os = "linux")]
 pub mod linux;
 
+pub mod neutral_oracle;
+
 pub const STAGES: &[&str] = &[
     "api_call",
     "api_returned",
