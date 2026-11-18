@@ -13,7 +13,7 @@ selected-target metadata and host outputs. See [ADR-0025](adr/ADR-0025-input-mod
 | Realization | Scope |
 | --- | --- |
 | `linux.uinput` | One gamepad with the Linux xpad evdev layout. It exposes A/B/X/Y, bumpers, View/Menu/Guide/Share, stick clicks, the D-pad hat, four signed stick axes and two 10-bit triggers. Conventional force feedback carries strong and weak main-motor playback. |
-| `linux.uhid.bluetooth` | Local Bluetooth-bus HID for the measured `045e:0b13` report map. Qualified with SDL 3.4.18 over evdev and hidraw on stock `microsoft`: all standard controls, separate Guide/Share, final neutral, main rumble and independent virtual trigger-command reception. Steam identity, controls excluding Guide, and Ping feedback were qualified with the active-seat dev setup. Physical trigger actuation remains unverified. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
+| `linux.uhid.bluetooth` | Local Bluetooth-bus HID for the measured `045e:0b13` report map. Qualified with SDL 3.4.18 over evdev and hidraw on stock `microsoft`: all standard controls, separate Guide/Share, final neutral, main rumble and independent virtual trigger-command reception. Steam identity, controls including Guide, and Ping feedback were qualified with the active-seat dev setup; Guide then closed the test screen to the storefront. A separate physical Bluetooth check confirmed independent left/right trigger actuation as described below. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
 | USB-bus UHID and `dummy_hcd` USB HID | Inapplicable to the wired GIP controller. GIP and USB/IP feasibility stay with [#168](https://github.com/anderstvoss/virtualgamepad/issues/168). |
 
 The xpad [consumer ledger](https://github.com/anderstvoss/controller-protocol-research/blob/eba02ad610e264a2518a699394255cc7f1d670dd/docs/ledgers/xbox-series-l0.md)
@@ -134,8 +134,17 @@ candidate, kernel and driver scope with the answers.
 
 | Steam Input consumer | Status |
 | --- | --- |
-| `linux.uinput` | Owner confirmed Xbox Series identity and controls excluding Guide. Steam Ping produced retained 32767/32767 playback and stops. Guide test-screen registration remains unverified. |
-| `linux.uhid.bluetooth` | With the temporary active-seat dev override, owner confirmed Xbox Series identity and controls excluding Guide. Steam Ping retained native 50/50 main rumble and stops on microsoft. Guide test-screen registration remains unverified. |
+| `linux.uinput` | Earlier owner checks confirmed Xbox Series identity and controls excluding Guide; Steam Ping retained 32767/32767 playback and stops. Alpha 2 Guide check: the test screen closed before the owner could determine whether its Guide indicator registered. Big Picture did not open. Registration remains unverified. |
+| `linux.uhid.bluetooth` | Earlier checks with the temporary active-seat dev override confirmed Xbox Series identity and controls excluding Guide; Steam Ping retained native 50/50 main rumble and stops on microsoft. Alpha 2 Guide check on microsoft: the owner saw Guide register briefly, then the test screen closed to the Steam storefront. Big Picture did not open. |
+
+The Alpha 2 Guide observations used candidate
+`324d250bb01a5ddbfc1dd189513d4c9160429ee1`, Steam build `1794424036`,
+kernel `7.3.0-1-mainline`, and installed SDL `3.4.18` on x86-64 kalux.
+Uinput had no hardware driver; Bluetooth-bus UHID bound to stock `microsoft`.
+Each run sent one Guide press and release, returned to neutral, closed the
+probe and verified removal of its owned nodes. The real Valve controller was
+disconnected. The temporary Steam visibility override was removed afterwards.
+These are Steam consumer observations, not a protocol-correctness oracle.
 
 ## Alpha 2 host audit
 
@@ -162,16 +171,29 @@ request. `MotorRole::LeftTrigger` and `RightTrigger` identify the two
 trigger channels separately from strong and weak main motors. Retained
 duration/delay fields are 10 ms descriptor ticks; repeat is a raw count.
 
-The evdev qualification covers controls and main rumble. Independent
-trigger-motor actuation remains unverified. The original evdev runs could not exercise hidraw HIDAPI because access was
+The evdev qualification covers controls and main rumble. The original evdev runs could not exercise hidraw HIDAPI because access was
 denied. A later dev-only raw-path probe with the stock microsoft driver
 passed all controls and observed separate left-only and right-only trigger
 commands. This qualifies a bounded virtual HIDAPI command path. Physical
-trigger actuation remains unverified: the physical xpadneo bind rule prevented
-stock microsoft binding, so no physical pulse was sent. Exact-candidate
+trigger actuation was initially unverified: the physical xpadneo bind rule prevented
+stock microsoft binding, so no physical pulse was sent in that earlier run. Exact-candidate
 virtual acceptance after the main merge passed.
 The dev setup and failed competing-driver attempt are retained in the
 checkpoint handoff.
+
+The Alpha 2 physical follow-up on the same candidate and environment as the
+Guide check bound the owner's Bluetooth Series controller to stock `microsoft`.
+With a temporary exception for that exact HID instance, the owner felt only the
+left trigger for the left-only command, then only the right trigger for the
+right-only command: **left OK / right OK**. Each report `0x03` used magnitude
+20/100 on the selected trigger, zero on the other trigger and both main motors,
+a 200 ms duration, no delay or repeats, and an explicit zero-magnitude stop
+300 ms after submission. Both nine-byte writes succeeded for each pulse/stop
+pair. No firmware or pairing commands were sent. This is scoped physical
+actuation evidence, separate from virtual retained-output qualification.
+The original vendor rule was restored byte-for-byte, the temporary hidraw ACL
+and xpadneo autoload blacklist were removed, and the lab helper restored the
+physical `xpadneo` binding. Raw data remains private.
 
 ## Bluetooth-bus UHID candidate qualification
 
