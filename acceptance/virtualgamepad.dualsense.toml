@@ -96,7 +96,7 @@ id = "player-indicators"
 [[functions]]
 id = "microphone-led"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/microphone-led", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "not-supported", test_id = "acceptance/dualsense/microphone-led", evidence = [], reason = "The uinput output surface exposes only conventional rumble; it cannot receive native microphone LED output reports." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/microphone-led", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/microphone-led", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/microphone-led", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
