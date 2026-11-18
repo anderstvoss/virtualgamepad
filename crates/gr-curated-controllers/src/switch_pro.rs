@@ -1195,7 +1195,7 @@ fn dummy_hcd_reply(
     wire.extend_from_slice(&bytes);
     Ok(ProviderFrame::DummyHcdInput(wire))
 }
-/// Encoded motor words from one Switch host output; not decoded amplitudes.
+/// Original motor words from one Switch host output; not physical actuator measurements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SwitchProRumble {
     pub packet_counter: u8,
