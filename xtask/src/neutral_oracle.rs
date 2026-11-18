@@ -611,7 +611,11 @@ mod tests {
             ),
         ] {
             let reference = NeutralReference::native(family).unwrap();
-            assert_eq!(reference.expected, InputReport::Native(expected), "{family}");
+            assert_eq!(
+                reference.expected,
+                InputReport::Native(expected),
+                "{family}"
+            );
         }
     }
     #[test]
