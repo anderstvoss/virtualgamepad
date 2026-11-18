@@ -29,7 +29,7 @@ bounded by the [support matrix](../CONTROLLER_SUPPORT.md), compiled
 
 ## Controllers and realizations
 
-**Support category:** every family/transport cell in
+**Support category:** every implemented family/transport path in
 [`CONTROLLER_SUPPORT.md`](../CONTROLLER_SUPPORT.md) remains **WIP**;
 no `✓*` or `✓` cell has been promoted. The transport list below describes
 declared/implemented paths, not a blanket acceptance of all native functions.
@@ -158,12 +158,14 @@ The #369 Xbox driver lab helper, xpadneo rule wrapper, Xbox additions to the inp
 
 ## Known limitations
 
-- **All support cells are WIP**; per-function virtual-host or partial
+- **All implemented support paths remain WIP**; undeclared and deferred
+  targets are not shipping realizations. Per-function virtual-host or partial
   physical correspondence is not blanket physical-controller equivalence.
   Physical fidelity #136 and many consumer combinations remain unqualified.
-- **First-valid-neutral oracle (#166):** creation-performance validation and
-  the first-valid-neutral timing oracle are still missing. Existing per-family
-  N1/N4 lifecycle runs remain the available evidence; **#166 is not an
+- **First-valid-neutral oracle (#166):** the deterministic oracle core landed
+  in #372, but the host capture/consumer adapter and empirical first-valid-neutral
+  timing and creation-performance qualification remain missing. Existing per-family
+  N1/N4 lifecycle runs are lifecycle evidence only; **#166 is not an
   Alpha 2 gate**, per [#365 owner decision](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358).
 - **Audio:** sustained duplex continuity, latency, matching profiles and
   physical audio are not qualified (#116, #135, #143, #145); dropouts and
@@ -172,16 +174,19 @@ The #369 Xbox driver lab helper, xpadneo rule wrapper, Xbox additions to the inp
   **not a loss-aware host-output stream**. VG-2/#344 and ADR-0024 are assigned
   to the separate audio track; #373 landed the journal core without family
   wiring. Neither is an Alpha 2 gate.
-- **Alpha 2 blocking gate — real kalux USB/IP #350 run:** **not yet run**
-  as of this draft; socket-pair/synthetic tests are not a substitute. Per
-  [#365 owner decision](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6792411358), the local run must
-  confirm live `host_outputs()` snapshots while in service, the FINAL
-  snapshot after close, and stale-worker refusal with reinstall guidance.
-  Do not mark the gate passed without its actual on-host evidence.
+- **Alpha 2 gate — real kalux USB/IP #350 run: PASS** on candidate
+  `324d250bb01a5ddbfc1dd189513d4c9160429ee1`, per the [recorded #365 result](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-6969740517). All three verdicts passed:
+  live `host_outputs()` snapshots while in service, FINAL retained snapshot
+  after close, and stale-worker refusal with reinstall guidance. The candidate
+  pair was restored and root API smoke passed; the report retains a separate
+  lower-level raw broker smoke failure for investigation. This is scoped
+  #350 evidence, not general streaming or final-release qualification.
 - **Xbox Series:** uinput is limited to conventional main-motor rumble;
   Bluetooth-bus UHID has independent virtual trigger-rumble commands but no
-  verified physical trigger actuation. Steam Guide test-screen registration
-  and Steam trigger-rumble support remain unverified. Real radio/pairing,
+  verified physical trigger actuation. SDL 3.4.18 evidence is for virtual
+  commands; Steam package 1792618285 listed both targets and exercised controls
+  excluding Guide, with the temporary active-seat dev setup for UHID. Steam
+  Guide test-screen registration and Steam trigger-rumble support remain unverified. Real radio/pairing,
   wired GIP, battery, LED, audio and accessories remain unimplemented
   ([Series guide](../XBOX_SERIES.md), #160, #168, #164).
 - SDL 3.2.10's Wii HIDAPI path can disconnect on a non-MotionPlus extension
@@ -190,8 +195,16 @@ The #369 Xbox driver lab helper, xpadneo rule wrapper, Xbox additions to the inp
 - Linux SDL Wii MotionPlus gyro events were not observed in the tested SDL
   3.2.10 path; kernel MotionPlus gyro delivery was observed separately
   ([#244](https://github.com/anderstvoss/virtualgamepad/issues/244), [W5 evidence](../WII_REMOTE.md#w5-gyro-consumer-boundary)).
-- DualShock 4's typed USB HID output event omits a decoded blink field; retained
-  `host_outputs()` carries the blink bytes ([#287](https://github.com/anderstvoss/virtualgamepad/issues/287)).
+- DualShock 4's typed USB HID output event (`DualShock4HidOutput::UsbOutput`)
+  omits a decoded blink field; retained `host_outputs()` carries the blink
+  bytes. This is an Alpha 2 API event-model limitation, not a finding that host
+  blink bytes are lost ([#287](https://github.com/anderstvoss/virtualgamepad/issues/287)).
+- **Xbox 360 feedback (#282):** Linux uinput exposes conventional evdev
+  `FF_RUMBLE`, but cannot create the `xpadN` LED-ring class device used by
+  Linux xpad. Standard-HID USB UHID has no output report; it does not provide
+  proprietary Xbox USB feedback. The uinput rumble observations are scoped
+  consumer evidence; physical motor and LED-ring behavior remain unvalidated
+  ([#282](https://github.com/anderstvoss/virtualgamepad/issues/282)).
 - **Steam Puck/receiver:** unsupported in production; wired Steam is not a
   Puck/receiver simulation. Real Bluetooth (including Wii radio/pairing)
   remains out of scope (#159, #164, #165).
