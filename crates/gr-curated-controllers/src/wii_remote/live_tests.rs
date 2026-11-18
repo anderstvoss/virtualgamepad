@@ -147,11 +147,11 @@ fn bluetooth_host_binding_extensions_outputs_and_battery_probe() {
         .and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()));
     let base = inputs(&root);
     let rumble = rumble_probe(&mut c, &root);
-    c.attach(WiiExtension::Nunchuk(WiiNunchukState::default()), false)
+    c.attach(WiiExtension::Nunchuk(WiiNunchukInputs::default()), false)
         .unwrap();
     pump(&mut c, Duration::from_secs(2));
     let nunchuk = inputs(&root);
-    c.attach(WiiExtension::Classic(WiiClassicState::default()), false)
+    c.attach(WiiExtension::Classic(WiiClassicInputs::default()), false)
         .unwrap();
     pump(&mut c, Duration::from_secs(2));
     let classic = inputs(&root);

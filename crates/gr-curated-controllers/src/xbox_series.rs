@@ -1,14 +1,16 @@
 //! Native controls for the standard Xbox Series controller.
 
+mod bluetooth;
 mod controller;
 mod definition;
 mod evdev;
+pub use bluetooth::XboxSeriesBluetoothRumble;
 pub use controller::{XboxSeriesController, XboxSeriesOutputState, create_xbox_series};
 
 pub(crate) use definition::XboxSeriesDefinition;
 use gr_controller_contract::{ControlError, DigitalControlUpdate, DpadDirection, FaceButton};
 
-/// Xbox Series has no per-controller creation settings on uinput.
+/// Xbox Series has no per-controller creation settings.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct XboxSeriesOptions {}
@@ -62,9 +64,22 @@ impl XboxSeriesTrigger {
     }
 }
 
-/// Complete input state for the Xbox Series uinput realization.
+/// Read-only selected realization metadata. This family models no battery
+/// telemetry or caller-visible input clock; those values are not fabricated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct XboxSeriesStatus {
+    target: gr_realization_api::RealizationTarget,
+}
+impl XboxSeriesStatus {
+    #[must_use]
+    pub const fn target(self) -> gr_realization_api::RealizationTarget {
+        self.target
+    }
+}
+
+/// Caller-owned native input levels for the Xbox Series controller.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct XboxSeriesState {
+pub struct XboxSeriesInputs {
     buttons: [bool; XboxSeriesButton::DpadRight as usize + 1],
     /// Left and right sticks, in signed xpad evdev units with positive Y down.
     /// See `xbox-series-xpad-axis-domains` and `xbox-series-xpad-evdev-shape`.
@@ -72,7 +87,7 @@ pub struct XboxSeriesState {
     triggers: [XboxSeriesTrigger; 2],
 }
 
-impl XboxSeriesState {
+impl XboxSeriesInputs {
     #[must_use]
     pub const fn pressed(&self, button: XboxSeriesButton) -> bool {
         self.buttons[button as usize]
@@ -134,7 +149,7 @@ mod tests {
 
     #[test]
     fn native_state_keeps_guide_share_and_dpad_independent() {
-        let mut state = XboxSeriesState::default();
+        let mut state = XboxSeriesInputs::default();
         assert_eq!(state.sticks, [[0; 2]; 2]);
         assert_eq!(state.triggers().map(XboxSeriesTrigger::raw), [0; 2]);
 
@@ -152,12 +167,12 @@ mod tests {
         state.sticks = [[i16::MIN, i16::MAX], [i16::MAX, i16::MIN]];
         state.set_triggers(0, 1023).unwrap();
         state.neutralize();
-        assert_eq!(state, XboxSeriesState::default());
+        assert_eq!(state, XboxSeriesInputs::default());
     }
 
     #[test]
     fn invalid_trigger_edit_preserves_both_accepted_values() {
-        let mut state = XboxSeriesState::default();
+        let mut state = XboxSeriesInputs::default();
         state.set_triggers(0, 1023).unwrap();
         let before = state.clone();
         for (left, right, invalid) in [(1024, 0, 1024), (0, u16::MAX, u16::MAX)] {

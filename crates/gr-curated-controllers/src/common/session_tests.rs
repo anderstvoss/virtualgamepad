@@ -34,29 +34,26 @@ macro_rules! input_fixture {
 }
 input_fixture!(
     crate::DualSenseInputs,
-    crate::DualShock4State,
-    crate::SwitchProState,
-    crate::Xbox360State,
-    crate::wii_remote::WiiRemoteState,
-    crate::steam_controller_2026::SteamController2026State,
-    crate::xbox_series::XboxSeriesState,
+    crate::DualShock4Inputs,
+    crate::SwitchProInputs,
+    crate::Xbox360Inputs,
+    crate::wii_remote::WiiRemoteInputs,
+    crate::steam_controller_2026::SteamController2026Inputs,
+    crate::xbox_series::XboxSeriesInputs,
 );
-macro_rules! controller_fixture {
-    ($($handle:ty => $state:ty),* $(,)?) => {$(
-        impl ControllerFixture for $handle {
-            type State = $state;
-            fn test_state(&self) -> &Self::State { self.state() }
-        }
-    )*};
+impl ControllerFixture for crate::steam_controller_2026::SteamController2026Controller {
+    type State = crate::steam_controller_2026::SteamController2026Inputs;
+    fn test_state(&self) -> &Self::State {
+        self.inputs()
+    }
 }
-controller_fixture!(
-    crate::DualShock4Controller => crate::DualShock4State,
-    crate::SwitchProController => crate::SwitchProState,
-    crate::Xbox360Controller => crate::Xbox360State,
-    crate::wii_remote::WiiRemoteController => crate::wii_remote::WiiRemoteState,
-    crate::steam_controller_2026::SteamController2026Controller => crate::steam_controller_2026::SteamController2026State,
-    crate::xbox_series::XboxSeriesController => crate::xbox_series::XboxSeriesState,
-);
+
+impl ControllerFixture for crate::xbox_series::XboxSeriesController {
+    type State = crate::xbox_series::XboxSeriesInputs;
+    fn test_state(&self) -> &Self::State {
+        self.inputs()
+    }
+}
 
 #[derive(Default)]
 struct WorkerRecord<S> {
@@ -1486,7 +1483,10 @@ pub(crate) fn snapshot_session<D: HidDriver>(
     target: RealizationTarget,
     numbered: [bool; 3],
 ) -> (ControllerSession<D>, Arc<Mutex<Record>>) {
-    if target == RealizationTarget::LINUX_UHID_USB {
+    if matches!(
+        target,
+        RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+    ) {
         let identity = super::test_address(2);
         let (runtime, io) = rig_with_identity(&driver, numbered, identity);
         io.lock()
@@ -1498,7 +1498,7 @@ pub(crate) fn snapshot_session<D: HidDriver>(
                 numbered_feature: numbered[2],
             }));
         (
-            ControllerSession::injected_hid(driver, runtime, identity),
+            ControllerSession::injected_hid(driver, runtime, identity, target),
             io,
         )
     } else {
@@ -2037,6 +2037,28 @@ fn worker_input_transactions_preserve_clean_dirty_and_closed_boundaries() {
         }};
     }
     check!(create_dualsense_usb_worker, crate::DualSenseInputs);
-    check!(create_dualshock4_usb_worker, crate::DualShock4State);
-    check!(create_xbox360_usb_worker, crate::Xbox360State);
+    check!(create_dualshock4_usb_worker, crate::DualShock4Inputs);
+    check!(create_xbox360_usb_worker, crate::Xbox360Inputs);
+}
+
+#[test]
+fn required_protocol_conversion_refuses_workers_and_cleans_up_once() {
+    use gr_controller_contract::RealizationControllerDefinition;
+    for already_closed in [false, true] {
+        let driver = DualSenseDefinition;
+        let selection = gr_realization_api::RealizationSelection {
+            controller: driver.controller_id(),
+            target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
+        };
+        let record = Arc::new(Mutex::new(WorkerRecord::default()));
+        let mut session =
+            ControllerSession::worker(driver, selection, Box::new(FakeWorker(record.clone())));
+        if already_closed {
+            session.close();
+        }
+        let converted =
+            session.require_protocol(|| panic!("worker must not construct a native protocol"));
+        assert!(matches!(converted, Err(ProviderError::Unsupported { .. })));
+        assert_eq!(record.lock().unwrap().closes, 1);
+    }
 }

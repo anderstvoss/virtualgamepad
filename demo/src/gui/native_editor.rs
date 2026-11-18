@@ -753,10 +753,7 @@ impl InputEditor for super::editor::WiiRemoteEditor {
             // Reuse the live axis ID so topology reconciliation owns the Hold cache.
             id: InputControlId::new("accel.x"),
             title: "Motion",
-            gyroscope: Some(Self::wii_sensor(
-                "gyro.pitch",
-                self.state().motion_plus().attached,
-            )),
+            gyroscope: Some(Self::wii_sensor("gyro.pitch", self.motion_plus_attached())),
             accelerometer: Self::wii_sensor("accel.x", true),
         }];
         if matches!(
@@ -827,7 +824,8 @@ impl InputEditor for super::editor::WiiRemoteEditor {
         matches!(id.as_str(), "nunchuk" | "classic" | "motion-plus")
     }
     fn current_topology(&self) -> &'static InputTopology {
-        self.state().input_topology()
+        self.state()
+            .projected_input_topology(self.motion_plus_attached())
     }
     fn stick_value(&self, id: InputControlId) -> Option<(i32, i32)> {
         use gr_curated_controllers::wii_remote::WiiExtension;
@@ -901,7 +899,8 @@ impl super::editor::WiiRemoteEditor {
     }
 }
 fn apply_wii_motion(
-    state: &mut gr_curated_controllers::wii_remote::WiiRemoteState,
+    state: &mut gr_curated_controllers::wii_remote::WiiRemoteInputs,
+    motion_plus_attached: bool,
     id: InputControlId,
     gyro: [i32; 3],
     accel: [i32; 3],
@@ -923,7 +922,7 @@ fn apply_wii_motion(
             if candidate.set_accelerometer(accel).is_err() {
                 return false;
             }
-            if candidate.motion_plus().attached {
+            if motion_plus_attached {
                 let Some(gyro) = convert(gyro) else {
                     return false;
                 };
@@ -959,7 +958,8 @@ fn wii_axis_index(name: &str, prefix: &str) -> Option<usize> {
     }
 }
 pub(super) fn apply_wii_event(
-    state: &mut gr_curated_controllers::wii_remote::WiiRemoteState,
+    state: &mut gr_curated_controllers::wii_remote::WiiRemoteInputs,
+    motion_plus_attached: bool,
     event: &InputEvent,
 ) -> bool {
     use gr_curated_controllers::wii_remote::WiiExtension;
@@ -968,7 +968,7 @@ pub(super) fn apply_wii_event(
             id,
             gyroscope,
             accelerometer,
-        } => apply_wii_motion(state, id, gyroscope, accelerometer),
+        } => apply_wii_motion(state, motion_plus_attached, id, gyroscope, accelerometer),
         InputEvent::Button { id, pressed } => apply_wii_button(state, id, pressed),
         InputEvent::Axis1 { id, value } => {
             let Ok(value) = u16::try_from(value) else {
@@ -980,6 +980,9 @@ pub(super) fn apply_wii_event(
                 return state.set_accelerometer(v).is_ok();
             }
             if let Some(i) = wii_axis_index(id.as_str(), "gyro.") {
+                if !motion_plus_attached {
+                    return false;
+                }
                 let m = state.motion_plus();
                 let mut v = m.gyroscope;
                 v[i] = value;
@@ -1047,7 +1050,7 @@ fn wii_classic_button_index(id: InputControlId) -> Option<usize> {
     .position(|name| *name == id.as_str())
 }
 fn apply_wii_button(
-    state: &mut gr_curated_controllers::wii_remote::WiiRemoteState,
+    state: &mut gr_curated_controllers::wii_remote::WiiRemoteInputs,
     id: InputControlId,
     pressed: bool,
 ) -> bool {
@@ -1148,7 +1151,7 @@ impl InputEditor for super::editor::SteamEditor {
 }
 
 pub(super) fn apply_steam_event(
-    state: &mut gr_curated_controllers::steam_controller_2026::SteamController2026State,
+    state: &mut gr_curated_controllers::steam_controller_2026::SteamController2026Inputs,
     event: &InputEvent,
 ) -> bool {
     if let Some((button, pressed)) = steam_button(event) {
@@ -1209,7 +1212,7 @@ fn steam_button(
     }
 }
 fn apply_steam_axes(
-    state: &mut gr_curated_controllers::steam_controller_2026::SteamController2026State,
+    state: &mut gr_curated_controllers::steam_controller_2026::SteamController2026Inputs,
     event: &InputEvent,
 ) -> bool {
     match event {
@@ -1309,9 +1312,7 @@ mod registry_tests {
     }
     #[test]
     fn wii_native_edits_cover_all_core_positions_and_raw_sensor_domains() {
-        use gr_curated_controllers::wii_remote::{
-            WiiRemoteButton, WiiRemoteRevision, WiiRemoteState,
-        };
+        use gr_curated_controllers::wii_remote::{WiiRemoteButton, WiiRemoteInputs};
         let names = [
             "left", "right", "up", "down", "plus", "minus", "one", "two", "a", "b", "home",
         ];
@@ -1329,9 +1330,10 @@ mod registry_tests {
             WiiRemoteButton::Home,
         ];
         for (index, name) in names.into_iter().enumerate() {
-            let mut state = WiiRemoteState::default();
+            let mut state = WiiRemoteInputs::default();
             assert!(apply_wii_event(
                 &mut state,
+                true,
                 &InputEvent::Button {
                     id: InputControlId::new(name),
                     pressed: true
@@ -1341,10 +1343,11 @@ mod registry_tests {
                 assert_eq!(state.pressed(*button), i == index);
             }
         }
-        let mut state = WiiRemoteState::new(WiiRemoteRevision::Tr);
+        let mut state = WiiRemoteInputs::default();
         for name in ["accel.x", "accel.y", "accel.z"] {
             assert!(apply_wii_event(
                 &mut state,
+                true,
                 &InputEvent::Axis1 {
                     id: InputControlId::new(name),
                     value: 1023
@@ -1355,6 +1358,7 @@ mod registry_tests {
         let before = state.clone();
         assert!(!apply_wii_event(
             &mut state,
+            true,
             &InputEvent::Axis1 {
                 id: InputControlId::new("accel.x"),
                 value: 1024
@@ -1363,6 +1367,7 @@ mod registry_tests {
         assert_eq!(state, before);
         assert!(apply_wii_event(
             &mut state,
+            true,
             &InputEvent::Axis1 {
                 id: InputControlId::new("gyro.yaw"),
                 value: 16383
@@ -1482,7 +1487,7 @@ impl InputEditor for super::editor::XboxSeriesEditor {
 }
 
 pub(super) fn apply_xbox_series_event(
-    state: &mut virtualgamepad::XboxSeriesState,
+    state: &mut virtualgamepad::XboxSeriesInputs,
     event: &InputEvent,
 ) -> bool {
     use virtualgamepad::XboxSeriesButton as Button;
@@ -1537,7 +1542,7 @@ pub(super) fn apply_xbox_series_event(
 #[cfg(test)]
 mod xbox_series_tests {
     use super::*;
-    use virtualgamepad::{RealizationId, XboxSeriesButton, XboxSeriesState};
+    use virtualgamepad::{RealizationId, XboxSeriesButton, XboxSeriesInputs};
 
     #[test]
     fn selector_and_editor_expose_series_native_controls() {
@@ -1545,12 +1550,15 @@ mod xbox_series_tests {
         let kinds = Kind::registered();
         assert_eq!(kinds.len(), 7);
         assert!(matches!(kinds.last(), Some(Kind::XboxSeries)));
-        let [target] = (Kind::XboxSeries.entry().realizations)() else {
-            panic!("expected only uinput");
-        };
-        assert_eq!(target.surface.target(), RealizationId::LINUX_UINPUT);
+        let targets = (Kind::XboxSeries.entry().realizations)();
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].surface.target(), RealizationId::LINUX_UINPUT);
+        assert_eq!(
+            targets[1].surface.target(),
+            RealizationId::LINUX_UHID_BLUETOOTH
+        );
 
-        let mut state = XboxSeriesState::default();
+        let mut state = XboxSeriesInputs::default();
         assert!(apply_xbox_series_event(
             &mut state,
             &InputEvent::Button {

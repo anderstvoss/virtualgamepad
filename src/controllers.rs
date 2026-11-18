@@ -6,15 +6,15 @@ use crate::{
     ControllerError, ControllerId, CreationOptions, DigitalControlUpdate, DualSenseAxis,
     DualSenseControl, DualSenseFeature, DualSenseInputs, DualSenseOutputEvent, DualSenseStatus,
     DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
-    DualShock4MotionSample, DualShock4OutputEvent, DualShock4State, DualShock4Surface,
+    DualShock4Inputs, DualShock4MotionSample, DualShock4OutputEvent, DualShock4Surface,
     DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
-    ServiceReadiness, SteamController2026Button, SteamController2026OutputEvent,
-    SteamController2026Outputs, SteamController2026State, SwitchProAxis, SwitchProControl,
-    SwitchProMotionSample, SwitchProOutputEvent, SwitchProState, SwitchProSurface, TouchSlot,
-    WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton, WiiRemoteOutputEvent,
-    WiiRemoteOutputs, WiiRemoteState, WiiResourceDisposition, Xbox360Axis, Xbox360Control,
-    Xbox360OutputEvent, Xbox360State, Xbox360Surface, Xbox360Trigger, XboxSeriesButton,
-    XboxSeriesOutputEvent, XboxSeriesOutputState, XboxSeriesState,
+    ServiceReadiness, SteamController2026Button, SteamController2026Inputs,
+    SteamController2026OutputEvent, SteamController2026Outputs, SwitchProAxis, SwitchProControl,
+    SwitchProInputs, SwitchProMotionSample, SwitchProOutputEvent, SwitchProSurface, TouchSlot,
+    WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton, WiiRemoteInputs,
+    WiiRemoteOutputEvent, WiiRemoteOutputs, WiiResourceDisposition, Xbox360Axis, Xbox360Control,
+    Xbox360Inputs, Xbox360OutputEvent, Xbox360Surface, Xbox360Trigger, XboxSeriesButton,
+    XboxSeriesInputs, XboxSeriesOutputEvent, XboxSeriesOutputState,
 };
 // The family adapter owns only static dispatch; protocol semantics stay curated.
 trait Family {
@@ -537,9 +537,18 @@ impl DualShock4Controller {
     shared!(wants_write);
     shared!(next_service_in);
     shared!(dropped_output_events);
-    shared!(state, DualShock4State);
-    shared!(edit_inputs, DualShock4State);
-    shared!(set_inputs, DualShock4State);
+    /// Borrow accepted native input levels.
+    #[must_use]
+    pub fn inputs(&self) -> &DualShock4Inputs {
+        self.controller.inner.inputs()
+    }
+    /// Read battery metadata and controller-owned motion/contact clocks.
+    #[must_use]
+    pub fn status(&self) -> crate::DualShock4Status {
+        self.controller.inner.status()
+    }
+    shared!(edit_inputs, DualShock4Inputs);
+    shared!(set_inputs, DualShock4Inputs);
     shared!(host_outputs, crate::DualShock4OutputState);
     shared!(is_dirty);
     shared!(surface, DualShock4Surface);
@@ -634,9 +643,18 @@ impl SwitchProController {
     shared!(wants_write);
     shared!(next_service_in);
     shared!(dropped_output_events);
-    shared!(state, SwitchProState);
-    shared!(edit_inputs, SwitchProState);
-    shared!(set_inputs, SwitchProState);
+    /// Borrow accepted native input levels.
+    #[must_use]
+    pub fn inputs(&self) -> &SwitchProInputs {
+        self.controller.inner.inputs()
+    }
+    /// Read accepted motion timing and host-selected stream state.
+    #[must_use]
+    pub fn status(&self) -> crate::SwitchProStatus {
+        self.controller.inner.status()
+    }
+    shared!(edit_inputs, SwitchProInputs);
+    shared!(set_inputs, SwitchProInputs);
     shared!(host_outputs, crate::SwitchProOutputState);
     shared!(is_dirty);
     shared!(surface, SwitchProSurface);
@@ -696,9 +714,18 @@ impl Xbox360Controller {
     shared!(wants_write);
     shared!(next_service_in);
     shared!(dropped_output_events);
-    shared!(state, Xbox360State);
-    shared!(edit_inputs, Xbox360State);
-    shared!(set_inputs, Xbox360State);
+    /// Borrow accepted native input levels.
+    #[must_use]
+    pub fn inputs(&self) -> &Xbox360Inputs {
+        self.controller.inner.inputs()
+    }
+    /// Read accepted battery metadata.
+    #[must_use]
+    pub fn status(&self) -> crate::Xbox360Status {
+        self.controller.inner.status()
+    }
+    shared!(edit_inputs, Xbox360Inputs);
+    shared!(set_inputs, Xbox360Inputs);
     shared!(host_outputs, crate::Xbox360OutputState);
     shared!(surface, Xbox360Surface);
     shared!(is_dirty);
@@ -758,7 +785,7 @@ impl WiiRemoteController {
 
     /// Current raw battery metadata, retained after close.
     #[must_use]
-    pub const fn battery(&self) -> crate::WiiRemoteBattery {
+    pub fn battery(&self) -> crate::WiiRemoteBattery {
         self.controller.inner.battery()
     }
 
@@ -808,8 +835,17 @@ impl WiiRemoteController {
         self.controller.inner.resolve_resource(choice)
     }
 
-    shared!(state, WiiRemoteState);
-    shared!(edit_inputs, WiiRemoteState);
+    /// Borrow accepted native levels for the current attachment.
+    #[must_use]
+    pub fn inputs(&self) -> &WiiRemoteInputs {
+        self.controller.inner.inputs()
+    }
+    /// Read revision, attachment and protocol-owned battery metadata.
+    #[must_use]
+    pub fn status(&self) -> crate::WiiRemoteStatus {
+        self.controller.inner.status()
+    }
+    shared!(edit_inputs, WiiRemoteInputs);
     shared!(host_outputs, WiiRemoteOutputs);
     shared!(surface, crate::ControllerSurface);
     shared!(wants_write);
@@ -826,7 +862,7 @@ impl WiiRemoteController {
     shared!(service, WiiRemoteOutputEvent);
     edits! {
         fn set_digital(update: DigitalControlUpdate);
-        fn set_inputs(state: WiiRemoteState);
+        fn set_inputs(state: WiiRemoteInputs);
         fn set_button(button: WiiRemoteButton, pressed: bool);
         fn set_accelerometer(values: [u16; 3]);
         fn set_ir(points: [Option<WiiIrPoint>; 4]);
@@ -866,8 +902,17 @@ impl SteamController2026Controller {
         self.controller.inner.identity()
     }
 
-    shared!(state, SteamController2026State);
-    shared!(edit_inputs, SteamController2026State);
+    /// Borrow accepted native input levels, including the caller's source timestamp.
+    #[must_use]
+    pub fn inputs(&self) -> &SteamController2026Inputs {
+        self.controller.inner.inputs()
+    }
+    /// Read wired protocol counters and mode metadata.
+    #[must_use]
+    pub fn status(&self) -> crate::SteamController2026Status {
+        self.controller.inner.status()
+    }
+    shared!(edit_inputs, SteamController2026Inputs);
     shared!(host_outputs, SteamController2026Outputs);
     shared!(surface, crate::ControllerSurface);
     shared!(wants_write);
@@ -884,7 +929,7 @@ impl SteamController2026Controller {
     shared!(service, SteamController2026OutputEvent);
     edits! {
         fn set_digital(update: DigitalControlUpdate);
-        fn set_inputs(state: SteamController2026State);
+        fn set_inputs(state: SteamController2026Inputs);
         fn set_button(button: SteamController2026Button, pressed: bool);
     }
 }
@@ -912,8 +957,17 @@ pub struct XboxSeriesController {
 }
 
 impl XboxSeriesController {
-    shared!(state, XboxSeriesState);
-    shared!(edit_inputs, XboxSeriesState);
+    /// Borrow accepted native input levels.
+    #[must_use]
+    pub fn inputs(&self) -> &XboxSeriesInputs {
+        self.controller.inner.inputs()
+    }
+    /// Read selected realization metadata.
+    #[must_use]
+    pub fn status(&self) -> crate::XboxSeriesStatus {
+        self.controller.inner.status()
+    }
+    shared!(edit_inputs, XboxSeriesInputs);
     shared!(host_outputs, XboxSeriesOutputState);
     shared!(surface, crate::ControllerSurface);
     shared!(wants_write);
@@ -930,7 +984,7 @@ impl XboxSeriesController {
     shared!(service, XboxSeriesOutputEvent);
     edits! {
         fn set_digital(update: DigitalControlUpdate);
-        fn set_inputs(state: XboxSeriesState);
+        fn set_inputs(state: XboxSeriesInputs);
         fn set_button(button: XboxSeriesButton, pressed: bool);
     }
 }

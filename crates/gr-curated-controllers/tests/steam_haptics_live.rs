@@ -1,8 +1,8 @@
 //! Opt-in real upstream clients against an owned virtual HID device, never hardware.
 #![cfg(target_os = "linux")]
 use gr_curated_controllers::steam_controller_2026::{
-    SteamController2026Controller as Controller, SteamController2026Options as Options,
-    SteamController2026State as State, SteamController2026StreamPacket as Packet,
+    SteamController2026Controller as Controller, SteamController2026Inputs as State,
+    SteamController2026Options as Options, SteamController2026StreamPacket as Packet,
     create_steam_controller_2026,
 };
 use gr_realization_api::{RawReverseEvent, RealizationTarget};

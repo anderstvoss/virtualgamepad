@@ -76,6 +76,10 @@ impl NativeProviderSession for Fake {
         Ok(())
     }
 }
+pub(super) fn ownership_controller() -> WiiRemoteController {
+    create(WiiEepromImage::default()).0
+}
+
 fn create(image: WiiEepromImage) -> (WiiRemoteController, Fake) {
     create_with_options(image, Compat::default())
 }
@@ -232,7 +236,7 @@ fn imported_calibration_survives_snapshot_and_cleanup_is_per_controller() {
     let (mut second, two) = create(image.clone());
     for (controller, fake) in [(&mut first, &one), (&mut second, &two)] {
         controller
-            .attach(WiiExtension::Nunchuk(WiiNunchukState::default()), false)
+            .attach(WiiExtension::Nunchuk(WiiNunchukInputs::default()), false)
             .unwrap();
         for (address, value) in [(0xf0, 0x55), (0xfb, 0)] {
             output(fake, 0x16, &write(0x52, address, &[value]));
@@ -376,28 +380,28 @@ fn live_attachment_swap_detach_preserves_core_and_counts_only_shape_changes() {
     c.set_button(WiiRemoteButton::A, true).unwrap();
     for (extension, mp, generation, buttons, axes) in [
         (
-            WiiExtension::Nunchuk(WiiNunchukState::default()),
+            WiiExtension::Nunchuk(WiiNunchukInputs::default()),
             false,
             1,
             13,
             6,
         ),
         (
-            WiiExtension::Nunchuk(WiiNunchukState::default()),
+            WiiExtension::Nunchuk(WiiNunchukInputs::default()),
             false,
             1,
             13,
             6,
         ),
         (
-            WiiExtension::Classic(WiiClassicState::default()),
+            WiiExtension::Classic(WiiClassicInputs::default()),
             false,
             2,
             26,
             5,
         ),
         (
-            WiiExtension::Classic(WiiClassicState::default()),
+            WiiExtension::Classic(WiiClassicInputs::default()),
             true,
             3,
             26,
@@ -410,7 +414,7 @@ fn live_attachment_swap_detach_preserves_core_and_counts_only_shape_changes() {
         assert_eq!(c.topology_generation(), generation);
         assert_eq!(c.current_topology().auxiliary_buttons().len(), buttons);
         assert_eq!(c.current_topology().extra_axes().len(), axes);
-        assert!(c.state().pressed(WiiRemoteButton::A));
+        assert!(c.runtime_state().pressed(WiiRemoteButton::A));
         c.commit().unwrap();
         c.service(&mut |_| {}).unwrap();
         let record = fake.0.lock().unwrap();
@@ -428,13 +432,13 @@ fn live_attachment_swap_detach_preserves_core_and_counts_only_shape_changes() {
             .unwrap();
         assert_eq!(status[2] & 2, u8::from(buttons > 11) * 2); // Inactive MP alone is not extension-present.
     }
-    let before = c.state().clone();
+    let before = c.runtime_state().clone();
     let generation = c.topology_generation();
     assert!(
-        c.attach(WiiExtension::ClassicPro(WiiClassicState::default()), false)
+        c.attach(WiiExtension::ClassicPro(WiiClassicInputs::default()), false)
             .is_err()
     );
-    assert_eq!(c.state(), &before);
+    assert_eq!(c.runtime_state(), &before);
     assert_eq!(c.topology_generation(), generation);
     c.close();
     c.close();
@@ -518,12 +522,12 @@ fn extension_init_identity_motionplus_activation_and_passthrough_are_source_mode
     let mut p = codec::WiiProtocol::default();
     for (extension, mode, id) in [
         (
-            WiiExtension::Nunchuk(WiiNunchukState::default()),
+            WiiExtension::Nunchuk(WiiNunchukInputs::default()),
             5,
             [0, 0, 0xa4, 0x20, 0, 0],
         ),
         (
-            WiiExtension::Classic(WiiClassicState::default()),
+            WiiExtension::Classic(WiiClassicInputs::default()),
             7,
             [0, 0, 0xa4, 0x20, 1, 1],
         ),
@@ -593,8 +597,8 @@ fn extension_init_identity_motionplus_activation_and_passthrough_are_source_mode
 }
 #[test]
 fn neutralization_preserves_topology_and_revision_and_releases_extension_controls() {
-    let mut s = WiiRemoteState::new(WiiRemoteRevision::Tr);
-    s.extension = WiiExtension::Nunchuk(WiiNunchukState {
+    let mut s = RuntimeState::new(WiiRemoteRevision::Tr);
+    s.inputs.extension = WiiExtension::Nunchuk(WiiNunchukInputs {
         c: true,
         z: true,
         ..Default::default()
@@ -602,11 +606,11 @@ fn neutralization_preserves_topology_and_revision_and_releases_extension_control
     s.set_button(WiiRemoteButton::A, true);
     s.neutralize();
     assert_eq!(s.revision(), WiiRemoteRevision::Tr);
-    assert!(s.motion_plus.attached);
+    assert!(s.motion_plus_attached);
     assert!(!s.pressed(WiiRemoteButton::A));
     assert_eq!(
         s.extension(),
-        &WiiExtension::Nunchuk(WiiNunchukState::default())
+        &WiiExtension::Nunchuk(WiiNunchukInputs::default())
     );
 }
 
@@ -659,7 +663,7 @@ fn memory_boundaries_negative_ack_and_rejected_attachment_leave_resources_unchan
         controller
             .attach(
                 if index % 2 == 0 {
-                    WiiExtension::Nunchuk(WiiNunchukState::default())
+                    WiiExtension::Nunchuk(WiiNunchukInputs::default())
                 } else {
                     WiiExtension::None
                 },
@@ -667,14 +671,14 @@ fn memory_boundaries_negative_ack_and_rejected_attachment_leave_resources_unchan
             )
             .unwrap();
     }
-    let before = controller.state().clone();
+    let before = controller.runtime_state().clone();
     let generation = controller.topology_generation();
     assert!(
         controller
-            .attach(WiiExtension::Nunchuk(WiiNunchukState::default()), false)
+            .attach(WiiExtension::Nunchuk(WiiNunchukInputs::default()), false)
             .is_err()
     );
-    assert_eq!(controller.state(), &before);
+    assert_eq!(controller.runtime_state(), &before);
     assert_eq!(controller.topology_generation(), generation);
 }
 
@@ -682,10 +686,10 @@ fn memory_boundaries_negative_ack_and_rejected_attachment_leave_resources_unchan
 fn replacement_notifies_consumer_of_both_edges_and_repeated_attachment_keeps_init() {
     use gr_hid::Protocol;
     let mut p = codec::WiiProtocol::default();
-    p.change_attachment(WiiExtension::Nunchuk(WiiNunchukState::default()), false, 0)
+    p.change_attachment(WiiExtension::Nunchuk(WiiNunchukInputs::default()), false, 0)
         .unwrap();
     p.input(&p.state.clone(), 0).unwrap();
-    p.change_attachment(WiiExtension::Classic(WiiClassicState::default()), false, 0)
+    p.change_attachment(WiiExtension::Classic(WiiClassicInputs::default()), false, 0)
         .unwrap();
     let statuses: Vec<_> = p
         .input(&p.state.clone(), 0)
@@ -696,20 +700,17 @@ fn replacement_notifies_consumer_of_both_edges_and_repeated_attachment_keeps_ini
         .collect();
     assert_eq!(statuses, [0, 2]);
     let (mut c, fake) = create(WiiEepromImage::default());
-    c.attach(WiiExtension::Nunchuk(WiiNunchukState::default()), false)
+    c.attach(WiiExtension::Nunchuk(WiiNunchukInputs::default()), false)
         .unwrap();
     c.commit().unwrap();
     for (offset, value) in [(0xf0, 0x55), (0xfb, 0)] {
         output(&fake, 0x16, &write(0x52, offset, &[value]));
         c.service(&mut |_| {}).unwrap();
     }
-    assert_eq!(
-        c.session.protocol().unwrap().memory.initialized,
-        [true, true]
-    );
+    assert_eq!(c.session.protocol().memory.initialized, [true, true]);
     let generation = c.topology_generation();
     c.attach(
-        WiiExtension::Nunchuk(WiiNunchukState {
+        WiiExtension::Nunchuk(WiiNunchukInputs {
             c: true,
             ..Default::default()
         }),
@@ -718,10 +719,7 @@ fn replacement_notifies_consumer_of_both_edges_and_repeated_attachment_keeps_ini
     .unwrap();
     c.commit().unwrap();
     assert_eq!(c.topology_generation(), generation);
-    assert_eq!(
-        c.session.protocol().unwrap().memory.initialized,
-        [true, true]
-    );
+    assert_eq!(c.session.protocol().memory.initialized, [true, true]);
 }
 
 #[test]
@@ -738,7 +736,7 @@ fn stopped_controller_accepts_repeated_attachments_and_restarts_without_backlog(
         let extension = if i % 2 == 0 {
             WiiExtension::None
         } else {
-            WiiExtension::Nunchuk(WiiNunchukState::default())
+            WiiExtension::Nunchuk(WiiNunchukInputs::default())
         };
         c.attach(extension, i % 3 == 0).unwrap();
     }
@@ -818,16 +816,16 @@ fn idle_host_output_wakes_the_exposed_readiness_descriptor() {
 #[test]
 fn detached_attachment_projection_matches_live_state_and_rejects_atomically() {
     let (mut c, _) = create(WiiEepromImage::default());
-    let mut projected = c.state().clone();
+    let mut projected = c.runtime_state().clone();
     for (extension, mp) in [
-        (WiiExtension::Nunchuk(WiiNunchukState::default()), true),
-        (WiiExtension::Nunchuk(WiiNunchukState::default()), true),
-        (WiiExtension::Classic(WiiClassicState::default()), false),
+        (WiiExtension::Nunchuk(WiiNunchukInputs::default()), true),
+        (WiiExtension::Nunchuk(WiiNunchukInputs::default()), true),
+        (WiiExtension::Classic(WiiClassicInputs::default()), false),
         (WiiExtension::None, false),
     ] {
         projected.set_attachment(extension.clone(), mp).unwrap();
         c.attach(extension, mp).unwrap();
-        assert_eq!(&projected, c.state());
+        assert_eq!(&projected, c.runtime_state());
         if mp {
             projected
                 .set_motion_plus_values([1, 2, 3], [true; 3])
@@ -838,7 +836,7 @@ fn detached_attachment_projection_matches_live_state_and_rejects_atomically() {
     let before = projected.clone();
     assert!(
         projected
-            .set_attachment(WiiExtension::ClassicPro(WiiClassicState::default()), true)
+            .set_attachment(WiiExtension::ClassicPro(WiiClassicInputs::default()), true)
             .is_err()
     );
     assert_eq!(projected, before);
@@ -856,7 +854,7 @@ fn compat_creation_options_are_per_controller_and_replies_cleanup_once() {
     let (mut second, two) = create_with_options(WiiEepromImage::default(), Compat::default());
     for (controller, fake, enabled) in [(&mut first, &one, false), (&mut second, &two, true)] {
         controller
-            .attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+            .attach(WiiExtension::Nunchuk(WiiNunchukInputs::default()), true)
             .unwrap();
         for (slave, addr, value) in [(0x52, 0xf0, 0x55), (0x52, 0xfb, 0), (0x53, 0xfe, 5)] {
             output(fake, 0x16, &write(slave, addr, &[value]));
@@ -1016,12 +1014,12 @@ fn hid_input_transactions_preserve_live_attachment_and_resources() {
     let resource_dirty = controller.resource_dirty();
     check_input_transactions!(
         controller,
-        |state: &mut WiiRemoteState| {
+        |state: &mut super::WiiRemoteInputs| {
             state.set_button(WiiRemoteButton::A, true);
             state.set_accelerometer([500, 600, 700])
         },
-        |state: &mut WiiRemoteState| {
-            state.set_attachment(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+        |state: &mut super::WiiRemoteInputs| {
+            state.set_extension_values(WiiExtension::Nunchuk(WiiNunchukInputs::default()))
         },
         fake.0.lock().unwrap().sent.len()
     );
@@ -1038,35 +1036,41 @@ fn battery_metadata_survives_inputs_attachment_neutralization_and_resource_resol
     controller.commit().unwrap();
     let outputs = controller.host_outputs().unwrap();
     let resource_dirty = controller.resource_dirty();
-    let initial_inputs = controller.state().clone();
+    let initial_inputs = controller.runtime_state().clone();
     let battery = WiiRemoteBattery::new(123);
     let frames = fake.0.lock().unwrap().sent.len();
     controller.set_battery(battery).unwrap();
-    assert_eq!(controller.state(), &initial_inputs);
+    assert_eq!(controller.runtime_state(), &initial_inputs);
     assert_eq!(controller.battery(), battery);
     assert_eq!(
-        controller.session.protocol().unwrap().status().payload()[5],
+        controller.session.protocol().status().payload()[5],
         battery.raw()
     );
     assert_eq!(fake.0.lock().unwrap().sent.len(), frames);
-    controller.set_inputs(WiiRemoteState::default()).unwrap();
+    controller
+        .set_inputs(RuntimeState::default().inputs)
+        .unwrap();
     assert_eq!(controller.battery(), battery);
     controller
-        .attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+        .attach(WiiExtension::Nunchuk(WiiNunchukInputs::default()), true)
         .unwrap();
     controller.set_button(WiiRemoteButton::A, true).unwrap();
     controller.neutralize().unwrap();
     assert_eq!(controller.battery(), battery);
     assert!(matches!(
-        controller.state().extension(),
+        controller.runtime_state().extension(),
         WiiExtension::Nunchuk(_)
     ));
-    assert!(controller.state().motion_plus().attached);
-    let state = controller.state().clone();
+    assert!(controller.runtime_state().motion_plus_attached());
+    let state = controller.runtime_state().clone();
     let dirty = controller.is_dirty();
     let topology = controller.topology_generation();
-    assert!(controller.set_inputs(WiiRemoteState::default()).is_err());
-    assert_eq!(controller.state(), &state);
+    assert!(
+        controller
+            .set_inputs(RuntimeState::default().inputs)
+            .is_err()
+    );
+    assert_eq!(controller.runtime_state(), &state);
     assert_eq!(controller.is_dirty(), dirty);
     assert_eq!(controller.battery(), battery);
     assert_eq!(controller.topology_generation(), topology);

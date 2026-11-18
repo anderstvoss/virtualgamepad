@@ -336,6 +336,18 @@ The in-repo live probe uses the typed accessor. Revision and attachment remain
 managed by live topology and `attach`, and EEPROM and host outputs retain their
 separate ownership.
 
+## Xbox Series Bluetooth-bus UHID
+
+`create_xbox_series` accepts `LINUX_UHID_BLUETOOTH` with the existing
+options and native input state. The selected surface advertises native
+four-channel Bluetooth HID rumble. `XboxSeriesOutputEvent` adds HID
+lifecycle and raw output observations, and `XboxSeriesOutputState` adds
+`bluetooth_rumble` with native motor amplitudes and timing fields.
+
+The motor-role vocabulary adds `LeftTrigger` and `RightTrigger` for
+native trigger channels. Bluetooth retained magnitudes are logical
+0–100 values, while evdev retained magnitudes stay 0–65535.
+
 ## VG-1b/d · DualSense input-only values
 
 The ordinary root and curated DualSense handle now use `DualSenseInputs` for
@@ -371,3 +383,254 @@ input and status values. The in-repo worker, root-audio adapter, demo and tests
 are migrated together. The worker envelope and HID report bytes are pinned
 against the pre-split synthetic payload; their encodings retain the existing
 format and version.
+
+## VG-1b/d · DualShock 4 input-only values
+
+`DualShock4Inputs` replaces `DualShock4State` on the ordinary root and curated
+surfaces. It contains native controls, contacts and motion only. `inputs()`
+borrows accepted levels; `status()` returns a copyable `DualShock4Status` with
+battery, accepted motion sequence, sensor timestamp and touch packet sequence.
+
+| Previous API | Current API |
+| --- | --- |
+| `DualShock4State` | `DualShock4Inputs` |
+| `controller.state()` | `controller.inputs()` |
+| `set_inputs(DualShock4State)` | `set_inputs(DualShock4Inputs)` |
+| `edit_inputs(FnOnce(&mut DualShock4State) -> Result<(), ControlError>)` | `edit_inputs(FnOnce(&mut DualShock4Inputs) -> Result<(), ControlError>)` |
+
+In each root snapshot feature view, remove the old type and add `DualShock4Inputs`
+and `DualShock4Status`. Remove the handle's `state()`, add
+`inputs() -> &DualShock4Inputs` and `status() -> DualShock4Status`, and change
+both input mutation signatures above. The fourteen native getters/mutators move
+to the input type. Status adds four read accessors: `battery()`, `sequence()`,
+`sensor_timestamp()` and `touch_sequence()`. Both types support defaults, clone
+and equality; status is also copyable. Wii and Steam supporting snapshots have
+zero delta.
+
+The experimental surface exports both new types, plus the supporting worker
+`DualShock4SessionState`; it also now exports `DualSenseInputs` and
+`DualSenseStatus` alongside the session type introduced in #370.
+
+The runtime retains one authoritative status value. Input edits preserve battery
+and apply the existing change-triggered motion and contact timing, including
+last-contact release and the motion/contact double-bump guard. Explicit
+`refresh_motion()` remains a separate clock update. Worker and HID bytes match
+synthetic baselines captured before the split, with family byte and field order
+unchanged. All compiling worker, root-audio, demo and test consumers migrate in
+this PR; no compatibility alias remains.
+
+## VG-1b/d · Switch Pro input-only values
+
+`SwitchProInputs` replaces `SwitchProState` on the ordinary root, curated and
+experimental surfaces. Native buttons, sticks and motion remain caller-owned;
+accepted motion timing and host-selected stream state are read through copyable
+`SwitchProStatus`.
+
+| Previous API | Current API |
+| --- | --- |
+| `SwitchProState` | `SwitchProInputs` |
+| `controller.state()` | `controller.inputs()` |
+| `set_inputs(SwitchProState)` | `set_inputs(SwitchProInputs)` |
+| `edit_inputs(FnOnce(&mut SwitchProState) -> Result<(), ControlError>)` | `edit_inputs(FnOnce(&mut SwitchProInputs) -> Result<(), ControlError>)` |
+
+In each root snapshot feature view, remove the old type and add `SwitchProInputs`
+and `SwitchProStatus`. Remove the handle's `state()`, add
+`inputs() -> &SwitchProInputs` and `status() -> SwitchProStatus`, and change both
+input mutation signatures above. Ten native getters/mutators move to the input
+type. Status adds `timer()` and `stream_enabled()` read accessors. Both types
+support defaults, clone and equality; status is also copyable. Wii and Steam
+supporting snapshots have zero delta.
+
+`status().timer()` is the accepted, change-triggered motion clock. The existing
+`motion_report_counter()` retains its realization-specific transport counter
+semantics; UHID cadence can advance that counter independently of input edits.
+`status().stream_enabled()` reads the live host-selected stream state, also
+available through the existing handle accessor. No battery telemetry is invented
+for this family. Input edits preserve stream state, while motion changes advance
+the accepted timer once. `refresh_motion()` retains its separate runtime update
+and delivery behavior.
+
+The supporting runtime holds the separate input and status values as a pair;
+there is no additional combined public family state type or worker codec. The
+demo and tests migrate with the API, retaining protocol, provider, handshake,
+queued-report and cleanup regressions.
+
+## VG-1b/d · Xbox 360 input-only values
+
+`Xbox360Inputs` replaces `Xbox360State` on the ordinary root and curated surfaces.
+Native buttons, sticks and triggers are caller-owned input levels; battery is
+separate controller metadata returned by copyable `Xbox360Status`.
+
+| Previous API | Current API |
+| --- | --- |
+| `Xbox360State` | `Xbox360Inputs` |
+| `controller.state()` | `controller.inputs()` |
+| `controller.state().battery()` | `controller.status().battery()` |
+| `set_inputs(Xbox360State)` | `set_inputs(Xbox360Inputs)` |
+| `edit_inputs(FnOnce(&mut Xbox360State) -> Result<(), ControlError>)` | `edit_inputs(FnOnce(&mut Xbox360Inputs) -> Result<(), ControlError>)` |
+
+In each root snapshot feature view, remove the old type and add `Xbox360Inputs`
+and `Xbox360Status`. Remove the handle's `state()`, add
+`inputs() -> &Xbox360Inputs` and `status() -> Xbox360Status`, and change both input
+mutation signatures above. Ten native getters/mutators move to the input type;
+status adds the `battery()` getter. Both values support defaults, clone and
+equality; status is also copyable. Wii and Steam supporting snapshots have zero
+delta.
+
+Root, curated and experimental exports migrate together. The supporting worker
+representation is the doc-hidden `Xbox360SessionState`, with separate inputs and
+status. Worker envelope and HID bytes are pinned against synthetic levels
+captured before the split: family byte 3, version and field order are unchanged.
+Battery setters remain separate runtime updates, while input edits and
+neutralization preserve accepted metadata. No input clock is invented for this
+family. Worker, root-audio, demo and test consumers migrate in the same PR with
+no compatibility alias.
+
+## VG-1b/d · Steam Controller 2026 input-only values
+
+`SteamController2026Inputs` replaces `SteamController2026State`. Its native input
+fields, including caller-supplied `motion.timestamp_us`, retain their domains and
+encoding. `inputs()` borrows accepted levels. Copyable `SteamController2026Status`
+reads the live wired protocol's counter and mode metadata.
+
+| Previous API | Current API |
+| --- | --- |
+| `SteamController2026State` | `SteamController2026Inputs` |
+| `controller.state()` | `controller.inputs()` |
+| `set_inputs(SteamController2026State)` | `set_inputs(SteamController2026Inputs)` |
+| `edit_inputs(FnOnce(&mut SteamController2026State) -> Result<(), ControlError>)` | `edit_inputs(FnOnce(&mut SteamController2026Inputs) -> Result<(), ControlError>)` |
+
+In both root snapshot feature views and the Steam supporting snapshot, remove
+the old type and add `SteamController2026Inputs` and `SteamController2026Status`.
+Remove the handle's `state()`, add `inputs() -> &SteamController2026Inputs` and
+`status() -> SteamController2026Status`, and change both mutation signatures above.
+The six public native fields and four input methods move to the renamed input
+type unchanged. Status adds seven read accessors: `report_sequence()`,
+`steam_client_compat()`, `haptic_streaming()`, `lizard_mode()`, `mappings()`,
+`lizard_setting()` and `imu_mode()`. Both value types support defaults, clone and
+equality; status is also copyable. The root and experimental modules export both
+new types. The Wii supporting snapshot has zero delta.
+
+The report sequence is the next wired transport sequence, independent of the
+caller-owned source timestamp. Compatibility, haptic-stream and desktop support
+are configured protocol modes; mappings, lizard setting and IMU mode are retained
+accepted host intent, with unknown settings represented by `None`. Desktop
+support opt-in and the host's lizard setting are separate observations. Reduced
+uinput has no HID protocol or feature channel, so all status fields are `None`.
+There is no fabricated battery value or wire counter for that realization.
+
+The protocol remains the metadata owner; the status view is read-only and remains
+readable after close. Input replacement, rejection and neutralization preserve
+protocol modes and retained host outputs. No combined session type or worker
+codec is added. The c1 reduced-uinput refusals and existing encoded report fixtures
+remain in force. Demo, xtask, live haptics probe and other compiling callers migrate
+with this PR; no compatibility alias remains.
+
+## VG-1b/d · Xbox Series input-only values
+
+`XboxSeriesInputs` replaces `XboxSeriesState` on both uinput and Bluetooth UHID.
+Native button, stick and trigger domains and payload encodings are unchanged.
+`inputs()` borrows accepted input levels; copyable `XboxSeriesStatus` reports
+selected realization metadata through `target()`, including after close.
+
+| Previous API | Current API |
+| --- | --- |
+| `XboxSeriesState` | `XboxSeriesInputs` |
+| `controller.state()` | `controller.inputs()` |
+| `set_inputs(XboxSeriesState)` | `set_inputs(XboxSeriesInputs)` |
+| `edit_inputs(FnOnce(&mut XboxSeriesState) -> Result<(), ControlError>)` | `edit_inputs(FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>)` |
+
+In each root snapshot feature view, remove the old type and add `XboxSeriesInputs`
+and `XboxSeriesStatus`. Remove the handle's `state()`, add
+`inputs() -> &XboxSeriesInputs` and `status() -> XboxSeriesStatus`, and change both
+mutation signatures above. The public `sticks` field and six native input methods
+move to the input type unchanged. Status adds `target() -> RealizationTarget`.
+Inputs retain default, clone and equality support; status is copyable with clone
+and equality support. Both new types are exported by root and experimental
+modules. Wii and Steam supporting snapshots have zero delta.
+
+This family models no battery telemetry or caller-visible input clock; status
+adds no fabricated values for them. Host rumble stays in `host_outputs()`, separate
+from input edits and selected-target metadata. No combined session type or worker
+codec is added. Demo, xtask, the Xbox Series probe and other compiling users migrate
+together, retaining the existing uinput and Bluetooth report fixtures and cleanup
+regressions. No compatibility alias remains.
+
+
+## VG-1b/d · Wii input-only values and metadata
+
+`WiiRemoteInputs`, `WiiMotionPlusInputs`, `WiiNunchukInputs` and
+`WiiClassicInputs` replace the four corresponding `*State` types on root,
+curated, experimental and Wii supporting surfaces. No compatibility aliases or
+public combined session type remain. Native input domains and report bytes are
+unchanged. `WiiExtension` payloads use the renamed accessory input types.
+
+| Previous API | Current API |
+| --- | --- |
+| `controller.state()` | `controller.inputs() -> &WiiRemoteInputs` |
+| `set_inputs(WiiRemoteState)` | `set_inputs(WiiRemoteInputs)` |
+| `edit_inputs(FnOnce(&mut WiiRemoteState) -> Result<(), ControlError>)` | `edit_inputs(FnOnce(&mut WiiRemoteInputs) -> Result<(), ControlError>)` |
+| `WiiRemoteState::new(revision)` and `state.revision()` | creation options and `controller.status().revision()` |
+| `state.set_attachment(...)` | live `controller.attach(...)` |
+| `state.motion_plus().attached` | `controller.status().motion_plus_attached()` |
+| `state.input_topology()` | `inputs.projected_input_topology(motion_plus_attached)` or live `controller.current_topology()` |
+
+Each root feature view and the Wii supporting snapshot removes four old types,
+adds the four input types and `WiiRemoteStatus`, removes handle `state()`, adds
+`inputs()` and `status()`, and changes both input mutation signatures. Accessory
+payload declarations follow the renames. Remote input methods retain native
+editing helpers except `new`, `revision` and `set_attachment`; `input_topology`
+is renamed to `projected_input_topology` and takes a presence boolean. `WiiMotionPlusInputs` removes `attached`, retaining
+only gyro and slow-range levels. Status adds four read getters: `revision()`,
+`motion_plus_attached()`, `battery()` and `topology_generation()`. All input types
+and status support default, clone and equality; status is copyable. Handle
+`battery()` is no longer `const`, because it reads live protocol state. The Steam
+supporting snapshot has zero delta.
+
+Detached `set_extension_values` validates the native payload domain; live input
+transactions also require the existing extension kind. Detached MotionPlus
+setters validate fourteen-bit samples; live transactions also reject non-neutral
+samples when MotionPlus is absent. Only `attach` changes live presence, companion
+nodes and topology generation. Neutralizing inputs preserves the extension
+payload kind and live metadata. Revision stays in creation options.
+
+The protocol is the single owner of battery for both UHID and uinput. Status
+reads that owner and retains the last accepted value after close. Attachment,
+neutralization and input replacement preserve battery; queued status reports
+retain accepted bytes. Closed handles reject updates. The demo keeps a detached
+attachment projection separately from input levels and revalidates queued edits
+against live status. Existing EEPROM, host-output, report and cleanup regressions
+remain in force.
+
+
+### Wii review refinements before merge
+
+The private runtime is a named-field struct (`inputs`, `revision`,
+`motion_plus_attached`), with no extension trait or tuple positions. The public
+supporting `WiiRemoteDefinition` driver's associated `State` is now
+`WiiRemoteInputs`; its default core-frame encoding is unchanged. Configured live
+sessions use the private runtime struct. This keeps runtime identity/presence out
+of the public supporting driver state as well as out of application inputs.
+The public-driver regression pins that associated type and its unchanged frame
+encoding. The snapshot guard records trait implementations but does not record
+their associated types.
+
+A protocol-owning session is required at Wii creation. Native sessions store a
+required protocol beside the runtime; HID sessions retain their required runtime
+protocol. Worker sessions cannot inhabit this type. `battery()` accesses the
+required owner directly, without `Option`, `expect` or a panic path, including
+after close. Protocol edits retain the existing transactional clone/validation
+rules. EEPROM and wire encodings remain unchanged.
+
+After attaching an extension, `set_inputs(WiiRemoteInputs::default())` is rejected:
+default inputs describe extension `None`. Use `controller.neutralize()`, or clone
+`controller.inputs()`, call `.neutralize()` on that snapshot, then `set_inputs`.
+Both preserve the extension payload kind and live revision, presence and battery.
+
+Use `controller.current_topology()` for live topology. Rename the detached input
+helper from `input_topology(motion_plus_attached)` to
+`projected_input_topology(motion_plus_attached)`: pending editor attachment context
+can differ from accepted status. The explicit projection name and documentation
+direct live callers to the handle rather than asking them to supply a boolean.
+Both root feature views and the Wii supporting snapshot record this method
+rename; the Steam supporting snapshot is unchanged.

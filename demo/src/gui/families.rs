@@ -81,9 +81,9 @@ pub(super) enum Controller {
 // pose; their individual necessity was not isolated. API raw-zero defaults stay.
 fn steam_demo_neutral(
     target: virtualgamepad::RealizationId,
-) -> gr_curated_controllers::steam_controller_2026::SteamController2026State {
+) -> gr_curated_controllers::steam_controller_2026::SteamController2026Inputs {
     let mut state =
-        gr_curated_controllers::steam_controller_2026::SteamController2026State::default();
+        gr_curated_controllers::steam_controller_2026::SteamController2026Inputs::default();
     if target == virtualgamepad::RealizationId::LINUX_UHID_USB {
         state.motion.accelerometer = [0, 0, 16384];
         state.motion.quaternion = [i16::MAX, 0, 0, 0];
@@ -487,7 +487,7 @@ impl ControllerView {
     }
     pub(super) fn battery(&self) -> BatteryState {
         match self {
-            Self::Xbox(controller) => controller.state().battery(),
+            Self::Xbox(controller) => controller.battery(),
             Self::DualSense(controller) => controller.battery(),
             Self::DualShock4(_)
             | Self::SwitchPro(_)
@@ -644,9 +644,9 @@ mod steam_tests {
     #[test]
     fn demo_neutral_has_a_synthetic_pose_without_changing_api_defaults() {
         use gr_curated_controllers::steam_controller_2026::{
-            SteamController2026State, SteamMotionSample,
+            SteamController2026Inputs, SteamMotionSample,
         };
-        let api = SteamController2026State::default();
+        let api = SteamController2026Inputs::default();
         assert_eq!(api.motion, SteamMotionSample::default());
         assert_eq!(api.motion.quaternion, [0; 4]);
         assert_eq!(
@@ -738,12 +738,10 @@ mod wii_tests {
                 assert_eq!(family.revision(), revision);
                 assert!(family.eeprom_image().bytes().is_empty());
                 assert_eq!(family, options.wii_compat.clone().with_revision(revision));
-                Ok::<_, String>(gr_curated_controllers::wii_remote::WiiRemoteState::new(
-                    family.revision(),
-                ))
+                Ok::<_, String>(family.revision())
             })
             .unwrap();
-            assert_eq!(state.revision(), revision);
+            assert_eq!(state, revision);
         }
     }
     #[test]

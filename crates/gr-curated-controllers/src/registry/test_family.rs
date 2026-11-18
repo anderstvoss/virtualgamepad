@@ -132,12 +132,12 @@ impl TargetAwareControllerDriver for Fifth {
                 EvdevEvent {
                     event_type: 1,
                     code: 304,
-                    value: i32::from(state.native_pressed(crate::Xbox360Control::A)),
+                    value: i32::from(state.inputs().native_pressed(crate::Xbox360Control::A)),
                 },
                 EvdevEvent {
                     event_type: 1,
                     code: 305,
-                    value: i32::from(state.native_pressed(crate::Xbox360Control::B)),
+                    value: i32::from(state.inputs().native_pressed(crate::Xbox360Control::B)),
                 },
                 EvdevEvent {
                     event_type: 0,
@@ -343,7 +343,7 @@ impl gr_hid::Protocol for FifthProtocol {
     fn validate(&self, state: &Self::State) -> Result<(), gr_hid::Error> {
         self.inner.validate(state)?;
         self.resources.validate()?;
-        if !self.attached && state.native_pressed(crate::Xbox360Control::A) {
+        if !self.attached && state.inputs().native_pressed(crate::Xbox360Control::A) {
             return Err(gr_hid::Error::InvalidState);
         }
         Ok(())

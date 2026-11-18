@@ -34,7 +34,8 @@ Choose an exact realization with `CreationOptions::new(target)`. All seven
 families offer `LINUX_UINPUT`. Wii Remote also offers `LINUX_UHID_BLUETOOTH`,
 which uses Bluetooth bus metadata through local UHID. `DualSense`, `DualShock4`,
 Switch Pro, Xbox 360 and Steam Controller 2026 also offer `LINUX_UHID_USB`.
-Xbox Series selects `LINUX_UINPUT` with `XboxSeriesOptions::default()`. Each realization has its own published restrictions
+Xbox Series selects `LINUX_UINPUT` or `LINUX_UHID_BLUETOOTH` with
+`XboxSeriesOptions::default()`. Each realization has its own published restrictions
 and acceptance status. Creation has no automatic fallback.
 
 Use common `CreationOptions` for realization and audio and the matching
@@ -244,7 +245,20 @@ explicitly unavailable because the lossy worker channel has no recovery query
 ## Wii attachment and EEPROM, and Steam scheduling
 
 Use `create_wii_remote(creation, WiiRemoteOptions::default())` with the
-selected target. `attach` applies the attachment and `MotionPlus` presence in
+selected target. `inputs()` borrows `WiiRemoteInputs`; `status()` returns copyable
+`WiiRemoteStatus` with revision, `MotionPlus` presence, battery and topology
+generation. Native extension and `MotionPlus` samples use `WiiNunchukInputs`,
+`WiiClassicInputs` and `WiiMotionPlusInputs`. Detached input values carry levels;
+creation options select revision and live `attach` selects attachment presence.
+`set_inputs` and `edit_inputs` reject extension kind changes and non-neutral
+`MotionPlus` samples while absent. After attaching an extension, clear levels
+with `wii.neutralize()`, or clone `wii.inputs()`, call `.neutralize()` on that
+snapshot, then pass it to `set_inputs`. `WiiRemoteInputs::default()` describes no
+extension and is rejected while an extension is attached. Use
+`wii.current_topology()` for live topology. The input value's `projected_input_topology`
+helper is only for detached editor projections with explicit attachment context. Battery is
+owned by the protocol, read through `battery()` or `status().battery()`, and
+remains readable after close. `attach` applies the attachment and `MotionPlus` presence in
 one transaction. Re-read `current_topology()`, `topology_generation()` and
 `association().components()` after an accepted change. The Bluetooth-bus UHID
 realization owns an addressed EEPROM image. Supply it through
@@ -317,9 +331,39 @@ series.close();
 # Ok(()) }
 ```
 
-`XboxSeriesState` uses signed xpad evdev coordinates with positive Y down.
-Trigger positions are 10-bit. `set_triggers` on the state validates both
+`XboxSeriesInputs` uses signed xpad evdev coordinates with positive Y down.
+Trigger positions are 10-bit. `set_triggers` on the inputs validates both
 values. Share and Guide are independent. `XboxSeriesOutputEvent` carries
-conventional force-feedback observations, and the retained state exposes
-the latest accepted strong/weak playback request. The selected surface
-lists the unavailable impulse-trigger motors and other uinput limits.
+conventional force feedback on uinput and native HID output on Bluetooth-bus
+UHID. `host_outputs()` retains the latest two-motor evdev playback or
+four-channel Bluetooth command, including trigger amplitudes and timing bytes.
+The selected surface lists the realization's limitations.
+
+`DualShock4Controller::inputs()` borrows native `DualShock4Inputs` levels.
+`status()` returns copyable `DualShock4Status` battery metadata and accepted
+motion/contact clock positions. Input replacement and edits cannot replace that
+status; `refresh_motion()` keeps its separate explicit clock-advance semantics.
+
+`SwitchProController::inputs()` borrows `SwitchProInputs`; `status()` returns
+copyable `SwitchProStatus` with the accepted motion timer and live host-selected
+stream state. The accepted timer is separate from the existing
+`motion_report_counter()` transport observation. Input edits preserve stream
+state, and `refresh_motion()` keeps its existing explicit delivery behavior.
+
+`Xbox360Controller::inputs()` borrows native `Xbox360Inputs` levels.
+`status().battery()` reads separate controller-owned metadata, retained after
+close. Battery setters remain explicit handle operations; input replacement,
+edits and neutralization preserve that metadata.
+
+`SteamController2026Controller::inputs()` borrows native
+`SteamController2026Inputs`, including the caller's motion source timestamp.
+`status()` returns copyable `SteamController2026Status` with the wired protocol's
+next report sequence, configured compatibility/stream/desktop modes and accepted
+host mapping/lizard/IMU settings. Unknown or unavailable observations are `None`;
+reduced uinput has no HID protocol or feature channel. The status view remains
+readable after close, and input edits cannot replace protocol metadata.
+
+`XboxSeriesController::inputs()` borrows `XboxSeriesInputs` for uinput or Bluetooth
+UHID. `status().target()` reads the selected realization, including after close.
+Battery telemetry and caller-visible input clocks are not modeled for this
+family; host rumble remains separate through `host_outputs()`.

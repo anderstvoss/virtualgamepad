@@ -2883,3 +2883,61 @@ fn lizard_stop_discards_pending_releases_without_replaying_them_after_start() {
     p.request(&set("feature-lizard-enable-map"), 6);
     assert!(desktop_reports(&mut p, &State::default(), 7).is_empty());
 }
+
+#[test]
+fn status_tracks_live_modes_and_counter_without_owning_source_time() {
+    let mut protocol =
+        SteamHidProtocol::with_desktop_options("TESTSTATUS".into(), true, true, true);
+    let status = protocol.status();
+    assert_eq!(status.report_sequence(), Some(0));
+    assert_eq!(status.steam_client_compat(), Some(true));
+    assert_eq!(status.haptic_streaming(), Some(true));
+    assert_eq!(status.lizard_mode(), Some(true));
+    assert_eq!(status.mappings(), None);
+    assert_eq!(status.lizard_setting(), None);
+    assert_eq!(status.imu_mode(), None);
+    let feature = |body: &[u8]| {
+        let mut bytes = vec![0; 63];
+        bytes[..body.len()].copy_from_slice(body);
+        RequestKind::Set(Report::new(ReportType::Feature, Some(1), bytes).unwrap())
+    };
+    assert_eq!(
+        protocol.request(&feature(&[0x81, 0]), 0).0,
+        Reply::Set(Ok(()))
+    );
+    assert_eq!(
+        protocol
+            .request(&feature(&[0x87, 6, 9, 0, 0, 48, 3, 0]), 0)
+            .0,
+        Reply::Set(Ok(()))
+    );
+    let accepted = protocol.status();
+    assert_eq!(accepted.mappings(), Some(false));
+    assert_eq!(accepted.lizard_setting(), Some(false));
+    assert_eq!(accepted.imu_mode(), Some(3));
+    assert!(matches!(
+        protocol
+            .request(&feature(&[0x87, 6, 9, 1, 0, 255, 1, 0]), 0)
+            .0,
+        Reply::Set(Err(_))
+    ));
+    assert_eq!(protocol.status(), accepted);
+    let mut inputs = State::default();
+    inputs.motion.timestamp_us = 123_456;
+    let reports = protocol.input(&inputs, 0).unwrap();
+    assert_eq!(&reports[0].wire()[30..34], &123_456_u32.to_le_bytes());
+    assert_eq!(protocol.status().report_sequence(), Some(1));
+    let before_stop = protocol.status();
+    protocol.lifecycle(Lifecycle::Stop, 1);
+    assert_eq!(protocol.status(), before_stop);
+    assert!(protocol.input(&inputs, 2).unwrap().is_empty());
+    protocol.lifecycle(
+        Lifecycle::Start {
+            numbered_input: true,
+            numbered_output: true,
+            numbered_feature: true,
+        },
+        3,
+    );
+    assert_eq!(protocol.status(), before_stop);
+}

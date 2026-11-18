@@ -9,6 +9,8 @@ pub enum MotorRole {
     Right,
     Strong,
     Weak,
+    LeftTrigger,
+    RightTrigger,
 }
 
 /// Native LED color vocabulary, independent of an evdev event code.

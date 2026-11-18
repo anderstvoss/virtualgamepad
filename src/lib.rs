@@ -85,26 +85,28 @@ pub use gr_controller_contract::{
     TriggerInputKind, TriggerStack, TypedInput,
 };
 pub use gr_curated_controllers::steam_controller_2026::{
-    SteamController2026Button, SteamController2026Haptic, SteamController2026Outputs,
-    SteamController2026State, SteamController2026StreamOutputs, SteamController2026StreamPacket,
-    SteamMotionSample, SteamTrackpadState,
+    SteamController2026Button, SteamController2026Haptic, SteamController2026Inputs,
+    SteamController2026Outputs, SteamController2026Status, SteamController2026StreamOutputs,
+    SteamController2026StreamPacket, SteamMotionSample, SteamTrackpadState,
 };
 pub use gr_curated_controllers::wii_remote::{
-    WiiClassicState, WiiEepromImage, WiiExtension, WiiExtensionCalibration, WiiIrPoint,
-    WiiMotionPlusState, WiiNunchukState, WiiRemoteBattery, WiiRemoteButton, WiiRemoteOutputs,
-    WiiRemoteRevision, WiiRemoteState, WiiResourceDisposition,
+    WiiClassicInputs, WiiEepromImage, WiiExtension, WiiExtensionCalibration, WiiIrPoint,
+    WiiMotionPlusInputs, WiiNunchukInputs, WiiRemoteBattery, WiiRemoteButton, WiiRemoteInputs,
+    WiiRemoteOutputs, WiiRemoteRevision, WiiRemoteStatus, WiiResourceDisposition,
 };
 pub use gr_curated_controllers::xbox_series::{
-    XboxSeriesButton, XboxSeriesOutputState, XboxSeriesState, XboxSeriesTrigger,
+    XboxSeriesBluetoothRumble, XboxSeriesButton, XboxSeriesInputs, XboxSeriesOutputState,
+    XboxSeriesStatus, XboxSeriesTrigger,
 };
 pub use gr_curated_controllers::{
     BatteryLevel, BatteryState, DualSenseAudioPath, DualSenseAxis, DualSenseControl,
     DualSenseFeature, DualSenseHidOutput, DualSenseInputs, DualSenseStatus, DualSenseSurface,
     DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
-    DualShock4HidOutput, DualShock4MotionSample, DualShock4State, DualShock4Surface,
-    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, SwitchProAxis,
-    SwitchProControl, SwitchProMotionSample, SwitchProRumble, SwitchProState, SwitchProSurface,
-    TouchSlot, Xbox360Axis, Xbox360Control, Xbox360State, Xbox360Surface, Xbox360Trigger,
+    DualShock4HidOutput, DualShock4Inputs, DualShock4MotionSample, DualShock4Status,
+    DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger,
+    MotionSample, SwitchProAxis, SwitchProControl, SwitchProInputs, SwitchProMotionSample,
+    SwitchProRumble, SwitchProStatus, SwitchProSurface, TouchSlot, Xbox360Axis, Xbox360Control,
+    Xbox360Inputs, Xbox360Status, Xbox360Surface, Xbox360Trigger,
 };
 pub use gr_realization_api::{
     ControllerId, ForceFeedbackEffect, ForceFeedbackEvent, RealizationId, RealizationTargetSet,

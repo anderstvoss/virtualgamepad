@@ -258,7 +258,7 @@ mod tests {
             write_message(&mut server, 4, &body).unwrap();
         });
         let mut control = Control::new(client, 7, 3).unwrap();
-        let state = NativeState::Xbox360(gr_curated_controllers::Xbox360State::default());
+        let state = NativeState::Xbox360(gr_curated_controllers::Xbox360SessionState::default());
         assert!(control.update(&state).is_err());
         control.update(&state).unwrap();
         let counters = control.diagnostics().unwrap();

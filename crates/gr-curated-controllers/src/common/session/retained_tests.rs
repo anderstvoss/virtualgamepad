@@ -77,7 +77,12 @@ fn hid<D: HidDriver>(driver: D, numbered: [bool; 3]) -> (ControllerSession<D>, A
     )
     .unwrap();
     (
-        ControllerSession::injected_hid(driver, runtime, identity),
+        ControllerSession::injected_hid(
+            driver,
+            runtime,
+            identity,
+            gr_realization_api::RealizationTarget::LINUX_UHID_USB,
+        ),
         record,
     )
 }

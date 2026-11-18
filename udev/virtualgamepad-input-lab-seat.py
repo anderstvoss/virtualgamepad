@@ -14,7 +14,7 @@ import sys
 _MAX_PHYS_LENGTH = 63
 _MAX_PID = (1 << 31) - 1  # Linux pid_t is a signed 32-bit integer.
 _PHYS = re.compile(
-    r"virtualgamepad/input-lab/(?:uhid|uinput)/(?:dualsense|dualshock4|steam-controller-2026)/"
+    r"virtualgamepad/input-lab/(?:(?:uhid|uinput)/(?:dualsense|dualshock4|steam-controller-2026)|uhid/xbox-series)/"
     r"p([1-9a-f][0-9a-f]{0,7})-i(0|[1-9a-f][0-9a-f]{0,15})",
     re.ASCII,
 )

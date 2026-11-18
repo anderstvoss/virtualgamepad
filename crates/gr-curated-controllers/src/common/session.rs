@@ -67,13 +67,31 @@ pub trait WorkerBridge<S>: Send {
         None
     }
 }
-enum Backend<D: HidDriver> {
-    Native(ControllerRuntime<D, ProviderSessionSink>),
+struct NativeBackend<D: HidDriver, P> {
+    runtime: ControllerRuntime<D, ProviderSessionSink>,
+    protocol: P,
+}
+impl<D: HidDriver, P> std::ops::Deref for NativeBackend<D, P> {
+    type Target = ControllerRuntime<D, ProviderSessionSink>;
+    fn deref(&self) -> &Self::Target {
+        &self.runtime
+    }
+}
+impl<D: HidDriver, P> std::ops::DerefMut for NativeBackend<D, P> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.runtime
+    }
+}
+// Fixed families use zero-size protocol/worker markers. Opt-in protocol owners
+// store a required native protocol and make the worker variant uninhabitable.
+enum Backend<D: HidDriver, P, W> {
+    Native(NativeBackend<D, P>),
     Hid {
         driver: D,
         runtime: Runtime<D::Hid, HidTransport>,
     },
     Worker {
+        marker: W,
         driver: D,
         state: D::State,
         dirty: bool,
@@ -81,8 +99,8 @@ enum Backend<D: HidDriver> {
         bridge: Box<dyn WorkerBridge<D::State>>,
     },
 }
-pub(crate) struct ControllerSession<D: HidDriver> {
-    backend: Backend<D>,
+pub(crate) struct ControllerSession<D: HidDriver, P = (), W = ()> {
+    backend: Backend<D, P, W>,
     association: crate::ControllerAssociation,
     selection: gr_realization_api::RealizationSelection,
     hid_identity: Option<[u8; 6]>,
@@ -102,6 +120,7 @@ impl<D: HidDriver> ControllerSession<D> {
             selection,
             association: crate::ControllerAssociation::default(),
             backend: Backend::Worker {
+                marker: (),
                 driver,
                 state,
                 dirty: true,
@@ -119,7 +138,10 @@ impl<D: HidDriver> ControllerSession<D> {
         Self {
             selection: runtime.selection(),
             association: crate::ControllerAssociation::default(),
-            backend: Backend::Native(runtime),
+            backend: Backend::Native(NativeBackend {
+                runtime,
+                protocol: (),
+            }),
             hid_identity: None,
             started: Instant::now(),
             observations: VecDeque::new(),
@@ -160,11 +182,12 @@ impl<D: HidDriver> ControllerSession<D> {
         driver: D,
         runtime: Runtime<D::Hid, HidTransport>,
         identity: [u8; 6],
+        target: gr_realization_api::RealizationTarget,
     ) -> Self {
         Self {
             selection: gr_realization_api::RealizationSelection {
                 controller: driver.controller_id(),
-                target: gr_realization_api::RealizationTarget::LINUX_UHID_USB,
+                target,
             },
             backend: Backend::Hid { driver, runtime },
             association: crate::ControllerAssociation::default(),
@@ -176,6 +199,72 @@ impl<D: HidDriver> ControllerSession<D> {
         }
     }
 
+    /// Convert once at creation: native sessions receive a required protocol;
+    /// HID sessions retain their runtime-owned protocol. Workers are refused.
+    pub(crate) fn require_protocol(
+        self,
+        native_protocol: impl FnOnce() -> D::Hid,
+    ) -> Result<ProtocolSession<D>, ProviderError> {
+        let backend = match self.backend {
+            Backend::Native(native) => Backend::Native(NativeBackend {
+                runtime: native.runtime,
+                protocol: native_protocol(),
+            }),
+            Backend::Hid { driver, runtime } => Backend::Hid { driver, runtime },
+            Backend::Worker {
+                mut bridge, closed, ..
+            } => {
+                if !closed {
+                    let _ = bridge.close();
+                }
+                return Err(ProviderError::Unsupported {
+                    reason: "worker cannot own a local protocol".into(),
+                });
+            }
+        };
+        Ok(ControllerSession {
+            backend,
+            association: self.association,
+            selection: self.selection,
+            hid_identity: self.hid_identity,
+            started: self.started,
+            observations: self.observations,
+            dropped: self.dropped,
+            feedback: self.feedback,
+        })
+    }
+    pub(crate) fn protocol(&self) -> Option<&D::Hid> {
+        self.optional_protocol()
+    }
+}
+
+pub(crate) type ProtocolSession<D> =
+    ControllerSession<D, <D as HidDriver>::Hid, std::convert::Infallible>;
+impl<D: HidDriver> ProtocolSession<D> {
+    pub(crate) fn protocol(&self) -> &D::Hid {
+        match &self.backend {
+            Backend::Native(native) => &native.protocol,
+            Backend::Hid { runtime, .. } => runtime.protocol(),
+            Backend::Worker { marker, .. } => match *marker {},
+        }
+    }
+    pub(crate) fn update_owned_configuration(
+        &mut self,
+        edit_state: impl FnOnce(&mut D::State) -> Result<(), ControlError>,
+        edit_protocol: impl FnOnce(&mut D::Hid) -> Result<(), gr_hid::Error>,
+    ) -> Result<(), ControlError> {
+        if let Backend::Native(native) = &mut self.backend {
+            return edit_native_configuration(
+                &mut native.runtime,
+                &mut native.protocol,
+                edit_state,
+                edit_protocol,
+            );
+        }
+        self.update_configuration(edit_state, edit_protocol)
+    }
+}
+impl<D: HidDriver, P, W> ControllerSession<D, P, W> {
     pub(super) fn with_association(mut self, association: crate::ControllerAssociation) -> Self {
         self.association = association;
         self
@@ -188,7 +277,7 @@ impl<D: HidDriver> ControllerSession<D> {
     }
     pub(crate) const fn state(&self) -> &D::State {
         match &self.backend {
-            Backend::Native(r) => r.state(),
+            Backend::Native(r) => r.runtime.state(),
             Backend::Hid { runtime, .. } => runtime.state(),
             Backend::Worker { state, .. } => state,
         }
@@ -272,26 +361,7 @@ impl<D: HidDriver> ControllerSession<D> {
                 available_in: gr_realization_api::RealizationTargetSet::EMPTY,
             });
         };
-        if runtime.is_closed() {
-            return Err(ControlError::Closed);
-        }
-        let invalid = |_| ControlError::UnsupportedControl {
-            control: "invalid protocol topology edit",
-        };
-        let mut state = runtime.state().clone();
-        let mut next = protocol.clone();
-        edit_state(&mut state)?;
-        edit_protocol(&mut next).map_err(invalid)?;
-        protocol.validate(&state).map_err(invalid)?;
-        next.validate(&state).map_err(invalid)?;
-        // Driver validation happens before runtime mutation. No provider I/O or
-        // fallible work occurs between state acceptance and config installation.
-        runtime.update_state(|s| {
-            *s = state;
-            Ok(())
-        })?;
-        *protocol = next;
-        Ok(())
+        edit_native_configuration(runtime, protocol, edit_state, edit_protocol)
     }
     pub(crate) fn neutralize(&mut self) -> Result<(), ControlError> {
         self.edit_inputs(|state| {
@@ -559,7 +629,7 @@ impl<D: HidDriver> ControllerSession<D> {
             Backend::Worker { closed, .. } => (!closed).then_some(Duration::from_millis(4)),
         }
     }
-    pub(crate) fn protocol(&self) -> Option<&D::Hid> {
+    pub(crate) fn optional_protocol(&self) -> Option<&D::Hid> {
         match &self.backend {
             Backend::Native(_) | Backend::Worker { .. } => None,
             Backend::Hid { runtime, .. } => Some(runtime.protocol()),
@@ -628,6 +698,34 @@ impl<D: HidDriver> ControllerSession<D> {
         }
     }
 }
+fn edit_native_configuration<D: HidDriver>(
+    runtime: &mut ControllerRuntime<D, ProviderSessionSink>,
+    protocol: &mut D::Hid,
+    edit_state: impl FnOnce(&mut D::State) -> Result<(), ControlError>,
+    edit_protocol: impl FnOnce(&mut D::Hid) -> Result<(), gr_hid::Error>,
+) -> Result<(), ControlError> {
+    if runtime.is_closed() {
+        return Err(ControlError::Closed);
+    }
+    let invalid = |_| ControlError::UnsupportedControl {
+        control: "invalid protocol topology edit",
+    };
+    let mut state = runtime.state().clone();
+    let mut next = protocol.clone();
+    edit_state(&mut state)?;
+    edit_protocol(&mut next).map_err(invalid)?;
+    protocol.validate(&state).map_err(invalid)?;
+    next.validate(&state).map_err(invalid)?;
+    // Driver validation happens before runtime mutation. No provider I/O or
+    // fallible work occurs between state acceptance and config installation.
+    runtime.update_state(|s| {
+        *s = state;
+        Ok(())
+    })?;
+    *protocol = next;
+    Ok(())
+}
+
 fn provider_error(error: gr_hid::Error) -> ProviderError {
     if error == gr_hid::Error::Closed {
         ProviderError::Closed

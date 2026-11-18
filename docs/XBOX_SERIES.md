@@ -7,10 +7,10 @@ the same two-argument shape with its supporting `CreationOptions`.
 | Realization | Scope |
 | --- | --- |
 | `linux.uinput` | One gamepad with the Linux xpad evdev layout. It exposes A/B/X/Y, bumpers, View/Menu/Guide/Share, stick clicks, the D-pad hat, four signed stick axes and two 10-bit triggers. Conventional force feedback carries strong and weak main-motor playback. |
-| `linux.uhid.bluetooth` | **No evidence** for a Series report map with a qualified consumer path. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
+| `linux.uhid.bluetooth` | Local Bluetooth-bus HID for the measured `045e:0b13` report map. Qualified with SDL 3.4.18 over evdev and hidraw on stock `microsoft`: all standard controls, separate Guide/Share, final neutral, main rumble and independent virtual trigger-command reception. Steam identity, controls excluding Guide, and Ping feedback were qualified with the active-seat dev setup. Physical trigger actuation remains unverified. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
 | USB-bus UHID and `dummy_hcd` USB HID | Inapplicable to the wired GIP controller. GIP and USB/IP feasibility stay with [#168](https://github.com/anderstvoss/virtualgamepad/issues/168). |
 
-The xpad [consumer ledger](https://github.com/anderstvoss/controller-protocol-research/blob/e1a059125d8c435d1575638360ab787a14136f19/docs/ledgers/xbox-series-l0.md)
+The xpad [consumer ledger](https://github.com/anderstvoss/controller-protocol-research/blob/eba02ad610e264a2518a699394255cc7f1d670dd/docs/ledgers/xbox-series-l0.md)
 covers the gamepad name, input ID, event codes, ranges and force-feedback
 capabilities. The chosen input ID version is an observed Linux evdev value.
 The provider sets stick flat to 128 and fuzz to zero. The stock xpad shape
@@ -44,7 +44,7 @@ needed.
 - SDL submitted conventional rumble. The controller independently retained
   strong 16384, weak 32768 and one playback repetition. This is a virtual
   reverse-output observation. Steam Input and physical reference validation
-  remain untested.
+  were not tested in that run.
 
 The reproduction commands use temporary output paths.
 
@@ -102,13 +102,94 @@ PY
 SDL's neutral observation comes from its bounded control sweep. The runner
 still has no timestamp oracle for the first valid consumer neutral state.
 
-For the manual Steam Input check, create one Series uinput controller, select
-the exact virtual pad in Steam's controller tester, verify Share, Guide, both
-triggers, all axes and D-pad directions, then remove the controller and verify
-that Steam stops listing it. Record the Steam build and observed result with
-[#160](https://github.com/anderstvoss/virtualgamepad/issues/160).
+For the manual Steam Input check, close Dolphin first, then create one
+product controller at a time. The owner-observed probe keeps it alive and
+prints retained host output changes:
+
+```sh
+VIRTUALGAMEPAD_INPUT_LAB=1 cargo run --locked --example xbox_series_steam_probe -- uinput
+# Repeat after closing that probe, selecting bluetooth instead.
+```
+
+Bluetooth lab nodes normally use an inactive seat and an ignore flag, so
+Steam may not list them. For this manual check only, the optional temporary
+[Steam visibility override](DEPLOYMENT_AND_VALIDATION.md#temporary-xbox-steam-visibility)
+exposes validated Xbox lab nodes on seat0. Remove it after testing.
+
+Select the newly created virtual pad in Steam Settings → Controller. Record
+whether Steam identifies it as Xbox Series. Enter `sweep-no-guide` in the probe to
+cycle the other buttons, both sticks and both triggers. Guide can open Big
+Picture; this mode deliberately leaves its Steam test-screen registration
+unverified. The full `sweep` mode remains available for other consumers. Enter `neutral` before
+Steam's rumble test; confirm that a nonzero retained output appears, rather
+than treating a successful UI action as evidence. Enter `quit` and verify
+removal. Ask for one owner observation at a time and retain the Steam build,
+candidate, kernel and driver scope with the answers.
+
+| Steam Input consumer | Status |
+| --- | --- |
+| `linux.uinput` | Owner confirmed Xbox Series identity and controls excluding Guide. Steam Ping produced retained 32767/32767 playback and stops. Guide test-screen registration remains unverified. |
+| `linux.uhid.bluetooth` | With the temporary active-seat dev override, owner confirmed Xbox Series identity and controls excluding Guide. Steam Ping retained native 50/50 main rumble and stops on microsoft. Guide test-screen registration remains unverified. |
 
 ## Alpha 2 host audit
 
 The [Alpha 2 host audit](ALPHA_2_HOST_AUDIT.md) covers the Series creator and
 consumer permissions. Owner sign-off remains on [#258](https://github.com/anderstvoss/virtualgamepad/issues/258).
+
+## Bluetooth UHID and wired audio checkpoint
+
+See the [checkpoint findings and reproduction commands](XBOX_SERIES_CHECKPOINT.md)
+for the physical Bluetooth report map, the local UHID consumer run, and the
+physical Linux headset results through xone. Select
+`RealizationId::LINUX_UHID_BLUETOOTH` with the same Xbox Series constructor.
+The measured map carries input and rumble. Battery, LED and headset audio
+have no report in this map. Native headset audio is tracked with USB GIP
+feasibility in [#168](https://github.com/anderstvoss/virtualgamepad/issues/168).
+
+## Native rumble units
+
+Bluetooth HID report 0x03 carries magnitudes in its descriptor's logical
+0 through 100 range. SDL's Xbox HIDAPI conversion divides a 16-bit API
+magnitude by 655, so 16384 and 32768 become 25 and 50. Uinput retains the
+16-bit evdev values. These are transport-specific units for the same API
+request. `MotorRole::LeftTrigger` and `RightTrigger` identify the two
+trigger channels separately from strong and weak main motors. Retained
+duration/delay fields are 10 ms descriptor ticks; repeat is a raw count.
+
+The evdev qualification covers controls and main rumble. Independent
+trigger-motor actuation remains unverified. The original evdev runs could not exercise hidraw HIDAPI because access was
+denied. A later dev-only raw-path probe with the stock microsoft driver
+passed all controls and observed separate left-only and right-only trigger
+commands. This qualifies a bounded virtual HIDAPI command path. Physical
+trigger actuation remains unverified: the physical xpadneo bind rule prevented
+stock microsoft binding, so no physical pulse was sent. Exact-candidate
+virtual acceptance after the main merge passed.
+The dev setup and failed competing-driver attempt are retained in the
+checkpoint handoff.
+
+## Bluetooth-bus UHID candidate qualification
+
+See [the exact-candidate checkpoint](XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate)
+for the research pin and historical results. The [review follow-up](XBOX_SERIES_CHECKPOINT.md#review-follow-up-main-merge-failure-diagnosis-and-isolated-timing)
+records the main merge, diagnosed harness readiness deadlock, final
+acceptance, isolated 250-session timing and blocked physical test. The concurrent
+Bluetooth open tail exceeded the C9 uinput budget; no Bluetooth timing budget
+is qualified. First-valid-neutral remains open under #166.
+
+For dev-only HIDAPI acceptance, use the installed input-lab policy and
+xpadneo wrapper described in [deployment](DEPLOYMENT_AND_VALIDATION.md),
+then run the ordinary product acceptance path:
+
+```sh
+VIRTUALGAMEPAD_INPUT_LAB=1 VIRTUALGAMEPAD_XBOX_HIDAPI=1 \
+cargo run --locked -p xtask -- acceptance \
+  --controller virtualgamepad.xbox-series --realization linux.uhid.bluetooth \
+  --cycles 1 --concurrency 1 --sdl --out /tmp/series-hidapi.json
+```
+
+This mode requires the stock `microsoft` binding before and after SDL and
+checks independently received left-only/right-only reports. It uses the
+owned hidraw path with HIDAPI enabled. The generic probe's SDL 3.2 backend
+classifier remains unknown on SDL 3.4.18; exact path selection, input and
+reverse reports are recorded independently. It does not verify a physical
+motor. Leave this mode unset for the evdev consumer run.
