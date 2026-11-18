@@ -186,6 +186,7 @@ impl WiiSpeakerDecoder {
     /// ignored 0x18 reports return records with original bytes and disposition.
     /// The caller owns transaction acceptance and must not reconstruct an
     /// authoritative history from lossy observation callbacks.
+    #[must_use = "advance the returned candidate only after acceptance"]
     pub fn decode(self, id: u8, raw: &[u8]) -> Option<(Self, WiiSpeakerOutput)> {
         let mut next = self;
         let output = match id {
@@ -281,7 +282,7 @@ mod tests {
     ) -> (WiiSpeakerDecoder, WiiSpeakerData) {
         let mut raw = [0; 21];
         raw[0] = (length << 3) | 7;
-        raw[1..1 + data.len()].copy_from_slice(data);
+        raw[1..=data.len()].copy_from_slice(data);
         let (next, output) = s.decode(0x18, &raw).unwrap();
         let WiiSpeakerOutput::Data(record) = output else {
             panic!("speaker data record expected");
