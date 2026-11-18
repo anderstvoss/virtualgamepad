@@ -107,6 +107,13 @@ max_slots:u16, address_policy:ID, hosted_count:u16 (<=32), hosted IDs,
 option_flags:u64 (family schema-defined; zero reserved),
 schema_count:u16 (<=64), entries {operation:u16, schema:u16,
 min_revision:u16, max_revision:u16, max_blob:u32}, feature_mask:u64.
+Schema entry keys are (operation, schema); capability list entries may not
+repeat a key. A CREATE includes the chosen compatible revisions for every
+schema needed by its requested options, including reply/notice schemas.
+The service validates the selection before allocation and uses only those
+revisions for the lifetime of the handle. A client lacking a required schema
+cannot select that configuration; optional unsupported views/operations
+are refused, not decoded as a different revision.
 Schema ranges describe supported revisions, not implicit validation.
 Address policy is a compiled identifier with published per-family bounds,
 not a free-form client definition; actual addresses need not be contiguous.
@@ -146,7 +153,10 @@ Cache updates ordered by state revision; never overwrite newer accepted
 state with old data. Synchronous setters/commit/creation/close wait only
 on bounded correlated RPC; while waiting may pump/retain replies/observations
 but never invoke arbitrary callbacks recursively. No locks across unrelated
-provider waits. Client deadline after sent request => close connection,
+provider waits. Client drop attempts bounded CLOSE/RELEASE for its own handle; on any
+uncertain close or inability to enqueue cleanup, close the shared connection
+and invalidate its sibling views. Explicit close retains terminal readback
+until release/drop. Client deadline after sent request => close connection,
 typed Uncertain, final last validated views; unsent EAGAIN can retry exact
 packet within deadline or return WouldBlock with no mutation. Required
 HID/FF replies get their own controller runtime priority/reserved slot,
@@ -154,8 +164,10 @@ never share application egress backpressure. No hard RT guarantee.
 
 ## 4. Handle, slot and data types
 
-H = u64 monotonically allocated nonzero connection-local handle ID (never
-reuse); S = {address:u32, incarnation:u64}; incarnation nonzero for occupied
+H = u64 monotonically allocated nonzero service-instance handle ID (never
+reuse before service restart), bound to one connection. A foreign H can
+never alias a different live connection's own H; lookup is still strictly
+owner-scoped, not a bearer authorization. S = {address:u32, incarnation:u64}; incarnation nonzero for occupied
 or retained child, zero for vacant address. Every child operation carries H
 and S; receiver-level operations carry H alone (separate message shape);
 slot address is not application player index. Shape = topology_generation:u64,
@@ -202,7 +214,7 @@ only stated fields. H/S defined above; code ranges retain their meanings.
 | 0001 HELLO (section 2) | 0002 WELCOME | Negotiate |
 | 0003 LIST_CAPS (section 2) | 0004 CAPS | Capability page |
 | 0005 PING empty | 0006 PONG empty | Liveness |
-| 0010 CREATE: family:ID, realization:ID, common_options:V, family_options:V | 0011 CREATED: H, Shape | Prepared, not yet active |
+| 0010 CREATE: family:ID, realization:ID, selection_count:u16 (1–64), {operation:u16,schema:u16,revision:u16} entries, common_options:V, family_options:V | 0011 CREATED: H, Shape | Prepared, not yet active |
 | 0012 CREATE_CONFIRM: H | 0013 CONFIRMED: H | Commit client ownership |
 | 0014 CLOSE: H | 0015 CLOSED: H, terminal:ErrorBody | Idempotent provider close, retains view |
 | 0016 RELEASE: H | 0017 OK | Discard closed handle/readback, free memory |
@@ -229,7 +241,15 @@ only stated fields. H/S defined above; code ranges retain their meanings.
 | all other codes | Reserved | Future owner-approved use; no vendor private codes |
 
 ENUM state: 1 prepared, 2 active, 3 closing, 4 closed-owned.
-Only release closed-owned handles, not active ones. Cursor is ordered
+Only release closed-owned handles, not active ones. Before CREATE_CONFIRM,
+the client obtains all initial typed state/read views and prepares any
+required client-side audio endpoint; failure closes the prepared handle or
+the connection. If required views/shape, maximum valid replies or terminal
+metadata cannot fit the negotiated packet ceiling, refuse CREATE before
+opening a provider. Large optional responses are requested by individual
+kind; validate response size before any mutation with required ACK data.
+Kind_mask bit (kind - 1) selects each known kind; unknown requested bits
+are rejected. Count arrays cannot contain duplicate IDs/kinds. Cursor is ordered
 by H; if concurrent changes occur it is not a snapshot of past objects.
 Limit by count AND bytes; cursor continues strictly after last returned H.
 For scope 0 terminal H,S zero; scope 1 S zero; scope 2 exact H,S.
@@ -271,7 +291,12 @@ and supported mode matrix need local evidence before tag.
 
 ## 6. Errors
 
-ErrorBody = code:u16, flags:u16, detail:Text. Flags bit0 terminal,
+ErrorBody = code:u16, flags:u16, detail:Text, typed_present:bool,
+[V if typed_present]. Optional family-typed detail must use the negotiated
+error-detail schema for the originating operation (e.g. native validation
+reason or cleanup diagnostics); not permitted before negotiation or for an
+unowned handle. Typed error details are required where the facade needs
+them to preserve a documented family error's discriminants/fields. Flags bit0 terminal,
 bit1 cleanup_uncertain; rest zero. Code 0 OK only in CLOSED terminal
 status, not ERROR. Unknown nonzero codes map to typed UnknownRemoteError
 (code, flags, bounded text); unknown flags fail closed. Typed mapping to
@@ -399,7 +424,7 @@ before acceptance or terminally close on inability to preserve accepted work.
 | fds_per_handle, fds_per_connection, fds_per_uid, fds_total | 32, 128, 256, 1024 (all owned and transient, including helper handoff; reserve daemon listener/control fds separately) |
 | memory_per_handle:u32, memory_per_uid:u32, memory_total:u32 | 2097152, 16777216, 67108864 (service-owned buffers including per-family journal and typed caches; separate measured kernel socket buffers/worker RSS) |
 | pcm_frames_per_endpoint | 2048 |
-| hello_ms:u32, request_ms:u32, prepare_ms:u32, confirm_ms:u32 | 3000, 1000, 10000, 3000 |
+| hello_ms:u32, request_ms:u32, prepare_ms:u32, confirm_ms:u32 | 3000, 1000, 10000, 5000 |
 | egress_stall_ms:u32, heartbeat_ms:u32, idle_ms:u32, drain_ms:u32 | 1000, 10000, 30000, 5000 |
 
 Hard max counts beyond above: capabilities 256, slots 256/handle,
@@ -423,7 +448,12 @@ loss, reserve does not displace required protocol replies. Required
 response or terminal notice undeliverable for egress deadline closes
 connection. No unbounded thread, queue or tombstone archive.
 Absolute request/prepare/confirm/close budgets never extended by partial
-progress. CLOSE may use drain_ms (rather than request_ms); true uncertainty
+progress. CREATE uses prepare_ms rather than request_ms from admission to
+CREATED; client waits no longer than prepare_ms plus the egress bound.
+Confirm deadline applies from CREATED enqueue through confirmation; the
+client uses the remaining conservative local budget for initial reads and
+client-side setup or aborts. CONFIRMED must be delivered within the same
+budget plus egress bound. CLOSE may use drain_ms (rather than request_ms); true uncertainty
 reported if deadline or provider cleanup fails. Family journaling caps
 remain ADR-0024-owned; charge full reserved capacity, reject creation if
 budget cannot fit largest family record. Tune only with owner review and
@@ -448,7 +478,7 @@ path. No USB/IP stream even if feature implemented on UHID/uinput; worker
 op8 is retained snapshots only. Exact epoch width, record/batch bytes,
 limits and additional codes frozen only by separately approved minor;
 currently reject any request and required feature before allocation.
-No feature advertised in Alpha 2; local VG-2 and haptic/Wii gates separate.
+No feature advertised in Alpha 2; in-process VG-2 and haptic/Wii gates separate.
 
 Reserve 0200–02ff and bit 2 for explicit lease/transfer: later separately
 authorized policy must define scoped unguessable token, expiry, owner
