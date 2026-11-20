@@ -190,6 +190,8 @@ struct Session {
     sent: u64,
     reverse: u64,
     failures: u64,
+    dropped_writes: u64,
+    last_dropped_write: Option<gr_realization_api::DroppedWrite>,
     lifecycle_events: u64,
     last_error: Option<String>,
     numbered_input_reports: bool,
@@ -209,6 +211,8 @@ impl Session {
             sent: 0,
             reverse: 0,
             failures: 0,
+            dropped_writes: 0,
+            last_dropped_write: None,
             lifecycle_events: 0,
             last_error: None,
             numbered_input_reports: specification.numbered_input_reports,
@@ -296,7 +300,13 @@ impl NativeProviderSession for Session {
                         .split_first()
                         .filter(|(report_id, _)| **report_id != 0)
                     else {
-                        // UHID_OUTPUT has no reply. Drop malformed writes and keep polling.
+                        // UHID_OUTPUT has no reply. Retain metadata and keep polling.
+                        self.dropped_writes += 1;
+                        self.last_dropped_write = Some(gr_realization_api::DroppedWrite {
+                            event_type: 6,
+                            report_id: bytes.first().copied(),
+                            length: bytes.len(),
+                        });
                         return Ok(());
                     };
                     (Some(report_id), bytes.to_vec())
@@ -366,6 +376,8 @@ impl NativeProviderSession for Session {
             reverse_events_drained: self.reverse,
             write_failures: self.failures,
             lifecycle_events: self.lifecycle_events,
+            dropped_writes: self.dropped_writes,
+            last_dropped_write: self.last_dropped_write.clone(),
             last_error: self.last_error.clone(),
         }
     }
@@ -1172,8 +1184,21 @@ mod seam_tests {
         assert_eq!(transport.event(), Ok(Some(HostEvent::Lifecycle(start))));
 
         let input = Command::Input(Report::new(ReportType::Input, Some(1), vec![5]).unwrap());
-        for _ in 0..2 {
+        for (index, (report_id, length)) in [(Some(0), 8), (None, 0)].into_iter().enumerate() {
             assert_eq!(transport.event(), Ok(None));
+            let diagnostics = transport.diagnostics();
+            assert_eq!(diagnostics.dropped_writes, index as u64 + 1);
+            assert_eq!(
+                diagnostics.last_dropped_write,
+                Some(gr_realization_api::DroppedWrite {
+                    event_type: 6,
+                    report_id,
+                    length
+                })
+            );
+            assert_eq!(diagnostics.state, ProviderState::Open);
+            assert_eq!(diagnostics.write_failures, 0);
+            assert_eq!(diagnostics.last_error, None);
             assert_eq!(transport.submit(&input), Delivery::Submitted);
         }
         assert!(record.lock().unwrap().set_replies.is_empty());
