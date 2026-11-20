@@ -1318,8 +1318,8 @@ pub fn decode_dualsense_trigger_effect(raw: [u8; 11]) -> DualSenseTriggerEffect 
                 return unknown();
             }
             DualSenseTriggerEffect::Weapon {
-                start_zone: u8::try_from(zone_mask.trailing_zeros()).expect("validated 10-zone mask"),
-                end_zone: u8::try_from(zone_mask.ilog2()).expect("validated 10-zone mask"),
+                start_zone: u8::try_from(zone_mask.trailing_zeros()).unwrap_or_default(),
+                end_zone: u8::try_from(zone_mask.ilog2()).unwrap_or_default(),
                 strength: raw[3] + 1,
             }
         }
@@ -1347,8 +1347,8 @@ pub fn decode_dualsense_trigger_effect(raw: [u8; 11]) -> DualSenseTriggerEffect 
             }
             let zones = DualSenseTriggerZoneForces {
                 active_zones: zone_mask,
-                start_zone: u8::try_from(zone_mask.trailing_zeros()).expect("validated 10-zone mask"),
-                end_zone: u8::try_from(zone_mask.ilog2()).expect("validated 10-zone mask"),
+                start_zone: u8::try_from(zone_mask.trailing_zeros()).unwrap_or_default(),
+                end_zone: u8::try_from(zone_mask.ilog2()).unwrap_or_default(),
                 strengths,
             };
             if raw[0] == 0x21 {
