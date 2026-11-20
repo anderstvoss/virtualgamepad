@@ -1271,10 +1271,22 @@ pub struct DualSenseTriggerZoneForces {
 #[non_exhaustive]
 pub enum DualSenseTriggerEffect {
     Off,
-    Feedback { zones: DualSenseTriggerZoneForces },
-    Weapon { start_zone: u8, end_zone: u8, strength: u8 },
-    Vibration { zones: DualSenseTriggerZoneForces, frequency_code: u8 },
-    Unknown { mode: u8, raw: [u8; 11] },
+    Feedback {
+        zones: DualSenseTriggerZoneForces,
+    },
+    Weapon {
+        start_zone: u8,
+        end_zone: u8,
+        strength: u8,
+    },
+    Vibration {
+        zones: DualSenseTriggerZoneForces,
+        frequency_code: u8,
+    },
+    Unknown {
+        mode: u8,
+        raw: [u8; 11],
+    },
 }
 
 /// One trigger's effect bytes and whether this report actually updates it.
@@ -1366,7 +1378,8 @@ impl DualSenseHidOutput {
             right_trigger_effect,
             left_trigger_effect,
             ..
-        } = self else {
+        } = self
+        else {
             return None;
         };
         let right_valid = valid_flag0 & 0x04 != 0;
@@ -1395,12 +1408,18 @@ mod dualsense_trigger_effect_tests {
     #[test]
     fn off_reset_and_unpinned_sdl_demo_modes_keep_raw() {
         let reset = [0x05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        assert_eq!(decode_dualsense_trigger_effect(reset), DualSenseTriggerEffect::Off);
+        assert_eq!(
+            decode_dualsense_trigger_effect(reset),
+            DualSenseTriggerEffect::Off
+        );
         let mut nonzero_reset = reset;
         nonzero_reset[10] = 1;
         assert_eq!(
             decode_dualsense_trigger_effect(nonzero_reset),
-            DualSenseTriggerEffect::Unknown { mode: 0x05, raw: nonzero_reset }
+            DualSenseTriggerEffect::Unknown {
+                mode: 0x05,
+                raw: nonzero_reset
+            }
         );
         // ds-l0-sdl-trigger-demo-modes: SDL sends 0x01 and 0x06, but
         // the demonstration does not pin general parameter semantics.
@@ -1417,7 +1436,10 @@ mod dualsense_trigger_effect_tests {
         unknown[10] = 0xa5;
         assert_eq!(
             decode_dualsense_trigger_effect(unknown),
-            DualSenseTriggerEffect::Unknown { mode: 0xfe, raw: unknown }
+            DualSenseTriggerEffect::Unknown {
+                mode: 0xfe,
+                raw: unknown
+            }
         );
     }
 
@@ -1429,13 +1451,21 @@ mod dualsense_trigger_effect_tests {
         lowest[0..3].copy_from_slice(&[0x25, 0x03, 0]);
         assert_eq!(
             decode_dualsense_trigger_effect(lowest),
-            DualSenseTriggerEffect::Weapon { start_zone: 0, end_zone: 1, strength: 1 }
+            DualSenseTriggerEffect::Weapon {
+                start_zone: 0,
+                end_zone: 1,
+                strength: 1
+            }
         );
         let mut highest = [0; 11];
         highest[0..4].copy_from_slice(&[0x25, 0, 0x03, 7]);
         assert_eq!(
             decode_dualsense_trigger_effect(highest),
-            DualSenseTriggerEffect::Weapon { start_zone: 8, end_zone: 9, strength: 8 }
+            DualSenseTriggerEffect::Weapon {
+                start_zone: 8,
+                end_zone: 9,
+                strength: 8
+            }
         );
         for (slot, value) in [(1, 0_u8), (2, 0x80), (3, 8), (10, 1)] {
             let mut malformed = lowest;
@@ -1459,7 +1489,10 @@ mod dualsense_trigger_effect_tests {
             decode_dualsense_trigger_effect(min),
             DualSenseTriggerEffect::Feedback {
                 zones: DualSenseTriggerZoneForces {
-                    active_zones: 1, start_zone: 0, end_zone: 0, strengths: min_levels
+                    active_zones: 1,
+                    start_zone: 0,
+                    end_zone: 0,
+                    strengths: min_levels
                 }
             }
         );
@@ -1469,7 +1502,9 @@ mod dualsense_trigger_effect_tests {
             decode_dualsense_trigger_effect(max),
             DualSenseTriggerEffect::Feedback {
                 zones: DualSenseTriggerZoneForces {
-                    active_zones: 0x03ff, start_zone: 0, end_zone: 9,
+                    active_zones: 0x03ff,
+                    start_zone: 0,
+                    end_zone: 9,
                     strengths: [Some(8); 10]
                 }
             }
@@ -1502,7 +1537,10 @@ mod dualsense_trigger_effect_tests {
             decode_dualsense_trigger_effect(min),
             DualSenseTriggerEffect::Vibration {
                 zones: DualSenseTriggerZoneForces {
-                    active_zones: 1, start_zone: 0, end_zone: 0, strengths: levels
+                    active_zones: 1,
+                    start_zone: 0,
+                    end_zone: 0,
+                    strengths: levels
                 },
                 frequency_code: 0
             }
@@ -1514,7 +1552,9 @@ mod dualsense_trigger_effect_tests {
             decode_dualsense_trigger_effect(max),
             DualSenseTriggerEffect::Vibration {
                 zones: DualSenseTriggerZoneForces {
-                    active_zones: 0x03ff, start_zone: 0, end_zone: 9,
+                    active_zones: 0x03ff,
+                    start_zone: 0,
+                    end_zone: 9,
                     strengths: [Some(8); 10]
                 },
                 frequency_code: u8::MAX
