@@ -85,15 +85,16 @@ no allocation of controllers prior to negotiation.
 
 | Feature bit | Meaning |
 | --- | --- |
-| 0 | Optional selected PCM sample bridge (existing typed audio I/O only) |
+| 0 | Reserved: Service-mode PCM sample bridge (existing typed audio I/O only). Not advertised or accepted in 1.0; whether and how Service mode carries audio is an open owner decision for the final production broker build (ADR-0026 section 2) |
 | 1 | Reserved: ADR-0024 journal reads (not advertised or accepted in 1.0) |
 | 2 | Reserved: leases/transfer (not advertised or accepted in 1.0) |
 | 3–63 | Unassigned; no private use in compatible production protocol |
 
 Base lifecycle, capability listing, N-slot handle, typed edits, read views
 and optional observations are mandatory, not separately negotiated. PCM
-may be advertised only on reviewed family/realization/options combos
-after parity qualification; absence is an explicit refusal. Capability
+(bit 0) is not advertised in 1.0; if the owner later approves it, it may be
+advertised only on reviewed family/realization/options combos after parity
+qualification; absence is an explicit refusal. Capability
 listing reflects actual service/profile availability, not physical acceptance.
 Use LIST_CAPS after WELCOME, no CREATE before successful discovery.
 Request start:u16 (zero initially), max:u16 (1–16); reply next:u16
@@ -106,7 +107,15 @@ family:ID, realization:ID, shape:u8 (1 standalone, 2 receiver),
 max_slots:u16, address_policy:ID, hosted_count:u16 (<=32), hosted IDs,
 option_flags:u64 (family schema-defined; zero reserved),
 schema_count:u16 (<=64), entries {operation:u16, schema:u16,
-min_revision:u16, max_revision:u16, max_blob:u32}, feature_mask:u64.
+min_revision:u16, max_revision:u16, max_blob:u32}, feature_mask:u64,
+stability:u8 (1 stable, 2 preview; other values rejected).
+Stable entries carry the section 9 compatibility promise. Preview entries
+may change their schemas by a new revision in any minor, may be withdrawn,
+and a client must opt in to each preview entry explicitly; the client
+library never selects a preview entry implicitly. The owner names the
+stable family/realization set at the tag (proposed: DualSense, DualShock 4,
+Xbox 360 and Switch Pro on their existing realizations); all others start
+as preview.
 Schema entry keys are (operation, schema); capability list entries may not
 repeat a key. A CREATE includes the chosen compatible revisions for every
 schema needed by its requested options, including reply/notice schemas.
@@ -127,7 +136,8 @@ not RF. No new family support inferred by listing syntax.
 
 ## 3. Requests, responses and scheduling
 
-Requests use strictly increasing connection-wide u64 IDs, starting at 1,
+Requests use strictly increasing connection-wide u64 IDs. HELLO consumes
+ID 1; the first request after WELCOME uses ID 2. IDs never decrease,
 no reuse/wrap; exhaustion closes. Responses echo ID and set response flag;
 one final response per request, except handshake which uses chosen bootstrap
 grammar. Message code identifies success shape; ERROR replies use common
@@ -224,9 +234,9 @@ only stated fields. H/S defined above; code ranges retain their meanings.
 | 0022 COMMIT: H,S | 0023 COMMITTED: H,S,B | Explicit submission attempt |
 | 0024 NATIVE_OP: H,S,op:u16,V | 0025 APPLIED: H,S,B | Typed non-level operation |
 | 0026 RECEIVER_OP: H,op:u16,V | 0027 RECEIVER_APPLIED: H,Shape | Typed receiver lifecycle transaction |
-| 0028 GET_VIEW: H,S,kind_mask:u16 | 0029 VIEW: H,S,B | Read validated current/terminal typed data |
+| 0028 GET_VIEW: H,S,kind_mask:u64 | 0029 VIEW: H,S,B | Read validated current/terminal typed data |
 | 002a RESOLVE_RESOURCE: H,S,disposition:u8 (0 discard,1 keep snapshot) | 002b RESOURCE: H,S,present:bool,[V if present] | Explicit terminal typed resource (ADR-0013) |
-| 002c GET_HANDLE_VIEW: H,kind_mask:u16 | 002d HANDLE_VIEW: H,B | Receiver-wide typed metadata/diagnostics |
+| 002c GET_HANDLE_VIEW: H,kind_mask:u64 | 002d HANDLE_VIEW: H,B | Receiver-wide typed metadata/diagnostics |
 | 0040 PCM_READ: H,S,endpoint:u16,max_frames:u16 | 0041 PCM_DATA: H,S,endpoint:u16,first_frame:u64,count:u16,discontinuity:bool,blob | Existing selected playback sample I/O |
 | 0042 PCM_WRITE: H,S,endpoint:u16,count:u16,blob | 0043 PCM_WRITTEN: H,S,endpoint:u16,accepted_frames:u16 | Existing selected microphone sample I/O |
 | 0044 PCM_FLUSH: H,S,endpoint:u16 | 0045 PCM_FLUSHED: H,S,endpoint:u16 | Existing typed explicit flush |
@@ -248,8 +258,9 @@ the connection. If required views/shape, maximum valid replies or terminal
 metadata cannot fit the negotiated packet ceiling, refuse CREATE before
 opening a provider. Large optional responses are requested by individual
 kind; validate response size before any mutation with required ACK data.
-Kind_mask bit (kind - 1) selects each known kind; unknown requested bits
-are rejected. Count arrays cannot contain duplicate IDs/kinds. Cursor is ordered
+Kind_mask bit (kind - 1) selects each known kind (kinds 1–64 addressable
+by mask; kinds above 64 need a separately approved additive message);
+unknown requested bits are rejected. Count arrays cannot contain duplicate IDs/kinds. Cursor is ordered
 by H; if concurrent changes occur it is not a snapshot of past objects.
 Limit by count AND bytes; cursor continues strictly after last returned H.
 For scope 0 terminal H,S zero; scope 1 S zero; scope 2 exact H,S.
@@ -355,8 +366,9 @@ Connection states:
 - Negotiating: parse HELLO, send WELCOME within deadline; discover caps.
   Failure closes; no resource allocation. Duplicate HELLO invalid.
 - Active: only negotiated messages, owner-scoped objects; independent
-  controller servicing. PING/PONG during inactivity; any valid request
-  refreshes last activity (absolute monotonic deadlines).
+  controller servicing. No idle expiry: a connected, authenticated client
+  keeps its controllers however long it goes without sending requests.
+  PING/PONG is an optional client liveness probe.
 - Draining: explicit service stop or terminal policy; reject new create/
   edit, attempt DRAINING and terminal notices, bounded cleanup. EOF,
   SHUT_WR (RDHUP), SHUT_RD causing send failure, HUP, SIGKILL last fd,
@@ -425,7 +437,7 @@ before acceptance or terminally close on inability to preserve accepted work.
 | memory_per_handle:u32, memory_per_uid:u32, memory_total:u32 | 2097152, 16777216, 67108864 (service-owned buffers including per-family journal and typed caches; separate measured kernel socket buffers/worker RSS) |
 | pcm_frames_per_endpoint | 2048 |
 | hello_ms:u32, request_ms:u32, prepare_ms:u32, confirm_ms:u32 | 3000, 1000, 10000, 5000 |
-| egress_stall_ms:u32, heartbeat_ms:u32, idle_ms:u32, drain_ms:u32 | 1000, 10000, 30000, 5000 |
+| egress_stall_ms:u32, drain_ms:u32 | 1000, 5000 |
 
 Hard max counts beyond above: capabilities 256, slots 256/handle,
 schemas 64/entry, observations <=32 per packet, typed views <=16;
@@ -433,11 +445,13 @@ parser never allocates from unchecked length. Both directions queue
 accounting includes encoded bytes and metadata; charge conservatively
 for buffers/caches and family memory, account transient fds and worker
 resources separately in helper-specific quotas. Connection quota includes
-idle/auth pending. Client sends PING by heartbeat deadline even while
-inputs unchanged; server expires dead or idle clients, no heartbeat thread
-required in caller. A live app that stops pumping indefinitely loses
-controllers rather than locking quota; during grace service maintains
-required replies. Suspend/resume may exceed negotiated deadline and close.
+idle/auth pending. Active connections have no idle or heartbeat expiry:
+dead clients are detected by EOF/HUP on the local socket, so an app that
+pauses its loop (loading, debugger, suspend) keeps its controllers and the
+service keeps answering required replies. Only the HELLO deadline and the
+egress-stall rule for required frames (below) close a live connection;
+optional observations are evicted with loss counted, never a reason to
+close. Quota held by a paused but connected app stays charged to its UID.
 Service must provide fair cycle (e.g. one admitted mutation and bounded
 IPC frames before native service, round-robin across ready handles,
 earliest required retry deadline first); use independent bounded tasks for
@@ -491,8 +505,8 @@ schemas with opaque handles; no C ABI promise in 1.0.
 
 ## 9. Compatibility and validation
 
-At tag freeze major 1, 1.0 grammar, errors, existing registry ID meanings and
-advertised family schemas, and the documented typed broker client API.
+At tag freeze major 1, 1.0 grammar, errors, existing registry ID meanings,
+the schemas of capability entries marked stable, and the documented typed broker client API.
 Highest compatible minor negotiation; additive operations/features only,
 never reinterpret an old numeric value; new family IDs do not require a
 protocol bump. Unknown optional capability ignored, required rejected.

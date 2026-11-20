@@ -103,6 +103,15 @@ until kalux evidence (b1 reports distinct installer capabilities). No
 CAP_SYS_ADMIN in general service. Avoid circular root/service dependencies by
 extracting private shared owner implementation if needed.
 
+**Open owner decision, deferred to the final production broker build:**
+whether and how Service mode carries controller audio. Anders deferred this
+(2026-11-19) together with the full production security and user-permission
+audit for the dedicated broker. Until decided, vgsp 1.0 reserves feature
+bit 0 and does not advertise it; Service-mode creation that requires audio
+fails with an explicit capability refusal, and audio realizations remain
+available through Direct. The options below are the candidate design for
+that later decision, not an approved scope.
+
 Audio is not silently lost. USB/IP worker remains the protocol owner and
 private PCM transport; service may bridge only typed existing PCM sample
 operations (including the current Samples mode and, when selected, the
@@ -165,7 +174,7 @@ replies to their bounded deadline or terminates by their transport rules,
 closes required components in reverse dependency order, reports cleanup errors
 and preserves last validated terminal views while owned. Repeated close is
 idempotent; RELEASE disposes the closed handle. EOF, half-close, protocol fault,
-SIGKILL (last socket reference), liveness timeout and overflow terminate the
+SIGKILL (last socket reference) and overflow terminate the
 connection or specified handle; no assumption that killing one PID closes an
 inherited fd. Client sockets CLOEXEC; sharing/duplication is outside trusted
 contract. Queue saturation cannot silently coalesce accepted edits/commits or
@@ -235,8 +244,12 @@ root or provider, and a Rust client module inside vg's ordinary typed facade
 (not a second competing app SDK). Service binary can link Direct-side vg or
 shared private owners; never recurse into Service backend. Stable surface
 at Alpha 2 is the documented broker client contract, selected common/family
-types and errors necessary to call it, plus vgsp major 1 and published family
-codec schemas. Rust ABI is not frozen. A type shared with Direct is stable
+types and errors necessary to call it, plus vgsp major 1 and the codec schemas
+of capability entries marked stable. Each capability entry carries a
+stability tier (stable or preview, see the spec); preview families and
+realizations stay alpha-mutable and need explicit client opt-in, so
+freezing the wire does not freeze every family's native input model.
+Rust ABI is not frozen. A type shared with Direct is stable
 insofar as needed for the broker contract; unrelated Direct-only APIs,
 experimental SPI, internals and unapproved family/feature work remain
 alpha-mutable until beta. Specify the exact API inventory/snapshots in the
@@ -340,6 +353,9 @@ Docs-only: no runtime, snapshot, test, dependency or host changes. CI is the
 first full validation of this PR. All implementation and local acceptance
 above remain not run. Owner decisions requested: transport/name and schema
 framing; sync mutation/confirmation and terminal policy; quota/time defaults;
-non-root host/helper grants; audio scope/bridge and failure behavior;
+non-root host/helper grants; stable capability set at the tag (proposed
+DualSense, DualShock 4, Xbox 360, Switch Pro; others preview). Deferred to the
+final production broker build with the full security/permissions audit:
+Service-mode audio scope and bridge; production host grants.
 compatibility/deprecation window and exact stable API inventory; acceptance
 matrix and benchmark thresholds. The ADR remains Proposed until owner accepts.
