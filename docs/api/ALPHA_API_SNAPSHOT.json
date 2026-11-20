@@ -391,7 +391,8 @@
         },
         "enum.DualShock4OutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum DualShock4OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput(DualShock4HidOutput), }"
+            "#[non_exhaustive]pub enum DualShock4OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput(DualShock4HidOutput), }",
+            "pub fn rumble(&self) -> Option<DualShock4Rumble>"
           ],
           "traits": [
             "impl Clone for DualShock4OutputEvent",
@@ -864,7 +865,8 @@
         },
         "enum.WiiRemoteOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum WiiRemoteOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum WiiRemoteOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "pub fn rumble(&self) -> Option<WiiRemoteRumble>"
           ],
           "traits": [
             "impl Clone for WiiRemoteOutputEvent",
@@ -933,7 +935,8 @@
         },
         "enum.Xbox360OutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum Xbox360OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum Xbox360OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "pub fn rumble(&self) -> Option<Xbox360Rumble>"
           ],
           "traits": [
             "impl Clone for Xbox360OutputEvent",
@@ -966,7 +969,8 @@
         },
         "enum.XboxSeriesOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), HostLifecycle(HostLifecycle), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), HostLifecycle(HostLifecycle), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "pub fn rumble(&self) -> Option<XboxSeriesRumble>"
           ],
           "traits": [
             "impl Clone for XboxSeriesOutputEvent",
@@ -978,6 +982,24 @@
             "impl Sync for XboxSeriesOutputEvent",
             "impl Unpin for XboxSeriesOutputEvent",
             "impl UnwindSafe for XboxSeriesOutputEvent"
+          ]
+        },
+        "enum.XboxSeriesRumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum XboxSeriesRumble { Bluetooth(XboxSeriesBluetoothRumble), Evdev { strong: u8, weak: u8, }, }",
+            "pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<XboxSeriesRumble>"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesRumble",
+            "impl Copy for XboxSeriesRumble",
+            "impl Debug for XboxSeriesRumble",
+            "impl Eq for XboxSeriesRumble",
+            "impl PartialEq for XboxSeriesRumble",
+            "impl RefUnwindSafe for XboxSeriesRumble",
+            "impl Send for XboxSeriesRumble",
+            "impl Sync for XboxSeriesRumble",
+            "impl Unpin for XboxSeriesRumble",
+            "impl UnwindSafe for XboxSeriesRumble"
           ]
         },
         "fn.create_dualsense.html": {
@@ -1818,6 +1840,24 @@
             "impl Sync for DualShock4OutputState",
             "impl Unpin for DualShock4OutputState",
             "impl UnwindSafe for DualShock4OutputState"
+          ]
+        },
+        "struct.DualShock4Rumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualShock4Rumble { pub valid_flags: Option<[u8; 2]>, pub strong: Option<u8>, pub weak: Option<u8>, }",
+            "pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<DualShock4Rumble>"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Rumble",
+            "impl Copy for DualShock4Rumble",
+            "impl Debug for DualShock4Rumble",
+            "impl Eq for DualShock4Rumble",
+            "impl PartialEq for DualShock4Rumble",
+            "impl RefUnwindSafe for DualShock4Rumble",
+            "impl Send for DualShock4Rumble",
+            "impl Sync for DualShock4Rumble",
+            "impl Unpin for DualShock4Rumble",
+            "impl UnwindSafe for DualShock4Rumble"
           ]
         },
         "struct.DualShock4Status.html": {
@@ -3070,6 +3110,24 @@
             "impl UnwindSafe for WiiRemoteOutputs"
           ]
         },
+        "struct.WiiRemoteRumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct WiiRemoteRumble { pub enabled: bool, }",
+            "pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<WiiRemoteRumble>"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteRumble",
+            "impl Copy for WiiRemoteRumble",
+            "impl Debug for WiiRemoteRumble",
+            "impl Eq for WiiRemoteRumble",
+            "impl PartialEq for WiiRemoteRumble",
+            "impl RefUnwindSafe for WiiRemoteRumble",
+            "impl Send for WiiRemoteRumble",
+            "impl Sync for WiiRemoteRumble",
+            "impl Unpin for WiiRemoteRumble",
+            "impl UnwindSafe for WiiRemoteRumble"
+          ]
+        },
         "struct.WiiRemoteStatus.html": {
           "declarations": [
             "pub struct WiiRemoteStatus { /* private fields */ }",
@@ -3208,6 +3266,24 @@
             "impl UnwindSafe for Xbox360OutputState"
           ]
         },
+        "struct.Xbox360Rumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct Xbox360Rumble { pub strong: u8, pub weak: u8, }",
+            "pub fn decode_xusb(command: &[u8]) -> Option<Xbox360Rumble>"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Rumble",
+            "impl Copy for Xbox360Rumble",
+            "impl Debug for Xbox360Rumble",
+            "impl Eq for Xbox360Rumble",
+            "impl PartialEq for Xbox360Rumble",
+            "impl RefUnwindSafe for Xbox360Rumble",
+            "impl Send for Xbox360Rumble",
+            "impl Sync for Xbox360Rumble",
+            "impl Unpin for Xbox360Rumble",
+            "impl UnwindSafe for Xbox360Rumble"
+          ]
+        },
         "struct.Xbox360Status.html": {
           "declarations": [
             "pub struct Xbox360Status { /* private fields */ }",
@@ -3267,7 +3343,8 @@
         },
         "struct.XboxSeriesBluetoothRumble.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }"
+            "#[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }",
+            "pub fn decode( report_id: Option<u8>, payload: &[u8], ) -> Option<XboxSeriesBluetoothRumble>"
           ],
           "traits": [
             "impl Clone for XboxSeriesBluetoothRumble",
@@ -3815,7 +3892,8 @@
         },
         "enum.DualShock4OutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum DualShock4OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput(DualShock4HidOutput), }"
+            "#[non_exhaustive]pub enum DualShock4OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput(DualShock4HidOutput), }",
+            "pub fn rumble(&self) -> Option<DualShock4Rumble>"
           ],
           "traits": [
             "impl Clone for DualShock4OutputEvent",
@@ -4288,7 +4366,8 @@
         },
         "enum.WiiRemoteOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum WiiRemoteOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum WiiRemoteOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "pub fn rumble(&self) -> Option<WiiRemoteRumble>"
           ],
           "traits": [
             "impl Clone for WiiRemoteOutputEvent",
@@ -4357,7 +4436,8 @@
         },
         "enum.Xbox360OutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum Xbox360OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum Xbox360OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "pub fn rumble(&self) -> Option<Xbox360Rumble>"
           ],
           "traits": [
             "impl Clone for Xbox360OutputEvent",
@@ -4390,7 +4470,8 @@
         },
         "enum.XboxSeriesOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), HostLifecycle(HostLifecycle), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), HostLifecycle(HostLifecycle), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "pub fn rumble(&self) -> Option<XboxSeriesRumble>"
           ],
           "traits": [
             "impl Clone for XboxSeriesOutputEvent",
@@ -4402,6 +4483,24 @@
             "impl Sync for XboxSeriesOutputEvent",
             "impl Unpin for XboxSeriesOutputEvent",
             "impl UnwindSafe for XboxSeriesOutputEvent"
+          ]
+        },
+        "enum.XboxSeriesRumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum XboxSeriesRumble { Bluetooth(XboxSeriesBluetoothRumble), Evdev { strong: u8, weak: u8, }, }",
+            "pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<XboxSeriesRumble>"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesRumble",
+            "impl Copy for XboxSeriesRumble",
+            "impl Debug for XboxSeriesRumble",
+            "impl Eq for XboxSeriesRumble",
+            "impl PartialEq for XboxSeriesRumble",
+            "impl RefUnwindSafe for XboxSeriesRumble",
+            "impl Send for XboxSeriesRumble",
+            "impl Sync for XboxSeriesRumble",
+            "impl Unpin for XboxSeriesRumble",
+            "impl UnwindSafe for XboxSeriesRumble"
           ]
         },
         "fn.create_dualsense.html": {
@@ -5242,6 +5341,24 @@
             "impl Sync for DualShock4OutputState",
             "impl Unpin for DualShock4OutputState",
             "impl UnwindSafe for DualShock4OutputState"
+          ]
+        },
+        "struct.DualShock4Rumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualShock4Rumble { pub valid_flags: Option<[u8; 2]>, pub strong: Option<u8>, pub weak: Option<u8>, }",
+            "pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<DualShock4Rumble>"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Rumble",
+            "impl Copy for DualShock4Rumble",
+            "impl Debug for DualShock4Rumble",
+            "impl Eq for DualShock4Rumble",
+            "impl PartialEq for DualShock4Rumble",
+            "impl RefUnwindSafe for DualShock4Rumble",
+            "impl Send for DualShock4Rumble",
+            "impl Sync for DualShock4Rumble",
+            "impl Unpin for DualShock4Rumble",
+            "impl UnwindSafe for DualShock4Rumble"
           ]
         },
         "struct.DualShock4Status.html": {
@@ -6494,6 +6611,24 @@
             "impl UnwindSafe for WiiRemoteOutputs"
           ]
         },
+        "struct.WiiRemoteRumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct WiiRemoteRumble { pub enabled: bool, }",
+            "pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<WiiRemoteRumble>"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteRumble",
+            "impl Copy for WiiRemoteRumble",
+            "impl Debug for WiiRemoteRumble",
+            "impl Eq for WiiRemoteRumble",
+            "impl PartialEq for WiiRemoteRumble",
+            "impl RefUnwindSafe for WiiRemoteRumble",
+            "impl Send for WiiRemoteRumble",
+            "impl Sync for WiiRemoteRumble",
+            "impl Unpin for WiiRemoteRumble",
+            "impl UnwindSafe for WiiRemoteRumble"
+          ]
+        },
         "struct.WiiRemoteStatus.html": {
           "declarations": [
             "pub struct WiiRemoteStatus { /* private fields */ }",
@@ -6632,6 +6767,24 @@
             "impl UnwindSafe for Xbox360OutputState"
           ]
         },
+        "struct.Xbox360Rumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct Xbox360Rumble { pub strong: u8, pub weak: u8, }",
+            "pub fn decode_xusb(command: &[u8]) -> Option<Xbox360Rumble>"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Rumble",
+            "impl Copy for Xbox360Rumble",
+            "impl Debug for Xbox360Rumble",
+            "impl Eq for Xbox360Rumble",
+            "impl PartialEq for Xbox360Rumble",
+            "impl RefUnwindSafe for Xbox360Rumble",
+            "impl Send for Xbox360Rumble",
+            "impl Sync for Xbox360Rumble",
+            "impl Unpin for Xbox360Rumble",
+            "impl UnwindSafe for Xbox360Rumble"
+          ]
+        },
         "struct.Xbox360Status.html": {
           "declarations": [
             "pub struct Xbox360Status { /* private fields */ }",
@@ -6691,7 +6844,8 @@
         },
         "struct.XboxSeriesBluetoothRumble.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }"
+            "#[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }",
+            "pub fn decode( report_id: Option<u8>, payload: &[u8], ) -> Option<XboxSeriesBluetoothRumble>"
           ],
           "traits": [
             "impl Clone for XboxSeriesBluetoothRumble",

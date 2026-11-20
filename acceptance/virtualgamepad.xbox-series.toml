@@ -54,14 +54,14 @@ id = "main-rumble"
 status = "source-evidence"
 test_id = "completes_each_rumble_request_and_retains_only_playback"
 evidence = ["xbox-series-xpad-trigger-rumble-limitation", "xbox-series-xpad-evdev-shape"]
-reason = "The virtual run observed both SDL magnitudes in the retained controller state."
+reason = "The virtual run observed both SDL magnitudes in the retained controller state. Decode sub-check: ff_rumble_decode_preserves_native_effect_and_stop_semantics (xbox-series-xpad-trigger-rumble-limitation); source only."
 
 [functions.cells."linux.uhid.bluetooth"]
 status = "virtual-live"
 test_id = "host_requests_reply_for_each_report_class_and_keep_valid_rumble"
-evidence = []
+evidence = ["xbox-series-sdl-bluetooth-rumble", "xbox-cgap-descriptor-example"]
 live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
-reason = "Integrated SDL produced native output 0x03 and the controller retained both main motor amplitudes."
+reason = "Integrated SDL produced native output 0x03 and the controller retained both main motor amplitudes. Decode sub-check: series_native_rumble_decode; supplemental xbox-series-rumble-native-fields (research PR 155, pending pin); source only."
 
 [[functions]]
 id = "identity-and-enumeration"
@@ -120,9 +120,9 @@ reason = "FF_RUMBLE exposes two main-motor amplitudes and no trigger channels."
 [functions.cells."linux.uhid.bluetooth"]
 status = "virtual-live"
 test_id = "host_requests_reply_for_each_report_class_and_keep_valid_rumble"
-evidence = []
+evidence = ["xbox-series-sdl-bluetooth-rumble", "xbox-cgap-descriptor-example"]
 live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
-reason = "Exact-candidate SDL HIDAPI independently submitted left-only and right-only commands received by the product on microsoft. Physical actuation remains unverified."
+reason = "Exact-candidate SDL HIDAPI independently submitted left-only and right-only commands received by the product on microsoft. Physical actuation remains unverified. Decode sub-check: series_native_rumble_decode; supplemental xbox-series-rumble-native-fields (research PR 155, pending pin); source only."
 
 [[functions]]
 id = "axis-fuzz"

@@ -892,3 +892,13 @@ and no journal, playback or transport API. Decode is a pure value transition;
 callers must advance it at the later journal acceptance boundary. Do not treat
 optional raw observations as an authoritative stream. Wii supporting snapshot:
 23 → 30 items; root and Steam unchanged.
+
+### #365 · Typed rumble observations (c4-rumble-records)
+
+- Xbox Series: add `XboxSeriesRumble`, `XboxSeriesOutputEvent::rumble()`, and pure `XboxSeriesRumble::decode()` / `XboxSeriesBluetoothRumble::decode()`; four-channel native report versus two-channel FF. No trigger emulation.
+- DualShock 4: add `DualShock4Rumble`, `DualShock4OutputEvent::rumble()`, and `DualShock4Rumble::decode()`; preserve both validity flags and distinguish no update from stop. Bluetooth parsing is source-only.
+- Xbox 360: add `Xbox360Rumble`, `Xbox360OutputEvent::rumble()`, and source-only `Xbox360Rumble::decode_xusb()`; existing standard HID does not admit XUSB outputs.
+- Wii Remote: add `WiiRemoteRumble`, `WiiRemoteOutputEvent::rumble()`, and `WiiRemoteRumble::decode()`; binary intent from shared bit or conventional FF.
+
+Existing events, raw payloads, FF effect types and retained snapshots are unchanged.
+These additive ordinary-root declarations do not change protocol admission or qualify physical output.

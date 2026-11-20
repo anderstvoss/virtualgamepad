@@ -72,10 +72,10 @@ id = "battery"
 [[functions]]
 id = "rumble"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/rumble", evidence = ["ds4-l0-consumer-rumble-lightbar-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/rumble", evidence = ["ds4-l0-consumer-rumble-lightbar-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/rumble", evidence = ["ds4-l0-consumer-rumble-lightbar-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell. Decode sub-check: ff_rumble_decode_preserves_native_effect_and_stop_semantics; source only." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/rumble", evidence = ["ds4-l0-consumer-rumble-lightbar-output", "ds4-l0-device-usb05-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell. Decode sub-check: ds4_native_rumble_decode; supplemental ds4-rumble-native-fields (research PR 155, pending pin); source only." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/rumble", evidence = ["ds4-l0-consumer-rumble-lightbar-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/rumble", evidence = ["ds4-l0-consumer-rumble-lightbar-output", "ds4-l0-device-usb05-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell. Decode sub-check: ds4_native_rumble_decode; supplemental ds4-rumble-native-fields (research PR 155, pending pin); source only." }
 
 [[functions]]
 id = "lightbar"
