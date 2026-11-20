@@ -108,16 +108,6 @@ def main():
         WII_BASELINE.write_text(json.dumps(wii, indent=2, sort_keys=True) + '\n')
         STEAM_BASELINE.write_text(json.dumps(steam, indent=2, sort_keys=True) + '\n')
     elif any(json.loads(BASELINE.read_text())['views'].get(view) != data for view, data in views.items()):
-        # Preserve the strict mismatch failure while showing the exact generated
-        # signature differences for source-only agents without local Cargo.
-        from difflib import unified_diff
-        baseline = json.loads(BASELINE.read_text())['views']
-        for view, data in views.items():
-            if baseline.get(view) != data:
-                expected_lines = json.dumps(baseline.get(view), indent=2, sort_keys=True).splitlines()
-                actual_lines = json.dumps(data, indent=2, sort_keys=True).splitlines()
-                print('\\n'.join(unified_diff(expected_lines, actual_lines,
-                    fromfile=f'checked-in/{view}', tofile=f'rustdoc/{view}')), flush=True)
         parser.exit(1, 'Alpha root API changed. Review necessity and migration notes before refreshing the snapshot.\n')
     elif not WII_BASELINE.exists() or json.loads(WII_BASELINE.read_text()) != wii:
         parser.exit(1, 'Wii supporting API changed. Review the imported-resource API before refreshing the snapshot.\n')

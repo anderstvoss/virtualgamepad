@@ -327,7 +327,7 @@
         "enum.DualSenseHidOutput.html": {
           "declarations": [
             "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }",
-            "pub fn trigger_effects(&self) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>"
+            "pub fn trigger_effects( &self, ) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>"
           ],
           "traits": [
             "impl Clone for DualSenseHidOutput",
@@ -3705,7 +3705,7 @@
         "enum.DualSenseHidOutput.html": {
           "declarations": [
             "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }",
-            "pub fn trigger_effects(&self) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>"
+            "pub fn trigger_effects( &self, ) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>"
           ],
           "traits": [
             "impl Clone for DualSenseHidOutput",
