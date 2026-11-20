@@ -1260,7 +1260,7 @@ pub struct DualSenseTriggerZoneForces {
     pub strengths: [Option<u8>; 10],
 }
 
-/// Source-supported interpretation of one 11-byte DualSense effect block.
+/// Source-supported interpretation of one 11-byte `DualSense` effect block.
 ///
 /// These are compatibility encoder parameters, not measured force/actuation.
 /// Unsupported mode bytes or noncanonical parameter layouts preserve all bytes.
@@ -1306,8 +1306,8 @@ pub fn decode_dualsense_trigger_effect(raw: [u8; 11]) -> DualSenseTriggerEffect 
                 return unknown();
             }
             DualSenseTriggerEffect::Weapon {
-                start_zone: zone_mask.trailing_zeros() as u8,
-                end_zone: (15 - zone_mask.leading_zeros()) as u8,
+                start_zone: u8::try_from(zone_mask.trailing_zeros()).expect("validated 10-zone mask"),
+                end_zone: u8::try_from(zone_mask.ilog2()).expect("validated 10-zone mask"),
                 strength: raw[3] + 1,
             }
         }
@@ -1325,18 +1325,18 @@ pub fn decode_dualsense_trigger_effect(raw: [u8; 11]) -> DualSenseTriggerEffect 
                 return unknown();
             }
             let mut strengths = [None; 10];
-            for zone in 0..10 {
+            for (zone, strength) in strengths.iter_mut().enumerate() {
                 let encoded = ((strength_bits >> (zone * 3)) & 7) as u8;
                 if zone_mask & (1 << zone) != 0 {
-                    strengths[zone] = Some(encoded + 1);
+                    *strength = Some(encoded + 1);
                 } else if encoded != 0 {
                     return unknown();
                 }
             }
             let zones = DualSenseTriggerZoneForces {
                 active_zones: zone_mask,
-                start_zone: zone_mask.trailing_zeros() as u8,
-                end_zone: (15 - zone_mask.leading_zeros()) as u8,
+                start_zone: u8::try_from(zone_mask.trailing_zeros()).expect("validated 10-zone mask"),
+                end_zone: u8::try_from(zone_mask.ilog2()).expect("validated 10-zone mask"),
                 strengths,
             };
             if raw[0] == 0x21 {
