@@ -105,7 +105,7 @@ id = "microphone-led"
 id = "adaptive-triggers"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/adaptive-triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/adaptive-triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/adaptive-triggers", evidence = [], reason = "Decode sub-check: raw right/left 11-byte blocks, independent update flags, bounded Off/Feedback/Weapon/Vibration and explicit unknown modes; source-only ds-l0-device-adaptive-trigger-mode-block, ds-l0-device-adaptive-trigger-mode-parameters, ds-l0-sdl-trigger-demo-modes at unmerged research commit 31e9dd94b8239b42432daff53b7a4e755258c5b9; pin adoption pending. ds-l0-physical-adaptive-trigger-unknown remains unresolved; ds-vg-exp0016-steam-trigger-disagreement concerns input mapping and does not establish effect actuation. No host/physical run; acceptance remains WIP." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/adaptive-triggers", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/adaptive-triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
