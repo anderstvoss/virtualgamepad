@@ -861,6 +861,28 @@ VG-1b final merge ledger: a #353 `2890223`; b #363 `5bea7a0`; c1 #364
 Step e records this consumer/documentation completion; its merge SHA belongs in
 the closing #322 status after owner merge, not as a predicted SHA here.
 
+## Switch Pro HD rumble typed decode (Alpha 2 G2)
+
+- Existing `SwitchProRumble` fields and `SwitchProOutputEvent::rumble()` remain
+  unchanged. New `decode()` and `decode_with_previous(left, right)` return
+  `SwitchProRumbleDecoded` with independent `SwitchProRumbleWord` sides;
+  each carries the original four bytes and bounded `SwitchProRumbleSamples`.
+- The new root functions `decode_switch_pro_rumble_word(raw)` and
+  `decode_switch_pro_rumble_word_with_previous(raw, previous)` are pure. Each
+  `SwitchProRumbleSample` exposes high/low `SwitchProRumbleBand` values;
+  `frequency_hz()` and `amplitude_ratio()` return optional quantities.
+  Amplitude is the dimensionless compatibility-model ratio, not physical
+  output or the community table's amplitude scale.
+- Recognized relative encodings can leave individual values unknown unless
+  prior contiguous motor state is provided. Preserve previous state across
+  no-sample words, but discard it on unpinned encodings, gaps, or resets.
+  Raw words remain available in all cases; no uinput or journal change.
+- Source-only research: [pinned draft corpus commit](https://github.com/anderstvoss/controller-protocol-research/commit/79f919f22d9c587eb4b3b15383b41c296de1e797);
+  `swpro-l0-rumble-absolute-layout`, `swpro-l0-rumble-sample-layouts`,
+  `swpro-l0-rumble-logarithmic-units`, `swpro-l0-rumble-relative-commands`.
+  Formal acceptance evidence awaits corpus merge and adopted pin. No host or
+  physical run was performed.
+
 ### Wii speaker S1 decode-only (Alpha 2)
 
 The Wii supporting API adds `WiiSpeakerDecoder::decode` and the six typed

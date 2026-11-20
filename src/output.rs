@@ -57,7 +57,7 @@ pub enum SwitchProOutputEvent {
     },
 }
 impl SwitchProOutputEvent {
-    /// Extract encoded motor words; amplitude/frequency decoding is unvalidated.
+    /// Extract original motor words; use `SwitchProRumble::decode` for source-supported intent.
     #[must_use]
     pub fn rumble(&self) -> Option<SwitchProRumble> {
         let Self::Output { report_id, bytes } = self else {
