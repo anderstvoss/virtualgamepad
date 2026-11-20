@@ -760,6 +760,24 @@
             "impl UnwindSafe for SwitchProOutputEvent"
           ]
         },
+        "enum.SwitchProRumbleSamples.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SwitchProRumbleSamples { NoSamples, One([SwitchProRumbleSample; 1]), Two([SwitchProRumbleSample; 2]), Three([SwitchProRumbleSample; 3]), Unknown, }",
+            "pub fn as_slice(&self) -> Option<&[SwitchProRumbleSample]>"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleSamples",
+            "impl Copy for SwitchProRumbleSamples",
+            "impl Debug for SwitchProRumbleSamples",
+            "impl Eq for SwitchProRumbleSamples",
+            "impl PartialEq for SwitchProRumbleSamples",
+            "impl RefUnwindSafe for SwitchProRumbleSamples",
+            "impl Send for SwitchProRumbleSamples",
+            "impl Sync for SwitchProRumbleSamples",
+            "impl Unpin for SwitchProRumbleSamples",
+            "impl UnwindSafe for SwitchProRumbleSamples"
+          ]
+        },
         "enum.TouchSlot.html": {
           "declarations": [
             "pub enum TouchSlot { First, Second, }"
@@ -1023,6 +1041,18 @@
         "fn.create_xbox_series.html": {
           "declarations": [
             "pub fn create_xbox_series( options: CreationOptions, family: XboxSeriesOptions, ) -> Result<XboxSeriesController, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.decode_switch_pro_rumble_word.html": {
+          "declarations": [
+            "pub fn decode_switch_pro_rumble_word(raw: [u8; 4]) -> SwitchProRumbleWord"
+          ],
+          "traits": []
+        },
+        "fn.decode_switch_pro_rumble_word_with_previous.html": {
+          "declarations": [
+            "pub fn decode_switch_pro_rumble_word_with_previous( raw: [u8; 4], previous: Option<SwitchProRumbleSample>, ) -> SwitchProRumbleWord"
           ],
           "traits": []
         },
@@ -2579,7 +2609,9 @@
         },
         "struct.SwitchProRumble.html": {
           "declarations": [
-            "pub struct SwitchProRumble { pub packet_counter: u8, pub left: [u8; 4], pub right: [u8; 4], }"
+            "pub struct SwitchProRumble { pub packet_counter: u8, pub left: [u8; 4], pub right: [u8; 4], }",
+            "pub fn decode(&self) -> SwitchProRumbleDecoded",
+            "pub fn decode_with_previous( &self, left: Option<SwitchProRumbleSample>, right: Option<SwitchProRumbleSample>, ) -> SwitchProRumbleDecoded"
           ],
           "traits": [
             "impl Clone for SwitchProRumble",
@@ -2592,6 +2624,78 @@
             "impl Sync for SwitchProRumble",
             "impl Unpin for SwitchProRumble",
             "impl UnwindSafe for SwitchProRumble"
+          ]
+        },
+        "struct.SwitchProRumbleBand.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleBand { /* private fields */ }",
+            "pub fn frequency_hz(&self) -> Option<f32>",
+            "pub fn amplitude_ratio(&self) -> Option<f32>"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleBand",
+            "impl Copy for SwitchProRumbleBand",
+            "impl Debug for SwitchProRumbleBand",
+            "impl Eq for SwitchProRumbleBand",
+            "impl PartialEq for SwitchProRumbleBand",
+            "impl RefUnwindSafe for SwitchProRumbleBand",
+            "impl Send for SwitchProRumbleBand",
+            "impl Sync for SwitchProRumbleBand",
+            "impl Unpin for SwitchProRumbleBand",
+            "impl UnwindSafe for SwitchProRumbleBand"
+          ]
+        },
+        "struct.SwitchProRumbleDecoded.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleDecoded { pub left: SwitchProRumbleWord, pub right: SwitchProRumbleWord, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleDecoded",
+            "impl Copy for SwitchProRumbleDecoded",
+            "impl Debug for SwitchProRumbleDecoded",
+            "impl Eq for SwitchProRumbleDecoded",
+            "impl PartialEq for SwitchProRumbleDecoded",
+            "impl RefUnwindSafe for SwitchProRumbleDecoded",
+            "impl Send for SwitchProRumbleDecoded",
+            "impl Sync for SwitchProRumbleDecoded",
+            "impl Unpin for SwitchProRumbleDecoded",
+            "impl UnwindSafe for SwitchProRumbleDecoded"
+          ]
+        },
+        "struct.SwitchProRumbleSample.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleSample { /* private fields */ }",
+            "pub const fn high(&self) -> SwitchProRumbleBand",
+            "pub const fn low(&self) -> SwitchProRumbleBand"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleSample",
+            "impl Copy for SwitchProRumbleSample",
+            "impl Debug for SwitchProRumbleSample",
+            "impl Eq for SwitchProRumbleSample",
+            "impl PartialEq for SwitchProRumbleSample",
+            "impl RefUnwindSafe for SwitchProRumbleSample",
+            "impl Send for SwitchProRumbleSample",
+            "impl Sync for SwitchProRumbleSample",
+            "impl Unpin for SwitchProRumbleSample",
+            "impl UnwindSafe for SwitchProRumbleSample"
+          ]
+        },
+        "struct.SwitchProRumbleWord.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleWord { pub raw: [u8; 4], pub samples: SwitchProRumbleSamples, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleWord",
+            "impl Copy for SwitchProRumbleWord",
+            "impl Debug for SwitchProRumbleWord",
+            "impl Eq for SwitchProRumbleWord",
+            "impl PartialEq for SwitchProRumbleWord",
+            "impl RefUnwindSafe for SwitchProRumbleWord",
+            "impl Send for SwitchProRumbleWord",
+            "impl Sync for SwitchProRumbleWord",
+            "impl Unpin for SwitchProRumbleWord",
+            "impl UnwindSafe for SwitchProRumbleWord"
           ]
         },
         "struct.SwitchProStatus.html": {
@@ -4157,6 +4261,24 @@
             "impl UnwindSafe for SwitchProOutputEvent"
           ]
         },
+        "enum.SwitchProRumbleSamples.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SwitchProRumbleSamples { NoSamples, One([SwitchProRumbleSample; 1]), Two([SwitchProRumbleSample; 2]), Three([SwitchProRumbleSample; 3]), Unknown, }",
+            "pub fn as_slice(&self) -> Option<&[SwitchProRumbleSample]>"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleSamples",
+            "impl Copy for SwitchProRumbleSamples",
+            "impl Debug for SwitchProRumbleSamples",
+            "impl Eq for SwitchProRumbleSamples",
+            "impl PartialEq for SwitchProRumbleSamples",
+            "impl RefUnwindSafe for SwitchProRumbleSamples",
+            "impl Send for SwitchProRumbleSamples",
+            "impl Sync for SwitchProRumbleSamples",
+            "impl Unpin for SwitchProRumbleSamples",
+            "impl UnwindSafe for SwitchProRumbleSamples"
+          ]
+        },
         "enum.TouchSlot.html": {
           "declarations": [
             "pub enum TouchSlot { First, Second, }"
@@ -4420,6 +4542,18 @@
         "fn.create_xbox_series.html": {
           "declarations": [
             "pub fn create_xbox_series( options: CreationOptions, family: XboxSeriesOptions, ) -> Result<XboxSeriesController, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.decode_switch_pro_rumble_word.html": {
+          "declarations": [
+            "pub fn decode_switch_pro_rumble_word(raw: [u8; 4]) -> SwitchProRumbleWord"
+          ],
+          "traits": []
+        },
+        "fn.decode_switch_pro_rumble_word_with_previous.html": {
+          "declarations": [
+            "pub fn decode_switch_pro_rumble_word_with_previous( raw: [u8; 4], previous: Option<SwitchProRumbleSample>, ) -> SwitchProRumbleWord"
           ],
           "traits": []
         },
@@ -5976,7 +6110,9 @@
         },
         "struct.SwitchProRumble.html": {
           "declarations": [
-            "pub struct SwitchProRumble { pub packet_counter: u8, pub left: [u8; 4], pub right: [u8; 4], }"
+            "pub struct SwitchProRumble { pub packet_counter: u8, pub left: [u8; 4], pub right: [u8; 4], }",
+            "pub fn decode(&self) -> SwitchProRumbleDecoded",
+            "pub fn decode_with_previous( &self, left: Option<SwitchProRumbleSample>, right: Option<SwitchProRumbleSample>, ) -> SwitchProRumbleDecoded"
           ],
           "traits": [
             "impl Clone for SwitchProRumble",
@@ -5989,6 +6125,78 @@
             "impl Sync for SwitchProRumble",
             "impl Unpin for SwitchProRumble",
             "impl UnwindSafe for SwitchProRumble"
+          ]
+        },
+        "struct.SwitchProRumbleBand.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleBand { /* private fields */ }",
+            "pub fn frequency_hz(&self) -> Option<f32>",
+            "pub fn amplitude_ratio(&self) -> Option<f32>"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleBand",
+            "impl Copy for SwitchProRumbleBand",
+            "impl Debug for SwitchProRumbleBand",
+            "impl Eq for SwitchProRumbleBand",
+            "impl PartialEq for SwitchProRumbleBand",
+            "impl RefUnwindSafe for SwitchProRumbleBand",
+            "impl Send for SwitchProRumbleBand",
+            "impl Sync for SwitchProRumbleBand",
+            "impl Unpin for SwitchProRumbleBand",
+            "impl UnwindSafe for SwitchProRumbleBand"
+          ]
+        },
+        "struct.SwitchProRumbleDecoded.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleDecoded { pub left: SwitchProRumbleWord, pub right: SwitchProRumbleWord, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleDecoded",
+            "impl Copy for SwitchProRumbleDecoded",
+            "impl Debug for SwitchProRumbleDecoded",
+            "impl Eq for SwitchProRumbleDecoded",
+            "impl PartialEq for SwitchProRumbleDecoded",
+            "impl RefUnwindSafe for SwitchProRumbleDecoded",
+            "impl Send for SwitchProRumbleDecoded",
+            "impl Sync for SwitchProRumbleDecoded",
+            "impl Unpin for SwitchProRumbleDecoded",
+            "impl UnwindSafe for SwitchProRumbleDecoded"
+          ]
+        },
+        "struct.SwitchProRumbleSample.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleSample { /* private fields */ }",
+            "pub const fn high(&self) -> SwitchProRumbleBand",
+            "pub const fn low(&self) -> SwitchProRumbleBand"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleSample",
+            "impl Copy for SwitchProRumbleSample",
+            "impl Debug for SwitchProRumbleSample",
+            "impl Eq for SwitchProRumbleSample",
+            "impl PartialEq for SwitchProRumbleSample",
+            "impl RefUnwindSafe for SwitchProRumbleSample",
+            "impl Send for SwitchProRumbleSample",
+            "impl Sync for SwitchProRumbleSample",
+            "impl Unpin for SwitchProRumbleSample",
+            "impl UnwindSafe for SwitchProRumbleSample"
+          ]
+        },
+        "struct.SwitchProRumbleWord.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleWord { pub raw: [u8; 4], pub samples: SwitchProRumbleSamples, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleWord",
+            "impl Copy for SwitchProRumbleWord",
+            "impl Debug for SwitchProRumbleWord",
+            "impl Eq for SwitchProRumbleWord",
+            "impl PartialEq for SwitchProRumbleWord",
+            "impl RefUnwindSafe for SwitchProRumbleWord",
+            "impl Send for SwitchProRumbleWord",
+            "impl Sync for SwitchProRumbleWord",
+            "impl Unpin for SwitchProRumbleWord",
+            "impl UnwindSafe for SwitchProRumbleWord"
           ]
         },
         "struct.SwitchProStatus.html": {

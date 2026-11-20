@@ -1195,12 +1195,514 @@ fn dummy_hcd_reply(
     wire.extend_from_slice(&bytes);
     Ok(ProviderFrame::DummyHcdInput(wire))
 }
-/// Encoded motor words from one Switch host output; not decoded amplitudes.
+/// Original motor words from one Switch host output; not physical actuator measurements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SwitchProRumble {
     pub packet_counter: u8,
     pub left: [u8; 4],
     pub right: [u8; 4],
+}
+
+/// A band's source-derived motor intent. Missing values require earlier motor state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchProRumbleBand {
+    frequency_step: Option<i16>,
+    amplitude_step: Option<i16>,
+    center_hz: u16,
+}
+
+impl SwitchProRumbleBand {
+    /// Frequency in Hz, or None when the previous frequency is unknown.
+    #[must_use]
+    pub fn frequency_hz(&self) -> Option<f32> {
+        self.frequency_step
+            .map(|step| f32::from(self.center_hz) * (f32::from(step) / 32.0).exp2())
+    }
+
+    /// Dimensionless `MissionControl` compatibility ratio (absolute index 127 = 1).
+    /// This is not acceleration, displacement, force, or a safe-drive guarantee.
+    /// None means an earlier amplitude is required.
+    #[must_use]
+    pub fn amplitude_ratio(&self) -> Option<f32> {
+        self.amplitude_step.map(|step| {
+            if step < -254 {
+                0.0
+            } else {
+                (f32::from(step) / 32.0).exp2()
+            }
+        })
+    }
+
+    fn unknown(center_hz: u16) -> Self {
+        Self {
+            frequency_step: None,
+            amplitude_step: None,
+            center_hz,
+        }
+    }
+
+    fn set_frequency(&mut self, index: i16) {
+        self.frequency_step = Some(index - 64);
+    }
+
+    fn set_amplitude(&mut self, index: i16) {
+        self.amplitude_step = Some(match index {
+            0 => -256,
+            1..=15 => 8 * index - 248,
+            16..=31 => 2 * index - 158,
+            _ => index - 127,
+        });
+    }
+
+    fn relative(&mut self, command: i16) {
+        match command {
+            0 => {
+                self.frequency_step = Some(0);
+                self.amplitude_step = Some(-256);
+            }
+            1..=11 => self.amplitude_step = Some(-16 * (command - 1)),
+            12..=16 => self.frequency_step = Some(6 * (command - 14)),
+            17..=31 => {
+                let index = command - 17;
+                let amplitude_delta = match index / 3 {
+                    0 => 4,
+                    1 => 1,
+                    2 => 0,
+                    3 => -1,
+                    _ => -4,
+                };
+                let frequency_delta = 1 - index % 3;
+                self.amplitude_step = self
+                    .amplitude_step
+                    .map(|step| (step + amplitude_delta).clamp(-256, 0));
+                self.frequency_step = self
+                    .frequency_step
+                    .map(|step| (step + frequency_delta).clamp(-64, 64));
+            }
+            _ => unreachable!("relative command is a five-bit field"),
+        }
+    }
+}
+
+/// One ordered sample of a single motor's high- and low-band intent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchProRumbleSample {
+    high: SwitchProRumbleBand,
+    low: SwitchProRumbleBand,
+}
+
+impl SwitchProRumbleSample {
+    #[must_use]
+    pub const fn high(&self) -> SwitchProRumbleBand {
+        self.high
+    }
+
+    #[must_use]
+    pub const fn low(&self) -> SwitchProRumbleBand {
+        self.low
+    }
+
+    fn unknown() -> Self {
+        Self {
+            high: SwitchProRumbleBand::unknown(320),
+            low: SwitchProRumbleBand::unknown(160),
+        }
+    }
+
+    fn relative_pair(&mut self, high: i16, low: i16) {
+        self.high.relative(high);
+        self.low.relative(low);
+    }
+}
+
+/// Bounded source-supported sample sequences, or an unpinned encoding.
+/// A recognized relative sample may still contain unknown individual values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SwitchProRumbleSamples {
+    NoSamples,
+    One([SwitchProRumbleSample; 1]),
+    Two([SwitchProRumbleSample; 2]),
+    Three([SwitchProRumbleSample; 3]),
+    Unknown,
+}
+
+impl SwitchProRumbleSamples {
+    /// None for an unpinned encoding; an empty slice for a no-sample word.
+    #[must_use]
+    pub fn as_slice(&self) -> Option<&[SwitchProRumbleSample]> {
+        match self {
+            Self::NoSamples => Some(&[]),
+            Self::One(samples) => Some(samples),
+            Self::Two(samples) => Some(samples),
+            Self::Three(samples) => Some(samples),
+            Self::Unknown => None,
+        }
+    }
+}
+
+/// One motor word, including its unchanged bytes even when decoding is unknown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchProRumbleWord {
+    pub raw: [u8; 4],
+    pub samples: SwitchProRumbleSamples,
+}
+
+/// The two independently decoded motors of a host output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchProRumbleDecoded {
+    pub left: SwitchProRumbleWord,
+    pub right: SwitchProRumbleWord,
+}
+
+impl SwitchProRumble {
+    /// Decode without assuming any previous motor intent.
+    #[must_use]
+    pub fn decode(&self) -> SwitchProRumbleDecoded {
+        self.decode_with_previous(None, None)
+    }
+
+    /// Decode with explicit preceding samples for each side, if available.
+    /// A no-sample word leaves previous state unchanged; an unknown word must
+    /// invalidate it. Never reuse earlier samples across a gap or reset.
+    #[must_use]
+    pub fn decode_with_previous(
+        &self,
+        left: Option<SwitchProRumbleSample>,
+        right: Option<SwitchProRumbleSample>,
+    ) -> SwitchProRumbleDecoded {
+        SwitchProRumbleDecoded {
+            left: decode_switch_pro_rumble_word_with_previous(self.left, left),
+            right: decode_switch_pro_rumble_word_with_previous(self.right, right),
+        }
+    }
+}
+
+/// Decode one native word with no assumed preceding state.
+#[must_use]
+pub fn decode_switch_pro_rumble_word(raw: [u8; 4]) -> SwitchProRumbleWord {
+    decode_switch_pro_rumble_word_with_previous(raw, None)
+}
+
+/// Decode one word using only the supplied previous sample and native bytes.
+/// Model: swpro-l0-rumble-absolute-layout, swpro-l0-rumble-sample-layouts,
+/// swpro-l0-rumble-logarithmic-units, swpro-l0-rumble-relative-commands.
+/// Source evidence only; no physical actuator response is asserted.
+#[must_use]
+pub fn decode_switch_pro_rumble_word_with_previous(
+    raw: [u8; 4],
+    previous: Option<SwitchProRumbleSample>,
+) -> SwitchProRumbleWord {
+    let word = u32::from_le_bytes(raw);
+    let field = |shift: u32, mask: u32| i16::from(((word >> shift) & mask).to_le_bytes()[0]);
+    let mut sample = previous.unwrap_or_else(SwitchProRumbleSample::unknown);
+
+    let samples = match word >> 30 {
+        0 if word == 0 => SwitchProRumbleSamples::NoSamples,
+        1 if word.trailing_zeros() >= 20 => {
+            sample.relative_pair(field(20, 31), field(25, 31));
+            SwitchProRumbleSamples::One([sample])
+        }
+        1 if word.trailing_zeros() >= 2 => {
+            sample.high.set_frequency(field(2, 127));
+            sample.high.set_amplitude(field(9, 127));
+            sample.low.set_frequency(field(16, 127));
+            sample.low.set_amplitude(field(23, 127));
+            SwitchProRumbleSamples::One([sample])
+        }
+        1 if word & 2 != 0 => {
+            let selected = if word & 1 != 0 {
+                &mut sample.high
+            } else {
+                &mut sample.low
+            };
+            if word & 4 != 0 {
+                selected.set_frequency(field(23, 127));
+            } else {
+                selected.set_amplitude(field(23, 127));
+            }
+            let first = sample;
+            sample.relative_pair(field(13, 31), field(18, 31));
+            let second = sample;
+            sample.relative_pair(field(3, 31), field(8, 31));
+            SwitchProRumbleSamples::Three([first, second, sample])
+        }
+        2 if word.trailing_zeros() >= 10 => {
+            sample.relative_pair(field(20, 31), field(25, 31));
+            let first = sample;
+            sample.relative_pair(field(10, 31), field(15, 31));
+            SwitchProRumbleSamples::Two([first, sample])
+        }
+        2 => {
+            let (absolute, relative) = if word & 1 != 0 {
+                (&mut sample.high, &mut sample.low)
+            } else {
+                (&mut sample.low, &mut sample.high)
+            };
+            absolute.set_frequency(field(1, 127));
+            absolute.set_amplitude(field(23, 127));
+            relative.relative(field(18, 31));
+            let first = sample;
+            sample.relative_pair(field(8, 31), field(13, 31));
+            SwitchProRumbleSamples::Two([first, sample])
+        }
+        3 => {
+            sample.relative_pair(field(20, 31), field(25, 31));
+            let first = sample;
+            sample.relative_pair(field(10, 31), field(15, 31));
+            let second = sample;
+            sample.relative_pair(field(0, 31), field(5, 31));
+            SwitchProRumbleSamples::Three([first, second, sample])
+        }
+        // Nonzero type-zero data and a missing documented mixed-format bit
+        // cannot be established as valid from the pinned sources.
+        _ => SwitchProRumbleSamples::Unknown,
+    };
+    SwitchProRumbleWord { raw, samples }
+}
+
+#[cfg(test)]
+mod rumble_decode_tests {
+    use super::{
+        SwitchProOutputEvent, SwitchProRumbleSample, SwitchProRumbleSamples,
+        decode_switch_pro_rumble_word, decode_switch_pro_rumble_word_with_previous,
+    };
+
+    fn absolute(hf: u8, ha: u8, lf: u8, la: u8) -> [u8; 4] {
+        [
+            hf << 2,
+            (hf >> 6) | (ha << 1),
+            lf | ((la & 1) << 7),
+            0x40 | (la >> 1),
+        ]
+    }
+
+    fn sample(word: [u8; 4]) -> SwitchProRumbleSample {
+        let decoded = decode_switch_pro_rumble_word(word);
+        assert_eq!(decoded.raw, word);
+        let SwitchProRumbleSamples::One([sample]) = decoded.samples else {
+            panic!("expected one sample");
+        };
+        sample
+    }
+
+    fn close(actual: Option<f32>, expected: f32) {
+        let value = actual.expect("expected known value");
+        assert!((value - expected).abs() <= 0.000_01 * expected.abs().max(1.0));
+    }
+
+    #[test]
+    fn absolute_indices_and_neutral() {
+        // swpro-l0-rumble-absolute-layout, swpro-l0-rumble-logarithmic-units.
+        // Use the other band's centered frequency to avoid the overlapping
+        // compact-format selector when sweeping each absolute field.
+        let neutral = sample([0x00, 0x01, 0x40, 0x40]);
+        close(neutral.high().frequency_hz(), 320.0);
+        close(neutral.low().frequency_hz(), 160.0);
+        close(neutral.high().amplitude_ratio(), 0.0);
+        close(neutral.low().amplitude_ratio(), 0.0);
+        for index in 0_u8..=127 {
+            let factor = (f32::from(index) / 32.0 - 2.0).exp2();
+            let a = sample(absolute(index, 64, 64, 64));
+            let b = sample(absolute(64, 64, index, 64));
+            close(a.high().frequency_hz(), 320.0 * factor);
+            close(b.low().frequency_hz(), 160.0 * factor);
+            let ratio = match index {
+                0 => 0.0,
+                1..=15 => 0.0625 * ((f32::from(index) - 15.0) / 4.0).exp2(),
+                16..=31 => 0.125 * ((f32::from(index) - 31.0) / 16.0).exp2(),
+                _ => ((f32::from(index) - 127.0) / 32.0).exp2(),
+            };
+            let c = sample(absolute(64, index, 64, 64));
+            let d = sample(absolute(64, 64, 64, index));
+            close(c.high().amplitude_ratio(), ratio);
+            close(d.low().amplitude_ratio(), ratio);
+        }
+    }
+
+    #[test]
+    fn relative_commands_and_partial_state() {
+        // swpro-l0-rumble-relative-commands, swpro-l0-rumble-logarithmic-units.
+        let baseline = sample(absolute(64, 64, 64, 64));
+        for command in 0_u32..=31 {
+            let raw = ((1_u32 << 30) | (command << 20) | (command << 25)).to_le_bytes();
+            let decoded = decode_switch_pro_rumble_word_with_previous(raw, Some(baseline));
+            let [value] = decoded.samples.as_slice().unwrap() else {
+                panic!("expected one sample");
+            };
+            let (amp, frequency) = match command {
+                0 => (-256, 0),
+                1..=11 => (-16 * (i16::try_from(command).unwrap() - 1), 0),
+                12..=16 => (-63, 6 * (i16::try_from(command).unwrap() - 14)),
+                _ => {
+                    let i = usize::try_from(command - 17).unwrap();
+                    (
+                        -63 + [4, 1, 0, -1, -4][i / 3],
+                        1 - i16::try_from(i % 3).unwrap(),
+                    )
+                }
+            };
+            let ratio = if amp < -254 {
+                0.0
+            } else {
+                (f32::from(amp) / 32.0).exp2()
+            };
+            close(value.high().amplitude_ratio(), ratio);
+            close(value.low().amplitude_ratio(), ratio);
+            close(
+                value.high().frequency_hz(),
+                320.0 * (f32::from(frequency) / 32.0).exp2(),
+            );
+            close(
+                value.low().frequency_hz(),
+                160.0 * (f32::from(frequency) / 32.0).exp2(),
+            );
+        }
+        let raw = ((1_u32 << 30) | (1 << 20) | (14 << 25)).to_le_bytes();
+        let partial = sample(raw);
+        close(partial.high().amplitude_ratio(), 1.0);
+        assert!(partial.high().frequency_hz().is_none());
+        close(partial.low().frequency_hz(), 160.0);
+        assert!(partial.low().amplitude_ratio().is_none());
+    }
+
+    #[test]
+    fn relative_multi_sample_forms_and_clamps() {
+        // swpro-l0-rumble-sample-layouts, swpro-l0-rumble-relative-commands.
+        let two = ((2_u32 << 30) | (1 << 10) | (14 << 15)).to_le_bytes();
+        let result = decode_switch_pro_rumble_word(two);
+        let [first, second] = result.samples.as_slice().unwrap() else {
+            panic!("expected two samples");
+        };
+        close(first.high().amplitude_ratio(), 0.0);
+        close(second.high().amplitude_ratio(), 1.0);
+        close(second.low().frequency_hz(), 160.0);
+        close(second.low().amplitude_ratio(), 0.0);
+
+        let three = ((3_u32 << 30) | (17 << 10) | (31 << 15) | 0x17 | (2 << 5)).to_le_bytes();
+        let result = decode_switch_pro_rumble_word(three);
+        let [first, second, third] = result.samples.as_slice().unwrap() else {
+            panic!("expected three samples");
+        };
+        close(first.high().frequency_hz(), 320.0);
+        close(
+            second.high().frequency_hz(),
+            320.0 * (1.0_f32 / 32.0).exp2(),
+        );
+        close(third.high().frequency_hz(), 320.0 * (2.0_f32 / 32.0).exp2());
+        close(second.high().amplitude_ratio(), (-252.0_f32 / 32.0).exp2());
+        close(second.low().amplitude_ratio(), 0.0);
+        close(third.low().amplitude_ratio(), 0.5_f32.sqrt());
+
+        let max = sample(absolute(127, 127, 127, 127));
+        let up =
+            ((3_u32 << 30) | (17 << 25) | (17 << 20) | (17 << 15) | (17 << 10) | (17 << 5) | 0x11)
+                .to_le_bytes();
+        let result = decode_switch_pro_rumble_word_with_previous(up, Some(max));
+        for value in result.samples.as_slice().unwrap() {
+            close(value.high().frequency_hz(), 1280.0);
+            close(value.low().frequency_hz(), 640.0);
+            close(value.high().amplitude_ratio(), 1.0);
+            close(value.low().amplitude_ratio(), 1.0);
+        }
+    }
+
+    #[test]
+    fn mixed_forms_both_bands_and_fields() {
+        // swpro-l0-rumble-sample-layouts, swpro-l0-rumble-relative-commands.
+        for selected_high in 0_u32..=1 {
+            let word =
+                ((2_u32 << 30) | (127 << 23) | (24 << 13) | (24 << 8) | (64 << 1) | selected_high)
+                    .to_le_bytes();
+            let result = decode_switch_pro_rumble_word(word);
+            assert_eq!(result.raw, word);
+            let [first, second] = result.samples.as_slice().unwrap() else {
+                panic!("expected two mixed samples");
+            };
+            assert_eq!(first, second);
+            let (selected, other) = if selected_high == 1 {
+                (first.high(), first.low())
+            } else {
+                (first.low(), first.high())
+            };
+            close(selected.amplitude_ratio(), 1.0);
+            close(other.amplitude_ratio(), 0.0);
+            for select_frequency in 0_u32..=1 {
+                let word = ((1_u32 << 30)
+                    | (64 << 23)
+                    | (24 << 8)
+                    | (24 << 3)
+                    | (select_frequency << 2)
+                    | 2
+                    | selected_high)
+                    .to_le_bytes();
+                let result = decode_switch_pro_rumble_word(word);
+                assert_eq!(result.raw, word);
+                let [first, second, third] = result.samples.as_slice().unwrap() else {
+                    panic!("expected three mixed samples");
+                };
+                let band = if selected_high == 1 {
+                    first.high()
+                } else {
+                    first.low()
+                };
+                if select_frequency == 1 {
+                    assert!(band.amplitude_ratio().is_none());
+                    close(
+                        band.frequency_hz(),
+                        if selected_high == 1 { 320.0 } else { 160.0 },
+                    );
+                } else {
+                    assert!(band.frequency_hz().is_none());
+                    close(band.amplitude_ratio(), (-63.0_f32 / 32.0).exp2());
+                }
+                close(second.high().amplitude_ratio(), 0.0);
+                close(second.low().frequency_hz(), 160.0);
+                assert_eq!(second, third);
+            }
+        }
+    }
+
+    #[test]
+    fn no_sample_unknown_and_raw_event_agreement() {
+        // swpro-l0-rumble-sample-layouts, swpro-l0-linux-rumble-framing.
+        let zero = decode_switch_pro_rumble_word([0; 4]);
+        assert_eq!(zero.samples, SwitchProRumbleSamples::NoSamples);
+        assert_eq!(zero.samples.as_slice(), Some(&[][..]));
+        let unknown = [1, 0, 0, 0x40];
+        let decoded = decode_switch_pro_rumble_word(unknown);
+        assert_eq!(decoded.raw, unknown);
+        assert_eq!(decoded.samples, SwitchProRumbleSamples::Unknown);
+        assert!(decoded.samples.as_slice().is_none());
+        assert_eq!(
+            decode_switch_pro_rumble_word([1, 0, 0, 0]).samples,
+            SwitchProRumbleSamples::Unknown
+        );
+        let left = absolute(64, 30, 64, 31);
+        let right = unknown;
+        for report_id in [1, 0x10] {
+            let mut bytes = vec![7];
+            bytes.extend_from_slice(&left);
+            bytes.extend_from_slice(&right);
+            if report_id == 1 {
+                bytes.push(0x48);
+            }
+            let raw = SwitchProOutputEvent::Output {
+                report_id: Some(report_id),
+                bytes,
+            }
+            .rumble()
+            .unwrap();
+            assert_eq!(raw.packet_counter, 7);
+            assert_eq!(raw.left, left);
+            assert_eq!(raw.right, right);
+            let decoded = raw.decode();
+            assert_eq!(decoded.left.raw, left);
+            assert_eq!(decoded.right.raw, right);
+            assert_eq!(decoded.left, decode_switch_pro_rumble_word(left));
+            assert_eq!(decoded.right, decode_switch_pro_rumble_word(right));
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1221,7 +1723,7 @@ pub enum SwitchProOutputEvent {
 }
 impl SwitchProOutputEvent {
     /// Extract exact encoded motor words from accepted rumble/subcommand output.
-    /// Stateful compressed amplitude/frequency interpretation remains unvalidated.
+    /// Decode source-supported words with `SwitchProRumble::decode`; physical response is unknown.
     #[must_use]
     pub fn rumble(&self) -> Option<SwitchProRumble> {
         let Self::Output {

@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.wii-remote"
-research_revision = "719befa86bbff044cb0cdc524d66085a4b610800"
+research_revision = "a67781e2412eceea9440d20dbb350ad5d3352c25"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
 refused_operations = ["speaker-audio", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
 persistent_resources = ["caller-imported-eeprom", "caller-imported-extension-calibration"]
@@ -208,6 +208,24 @@ id = "speaker-control-ack"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "uinput has no HID output-report or addressed memory channel; its existing rumble behavior is unchanged." }
 "linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_tests::control_acknowledgements_retain_state_and_shared_rumble", evidence = ["wii-gap-wiibrew-speaker-control-reports", "audio-wii-dolphin-control-and-stream-reports", "wii-gap-wiibrew-speaker-init-config-registers", "audio-wii-dolphin-speaker-register-model", "wii-gap-wiibrew-status-20-resend"], reason = "Control intent and bounded register writes are retained and ACKed without producing audio; speaker data has only its shared rumble effect. Deterministic source-model regression, not audio acceptance." }
+
+[[functions]]
+id = "speaker-configuration-decode"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "No HID speaker control or data channel." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_decode::tests::configuration_formats_rates_and_activation_order", evidence = ["audio-wii-dolphin-pcm-adpcm-rate","audio-wii-dolphin-speaker-register-model","wii-gap-speaker-libogc-startup-status","wii-gap-speaker-cwiid-beep-sequence"], reason = "Pure source-model decode of bounded register writes and ordered consumer initialization; activation latch and physical sample clock remain unknown." }
+
+[[functions]]
+id = "speaker-adpcm-decode"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "No HID speaker control or data channel." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_decode::tests::adpcm_vectors_and_state_across_packets_and_reconfiguration", evidence = ["audio-wii-dolphin-yamaha-adpcm-nibbles","audio-wii-dolphin-pcm-adpcm-rate","wii-gap-speaker-physical-decoder-behavior-unknown"], reason = "Pure mathematical vectors and compatibility-model state continuity; no journal delivery or physical decoder claim." }
+
+[[functions]]
+id = "speaker-data-decode"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "No HID speaker control or data channel." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_decode::tests::pcm_length_and_control_dispositions_preserve_raw_and_state", evidence = ["audio-wii-dolphin-control-and-stream-reports","audio-wii-dolphin-pcm-adpcm-rate","wii-gap-speaker-physical-decoder-behavior-unknown"], reason = "Pure source-model PCM and bounded packet disposition including mute and disabled status; no journal wiring or audio acceptance." }
 
 [[functions]]
 id = "real-bluetooth"

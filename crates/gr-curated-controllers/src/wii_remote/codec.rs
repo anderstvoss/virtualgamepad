@@ -580,3 +580,5 @@ mod plus_tests;
 
 #[cfg(test)]
 mod activation_tests;
+
+pub(super) mod speaker_decode;

@@ -70,6 +70,56 @@
         "impl UnwindSafe for WiiResourceDisposition"
       ]
     },
+    "enum.WiiSpeakerDataDisposition.html": {
+      "declarations": [
+        "pub enum WiiSpeakerDataDisposition { Decoded, DecodedWhileDisabled, Muted, Empty, Oversized, Unconfigured, UnknownFormat, }"
+      ],
+      "traits": [
+        "impl Clone for WiiSpeakerDataDisposition",
+        "impl Copy for WiiSpeakerDataDisposition",
+        "impl Debug for WiiSpeakerDataDisposition",
+        "impl Eq for WiiSpeakerDataDisposition",
+        "impl PartialEq for WiiSpeakerDataDisposition",
+        "impl RefUnwindSafe for WiiSpeakerDataDisposition",
+        "impl Send for WiiSpeakerDataDisposition",
+        "impl Sync for WiiSpeakerDataDisposition",
+        "impl Unpin for WiiSpeakerDataDisposition",
+        "impl UnwindSafe for WiiSpeakerDataDisposition"
+      ]
+    },
+    "enum.WiiSpeakerFormat.html": {
+      "declarations": [
+        "pub enum WiiSpeakerFormat { YamahaAdpcm, SignedPcm8, Unknown(u8), }"
+      ],
+      "traits": [
+        "impl Clone for WiiSpeakerFormat",
+        "impl Copy for WiiSpeakerFormat",
+        "impl Debug for WiiSpeakerFormat",
+        "impl Eq for WiiSpeakerFormat",
+        "impl PartialEq for WiiSpeakerFormat",
+        "impl RefUnwindSafe for WiiSpeakerFormat",
+        "impl Send for WiiSpeakerFormat",
+        "impl Sync for WiiSpeakerFormat",
+        "impl Unpin for WiiSpeakerFormat",
+        "impl UnwindSafe for WiiSpeakerFormat"
+      ]
+    },
+    "enum.WiiSpeakerOutput.html": {
+      "declarations": [
+        "pub enum WiiSpeakerOutput { Enable(WiiSpeakerControl), Mute(WiiSpeakerControl), Configuration { raw: [u8; 21], configuration: WiiSpeakerConfiguration, }, Data(WiiSpeakerData), }"
+      ],
+      "traits": [
+        "impl Clone for WiiSpeakerOutput",
+        "impl Debug for WiiSpeakerOutput",
+        "impl Eq for WiiSpeakerOutput",
+        "impl PartialEq for WiiSpeakerOutput",
+        "impl RefUnwindSafe for WiiSpeakerOutput",
+        "impl Send for WiiSpeakerOutput",
+        "impl Sync for WiiSpeakerOutput",
+        "impl Unpin for WiiSpeakerOutput",
+        "impl UnwindSafe for WiiSpeakerOutput"
+      ]
+    },
     "fn.create_wii_remote.html": {
       "declarations": [
         "pub fn create_wii_remote( options: CreationOptions, family: WiiRemoteOptions, ) -> Result<WiiRemoteController, ProviderError>"
@@ -123,7 +173,7 @@
         "pub fn import(bytes: Vec<u8>) -> Result<Self, ControlError>",
         "pub fn with_extension_calibration( self, calibration: WiiExtensionCalibration, ) -> Self",
         "pub fn extension_calibration(&self) -> &WiiExtensionCalibration",
-        "pub fn bytes(&self) -> &[u8] \u24d8"
+        "pub fn bytes(&self) -> &[u8] ⓘ"
       ],
       "traits": [
         "impl Clone for WiiEepromImage",
@@ -412,6 +462,75 @@
         "impl Sync for WiiRemoteStatus",
         "impl Unpin for WiiRemoteStatus",
         "impl UnwindSafe for WiiRemoteStatus"
+      ]
+    },
+    "struct.WiiSpeakerConfiguration.html": {
+      "declarations": [
+        "pub struct WiiSpeakerConfiguration { pub raw: [u8; 10], pub format: WiiSpeakerFormat, pub divisor: u16, pub sample_rate_hz: Option<u32>, pub volume: u8, }"
+      ],
+      "traits": [
+        "impl Clone for WiiSpeakerConfiguration",
+        "impl Copy for WiiSpeakerConfiguration",
+        "impl Debug for WiiSpeakerConfiguration",
+        "impl Eq for WiiSpeakerConfiguration",
+        "impl PartialEq for WiiSpeakerConfiguration",
+        "impl RefUnwindSafe for WiiSpeakerConfiguration",
+        "impl Send for WiiSpeakerConfiguration",
+        "impl Sync for WiiSpeakerConfiguration",
+        "impl Unpin for WiiSpeakerConfiguration",
+        "impl UnwindSafe for WiiSpeakerConfiguration"
+      ]
+    },
+    "struct.WiiSpeakerControl.html": {
+      "declarations": [
+        "pub struct WiiSpeakerControl { pub raw: u8, pub enabled: bool, pub muted: bool, }"
+      ],
+      "traits": [
+        "impl Clone for WiiSpeakerControl",
+        "impl Copy for WiiSpeakerControl",
+        "impl Debug for WiiSpeakerControl",
+        "impl Eq for WiiSpeakerControl",
+        "impl PartialEq for WiiSpeakerControl",
+        "impl RefUnwindSafe for WiiSpeakerControl",
+        "impl Send for WiiSpeakerControl",
+        "impl Sync for WiiSpeakerControl",
+        "impl Unpin for WiiSpeakerControl",
+        "impl UnwindSafe for WiiSpeakerControl"
+      ]
+    },
+    "struct.WiiSpeakerData.html": {
+      "declarations": [
+        "pub struct WiiSpeakerData { pub raw: [u8; 21], pub length: u8, pub enabled: bool, pub muted: bool, pub configuration: WiiSpeakerConfiguration, pub disposition: WiiSpeakerDataDisposition, pub samples: Vec<i16>, }"
+      ],
+      "traits": [
+        "impl Clone for WiiSpeakerData",
+        "impl Debug for WiiSpeakerData",
+        "impl Eq for WiiSpeakerData",
+        "impl PartialEq for WiiSpeakerData",
+        "impl RefUnwindSafe for WiiSpeakerData",
+        "impl Send for WiiSpeakerData",
+        "impl Sync for WiiSpeakerData",
+        "impl Unpin for WiiSpeakerData",
+        "impl UnwindSafe for WiiSpeakerData"
+      ]
+    },
+    "struct.WiiSpeakerDecoder.html": {
+      "declarations": [
+        "pub struct WiiSpeakerDecoder { /* private fields */ }",
+        "pub fn decode(self, id: u8, raw: &[u8]) -> Option<(Self, WiiSpeakerOutput)>"
+      ],
+      "traits": [
+        "impl Clone for WiiSpeakerDecoder",
+        "impl Copy for WiiSpeakerDecoder",
+        "impl Debug for WiiSpeakerDecoder",
+        "impl Default for WiiSpeakerDecoder",
+        "impl Eq for WiiSpeakerDecoder",
+        "impl PartialEq for WiiSpeakerDecoder",
+        "impl RefUnwindSafe for WiiSpeakerDecoder",
+        "impl Send for WiiSpeakerDecoder",
+        "impl Sync for WiiSpeakerDecoder",
+        "impl Unpin for WiiSpeakerDecoder",
+        "impl UnwindSafe for WiiSpeakerDecoder"
       ]
     }
   },
