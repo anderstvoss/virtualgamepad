@@ -102,18 +102,21 @@ retain error 7: the cited register records establish writes but do not decide
 the read contract here. Out-of-block and straddling writes keep error 7 without
 storing a prefix. These controls do not create an audio stream or audio endpoint.
 
-For `0x18`, the fixed report is admitted only to preserve its shared rumble bit.
-The audio area is discarded, including oversized encoded lengths, without an
-ACK, decoder, queue, mixer, PipeWire sink or playback. Transport success is not
-speaker-audio acceptance. This is an explicit deviation while playback remains
-gated by D7 and Brief 16 step S1. No S1 playback work is included. Uinput has no HID output
-report or addressed register channel; its existing native rumble is unchanged.
+For `0x18`, live protocol acceptance still applies only the shared rumble bit;
+the raw observation is optional and no audio ACK, mixer, sink or playback is
+provided. Brief 16 step S1 now supplies a pure supporting-API decoder for the
+later acceptance/journal integration, with typed control, configuration and
+bounded data records. See [Wii speaker decode](WII_SPEAKER_DECODE.md). Transport
+success is not speaker-audio acceptance; D7 and journal integration remain
+gates. Uinput has no HID output or addressed register channel; its rumble is
+unchanged.
 Evidence: [wii-gap-wiibrew-speaker-control-reports](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/wii-gap-wiibrew-speaker-control-reports.json),
 [audio-wii-dolphin-control-and-stream-reports](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-control-and-stream-reports.json),
 [wii-gap-wiibrew-speaker-init-config-registers](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/wii-gap-wiibrew-speaker-init-config-registers.json), and
 [audio-wii-dolphin-speaker-register-model](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-speaker-register-model.json). The speaker-enabled status flag
 `0x04` cites `wii-gap-wiibrew-status-20-resend`; it retains accepted enable
-intent and does not establish audio playback. No public API is added.
+intent and does not establish audio playback. The pure S1 decoder is supporting
+API only, not an ordinary-root or live stream API.
 
 The demo creates Wii handles and provides native controls, extension selection
 and typed IR editing. Battery metadata uses `controller.battery()` and
@@ -157,8 +160,8 @@ The final input/status contract and neutralization rules are recorded in
   visible extended/full IR blob metadata remain **No evidence**. Basic point
   coordinates and no-point data shapes are implemented; unsupported visible
   blobs reject rather than silently disappear.
-- Speaker support remains a later separately gated realization under D7 and
-  Brief 16 step S1 and ADR-0023. USB-bus UHID is a fixture-only experiment, outside this production
+- Speaker playback and journal integration remain separately gated under D7,
+  Brief 16 S1 and ADR-0023. USB-bus UHID is a fixture-only experiment, outside this production
   package. Actual Bluetooth remains deferred to #164.
 
 For Brief 16 S1 (planned; not run in this audit), the pinned Dolphin-source

@@ -580,6 +580,10 @@ mod controller;
 pub use controller::{WiiRemoteController, create_wii_remote};
 
 mod codec;
+pub use codec::speaker_decode::{
+    WiiSpeakerConfiguration, WiiSpeakerControl, WiiSpeakerData, WiiSpeakerDataDisposition,
+    WiiSpeakerDecoder, WiiSpeakerFormat, WiiSpeakerOutput,
+};
 
 mod extensions;
 mod memory;

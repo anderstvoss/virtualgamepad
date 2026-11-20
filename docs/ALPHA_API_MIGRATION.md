@@ -882,3 +882,13 @@ the closing #322 status after owner merge, not as a predicted SHA here.
   `swpro-l0-rumble-logarithmic-units`, `swpro-l0-rumble-relative-commands`.
   Formal acceptance evidence awaits corpus merge and adopted pin. No host or
   physical run was performed.
+
+### Wii speaker S1 decode-only (Alpha 2)
+
+The Wii supporting API adds `WiiSpeakerDecoder::decode` and the six typed
+`WiiSpeaker*` control, configuration, format, data, disposition and output
+records. No ordinary-root API removal or addition, no changed retained outputs,
+and no journal, playback or transport API. Decode is a pure value transition;
+callers must advance it at the later journal acceptance boundary. Do not treat
+optional raw observations as an authoritative stream. Wii supporting snapshot:
+23 → 30 items; root and Steam unchanged.
