@@ -64,7 +64,7 @@ id = "battery"
 [[functions]]
 id = "headset-audio"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "not-supported", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "uinput has no audio endpoint or audio sidecar creation path." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "Opt-in functional stereo playback/mono capture beside standard HID; no proprietary Xbox headset transport or sustained acceptance established." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "Opt-in functional stereo playback/mono capture beside standard HID; no proprietary Xbox headset transport or sustained acceptance established." }

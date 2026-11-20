@@ -88,18 +88,18 @@ id = "lightbar"
 [[functions]]
 id = "headset-audio"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/headset-audio", evidence = ["audio-dualshock4-hid-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/headset-audio", evidence = ["audio-dualshock4-hid-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "not-supported", test_id = "acceptance/dualshock4/headset-audio", evidence = ["audio-dualshock4-hid-output"], reason = "uinput has no audio endpoint or audio sidecar creation path; HID controls do not establish PCM transport." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/headset-audio", evidence = ["audio-dualshock4-hid-output"], reason = "Opt-in functional stereo playback/mono capture only; cited HID effects do not establish native headset PCM or sustained acceptance." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/headset-audio", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/headset-audio", evidence = ["audio-dualshock4-hid-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/headset-audio", evidence = ["audio-dualshock4-hid-output"], reason = "Opt-in functional stereo playback/mono capture only; cited HID effects do not establish native headset PCM or sustained acceptance." }
 
 [[functions]]
 id = "speaker-audio"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/speaker-audio", evidence = ["audio-dualshock4-hid-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/speaker-audio", evidence = ["audio-dualshock4-hid-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "not-supported", test_id = "acceptance/dualshock4/speaker-audio", evidence = ["audio-dualshock4-hid-output"], reason = "uinput has no audio endpoint or audio sidecar creation path; HID controls do not establish PCM transport." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/speaker-audio", evidence = ["audio-dualshock4-hid-output"], reason = "Opt-in functional stereo playback only; cited HID effects do not establish a dedicated onboard speaker route or physical matching." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/speaker-audio", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/speaker-audio", evidence = ["audio-dualshock4-hid-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/speaker-audio", evidence = ["audio-dualshock4-hid-output"], reason = "Opt-in functional stereo playback only; cited HID effects do not establish a dedicated onboard speaker route or physical matching." }
 
 [[functions]]
 id = "calibration"
