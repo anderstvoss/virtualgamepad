@@ -1248,6 +1248,144 @@ pub enum DualSenseHidOutput {
     },
 }
 
+/// Source-derived 3-bit force levels per active trigger zone (1..=8).
+///
+/// The zone boundaries are inclusive indices in 0..=9, not physical travel.
+/// Claim: ds-l0-device-adaptive-trigger-mode-parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DualSenseTriggerZoneForces {
+    pub active_zones: u16,
+    pub start_zone: u8,
+    pub end_zone: u8,
+    pub strengths: [Option<u8>; 10],
+}
+
+/// Source-supported interpretation of one 11-byte DualSense effect block.
+///
+/// These are compatibility encoder parameters, not measured force/actuation.
+/// Unsupported mode bytes or noncanonical parameter layouts preserve all bytes.
+/// Claims: ds-l0-device-adaptive-trigger-mode-block,
+/// ds-l0-device-adaptive-trigger-mode-parameters,
+/// ds-l0-sdl-trigger-demo-modes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DualSenseTriggerEffect {
+    Off,
+    Feedback { zones: DualSenseTriggerZoneForces },
+    Weapon { start_zone: u8, end_zone: u8, strength: u8 },
+    Vibration { zones: DualSenseTriggerZoneForces, frequency_code: u8 },
+    Unknown { mode: u8, raw: [u8; 11] },
+}
+
+/// One trigger's effect bytes and whether this report actually updates it.
+/// `effect` is absent if the host did not set that side's validity bit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DualSenseTriggerEffectUpdate {
+    pub valid: bool,
+    pub raw: [u8; 11],
+    pub effect: Option<DualSenseTriggerEffect>,
+}
+
+/// Decode the source-pinned 0x05 / 0x21 / 0x25 / 0x26 effect layouts.
+///
+/// Force levels are 1..=8, zone indices 0..=9. Vibration frequency is
+/// an *unscaled native code*, not verified hertz. SDL demo modes 0x01/0x06
+/// intentionally remain Unknown (ds-l0-sdl-trigger-demo-modes).
+#[must_use]
+pub fn decode_dualsense_trigger_effect(raw: [u8; 11]) -> DualSenseTriggerEffect {
+    let unknown = || DualSenseTriggerEffect::Unknown { mode: raw[0], raw };
+    match raw[0] {
+        0x05 if raw[1..].iter().all(|byte| *byte == 0) => DualSenseTriggerEffect::Off,
+        0x25 => {
+            let zone_mask = u16::from_le_bytes([raw[1], raw[2]]);
+            if zone_mask & !0x03ff != 0
+                || zone_mask.count_ones() != 2
+                || raw[3] > 7
+                || raw[4..].iter().any(|byte| *byte != 0)
+            {
+                return unknown();
+            }
+            DualSenseTriggerEffect::Weapon {
+                start_zone: zone_mask.trailing_zeros() as u8,
+                end_zone: (15 - zone_mask.leading_zeros()) as u8,
+                strength: raw[3] + 1,
+            }
+        }
+        0x21 | 0x26 => {
+            let zone_mask = u16::from_le_bytes([raw[1], raw[2]]);
+            let strength_bits = u32::from_le_bytes([raw[3], raw[4], raw[5], raw[6]]);
+            if zone_mask == 0
+                || zone_mask & !0x03ff != 0
+                || strength_bits >> 30 != 0
+                || raw[7] != 0
+                || raw[8] != 0
+                || raw[10] != 0
+                || (raw[0] == 0x21 && raw[9] != 0)
+            {
+                return unknown();
+            }
+            let mut strengths = [None; 10];
+            for zone in 0..10 {
+                let encoded = ((strength_bits >> (zone * 3)) & 7) as u8;
+                if zone_mask & (1 << zone) != 0 {
+                    strengths[zone] = Some(encoded + 1);
+                } else if encoded != 0 {
+                    return unknown();
+                }
+            }
+            let zones = DualSenseTriggerZoneForces {
+                active_zones: zone_mask,
+                start_zone: zone_mask.trailing_zeros() as u8,
+                end_zone: (15 - zone_mask.leading_zeros()) as u8,
+                strengths,
+            };
+            if raw[0] == 0x21 {
+                DualSenseTriggerEffect::Feedback { zones }
+            } else {
+                DualSenseTriggerEffect::Vibration {
+                    zones,
+                    frequency_code: raw[9],
+                }
+            }
+        }
+        _ => unknown(),
+    }
+}
+
+impl DualSenseHidOutput {
+    /// Return (right, left) trigger updates from a USB report; None for
+    /// unrecognized reports. Raw bytes are retained even when validity is
+    /// unset. Validity bits are 0x04 (right) and 0x08 (left) of flag0.
+    /// Claims: ds-l0-sdl-trigger-demo-modes, ds-l0-device-adaptive-trigger-mode-block.
+    #[must_use]
+    pub fn trigger_effects(
+        &self,
+    ) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)> {
+        let Self::UsbOutput {
+            valid_flag0,
+            right_trigger_effect,
+            left_trigger_effect,
+            ..
+        } = self else {
+            return None;
+        };
+        let right_valid = valid_flag0 & 0x04 != 0;
+        let left_valid = valid_flag0 & 0x08 != 0;
+        Some((
+            DualSenseTriggerEffectUpdate {
+                valid: right_valid,
+                raw: *right_trigger_effect,
+                effect: right_valid.then(|| decode_dualsense_trigger_effect(*right_trigger_effect)),
+            },
+            DualSenseTriggerEffectUpdate {
+                valid: left_valid,
+                raw: *left_trigger_effect,
+                effect: left_valid.then(|| decode_dualsense_trigger_effect(*left_trigger_effect)),
+            },
+        ))
+    }
+}
+
 pub(crate) fn decode_dualsense_hid_output(
     report_id: Option<u8>,
     raw: Vec<u8>,
