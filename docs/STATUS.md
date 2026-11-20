@@ -261,7 +261,7 @@ C5 [#233](https://github.com/anderstvoss/virtualgamepad/pull/233) landed as
 `linux.uinput` and Bluetooth-bus UHID (bus5) realizations under D6/D7. Original
 and TR identities remain distinct; early integrated Plus identity is No evidence.
 There is no USB-UHID fallback, radio/pairing/BlueZ or speaker realization.
-Speaker support stays separately gated under D7 and ADR-0023.
+Speaker support stays separately gated under D7, Brief 16 step S1 and ADR-0023.
 
 The controller owns native buttons, raw accelerometer and typed IR point-set
 inputs, Nunchuk/Classic and external MotionPlus/pass-through, retained host
@@ -293,7 +293,7 @@ remain open. [Wii evidence and limits](WII_REMOTE.md) ·
 
 Classic Pro wire identity, early Plus discrimination, encrypted/calibration
 register defaults, retail EEPROM size and visible extended/full IR blob metadata
-remain unverified. Wii speaker audio is deferred. Actual Bluetooth is outside
+remain unverified. Wii speaker audio remains deferred to Brief 16 step S1. Actual Bluetooth is outside
 the local Bluetooth-bus UHID realization.
 
 ## C6 Steam Controller 2026 wired buildout
