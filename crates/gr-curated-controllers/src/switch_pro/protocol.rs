@@ -9,6 +9,12 @@ use gr_hid::{
 };
 use std::collections::VecDeque;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SwitchHidTransport {
+    Usb,
+    Bluetooth,
+}
+
 #[derive(Clone)]
 pub(crate) struct SwitchUsbProtocol {
     identity: SwitchProIdentity,
@@ -20,7 +26,7 @@ pub(crate) struct SwitchUsbProtocol {
     next: Option<u64>,
     active: bool,
     valid: bool,
-    bluetooth: bool,
+    transport: SwitchHidTransport,
 }
 impl SwitchUsbProtocol {
     fn new(identity: SwitchProIdentity, bluetooth: bool) -> Self {
@@ -34,8 +40,15 @@ impl SwitchUsbProtocol {
             next: Some(0),
             active: true,
             valid: true,
-            bluetooth,
+            transport: if bluetooth {
+                SwitchHidTransport::Bluetooth
+            } else {
+                SwitchHidTransport::Usb
+            },
         }
+    }
+    fn is_bluetooth(&self) -> bool {
+        self.transport == SwitchHidTransport::Bluetooth
     }
     fn process(&mut self, report: &Report, now: u64) -> Result<(), ReplyError> {
         let mut next = self.clone();
@@ -49,14 +62,14 @@ impl SwitchUsbProtocol {
             return Err(ReplyError::Unsupported);
         }
         let bytes = report.payload();
-        if bytes.len() > if self.bluetooth { 48 } else { 63 } {
+        if bytes.len() > if self.is_bluetooth() { 48 } else { 63 } {
             return Err(ReplyError::Invalid);
         }
         if self.pending.len() == 31 {
             return Err(ReplyError::Busy);
         }
         match report.id() {
-            Some(0x80) if !self.bluetooth && !bytes.is_empty() => {
+            Some(0x80) if !self.is_bluetooth() && !bytes.is_empty() => {
                 self.pending
                     .push_back(common::logical_input(switch_usb_reply(
                         bytes[0],
@@ -64,10 +77,10 @@ impl SwitchUsbProtocol {
                     )));
             }
             Some(1) if bytes.len() >= 10 => {
-                if self.bluetooth && (
-                    matches!(bytes[9], 0x20 | 0x21 | 0x22)
+                if self.is_bluetooth() && (
+                    matches!(bytes[9], 0x20..=0x22)
                     || (bytes[9] == 0x03
-                        && !matches!(bytes.get(10), Some(&0x30) | Some(&0x3f)))
+                        && !matches!(bytes.get(10), Some(&0x30 | &0x3f)))
                 ) {
                     // Only source-defined simple/full input mode is available.
                     // Pro-specific MCU behavior is unverified; no successful
@@ -76,7 +89,7 @@ impl SwitchUsbProtocol {
                 }
                 let (reply, enable) =
                     switch_subcommand_reply(&self.state, bytes[9], &bytes[10..], self.identity);
-                if self.bluetooth && bytes[9] == 0x03 && bytes.get(10) == Some(&0x3f) {
+                if self.is_bluetooth() && bytes[9] == 0x03 && bytes.get(10) == Some(&0x3f) {
                     self.stream_enabled = false;
                 } else {
                     self.stream_enabled |= enable;
@@ -117,7 +130,7 @@ impl Protocol for SwitchUsbProtocol {
         self.state.1.timer = self.timer;
         self.state.1.stream_enabled = self.stream_enabled;
         let mut reports: Vec<_> = self.pending.drain(..).collect();
-        reports.push(common::logical_input(if self.bluetooth && !self.stream_enabled {
+        reports.push(common::logical_input(if self.is_bluetooth() && !self.stream_enabled {
             switch_simple_frame(&self.state)
         } else {
             switch_frame(&self.state)
@@ -279,7 +292,10 @@ mod bluetooth_tests {
                 assert_eq!(&reply[0].payload()[14..19], &arg);
                 let (usb_reply, _) =
                     super::switch_subcommand_reply(&Default::default(), 0x10, &arg, identity(1));
-                let crate::ProviderFrame::HidInput { bytes: usb_bytes, .. } = usb_reply else {
+                let gr_realization_api::ProviderFrame::HidInput {
+                    bytes: usb_bytes, ..
+                } = usb_reply
+                else {
                     unreachable!()
                 };
                 assert_eq!(&reply[0].payload()[19..23], &usb_bytes[19..23]);

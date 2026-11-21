@@ -674,6 +674,7 @@ impl<D: HidDriver, P, W> ControllerSession<D, P, W> {
             available_in: gr_realization_api::RealizationTargetSet::new(&[
                 gr_realization_api::RealizationTarget::LINUX_UINPUT,
                 gr_realization_api::RealizationTarget::LINUX_UHID_USB,
+                gr_realization_api::RealizationTarget::LINUX_UHID_BLUETOOTH,
             ]),
         })
     }
