@@ -147,6 +147,9 @@ mod tests {
         assert_eq!((report_id, bytes.len()), (Some(0x11), 77));
         assert_eq!(bytes[0], 0xc0);
         assert_eq!(bytes[34], 1);
+        // Independent synthetic golden checksum for the neutral full frame;
+        // not a physical-device packet or a measured report.
+        assert_eq!(&bytes[73..], &[0x6f, 0x7b, 0xea, 0x38]);
         let mut prefix = vec![0x11];
         prefix.extend_from_slice(&bytes[..73]);
         assert_eq!(&bytes[73..], &crc32(0xa1, &prefix).to_le_bytes());
