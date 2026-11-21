@@ -385,6 +385,62 @@ impl crate::audio::backend::Backend for Pcm {
     fn dropped_playback_frames(&self) -> u64 {
         self.lock().dropped_playback_frames()
     }
+    fn playback_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        if self.access.playback_access() == AudioAccess::NativeClient {
+            #[cfg(feature = "audio-pipewire")]
+            {
+                return self
+                    .bridge
+                    .as_ref()
+                    .and_then(crate::usb_audio_bridge::Bridge::playback_accounting);
+            }
+            #[cfg(not(feature = "audio-pipewire"))]
+            return None;
+        }
+        Some(self.lock().playback_accounting())
+    }
+    fn microphone_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        if self.access.microphone_access() == AudioAccess::NativeClient {
+            #[cfg(feature = "audio-pipewire")]
+            {
+                return self
+                    .bridge
+                    .as_ref()
+                    .and_then(crate::usb_audio_bridge::Bridge::microphone_accounting);
+            }
+            #[cfg(not(feature = "audio-pipewire"))]
+            return None;
+        }
+        Some(self.lock().microphone_accounting())
+    }
+    fn microphone_callback_rejected_frames(&self) -> Option<u64> {
+        #[cfg(feature = "audio-pipewire")]
+        if self.access.microphone_access() == AudioAccess::NativeClient {
+            return self
+                .bridge
+                .as_ref()
+                .map(crate::usb_audio_bridge::Bridge::graph_input_dropped_frames);
+        }
+        None
+    }
+    fn playback_silence_frames(&self) -> Option<u64> {
+        #[cfg(feature = "audio-pipewire")]
+        if self.access.playback_access() == AudioAccess::NativeClient {
+            return self
+                .bridge
+                .as_ref()
+                .map(crate::usb_audio_bridge::Bridge::playback_source_silence_frames);
+        }
+        None
+    }
+    fn microphone_silence_frames(&self) -> Option<u64> {
+        #[cfg(feature = "audio-pipewire")]
+        if self.access.microphone_access() == AudioAccess::NativeClient && self.bridge.is_some() {
+            return Some(self.microphone_silence.load(Ordering::Acquire));
+        }
+        // Sample-mode USB host progress requires a separate queried worker sample.
+        None
+    }
     fn native_playback_underrun_frames(&self) -> Option<u64> {
         #[cfg(feature = "audio-pipewire")]
         if let Some(bridge) = &self.bridge {
