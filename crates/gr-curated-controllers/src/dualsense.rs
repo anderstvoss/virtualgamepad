@@ -2028,7 +2028,11 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             RealizationTarget::LINUX_USBIP_USB_AUDIO,
         ] {
-            let session = input_validation_session(DualSenseDefinition::default(), target, [true; 3]);
+            let session = input_validation_session(
+                DualSenseDefinition::default(),
+                target,
+                [true; 3],
+            );
             let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller.set_battery_exposed(true).unwrap();
@@ -2291,7 +2295,11 @@ mod tests {
             RealizationTarget::LINUX_USBIP_USB_AUDIO,
         ] {
             let is_uinput = target == RealizationTarget::LINUX_UINPUT;
-            let session = input_validation_session(DualSenseDefinition::default(), target, [true; 3]);
+            let session = input_validation_session(
+                DualSenseDefinition::default(),
+                target,
+                [true; 3],
+            );
             let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             check_opposing_dpad!(controller, true);
@@ -2390,7 +2398,11 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
             let is_uinput = target == RealizationTarget::LINUX_UINPUT;
-            let (session, io) = snapshot_session(DualSenseDefinition::default(), target, [true, true, true]);
+            let (session, io) = snapshot_session(
+                DualSenseDefinition::default(),
+                target,
+                [true, true, true],
+            );
             let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller
                 .0
