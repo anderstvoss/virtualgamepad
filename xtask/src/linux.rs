@@ -11,7 +11,10 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use virtualgamepad::{CreationOptions, DigitalControlUpdate, InputTopology, RealizationId};
+use virtualgamepad::{
+    AudioExposure, AudioOptions, CreationOptions, DigitalControlUpdate, InputTopology,
+    RealizationId,
+};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -22,12 +25,21 @@ impl Drop for Capture {
     }
 }
 
+fn acceptance_creation_options(target: RealizationId) -> CreationOptions {
+    let options = CreationOptions::new(target);
+    if target == RealizationId::LINUX_USBIP_USB_AUDIO {
+        options.with_audio(AudioOptions::new(AudioExposure::Emulated))
+    } else {
+        options
+    }
+}
+
 macro_rules! controllers {
     ($(($variant:ident,$ty:ident,$create:ident,$id:literal $(,$common:ident)?)),+ $(,)?) => {
         pub enum Controller { $($variant(virtualgamepad::$ty),)+ }
         impl Controller {
             fn create(id:&str,target:RealizationId)->Result<Self,String>{
-                match id { $($id=>virtualgamepad::$create(CreationOptions::new(target), Default::default()).map(Self::$variant).map_err(|e|e.to_string()),)+ _=>Err("unmapped compiled family".into()) }
+                match id { $($id=>virtualgamepad::$create(acceptance_creation_options(target), Default::default()).map(Self::$variant).map_err(|e|e.to_string()),)+ _=>Err("unmapped compiled family".into()) }
             }
             fn physical_paths(&self)->Vec<String> { match self { $(Self::$variant(c)=>c.association().components().iter().filter_map(|c|c.requested_physical_path().map(str::to_owned)).collect(),)+ } }
             fn topology(&self)->&InputTopology { match self { $(Self::$variant(c)=>c.surface()$(.$common())?.input_topology(),)+ } }
@@ -63,7 +75,10 @@ pub struct Session {
     phases: BTreeMap<&'static str, u64>,
 }
 
-fn matching_nodes(physical_paths: &[String]) -> BTreeSet<PathBuf> {
+fn matching_nodes(physical_paths: &[String]) -> Result<BTreeSet<PathBuf>, String> {
+    if physical_paths.is_empty() {
+        return Err("no creation-owned node selector for this realization".into());
+    }
     let mut result = BTreeSet::new();
     for (class, prefix) in [("input", "event"), ("hidraw", "hidraw")] {
         let Ok(entries) = fs::read_dir(format!("/sys/class/{class}")) else {
@@ -94,7 +109,7 @@ fn matching_nodes(physical_paths: &[String]) -> BTreeSet<PathBuf> {
             }
         }
     }
-    result
+    Ok(result)
 }
 fn open_consumer(node: &Path, wait_for_udev: bool) -> std::io::Result<File> {
     open_consumer_diagnostics(node, wait_for_udev).map(|(file, _)| file)
@@ -530,7 +545,7 @@ impl Backend for Linux {
                 let deadline=Instant::now()+Duration::from_secs(2);
                 loop {
                     for peer in peers.iter_mut() { peer.service.service(|| peer.controller.service()); }
-                    let nodes=matching_nodes(&s.physical_paths);
+                    let nodes=matching_nodes(&s.physical_paths)?;
                     if stage == "node_present" {
                         if probe_node(&nodes, true).is_some() { s.phases.entry("hidraw_appearance_ns").or_insert_with(|| elapsed_ns(s.created)); }
                         if probe_node(&nodes, false).is_some() { s.phases.entry("input_appearance_ns").or_insert_with(|| elapsed_ns(s.created)); }
@@ -655,6 +670,32 @@ impl Backend for Linux {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn missing_node_selector_cannot_report_empty_owned_set() {
+        assert_eq!(
+            super::matching_nodes(&[]),
+            Err("no creation-owned node selector for this realization".into())
+        );
+    }
+
+    #[test]
+    fn explicit_usbip_acceptance_requests_emulated_audio() {
+        use super::{AudioExposure, AudioOptions, RealizationId, acceptance_creation_options};
+
+        assert_eq!(
+            acceptance_creation_options(RealizationId::LINUX_USBIP_USB_AUDIO).audio(),
+            AudioOptions::new(AudioExposure::Emulated)
+        );
+        assert_eq!(
+            acceptance_creation_options(RealizationId::LINUX_UHID_USB).audio(),
+            AudioOptions::default()
+        );
+        assert_eq!(
+            acceptance_creation_options(RealizationId::LINUX_UINPUT).audio(),
+            AudioOptions::default()
+        );
+    }
+
     #[test]
     fn failed_probe_keeps_actionable_diagnostics_without_device_identifiers() {
         let record = serde_json::json!({"path":"private", "guid":"private", "failure_detail":{

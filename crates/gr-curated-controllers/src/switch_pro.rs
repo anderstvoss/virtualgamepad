@@ -40,6 +40,38 @@ pub struct SwitchProMotionSample {
     pub accelerometer: [i16; 3],
     pub gyroscope: [i16; 3],
 }
+/// Source-supported Switch Pro battery level; no voltage thresholds are inferred.
+/// Research: `swpro-l0-device-battery-connection-bits`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SwitchProBatteryLevel {
+    Empty,
+    Critical,
+    Low,
+    Medium,
+    #[default]
+    Full,
+}
+
+/// Native battery report status. Pro connection nibble 0 means unpowered;
+/// bit zero indicates host/USB power (other controller types are out of scope).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SwitchProBattery {
+    pub level: SwitchProBatteryLevel,
+    pub charging: bool,
+    pub usb_powered: bool,
+}
+impl SwitchProBattery {
+    const fn wire_byte(self) -> u8 {
+        let level = match self.level {
+            SwitchProBatteryLevel::Empty => 0,
+            SwitchProBatteryLevel::Critical => 2,
+            SwitchProBatteryLevel::Low => 4,
+            SwitchProBatteryLevel::Medium => 6,
+            SwitchProBatteryLevel::Full => 8,
+        };
+        ((level | (self.charging as u8)) << 4) | (self.usb_powered as u8)
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SwitchProControl {
     B,
@@ -86,6 +118,7 @@ impl Default for SwitchProInputs {
 const fn motion_targets() -> RealizationTargetSet {
     RealizationTargetSet::new(&[
         RealizationTarget::LINUX_UHID_USB,
+        RealizationTarget::LINUX_UHID_BLUETOOTH,
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
     ])
 }
@@ -182,6 +215,9 @@ impl SwitchProInputs {
 pub struct SwitchProStatus {
     timer: u8,
     stream_enabled: bool,
+    battery: SwitchProBattery,
+    imu_gating: bool,
+    imu_enabled: bool,
 }
 impl SwitchProStatus {
     /// Accepted motion clock; the transport has a separate report counter.
@@ -192,6 +228,21 @@ impl SwitchProStatus {
     #[must_use]
     pub const fn stream_enabled(self) -> bool {
         self.stream_enabled
+    }
+    /// Current caller-selected battery and Pro power status.
+    #[must_use]
+    pub const fn battery(self) -> SwitchProBattery {
+        self.battery
+    }
+    /// Whether source-only IMU gating was selected at creation.
+    #[must_use]
+    pub const fn imu_gating(self) -> bool {
+        self.imu_gating
+    }
+    /// Latest accepted 0x40 IMU enable state.
+    #[must_use]
+    pub const fn imu_enabled(self) -> bool {
+        self.imu_enabled
     }
 }
 
@@ -336,6 +387,25 @@ static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "console pairing",
     reason: "Steam/Linux mode deliberately omits Switch-console pairing and SPI calibration persistence",
 }];
+static BT_RESTRICTIONS: [TargetRestriction; 5] = [
+    RESTRICTIONS[0],
+    TargetRestriction {
+        feature: "Bluetooth radio and reconnection",
+        reason: "Bluetooth-bus UHID is a local HID presentation, with no radio, BlueZ, discovery, pairing or reconnection transport",
+    },
+    TargetRestriction {
+        feature: "NFC and infrared MCU",
+        reason: "the Switch Pro-specific MCU 0x11/0x31 exchange is not established by pinned consumer sources; controller-family research leads are insufficient",
+    },
+    TargetRestriction {
+        feature: "Bluetooth controller audio",
+        reason: "the selected UHID HID report surface carries no PCM or headset transport; Bluetooth audio requires a separate endpoint",
+    },
+    TargetRestriction {
+        feature: "opposing D-pad directions in simple report mode",
+        reason: "Bluetooth input report 0x3F uses a single hat that cannot represent simultaneous opposing directions; full mode 0x30 preserves independent bits",
+    },
+];
 static EVDEV_RESTRICTIONS: [TargetRestriction; 5] = [
     common::FEEDBACK_RESTRICTION,
     TargetRestriction {
@@ -539,6 +609,30 @@ static HID_SURFACE: SwitchProSurface = SwitchProSurface {
     }
     .build(),
 };
+
+/* Synthetic, source-derived Bluetooth-bus descriptor. Pinned consumer parsers
+ * establish report IDs and payload lengths, not retail SDP/descriptor bytes.
+ * No USB-proprietary report IDs, MCU mode, or audio endpoints are declared.
+ */
+const SWITCH_PRO_BT_DESCRIPTOR: &[u8] = &[
+    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x06, 0x00, 0xff, 0x85, 0x3f, 0x09, 0x01, 0x75, 0x08, 0x95,
+    0x0b, 0x81, 0x02, 0x85, 0x30, 0x09, 0x02, 0x75, 0x08, 0x95, 0x3f, 0x81, 0x02, 0x85, 0x21, 0x09,
+    0x03, 0x75, 0x08, 0x95, 0x3f, 0x81, 0x02, 0x85, 0x01, 0x09, 0x04, 0x75, 0x08, 0x95, 0x30, 0x91,
+    0x02, 0x85, 0x10, 0x09, 0x05, 0x75, 0x08, 0x95, 0x30, 0x91, 0x02, 0xc0,
+];
+static BT_SURFACE: SwitchProSurface = SwitchProSurface {
+    common: gr_controller_contract::construction::ControllerSurfaceSpec {
+        target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+        validation_status: RealizationValidationStatus::ResearchBacked,
+        digital_controls: &DIGITAL,
+        axes: &AXES,
+        outputs: &OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
+        restrictions: &BT_RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
+    }
+    .build(),
+};
 static RETAINED_DUMMY: [TargetRestriction; 2] =
     [RESTRICTIONS[0], crate::retained::DUMMY_RESTRICTION];
 static USB_SURFACE: SwitchProSurface = SwitchProSurface {
@@ -560,7 +654,7 @@ impl RealizationControllerDefinition for SwitchProDefinition {
         ControllerId::new("virtualgamepad.switch-pro")
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        static E: [RealizationManifestEntry; 3] = [
+        static E: [RealizationManifestEntry; 4] = [
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
@@ -577,6 +671,13 @@ impl RealizationControllerDefinition for SwitchProDefinition {
             },
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UHID_USB,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: true,
+                },
+                audio_sidecar: None,
+            },
+            RealizationManifestEntry {
+                target: RealizationTarget::LINUX_UHID_BLUETOOTH,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -609,6 +710,7 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
             sel.target,
             RealizationTarget::LINUX_UINPUT
                 | RealizationTarget::LINUX_UHID_USB
+                | RealizationTarget::LINUX_UHID_BLUETOOTH
                 | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
         ) {
             return Err(common::unavailable(sel.target));
@@ -634,6 +736,12 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
         };
         if sel.target == RealizationTarget::LINUX_UHID_USB {
             Ok(ProviderFrame::HidInput { report_id, bytes })
+        } else if sel.target == RealizationTarget::LINUX_UHID_BLUETOOTH {
+            if s.1.stream_enabled {
+                Ok(ProviderFrame::HidInput { report_id, bytes })
+            } else {
+                Ok(switch_simple_frame(s))
+            }
         } else {
             let Some(report_id) = report_id else {
                 unreachable!("Switch USB reports are numbered")
@@ -703,7 +811,7 @@ fn pack(out: &mut [u8], x: i16, y: i16) {
 fn switch_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
     let mut b = vec![0; 63];
     b[0] = s.1.timer;
-    b[1] = 0x80;
+    b[1] = s.1.battery.wire_byte();
     // `FaceButton` follows the host gamepad layout, so its South/East controls
     // map to Nintendo B/A respectively (the printed labels are reversed).
     b[2] = u8::from(s.0.face[2])
@@ -738,6 +846,14 @@ fn switch_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
         s.0.right.1.raw().saturating_neg(),
     );
     b[11] = 9;
+    // Optional source-only compatibility gate; default keeps the prior raw
+    // samples even before the host's 0x40 command.
+    if s.1.imu_gating && !s.1.imu_enabled {
+        return ProviderFrame::HidInput {
+            report_id: Some(0x30),
+            bytes: b,
+        };
+    }
     let ax = s.0.motion.accelerometer[1] / 4;
     let ay = s.0.motion.accelerometer[0].wrapping_neg() / 4;
     let az = s.0.motion.accelerometer[2] / 4;
@@ -758,6 +874,57 @@ fn switch_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
     ProviderFrame::HidInput {
         report_id: Some(0x30),
         bytes: b,
+    }
+}
+
+// SDL 535d80b lines 137-152 and 2183-2257: 0x3f uses separate
+// face/shoulder, menu and hat bytes followed by 16-bit stick codes.
+// SDL 535d80b lines 1107-1122: simple-mode neutral raw stick is 0x8000.
+// This is a synthetic golden encoding, not a captured retail report.
+fn switch_simple_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
+    let mut bytes = vec![0; 11];
+    bytes[0] = u8::from(s.0.face[0])
+        | (u8::from(s.0.face[1]) << 1)
+        | (u8::from(s.0.face[2]) << 2)
+        | (u8::from(s.0.face[3]) << 3)
+        | (u8::from(s.0.buttons[0]) << 4)
+        | (u8::from(s.0.buttons[1]) << 5)
+        | (u8::from(s.0.buttons[2]) << 6)
+        | (u8::from(s.0.buttons[3]) << 7);
+    bytes[1] = u8::from(s.0.buttons[4])
+        | (u8::from(s.0.buttons[5]) << 1)
+        | (u8::from(s.0.buttons[8]) << 2)
+        | (u8::from(s.0.buttons[9]) << 3)
+        | (u8::from(s.0.buttons[6]) << 4)
+        | (u8::from(s.0.buttons[7]) << 5);
+    let [up, down, left, right] = s.0.dpad;
+    bytes[2] = match (up, down, left, right) {
+        (true, false, false, false) => 0,
+        (true, false, false, true) => 1,
+        (false, false, false, true) => 2,
+        (false, true, false, true) => 3,
+        (false, true, false, false) => 4,
+        (false, true, true, false) => 5,
+        (false, false, true, false) => 6,
+        (true, false, true, false) => 7,
+        _ => 8,
+    };
+    for (idx, value) in [
+        s.0.left.0.raw(),
+        s.0.left.1.raw(),
+        s.0.right.0.raw(),
+        s.0.right.1.raw(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let centered = u16::try_from(i32::from(value) - i32::from(i16::MIN))
+            .expect("signed stick offset is a u16 raw code");
+        bytes[3 + idx * 2..5 + idx * 2].copy_from_slice(&centered.to_le_bytes());
+    }
+    ProviderFrame::HidInput {
+        report_id: Some(0x3f),
+        bytes,
     }
 }
 
@@ -877,8 +1044,27 @@ fn hid(identity: SwitchProIdentity) -> NativeControllerRealization {
         numbered_feature_reports: false,
     })
 }
+fn bluetooth_hid(identity: SwitchProIdentity) -> NativeControllerRealization {
+    NativeControllerRealization::Uhid(NativeHidRealization {
+        target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+        bus_type: 5,
+        device_name: "Pro Controller".into(),
+        physical_path: "virtualgamepad/uhid/switch-pro-bluetooth".into(),
+        unique_id: common::address_label(identity.bytes()),
+        identity: NativeDeviceIdentity {
+            vendor_id: 0x057e,
+            product_id: 0x2009,
+            version: 0x0220,
+        },
+        descriptor: SWITCH_PRO_BT_DESCRIPTOR.to_vec(),
+        numbered_input_reports: true,
+        numbered_output_reports: true,
+        numbered_feature_reports: false,
+    })
+}
 fn evdev_realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
+        bus_type: 0x03,
         physical_path: None,
         device_name: "Pro Controller".into(),
         identity: NativeDeviceIdentity {
@@ -945,6 +1131,17 @@ impl SwitchProController {
             .map_or(self.0.state().1.stream_enabled, |p| p.stream_enabled)
     }
     #[must_use]
+    pub fn battery(&self) -> SwitchProBattery {
+        self.0.state().1.battery
+    }
+    /// Live caller battery metadata; updates the subsequent 0x30 and 0x21 prefixes.
+    pub fn set_battery(&mut self, battery: SwitchProBattery) -> Result<(), ControlError> {
+        self.0.update_state(|state| {
+            state.1.battery = battery;
+            Ok(())
+        })
+    }
+    #[must_use]
     pub fn motion_report_counter(&self) -> u8 {
         self.0
             .optional_protocol()
@@ -981,6 +1178,10 @@ impl SwitchProController {
     pub fn status(&self) -> SwitchProStatus {
         SwitchProStatus {
             stream_enabled: self.stream_enabled(),
+            imu_enabled: self.0.optional_protocol().map_or(
+                self.0.state().1.imu_enabled,
+                protocol::SwitchUsbProtocol::imu_enabled,
+            ),
             ..self.0.state().1
         }
     }
@@ -993,6 +1194,7 @@ impl SwitchProController {
         match self.0.selection().target {
             RealizationTarget::LINUX_UINPUT => &EVDEV_SURFACE,
             RealizationTarget::LINUX_UHID_USB => &HID_SURFACE,
+            RealizationTarget::LINUX_UHID_BLUETOOTH => &BT_SURFACE,
             _ => &USB_SURFACE,
         }
     }
@@ -1077,7 +1279,10 @@ impl SwitchProController {
         self.0.commit()
     }
     pub fn refresh_motion(&mut self) -> Result<(), CommitError> {
-        if self.0.selection().target == RealizationTarget::LINUX_UHID_USB {
+        if matches!(
+            self.0.selection().target,
+            RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+        ) {
             return self.0.commit();
         }
         if self.0.state().1.stream_enabled {
@@ -1117,7 +1322,10 @@ impl SwitchProController {
         &mut self,
         callback: &mut dyn FnMut(SwitchProOutputEvent),
     ) -> Result<(), ProviderError> {
-        if self.0.selection().target == RealizationTarget::LINUX_UHID_USB {
+        if matches!(
+            self.0.selection().target,
+            RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+        ) {
             return self
                 .0
                 .drain(&mut |event| callback(SwitchProOutputEvent::from(event)));
@@ -1126,6 +1334,7 @@ impl SwitchProController {
         self.0
             .with_sink(|sink| sink.drain(&mut |event| events.push(event)))?;
         let mut enable = false;
+        let mut requested_imu = None;
         let state = self.0.state().clone();
         let mut replies = Vec::new();
         for event in events {
@@ -1142,6 +1351,9 @@ impl SwitchProController {
                         switch_subcommand_reply(&state, bytes[9], &bytes[10..], self.1);
                     replies.push(reply);
                     enable |= stream;
+                    if bytes[9] == 0x40 {
+                        requested_imu = bytes.get(10).map(|value| *value != 0);
+                    }
                 }
                 RawReverseEvent::HidSetReportRequest { request_id, .. } => {
                     replies.push(ProviderFrame::HidSetReportReply {
@@ -1160,10 +1372,15 @@ impl SwitchProController {
             }
             Ok::<(), ProviderError>(())
         })?;
-        if enable {
+        if enable || requested_imu.is_some() {
             self.0
                 .update_state(|s| {
-                    s.1.stream_enabled = true;
+                    if enable {
+                        s.1.stream_enabled = true;
+                    }
+                    if let Some(enabled) = requested_imu {
+                        s.1.imu_enabled = enabled;
+                    }
                     Ok(())
                 })
                 .map_err(|e| ProviderError::Open {
@@ -1705,9 +1922,21 @@ mod rumble_decode_tests {
     }
 }
 
+/// Source-only HOME light request via subcommand 0x38.
+/// `mini_cycle` retains all five request bytes; only Linux's brightness
+/// nibble is interpreted. Not a player indicator.
+/// Claim: `swpro-cgap-home-led-consumer`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchProHomeLight {
+    pub brightness: u8,
+    pub mini_cycle: [u8; 5],
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SwitchProOutputEvent {
     ForceFeedback(gr_realization_api::ForceFeedbackEvent),
+    /// Accepted HOME light command, distinct from the four player indicators.
+    HomeLight(SwitchProHomeLight),
     ProviderEvent(Vec<EvdevEvent>),
     HidLifecycle(gr_hid::Lifecycle),
     Output {
@@ -1750,6 +1979,18 @@ impl From<RawReverseEvent> for SwitchProOutputEvent {
             RawReverseEvent::ForceFeedback(event) => Self::ForceFeedback(event),
             RawReverseEvent::Evdev(events) => Self::ProviderEvent(events),
             RawReverseEvent::HidLifecycle(event) => Self::HidLifecycle(event),
+            RawReverseEvent::HidOutput {
+                report_id: Some(1),
+                bytes,
+            } if bytes.len() >= 15 && bytes[9] == 0x38 => {
+                let mini_cycle: [u8; 5] = bytes[10..15]
+                    .try_into()
+                    .expect("validated HOME mini-cycle payload");
+                Self::HomeLight(SwitchProHomeLight {
+                    brightness: mini_cycle[1] >> 4,
+                    mini_cycle,
+                })
+            }
             RawReverseEvent::HidOutput { report_id, bytes } => Self::Output { report_id, bytes },
             RawReverseEvent::HidGetReportRequest {
                 request_id,
@@ -1771,10 +2012,15 @@ impl From<RawReverseEvent> for SwitchProOutputEvent {
     }
 }
 /// Family options for a new `SwitchPro` session.
+///
+/// IMU enable behavior is source-backed by research claim
+/// `swpro-l0-consumer-imu-rumble-ack-gates`; retail timing remains unmeasured.
 #[derive(Debug, Clone, Copy, Default)]
 #[non_exhaustive]
 pub struct SwitchProOptions {
     identity: Option<SwitchProIdentity>,
+    battery: SwitchProBattery,
+    imu_gating: bool,
 }
 
 impl SwitchProOptions {
@@ -1784,6 +2030,34 @@ impl SwitchProOptions {
     pub const fn with_identity(mut self, identity: SwitchProIdentity) -> Self {
         self.identity = Some(identity);
         self
+    }
+
+    /// Set the initial battery report status (defaults to full, not charging,
+    /// Pro connection nibble zero, preserving report byte 0x80).
+    #[must_use]
+    pub const fn with_battery(mut self, battery: SwitchProBattery) -> Self {
+        self.battery = battery;
+        self
+    }
+
+    /// Initial battery status for the new session.
+    #[must_use]
+    pub const fn battery(self) -> SwitchProBattery {
+        self.battery
+    }
+
+    /// Opt into gating the IMU sample bytes until subcommand 0x40 enables them.
+    /// Defaults to false to preserve existing emissions.
+    /// Source-only: `swpro-l0-consumer-imu-rumble-ack-gates`.
+    #[must_use]
+    pub const fn with_imu_gating(mut self, enabled: bool) -> Self {
+        self.imu_gating = enabled;
+        self
+    }
+
+    #[must_use]
+    pub const fn imu_gating(self) -> bool {
+        self.imu_gating
     }
 
     /// An explicitly supplied identity, if any.
@@ -1809,6 +2083,7 @@ fn create_switch_pro_configured(
     let build_realization: fn(SwitchProIdentity) -> NativeControllerRealization = match o.target {
         RealizationTarget::LINUX_UINPUT => |_| evdev_realization(),
         RealizationTarget::LINUX_UHID_USB => hid,
+        RealizationTarget::LINUX_UHID_BLUETOOTH => bluetooth_hid,
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => |_| {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
                 controller: gr_controller_wire::registry::ids::SWITCH_PRO,
@@ -1824,11 +2099,23 @@ fn create_switch_pro_configured(
     let identity = family.identity().map_or_else(generate_identity, Ok)?;
     let realization = build_realization(identity);
     let is_dummy_hcd = o.target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID;
-    let mut controller = if o.target == RealizationTarget::LINUX_UHID_USB {
+    let mut controller = if matches!(
+        o.target,
+        RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+    ) {
         common::create_restored(SwitchProDefinition, realization, o, Some(identity.bytes()))?
     } else {
         common::create(SwitchProDefinition, realization, o)?
     };
+    controller
+        .update_state(|state| {
+            state.1.battery = family.battery();
+            state.1.imu_gating = family.imu_gating();
+            Ok(())
+        })
+        .map_err(|error| ProviderError::Open {
+            reason: error.to_string(),
+        })?;
     if is_dummy_hcd {
         // A physical USB attachment should expose a neutral 0x30 report as
         // soon as it appears; host-side controller-info traffic then has a
@@ -1863,8 +2150,25 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
             &[
                 RealizationTarget::LINUX_UINPUT,
                 RealizationTarget::LINUX_UHID_USB,
+                RealizationTarget::LINUX_UHID_BLUETOOTH,
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             ],
+        ),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[1],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[2],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[3],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[4],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
         ),
         crate::registry::refusal(
             RETAINED_DUMMY[1],
@@ -1893,6 +2197,11 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
                 &USB_SURFACE.common,
                 crate::registry::RealizationTier::FaithfulUsb,
                 crate::registry::PermissionClass::RootBroker,
+            ),
+            crate::registry::FamilyRealization::new(
+                &BT_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
             ),
         ];
         REALIZATIONS
@@ -2198,7 +2507,7 @@ mod tests {
                 (snapshot.clone()).0,
                 SwitchProStatus {
                     timer: current.1.timer.wrapping_add(u8::from(motion_changed)),
-                    stream_enabled: current.1.stream_enabled,
+                    ..current.1
                 },
             );
             let mut bad = snapshot.clone();
@@ -2233,14 +2542,14 @@ mod tests {
         }
     }
 
-    fn fixture_identity() -> SwitchProIdentity {
+    pub(super) fn fixture_identity() -> SwitchProIdentity {
         SwitchProIdentity::from_bytes(common::test_address(1)).unwrap()
     }
 
     #[test]
     fn undeclared_target_is_rejected_before_resolving_identity() {
         let options = CreationOptions {
-            target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+            target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
             session: RealizationSessionId(7),
         };
         assert!(matches!(
@@ -2257,6 +2566,7 @@ mod tests {
         for target in [
             RealizationTarget::LINUX_UINPUT,
             RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_UHID_BLUETOOTH,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
             let options = CreationOptions {
@@ -2280,6 +2590,7 @@ mod tests {
         }
         assert!(EVDEV_SURFACE.common.input_topology().motion().is_empty());
         assert_eq!(HID_SURFACE.common.input_topology().motion().len(), 1);
+        assert_eq!(BT_SURFACE.common.input_topology().motion().len(), 1);
         assert_eq!(USB_SURFACE.common.input_topology().motion().len(), 1);
     }
 
@@ -2318,6 +2629,7 @@ mod tests {
             SwitchProStatus {
                 timer: 77,
                 stream_enabled: true,
+                ..Default::default()
             },
         );
         let mut state = expected.clone();
@@ -2391,6 +2703,177 @@ mod tests {
                 .iter()
                 .any(|restriction| restriction.feature == "automatic force-feedback trigger")
         );
+    }
+
+    #[test]
+    fn battery_status_encodes_native_level_charging_and_pro_power() {
+        let mut state = <(SwitchProInputs, SwitchProStatus)>::default();
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
+            unreachable!()
+        };
+        assert_eq!(bytes[1], 0x80, "legacy default byte is unchanged");
+        assert_eq!(state.1.battery(), SwitchProBattery::default());
+        for (level, prefix) in [
+            (SwitchProBatteryLevel::Empty, 0x00),
+            (SwitchProBatteryLevel::Critical, 0x20),
+            (SwitchProBatteryLevel::Low, 0x40),
+            (SwitchProBatteryLevel::Medium, 0x60),
+            (SwitchProBatteryLevel::Full, 0x80),
+        ] {
+            for charging in [false, true] {
+                for usb_powered in [false, true] {
+                    let battery = SwitchProBattery {
+                        level,
+                        charging,
+                        usb_powered,
+                    };
+                    state.1.battery = battery;
+                    let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
+                        unreachable!()
+                    };
+                    let expected = prefix | (u8::from(charging) << 4) | u8::from(usb_powered);
+                    assert_eq!(bytes[1], expected);
+                    let (reply, enabled) = switch_subcommand_reply(
+                        &state,
+                        0x38,
+                        &[1, 0x50, 0x55, 0x11, 0x11],
+                        fixture_identity(),
+                    );
+                    assert!(!enabled);
+                    let ProviderFrame::HidInput { bytes, .. } = reply else {
+                        unreachable!()
+                    };
+                    assert_eq!(bytes[1], expected, "0x21 prefix uses current battery");
+                }
+            }
+        }
+        let selected = SwitchProBattery {
+            level: SwitchProBatteryLevel::Critical,
+            charging: true,
+            usb_powered: true,
+        };
+        let options = SwitchProOptions::default().with_battery(selected);
+        assert_eq!(options.battery(), selected);
+        assert!(!options.imu_gating());
+        assert!(options.with_imu_gating(true).imu_gating());
+    }
+
+    #[test]
+    fn live_battery_edits_update_hid_and_preserve_native_inputs() {
+        use common::session_tests::snapshot_session;
+        let (session, _) = snapshot_session(
+            SwitchProDefinition,
+            RealizationTarget::LINUX_UHID_USB,
+            [true, true, false],
+        );
+        let mut controller = SwitchProController(session, fixture_identity());
+        let before = controller.inputs().clone();
+        assert_eq!(controller.battery(), SwitchProBattery::default());
+        let selected = SwitchProBattery {
+            level: SwitchProBatteryLevel::Low,
+            charging: true,
+            usb_powered: true,
+        };
+        controller.set_battery(selected).unwrap();
+        assert_eq!(controller.battery(), selected);
+        assert_eq!(controller.status().battery(), selected);
+        assert_eq!(controller.inputs(), &before);
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(controller.test_state()) else {
+            unreachable!()
+        };
+        assert_eq!(bytes[1], 0x51);
+        controller.commit().unwrap();
+        controller.close();
+        assert_eq!(controller.set_battery(selected), Err(ControlError::Closed));
+        assert_eq!(controller.battery(), selected);
+    }
+
+    #[test]
+    fn home_light_keeps_generic_ack_and_typed_minicycle_separate_from_players() {
+        let state = <(SwitchProInputs, SwitchProStatus)>::default();
+        let payload = [0x01, 0xb0, 0xbb, 0x11, 0x11];
+        let (reply, enabled) = switch_subcommand_reply(&state, 0x38, &payload, fixture_identity());
+        assert!(!enabled);
+        let mut expected = vec![0; 63];
+        expected[..12].copy_from_slice(&switch_input_prefix(&state));
+        expected[12] = 0x80;
+        expected[13] = 0x38;
+        assert_eq!(
+            reply,
+            ProviderFrame::HidInput {
+                report_id: Some(0x21),
+                bytes: expected
+            }
+        );
+        let mut raw = vec![0; 63];
+        raw[9] = 0x38;
+        raw[10..15].copy_from_slice(&payload);
+        assert_eq!(
+            SwitchProOutputEvent::from(RawReverseEvent::HidOutput {
+                report_id: Some(1),
+                bytes: raw,
+            }),
+            SwitchProOutputEvent::HomeLight(SwitchProHomeLight {
+                brightness: 11,
+                mini_cycle: payload,
+            })
+        );
+        let mut truncated = vec![0; 14];
+        truncated[9] = 0x38;
+        assert!(matches!(
+            SwitchProOutputEvent::from(RawReverseEvent::HidOutput {
+                report_id: Some(1),
+                bytes: truncated,
+            }),
+            SwitchProOutputEvent::Output { .. }
+        ));
+        assert_eq!(
+            NATIVE_OUTPUT_KINDS[1],
+            OutputKind::PlayerIndicator { count: 4 }
+        );
+    }
+
+    #[test]
+    fn native_service_retains_imu_enable_status_for_opted_in_frames() {
+        use common::session_tests::snapshot_session;
+        let (session, io) = snapshot_session(
+            SwitchProDefinition,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            [true, true, false],
+        );
+        let mut controller = SwitchProController(session, fixture_identity());
+        controller
+            .0
+            .update_state(|state| {
+                state.1.imu_gating = true;
+                state.0.motion = SwitchProMotionSample {
+                    accelerometer: [400, -800, 1200],
+                    gyroscope: [1, -2, 3],
+                };
+                Ok(())
+            })
+            .unwrap();
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(controller.test_state()) else {
+            unreachable!()
+        };
+        assert!(bytes[12..48].iter().all(|byte| *byte == 0));
+        let mut enable = vec![0; 63];
+        enable[9] = 0x40;
+        enable[10] = 1;
+        io.lock()
+            .unwrap()
+            .events
+            .push_back(RawReverseEvent::HidOutput {
+                report_id: Some(1),
+                bytes: enable,
+            });
+        controller.service(&mut |_| {}).unwrap();
+        assert!(controller.status().imu_enabled());
+        assert!(controller.status().imu_gating());
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(controller.test_state()) else {
+            unreachable!()
+        };
+        assert!(bytes[12..48].iter().any(|byte| *byte != 0));
     }
 
     #[test]
@@ -2602,6 +3085,119 @@ mod tests {
             unpack_y(&bytes[8..11]) >= 4094,
             "negative public Y must become high Switch-wire Y so Linux reports up"
         );
+    }
+
+    #[test]
+    fn bt_descriptor_and_identity_use_explicit_local_transport_metadata() {
+        let first = bluetooth_hid(fixture_identity());
+        let second_identity = SwitchProIdentity::from_bytes(common::test_address(2)).unwrap();
+        let second = bluetooth_hid(second_identity);
+        let first_uniq = crate::ControllerAssociation::requested(&first).requested_unique_id;
+        let second_uniq = crate::ControllerAssociation::requested(&second).requested_unique_id;
+        assert_ne!(first_uniq, second_uniq);
+        let NativeControllerRealization::Uhid(bt) = first else {
+            unreachable!()
+        };
+        assert_eq!(bt.target, RealizationTarget::LINUX_UHID_BLUETOOTH);
+        assert_eq!(bt.bus_type, 5);
+        assert_eq!(
+            (bt.identity.vendor_id, bt.identity.product_id),
+            (0x057e, 0x2009)
+        );
+        assert!(bt.numbered_input_reports && bt.numbered_output_reports);
+        assert!(!bt.numbered_feature_reports);
+        for id in [0x3f, 0x30, 0x21, 0x01, 0x10] {
+            assert!(bt.descriptor.windows(2).any(|pair| pair == [0x85, id]));
+        }
+        for usb_id in [0x80, 0x81, 0x82] {
+            assert!(!bt.descriptor.windows(2).any(|pair| pair == [0x85, usb_id]));
+        }
+        let NativeControllerRealization::Uhid(usb) = hid(fixture_identity()) else {
+            unreachable!()
+        };
+        assert_eq!(usb.bus_type, 3);
+        assert_eq!(usb.descriptor.as_slice(), SWITCH_PRO_USB_DESCRIPTOR);
+        assert_ne!(bt.descriptor, usb.descriptor);
+    }
+
+    #[test]
+    fn bt_simple_report_has_source_derived_synthetic_golden_bytes() {
+        // SDL 535d80b lines 137-152, 2183-2257, not a physical capture.
+        let mut inputs = SwitchProInputs::default();
+        inputs.set_native(SwitchProControl::B, true);
+        inputs.set_native(SwitchProControl::L, true);
+        inputs.set_native(SwitchProControl::Zr, true);
+        inputs.set_native(SwitchProControl::Minus, true);
+        inputs.set_native(SwitchProControl::Home, true);
+        inputs.set_digital(DigitalControlUpdate::Dpad {
+            direction: gr_controller_contract::DpadDirection::Up,
+            pressed: true,
+        });
+        inputs.set_sticks(
+            (SwitchProAxis::new(-1234), SwitchProAxis::new(2345)),
+            (SwitchProAxis::new(0), SwitchProAxis::new(0)),
+        );
+        assert_eq!(
+            switch_simple_frame(&(inputs, SwitchProStatus::default())),
+            ProviderFrame::HidInput {
+                report_id: Some(0x3f),
+                bytes: vec![0x91, 0x11, 0, 0x2e, 0x7b, 0x29, 0x89, 0, 0x80, 0, 0x80],
+            }
+        );
+        assert_eq!(
+            switch_simple_frame(&(SwitchProInputs::default(), SwitchProStatus::default())),
+            ProviderFrame::HidInput {
+                report_id: Some(0x3f),
+                bytes: vec![0, 0, 8, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80],
+            }
+        );
+        let mut opposite = SwitchProInputs::default();
+        for direction in [
+            gr_controller_contract::DpadDirection::Up,
+            gr_controller_contract::DpadDirection::Down,
+        ] {
+            opposite.set_digital(DigitalControlUpdate::Dpad {
+                direction,
+                pressed: true,
+            });
+        }
+        let ProviderFrame::HidInput { bytes, .. } =
+            switch_simple_frame(&(opposite, SwitchProStatus::default()))
+        else {
+            unreachable!()
+        };
+        assert_eq!(bytes[2], 8); // Simple hat cannot carry opposing directions.
+    }
+
+    #[test]
+    fn bluetooth_surface_has_every_provider_specific_refusal() {
+        let family = <SwitchProDefinition as crate::registry::ControllerFamily>::realizations();
+        let bt = family
+            .iter()
+            .find(|r| r.surface.target() == RealizationTarget::LINUX_UHID_BLUETOOTH)
+            .unwrap();
+        assert_eq!(bt.tier, crate::registry::RealizationTier::PlayableFull);
+        assert_eq!(bt.permission, crate::registry::PermissionClass::Uhid);
+        for (index, restriction) in BT_RESTRICTIONS.into_iter().enumerate() {
+            assert!(bt.surface.restrictions().contains(&restriction));
+            let entries: Vec<_> =
+                <SwitchProDefinition as crate::registry::ControllerFamily>::REFUSED_OPERATIONS
+                    .iter()
+                    .filter(|r| r.name == restriction.feature && r.detail == restriction.reason)
+                    .collect();
+            assert_eq!(entries.len(), 1);
+            assert!(
+                entries[0]
+                    .targets
+                    .contains(&RealizationTarget::LINUX_UHID_BLUETOOTH)
+            );
+            if index > 0 {
+                assert_eq!(
+                    entries[0].targets,
+                    &[RealizationTarget::LINUX_UHID_BLUETOOTH]
+                );
+            }
+        }
     }
 
     #[test]

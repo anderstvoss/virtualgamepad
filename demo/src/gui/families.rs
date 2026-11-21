@@ -91,6 +91,33 @@ fn steam_demo_neutral(
     state
 }
 
+fn apply_dualsense_output_event(event: &DualSenseOutputEvent, indicators: &mut ReverseIndicators) {
+    match event {
+        DualSenseOutputEvent::ForceFeedback(event) => {
+            indicators.apply_force_feedback(*event);
+        }
+        DualSenseOutputEvent::HidOutput(DualSenseHidOutput::UsbOutput {
+            right_motor,
+            left_motor,
+            lightbar_rgb,
+            mute_button_led,
+            player_leds,
+            player_led_instant,
+            led_brightness,
+            ..
+        }) => {
+            indicators.apply_hid_output(*right_motor, *left_motor, *lightbar_rgb, None);
+            indicators.apply_dualsense_led_output(
+                *mute_button_led,
+                *player_leds,
+                *player_led_instant,
+                *led_brightness,
+            );
+        }
+        _ => {}
+    }
+}
+
 impl Kind {
     pub(super) fn id(self) -> virtualgamepad::ControllerId {
         virtualgamepad::ControllerId::new(match self {
@@ -163,12 +190,18 @@ impl Kind {
             Self::Xbox360 => create_xbox360(creation, virtualgamepad::Xbox360Options::default())
                 .map(Controller::Xbox),
             Self::DualSense => {
-                create_dualsense(creation, virtualgamepad::DualSenseOptions::default())
-                    .map(Controller::DualSense)
+                let mut family = virtualgamepad::DualSenseOptions::default();
+                if let Some(data) = options.sony_data.dualsense {
+                    family = family.with_device_data(data);
+                }
+                create_dualsense(creation, family).map(Controller::DualSense)
             }
             Self::DualShock4 => {
-                create_dualshock4(creation, virtualgamepad::DualShock4Options::default())
-                    .map(Controller::DualShock4)
+                let mut family = virtualgamepad::DualShock4Options::default();
+                if let Some(data) = options.sony_data.dualshock4 {
+                    family = family.with_device_data(data);
+                }
+                create_dualshock4(creation, family).map(Controller::DualShock4)
             }
             Self::SwitchPro => {
                 create_switch_pro(creation, virtualgamepad::SwitchProOptions::default())
@@ -364,24 +397,7 @@ impl Controller {
                 .map_err(|error| error.to_string()),
             Self::DualSense(controller) => controller
                 .service(&mut |event| {
-                    match &event {
-                        DualSenseOutputEvent::ForceFeedback(event) => {
-                            indicators.apply_force_feedback(*event);
-                        }
-                        DualSenseOutputEvent::HidOutput(DualSenseHidOutput::UsbOutput {
-                            right_motor,
-                            left_motor,
-                            lightbar_rgb,
-                            mute_button_led,
-                            ..
-                        }) => indicators.apply_hid_output(
-                            *right_motor,
-                            *left_motor,
-                            *lightbar_rgb,
-                            *mute_button_led,
-                        ),
-                        _ => {}
-                    }
+                    apply_dualsense_output_event(&event, indicators);
                     log.push(format!("DualSense: {event:?}"));
                 })
                 .map_err(|error| error.to_string()),
@@ -436,17 +452,27 @@ impl Controller {
                 Ok(())
             }
             Self::SwitchPro(controller) => controller
-                .service(&mut |event| {
-                    if let virtualgamepad::SwitchProOutputEvent::ForceFeedback(event) = event {
-                        indicators.apply_force_feedback(event);
-                    }
-                    log.push(format!("Switch Pro: {event:?}"));
-                })
+                .service(&mut |event| record_switch_pro_output(&event, log, indicators))
                 .map_err(|error| error.to_string()),
         };
         result
     }
 }
+
+fn record_switch_pro_output(
+    event: &virtualgamepad::SwitchProOutputEvent,
+    log: &mut Vec<String>,
+    indicators: &mut ReverseIndicators,
+) {
+    if let virtualgamepad::SwitchProOutputEvent::ForceFeedback(feedback) = &event {
+        indicators.apply_force_feedback(*feedback);
+    }
+    if let virtualgamepad::SwitchProOutputEvent::HomeLight(light) = &event {
+        indicators.switch_home_light = Some(*light);
+    }
+    log.push(format!("Switch Pro: {event:?}"));
+}
+
 impl ControllerView {
     pub(super) fn surface(&self) -> &dyn ControllerSurfaceInfo {
         match self {
@@ -676,6 +702,7 @@ mod steam_tests {
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteOptions::default(),
                 steam_options: super::super::SteamController2026Options::default(),
+                sony_data: super::super::sony_device_data::Selections::default(),
             };
             let mut captured = Vec::new();
             for (enabled, streaming, lizard) in [
@@ -731,6 +758,7 @@ mod wii_tests {
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteOptions::default(),
                 steam_options: super::super::SteamController2026Options::default(),
+                sony_data: super::super::sony_device_data::Selections::default(),
             };
             let state = create_wii_session(&options, |common, family| {
                 assert_eq!(common.target, options.target);
@@ -809,6 +837,7 @@ mod wii_tests {
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteOptions::default(),
                 steam_options: super::super::SteamController2026Options::default(),
+                sony_data: super::super::sony_device_data::Selections::default(),
             };
             let received = create_wii_session(&options, |common, family| {
                 assert_eq!(family.revision(), super::super::WiiRemoteRevision::Original);
@@ -852,6 +881,7 @@ mod compat_creation_tests {
                                 wii_imports: super::super::wii_import::Imports::default(),
                                 wii_compat: compat.clone(),
                                 steam_options: super::super::SteamController2026Options::default(),
+                                sony_data: super::super::sony_device_data::Selections::default(),
                             };
                             assert_eq!(
                                 create_wii_session(&options, |_, received| Ok::<_, String>(

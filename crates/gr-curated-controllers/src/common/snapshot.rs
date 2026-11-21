@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 type FeatureEnhancement<S> = ([u8; 2], fn(&S, u64, u8) -> Report);
 
 #[derive(Clone)]
+#[allow(clippy::struct_excessive_bools)] // Independent opt-in protocol behaviors set by each family.
 pub(crate) struct SnapshotProtocol<S: Clone, R: OutputState = ()> {
     pub neutral: S,
     pub encode: fn(&S, u64, u8) -> Report,
@@ -20,6 +21,7 @@ pub(crate) struct SnapshotProtocol<S: Clone, R: OutputState = ()> {
     initial_encode: fn(&S, u64, u8) -> Report,
     enhance_on_feature: Option<FeatureEnhancement<S>>,
     drop_invalid_output: bool,
+    refresh_on_open: bool,
     sequence: u8,
     next: Option<u64>,
     active: bool,
@@ -46,6 +48,7 @@ impl<S: Clone, R: OutputState> SnapshotProtocol<S, R> {
             initial_encode: encode,
             enhance_on_feature: None,
             drop_invalid_output: false,
+            refresh_on_open: false,
             sequence: 1,
             next: Some(0),
             active: true,
@@ -67,6 +70,12 @@ impl<S: Clone, R: OutputState> SnapshotProtocol<S, R> {
 
     pub(crate) fn reject_invalid_host_output(mut self) -> Self {
         self.drop_invalid_output = true;
+        self
+    }
+
+    /// Request a fresh current-state snapshot when the consumer opens this HID.
+    pub(crate) fn with_open_refresh(mut self) -> Self {
+        self.refresh_on_open = true;
         self
     }
 }
@@ -179,6 +188,9 @@ impl<S: Clone, R: OutputState> Protocol for SnapshotProtocol<S, R> {
             Lifecycle::Stop => {
                 self.active = false;
                 self.next = None;
+            }
+            Lifecycle::Open if self.refresh_on_open && self.active => {
+                self.next = Some(now);
             }
             Lifecycle::Open | Lifecycle::Close => {}
         }

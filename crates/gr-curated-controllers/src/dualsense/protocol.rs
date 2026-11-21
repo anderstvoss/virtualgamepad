@@ -1,7 +1,7 @@
 //! Stateful USB personality shared by HID presentation and future USB adapters.
 use super::{
     BTreeMap, DualSenseDefinition, DualSenseSessionState, NativeHidReportKey, ProviderFrame,
-    RawReverseEvent, RealizationSessionId, common, dualsense_feature_responses,
+    RawReverseEvent, RealizationSessionId, common, dualsense_feature_responses_with_data,
     dualsense_hid_input_report,
 };
 use gr_hid::{
@@ -10,6 +10,7 @@ use gr_hid::{
 };
 
 #[derive(Clone)]
+#[allow(clippy::struct_excessive_bools)] // Independent session flags; transport is fixed at creation.
 pub(crate) struct DualSenseUsbProtocol<
     R: crate::retained::OutputState = crate::retained::DualSenseOutputState,
 > {
@@ -20,18 +21,46 @@ pub(crate) struct DualSenseUsbProtocol<
     active: bool,
     numbering_valid: bool,
     last_input: Option<Report>,
+    bluetooth: bool,
+    enhanced: bool,
 }
 impl DualSenseUsbProtocol {
+    #[cfg(test)]
     pub(crate) fn new(identity: [u8; 6]) -> Self {
+        Self::with_device_data(identity, None)
+    }
+    pub(crate) fn with_device_data(
+        identity: [u8; 6],
+        data: Option<super::DualSenseDeviceData>,
+    ) -> Self {
         Self {
-            features: dualsense_feature_responses(identity),
+            features: dualsense_feature_responses_with_data(identity, data),
             retained: crate::retained::DualSenseOutputState::default(),
             sequence: 1,
             next_input: 0,
             active: true,
             numbering_valid: true,
             last_input: None,
+            bluetooth: false,
+            enhanced: false,
         }
+    }
+    pub(crate) fn new_bluetooth(
+        identity: [u8; 6],
+        data: Option<super::DualSenseDeviceData>,
+    ) -> Self {
+        let mut protocol = Self::with_device_data(identity, data);
+        protocol.bluetooth = true;
+        // The feature values (including caller device data) are still the
+        // same single source as USB. On the Bluetooth bus the last four bytes
+        // of each feature are its CRC.
+        protocol
+            .features
+            .retain(|key, _| matches!(key.report_id, 5 | 9 | 0x20));
+        for wire in protocol.features.values_mut() {
+            super::bluetooth::sign(super::bluetooth::FEATURE_SEED, wire);
+        }
+        protocol
     }
 }
 impl<R: crate::retained::OutputState> DualSenseUsbProtocol<R> {
@@ -72,14 +101,24 @@ impl<R: crate::retained::OutputState> Protocol for DualSenseUsbProtocol<R> {
         let mut sample = state.clone();
         sample.status.input_sequence = self.sequence;
         sample.status.sensor_timestamp = (now as u32).wrapping_mul(3);
-        let ProviderFrame::HidInput { report_id, bytes } = dualsense_hid_input_report(&sample)
-        else {
-            unreachable!()
+        let report = if self.bluetooth {
+            if self.enhanced {
+                super::bluetooth::enhanced_input(&sample)
+            } else {
+                super::bluetooth::simple_input(&sample)
+            }
+        } else {
+            let ProviderFrame::HidInput { report_id, bytes } = dualsense_hid_input_report(&sample)
+            else {
+                unreachable!()
+            };
+            Report::new(ReportType::Input, report_id, bytes)?
         };
-        let report = Report::new(ReportType::Input, report_id, bytes)?;
         self.last_input = Some(report.clone());
         self.sequence = self.sequence.wrapping_add(1);
-        self.next_input = now.saturating_add(4000);
+        // SDL describes an approximate 1 kHz Bluetooth sensor rate;
+        // a virtual report schedule is not a measurement of physical timing.
+        self.next_input = now.saturating_add(if self.bluetooth { 1000 } else { 4000 });
         Ok(vec![report])
     }
     fn deadline(&self) -> Option<u64> {
@@ -99,26 +138,68 @@ impl<R: crate::retained::OutputState> Protocol for DualSenseUsbProtocol<R> {
                     })
                     .and_then(|bytes| Report::from_wire(ReportType::Feature, true, bytes).ok())
                     .ok_or(ReplyError::Unsupported);
+                if self.bluetooth && report.is_ok() {
+                    // An enhanced Sony feature request is evidence that the
+                    // host needs the full Bluetooth state layout.
+                    self.enhanced = true;
+                }
                 (Reply::Get(report), None)
             }
             RequestKind::Get {
                 kind: ReportType::Input,
-                id: Some(1),
-            } => (
-                Reply::Get(self.last_input.clone().ok_or(ReplyError::Unsupported)),
-                None,
-            ),
-            RequestKind::Get { .. } => (Reply::Get(Err(ReplyError::Unsupported)), None),
-            RequestKind::Set(report) => match Self::accept_output(report)
-                .and_then(|()| crate::retained::OutputState::apply(&mut self.retained, report))
+                id: Some(id),
+            } if *id
+                == if self.bluetooth && self.enhanced {
+                    0x31
+                } else {
+                    1
+                } =>
             {
-                Ok(()) => (Reply::Set(Ok(())), Some(Self::decode(report))),
-                Err(error) => (Reply::Set(Err(error)), None),
-            },
+                (
+                    Reply::Get(
+                        self.last_input
+                            .clone()
+                            .filter(|report| report.id() == Some(*id))
+                            .ok_or(ReplyError::Unsupported),
+                    ),
+                    None,
+                )
+            }
+            RequestKind::Get { .. } => (Reply::Get(Err(ReplyError::Unsupported)), None),
+            RequestKind::Set(report) => {
+                let normalized = if self.bluetooth {
+                    super::bluetooth::normalized_output(report)
+                } else {
+                    Self::accept_output(report).map(|()| report.clone())
+                };
+                match normalized.and_then(|normalized| {
+                    crate::retained::OutputState::apply(&mut self.retained, &normalized)?;
+                    Ok(normalized)
+                }) {
+                    Ok(normalized) => {
+                        if self.bluetooth {
+                            self.enhanced = true;
+                        }
+                        (Reply::Set(Ok(())), Some(Self::decode(&normalized)))
+                    }
+                    Err(error) => (Reply::Set(Err(error)), None),
+                }
+            }
         }
     }
     fn output(&mut self, report: Report, _: u64) -> Result<Option<Self::Output>, Error> {
-        // Interrupt output has no acknowledgement; preserve unknown bytes for diagnostics.
+        // Interrupt output has no acknowledgement. Drop malformed Bluetooth
+        // CRCs without closing the runtime or changing retained output.
+        if self.bluetooth {
+            let Ok(normalized) = super::bluetooth::normalized_output(&report) else {
+                return Ok(None);
+            };
+            crate::retained::OutputState::apply(&mut self.retained, &normalized)
+                .map_err(|_| Error::InvalidState)?;
+            self.enhanced = true;
+            return Ok(Some(Self::decode(&normalized)));
+        }
+        // Keep the USB path's existing unknown-output observation policy.
         if Self::accept_output(&report).is_ok() {
             crate::retained::OutputState::apply(&mut self.retained, &report)
                 .map_err(|_| Error::InvalidState)?;
@@ -166,7 +247,19 @@ impl common::HidDriver for DualSenseDefinition {
         common::creation_identity()
     }
     fn hid_protocol(&self, _: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
-        DualSenseUsbProtocol::new(identity)
+        DualSenseUsbProtocol::with_device_data(identity, self.device_data)
+    }
+    fn hid_protocol_for_target(
+        &self,
+        session: RealizationSessionId,
+        identity: [u8; 6],
+        target: gr_realization_api::RealizationTarget,
+    ) -> Self::Hid {
+        if target == gr_realization_api::RealizationTarget::LINUX_UHID_BLUETOOTH {
+            DualSenseUsbProtocol::new_bluetooth(identity, self.device_data)
+        } else {
+            self.hid_protocol(session, identity)
+        }
     }
 }
 
@@ -185,13 +278,146 @@ mod tests {
     use crate::BatteryLevel;
     use crate::common::HidDriver;
     #[test]
+    fn bluetooth_initial_neutral_then_required_feature_replies_enable_full_mode() {
+        use crate::dualsense::{DualSenseIdentity, bluetooth};
+        let identity = DualSenseIdentity::generate().expect("OS entropy for test instance");
+        let mut protocol = DualSenseUsbProtocol::new_bluetooth(identity.bytes(), None);
+        let initial = protocol.input(&protocol.neutral(), 0).unwrap().remove(0);
+        assert_eq!(initial.id(), Some(1));
+        assert_eq!(initial.wire().len(), 10);
+        assert_eq!(protocol.deadline(), Some(1000));
+        for (id, len) in [(5, 41), (9, 20), (0x20, 64)] {
+            let (reply, event) = protocol.request(
+                &RequestKind::Get {
+                    kind: ReportType::Feature,
+                    id: Some(id),
+                },
+                0,
+            );
+            assert!(event.is_none());
+            let Reply::Get(Ok(report)) = reply else {
+                panic!("required Bluetooth feature was refused");
+            };
+            assert_eq!(report.wire().len(), len);
+            assert!(bluetooth::valid(bluetooth::FEATURE_SEED, &report.wire()));
+            assert_eq!(report.id(), Some(id));
+        }
+        let full = protocol.input(&protocol.neutral(), 1000).unwrap().remove(0);
+        assert_eq!(full.id(), Some(0x31));
+        assert_eq!(full.wire().len(), 78);
+        assert!(bluetooth::valid(bluetooth::INPUT_SEED, &full.wire()));
+        assert_eq!(
+            protocol
+                .request(
+                    &RequestKind::Get {
+                        kind: ReportType::Input,
+                        id: Some(0x31)
+                    },
+                    1000,
+                )
+                .0,
+            Reply::Get(Ok(full))
+        );
+        assert_eq!(
+            protocol
+                .request(
+                    &RequestKind::Get {
+                        kind: ReportType::Feature,
+                        id: Some(0x03)
+                    },
+                    0,
+                )
+                .0,
+            Reply::Get(Err(ReplyError::Unsupported))
+        );
+    }
+
+    #[test]
+    fn bluetooth_output_crc_rejects_bad_host_writes_and_retains_leds_and_trigger_data() {
+        use crate::dualsense::{DualSenseIdentity, bluetooth};
+        let identity = DualSenseIdentity::generate().unwrap();
+        let mut protocol = DualSenseUsbProtocol::new_bluetooth(identity.bytes(), None);
+        let mut wire = vec![0u8; 78];
+        wire[0] = 0x31;
+        wire[2] = 0x10; // kernel's fixed tag
+        let common = 3;
+        wire[common] = 0x0d; // compatible rumble + two trigger slots
+        wire[common + 1] = 0x14; // player/RGB valid
+        wire[common + 2] = 33;
+        wire[common + 3] = 44;
+        wire[common + 10..common + 21].copy_from_slice(&[7; 11]);
+        wire[common + 21..common + 32].copy_from_slice(&[9; 11]);
+        wire[common + 43] = 0x12;
+        wire[common + 44..common + 47].copy_from_slice(&[10, 20, 30]);
+        bluetooth::sign(bluetooth::OUTPUT_SEED, &mut wire);
+        let report = Report::from_wire(ReportType::Output, true, &wire).unwrap();
+        let (ok, emitted) = protocol.request(&RequestKind::Set(report), 0);
+        assert_eq!(ok, Reply::Set(Ok(())));
+        let RawReverseEvent::HidOutput {
+            report_id: Some(2),
+            bytes,
+        } = emitted.unwrap()
+        else {
+            panic!("Bluetooth host output must decode through common typed output");
+        };
+        assert_eq!(&bytes[44..47], &[10, 20, 30]);
+        assert_eq!(protocol.retained.motors, Some([44, 33]));
+        assert_eq!(protocol.retained.left_trigger, Some([9; 11]));
+        assert_eq!(protocol.retained.right_trigger, Some([7; 11]));
+        assert_eq!(protocol.retained.player_leds, Some(0x12));
+        assert_eq!(protocol.retained.lightbar_rgb, Some([10, 20, 30]));
+        let accepted = protocol.retained.clone();
+        let mut bad = wire;
+        bad[common + 43] ^= 1;
+        let bad = Report::from_wire(ReportType::Output, true, &bad).unwrap();
+        assert_eq!(
+            protocol.request(&RequestKind::Set(bad.clone()), 1).0,
+            Reply::Set(Err(ReplyError::Invalid))
+        );
+        assert_eq!(protocol.retained, accepted);
+        assert!(protocol.output(bad, 2).unwrap().is_none());
+        assert_eq!(protocol.retained, accepted);
+    }
+
+    #[test]
+    fn bluetooth_two_instances_have_independent_creation_owned_feature_identity() {
+        use crate::dualsense::{DualSenseIdentity, bluetooth};
+        let first = DualSenseIdentity::generate().unwrap();
+        let second = DualSenseIdentity::generate().unwrap();
+        assert_ne!(first, second);
+        assert_ne!(first.unique_id(), second.unique_id());
+        let mut a = DualSenseUsbProtocol::new_bluetooth(first.bytes(), None);
+        let mut b = DualSenseUsbProtocol::new_bluetooth(second.bytes(), None);
+        let get = RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(9),
+        };
+        let first_reply = a.request(&get, 0).0;
+        assert_ne!(first_reply, b.request(&get, 0).0);
+        assert_eq!(first_reply, a.request(&get, 1).0);
+        let Reply::Get(Ok(ref report)) = first_reply else {
+            unreachable!()
+        };
+        assert!(bluetooth::valid(bluetooth::FEATURE_SEED, &report.wire()));
+
+        // The original USB personality remains independent of BT CRC/framing.
+        let mut usb = DualSenseUsbProtocol::new(first.bytes());
+        let Reply::Get(Ok(usb_feature)) = usb.request(&get, 0).0 else {
+            unreachable!()
+        };
+        assert_eq!(usb_feature.wire().len(), 20);
+        assert_ne!(usb_feature.wire(), report.wire());
+        assert_eq!(usb.input(&usb.neutral(), 0).unwrap()[0].id(), Some(1));
+    }
+
+    #[test]
     fn pairing_identity_is_creation_owned_and_stable_across_requests() {
         let get = RequestKind::Get {
             kind: ReportType::Feature,
             id: Some(9),
         };
         for session in [7, 7 + (1 << 16)] {
-            let driver = DualSenseDefinition;
+            let driver = DualSenseDefinition::default();
             let mut first = driver.hid_protocol(RealizationSessionId(session), [2, 1, 2, 3, 4, 5]);
             let mut second = driver.hid_protocol(RealizationSessionId(session), [2, 1, 2, 3, 4, 6]);
             let reply = first.request(&get, 0).0;

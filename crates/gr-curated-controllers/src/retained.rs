@@ -129,7 +129,6 @@ impl OutputState for DualSenseOutputState {
             speaker_volume,
             microphone_volume,
             speaker_preamp,
-            player_leds,
             lightbar_rgb,
             ..
         } = crate::dualsense::decode_dualsense_hid_output(report.id(), b.to_vec())
@@ -148,6 +147,11 @@ impl OutputState for DualSenseOutputState {
             if b[1] & 1 != 0 {
                 next.mute_led = Some(b[8]);
             }
+            // The legacy retained field keeps the exact player byte; the
+            // typed HID event splits the five indicators from bit 5.
+            if b[1] & 0x10 != 0 {
+                next.player_leds = Some(b[43]);
+            }
             macro_rules! retain { ($($field:ident),*) => { $(if $field.is_some() { next.$field = $field; })* }; }
             retain!(
                 microphone_muted,
@@ -155,7 +159,6 @@ impl OutputState for DualSenseOutputState {
                 speaker_volume,
                 microphone_volume,
                 speaker_preamp,
-                player_leds,
                 lightbar_rgb
             );
         }

@@ -105,6 +105,9 @@ pub(super) fn specification(
         ),
     };
     NativeControllerRealization::Evdev(NativeEvdevRealization {
+        // hid-wiimote nodes sit on the Bluetooth HID device, so the emulated
+        // native view advertises BUS_BLUETOOTH like the real remote does.
+        bus_type: 0x05,
         physical_path: None,
         device_name: name.into(),
         identity: NativeDeviceIdentity {
@@ -114,7 +117,7 @@ pub(super) fn specification(
             } else {
                 0x0306
             },
-            version: 0,
+            version: native_version(revision),
         },
         event_codes: {
             let mut v = Vec::new();
@@ -284,6 +287,18 @@ pub(super) const DESCRIPTOR: &[u8] = &[
     0x85, 0x14, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02, 0x85, 0x18, 0x09, 0x01, 0x95, 0x15, 0x91, 0x02,
     0x85, 0x19, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02, 0xc0,
 ];
+/// HID/input version reported by a real RVL-CNT-01 over Bluetooth, measured on
+/// one retail Original remote (#158 comment 7061259225). It is a model-level
+/// value, not a per-unit identifier. No RVL-CNT-01-TR value has been measured,
+/// so that revision keeps 0.
+const ORIGINAL_NATIVE_VERSION: u16 = 0x8601;
+fn native_version(revision: WiiRemoteRevision) -> u16 {
+    if revision == WiiRemoteRevision::Tr {
+        0
+    } else {
+        ORIGINAL_NATIVE_VERSION
+    }
+}
 pub(super) fn hid(revision: WiiRemoteRevision) -> NativeControllerRealization {
     let mut realization = crate::common::hid_realization(
         if revision == WiiRemoteRevision::Tr {
@@ -303,7 +318,7 @@ pub(super) fn hid(revision: WiiRemoteRevision) -> NativeControllerRealization {
     };
     spec.target = RealizationTarget::LINUX_UHID_BLUETOOTH;
     spec.bus_type = 5;
-    spec.identity.version = 0;
+    spec.identity.version = native_version(revision);
     spec.descriptor = DESCRIPTOR.to_vec();
     spec.numbered_input_reports = true;
     spec.numbered_output_reports = true;
