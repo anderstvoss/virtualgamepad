@@ -1477,13 +1477,15 @@ fn xbox_series_bluetooth_first_open_uses_edited_state() {
 
     let driver = crate::xbox_series::XboxSeriesDefinition::default();
     let (mut runtime, record) = rig(&driver, [true, true, false]);
-    record.lock().unwrap().events.push_back(RawReverseEvent::HidLifecycle(
-        gr_hid::Lifecycle::Start {
+    record
+        .lock()
+        .unwrap()
+        .events
+        .push_back(RawReverseEvent::HidLifecycle(gr_hid::Lifecycle::Start {
             numbered_input: true,
             numbered_output: true,
             numbered_feature: false,
-        },
-    ));
+        }));
     runtime.service(0).unwrap();
     runtime
         .update(|state| {
@@ -1513,8 +1515,7 @@ fn xbox_series_bluetooth_first_open_uses_edited_state() {
 
 #[test]
 fn xbox_series_uinput_neutral_frame_remains_evdev() {
-    let (mut session, record) =
-        evdev_rig(crate::xbox_series::XboxSeriesDefinition::default());
+    let (mut session, record) = evdev_rig(crate::xbox_series::XboxSeriesDefinition::default());
     session.commit().unwrap();
     let record = record.lock().unwrap();
     let Some(ProviderFrame::Evdev(events)) = record.sent.first() else {
