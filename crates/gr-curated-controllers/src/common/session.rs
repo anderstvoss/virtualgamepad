@@ -47,6 +47,16 @@ pub(crate) trait HidDriver:
         session: gr_realization_api::RealizationSessionId,
         identity: [u8; 6],
     ) -> Self::Hid;
+    /// Choose the protocol by exact realization; USB remains the default for
+    /// existing families and for DualSense's independent USB worker.
+    fn hid_protocol_for_target(
+        &self,
+        _: gr_realization_api::RealizationTarget,
+        session: gr_realization_api::RealizationSessionId,
+        identity: [u8; 6],
+    ) -> Self::Hid {
+        self.hid_protocol(session, identity)
+    }
 }
 /// Implementation interface for a controller-native worker. The application
 /// crate owns transport setup; curated controllers keep edit validation and
@@ -161,7 +171,7 @@ impl<D: HidDriver> ControllerSession<D> {
             Some(identity) => identity,
             None => driver.hid_identity()?,
         };
-        let protocol = driver.hid_protocol(request.session, identity);
+        let protocol = driver.hid_protocol_for_target(selection.target, request.session, identity);
         let id = request.session.0;
         let transport = driver.open_hid(request)?;
         let runtime =
