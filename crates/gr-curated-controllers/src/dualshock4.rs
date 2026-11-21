@@ -1111,6 +1111,7 @@ fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
 }
 fn evdev_realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
+        bus_type: 0x03,
         physical_path: None,
         device_name: "Wireless Controller".into(),
         identity: NativeDeviceIdentity {

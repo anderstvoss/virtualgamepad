@@ -24,6 +24,7 @@ const KEYS: [Button; 12] = [
 
 pub(super) fn realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
+        bus_type: 0x03,
         physical_path: None,
         // xbox-series-xpad-evdev-golden. The version is a Linux input ID sample.
         device_name: "Microsoft Xbox Series S|X Controller".into(),

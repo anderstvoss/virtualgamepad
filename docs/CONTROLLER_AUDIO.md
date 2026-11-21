@@ -137,6 +137,46 @@ not an end-to-end latency measurement. Emulated PCM preserves raw sample values;
 it does not apply HID volume/routing controls a second time or claim matching
 physical control behavior.
 
+## Cooperative Native HID sidecar association
+
+For `linux.uhid.usb`, PipeWire audio endpoints are separate session-graph
+nodes, not USB audio interfaces. An opt-in cooperating application can correlate
+them with the owning HID presentation using VirtualGamepad association metadata;
+stock SDL, Steam and WirePlumber do not perform this association. Automatic
+HID/audio device association requires the Real USB realization
+(`linux.usbip.usb-audio`) rather than PipeWire properties alone.
+
+The borrowed `controller.audio()?.sidecar_association()` accessor is available
+only for Native HID/PipeWire audio; it returns the stable-per-creation
+`AudioSidecarAssociation::key()` and exact `node_names()`. It does not return
+PipeWire numeric node IDs, which are assigned by the graph and can change.
+All host and NativeClient caller nodes carry the same key.
+
+A cooperating client enumerates its current PipeWire graph, looks up nodes
+whose `virtualgamepad.association.key` equals the accessor value, and connects
+them using the appropriate declared `media.class` (sink or source). Each
+registered node publishes:
+
+- `device.vendor.id` and `device.product.id` (hexadecimal USB HID IDs),
+  `device.product.name` (owning HID product name), and `device.serial`
+  (the **exact UHID uniq**, not a manufactured physical device serial).
+- `virtualgamepad.realization.id` (`linux.uhid.usb`) and
+  `virtualgamepad.association.key` (creation-scoped shared correlation key).
+- Existing `node.name`, `media.class`, and `node.virtual` properties.
+
+The key differs for distinct creations, including a recreation with restored
+HID identity. Graph names and property metadata neither attach a Linux sound
+card to the HID input nor grant physical USB ancestry. Do not persist the key
+or use it as a controller's long-term hardware identity.
+
+**Live host check plan — not run:** on an explicitly provisioned Linux test
+host, create two UHID controllers with PipeWire audio, enumerate current nodes
+with `pw-dump`, verify every sink/source and optional caller node has the
+expected matching key, HID uniq, VID/PID and direction; verify sibling isolation,
+close/removal and recreation with a changed key. Then test a cooperating client
+routing playback and microphone explicitly. This agent has no live host and
+reports no host, physical, SDL, Steam or WirePlumber acceptance result.
+
 ## Build and provision
 
 PipeWire builds need its development headers, SPA headers, pkg-config and libclang
