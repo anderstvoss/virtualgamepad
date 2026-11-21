@@ -83,22 +83,6 @@ impl Control {
         }
         result
     }
-    /// Establish immutable feature data before the USB worker begins servicing
-    /// host requests. The worker rejects malformed profiles atomically.
-    pub fn configure_device_data(
-        &mut self,
-        data: Option<(&[u8], &[u8])>,
-    ) -> io::Result<()> {
-        let mut payload = vec![1, u8::from(data.is_some())];
-        if let Some((calibration, firmware)) = data {
-            payload.extend_from_slice(calibration);
-            payload.extend_from_slice(firmware);
-        }
-        if self.exchange(8, &payload)? != [1] {
-            return self.invalid("worker rejected initial device-data configuration");
-        }
-        Ok(())
-    }
     fn pending_worker_failure(&self) -> Option<io::Error> {
         let (tag, body) = read_startup_frame(&self.socket, Duration::from_millis(20)).ok()?;
         worker_failure(self.generation, tag, &body)
