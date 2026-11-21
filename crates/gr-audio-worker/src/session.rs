@@ -188,32 +188,40 @@ fn initial_device_data(
     let mut ready = vec![1];
     ready.extend(generation.to_le_bytes());
     write_message(&mut socket, 0, &ready)?;
-    let (tag, body) = read_frame(control, Duration::from_secs(2))?;
-    if tag != 8 || body.len() < 10 || body[..8] != generation.to_le_bytes()
-        || body[8] != 1
-    {
-        return Err(io::Error::other("invalid initial USB device-data operation"));
+    let configured = (|| {
+        let (tag, body) = read_frame(control, Duration::from_secs(2))?;
+        if tag != 8 || body.len() < 10 || body[..8] != generation.to_le_bytes()
+            || body[8] != 1
+        {
+            return Err(io::Error::other("invalid initial USB device-data operation"));
+        }
+        let data = match (profile, body[9], &body[10..]) {
+            (gr_usbip::profile::ids::DUALSENSE, 1, bytes) if bytes.len() == 41 + 64 => {
+                let data = gr_curated_controllers::dualsense::DualSenseDeviceData::from_feature_reports(
+                    &bytes[..41], &bytes[41..],
+                )?;
+                Some(SonyData::DualSense(data))
+            }
+            (gr_usbip::profile::ids::DUALSHOCK4, 1, bytes) if bytes.len() == 37 + 49 => {
+                let data = gr_curated_controllers::dualshock4::DualShock4DeviceData::from_feature_reports(
+                    &bytes[..37], &bytes[37..],
+                )?;
+                Some(SonyData::DualShock4(data))
+            }
+            (gr_usbip::profile::ids::XBOX360, 0, []) => None,
+            _ => return Err(io::Error::other("incorrect initial USB device-data family or length")),
+        };
+        let mut response = generation.to_le_bytes().to_vec();
+        response.push(1);
+        write_message(&mut socket, 8, &response)?;
+        Ok(data)
+    })();
+    if let Err(error) = &configured {
+        let mut failure = generation.to_le_bytes().to_vec();
+        failure.extend_from_slice(error.to_string().as_bytes());
+        let _ = write_message(&mut socket, 0x81, &failure);
     }
-    let data = match (profile, body[9], &body[10..]) {
-        (gr_usbip::profile::ids::DUALSENSE, 1, bytes) if bytes.len() == 41 + 64 => {
-            let data = gr_curated_controllers::dualsense::DualSenseDeviceData::from_feature_reports(
-                &bytes[..41], &bytes[41..],
-            )?;
-            Some(SonyData::DualSense(data))
-        }
-        (gr_usbip::profile::ids::DUALSHOCK4, 1, bytes) if bytes.len() == 37 + 49 => {
-            let data = gr_curated_controllers::dualshock4::DualShock4DeviceData::from_feature_reports(
-                &bytes[..37], &bytes[37..],
-            )?;
-            Some(SonyData::DualShock4(data))
-        }
-        (gr_usbip::profile::ids::XBOX360, 0, []) => None,
-        _ => return Err(io::Error::other("incorrect initial USB device-data family or length")),
-    };
-    let mut response = generation.to_le_bytes().to_vec();
-    response.push(1);
-    write_message(&mut socket, 8, &response)?;
-    Ok(data)
+    configured
 }
 
 pub fn run(setup: Setup, channels: Channels) -> io::Result<()> {
