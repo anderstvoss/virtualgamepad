@@ -89,6 +89,15 @@ not an end-to-end latency measurement. Emulated PCM preserves raw sample values;
 it does not apply HID volume/routing controls a second time or claim matching
 physical control behavior.
 
+## Cooperative Native HID sidecar association
+
+For `linux.uhid.usb`, PipeWire audio endpoints are separate session-graph
+nodes, not USB audio interfaces. An opt-in cooperating application can correlate
+them with the owning HID presentation using VirtualGamepad association metadata;
+stock SDL, Steam and WirePlumber do not perform this association. Automatic
+HID/audio device association requires the Real USB realization
+(`linux.usbip.usb-audio`) rather than PipeWire properties alone.
+
 ## Build and provision
 
 PipeWire builds need its development headers, SPA headers, pkg-config and libclang
