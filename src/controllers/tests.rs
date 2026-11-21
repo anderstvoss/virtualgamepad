@@ -2473,8 +2473,7 @@ fn sony_root_device_data_readback_survives_close_without_hardware() {
         .internal()
         .unwrap();
     let record = Arc::new(Mutex::new(Record::default()));
-    let inner =
-        gr_curated_controllers::dualsense::test_controller(Box::new(Fake(record))).unwrap();
+    let inner = gr_curated_controllers::dualsense::test_controller(Box::new(Fake(record))).unwrap();
     let association = ControllerAssociation::single(
         ControllerId::new("virtualgamepad.dualsense"),
         options,
