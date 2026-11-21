@@ -179,3 +179,48 @@ impl crate::retained::RetainedProtocol for SwitchUsbProtocol {
         &self.retained
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn imu_samples_are_gated_only_with_opt_in_and_host_enable() {
+        let mut gated = SwitchUsbProtocol::new(super::super::tests::fixture_identity());
+        let mut ungated = gated.clone();
+        let mut inputs = SwitchProInputs::default();
+        inputs.set_motion(super::super::SwitchProMotionSample {
+            accelerometer: [400, -800, 1200],
+            gyroscope: [1, -2, 3],
+        });
+        let mut state = (inputs, SwitchProStatus::default());
+        state.1.imu_gating = true;
+
+        let before = gated.input(&state, 0).unwrap();
+        let before = before.last().unwrap().payload();
+        assert!(before[12..48].iter().all(|value| *value == 0));
+
+        state.1.imu_gating = false;
+        let unmodified = ungated.input(&state, 0).unwrap();
+        assert!(unmodified.last().unwrap().payload()[12..48].iter().any(|value| *value != 0));
+        state.1.imu_gating = true;
+
+        let mut subcmd = vec![0; 11];
+        subcmd[9] = 0x40;
+        subcmd[10] = 1;
+        let enable = Report::new(ReportType::Output, Some(1), subcmd.clone()).unwrap();
+        let (reply, observation) = gated.request(&RequestKind::Set(enable), 1);
+        assert_eq!(reply, Reply::Set(Ok(())));
+        assert!(observation.is_some());
+        assert!(gated.imu_enabled);
+        let after = gated.input(&state, 2).unwrap();
+        assert!(after.last().unwrap().payload()[12..48].iter().any(|value| *value != 0));
+
+        subcmd[10] = 0;
+        let disable = Report::new(ReportType::Output, Some(1), subcmd).unwrap();
+        assert_eq!(gated.request(&RequestKind::Set(disable), 3).0, Reply::Set(Ok(())));
+        assert!(!gated.imu_enabled);
+        let disabled = gated.input(&state, 4).unwrap();
+        assert!(disabled.last().unwrap().payload()[12..48].iter().all(|value| *value == 0));
+    }
+}
