@@ -1520,7 +1520,12 @@ fn xbox_series_uinput_neutral_frame_remains_evdev() {
     let Some(ProviderFrame::Evdev(events)) = record.sent.first() else {
         panic!("Xbox Series uinput must emit evdev");
     };
-    assert_eq!(events.last().map(|event| (event.event_type, event.code, event.value)), Some((0, 0, 0)));
+    assert_eq!(
+        events
+            .last()
+            .map(|event| (event.event_type, event.code, event.value)),
+        Some((0, 0, 0))
+    );
 }
 
 #[test]
