@@ -2806,7 +2806,6 @@ mod tests {
 
     #[test]
     fn bluetooth_surface_has_every_provider_specific_refusal() {
-        use crate::registry::ControllerFamily as _;
         let family = <SwitchProDefinition as crate::registry::ControllerFamily>::realizations();
         let bt = family.iter().find(|r| r.surface.target() == RealizationTarget::LINUX_UHID_BLUETOOTH).unwrap();
         assert_eq!(bt.tier, crate::registry::RealizationTier::PlayableFull);

@@ -203,7 +203,7 @@ mod bluetooth_tests {
     use super::*;
     use gr_hid::{Report, ReportType, Reply, RequestKind};
 
-    fn identity(index: u8) -> SwitchProIdentity {
+    fn identity(index: u32) -> SwitchProIdentity {
         SwitchProIdentity(common::test_address(index))
     }
     fn subcommand(id: u8, args: &[u8]) -> Report {
