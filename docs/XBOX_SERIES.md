@@ -10,6 +10,8 @@ contains only `target()`: the family models no battery or input clock telemetry.
 Read retained rumble separately through `host_outputs()`; neutralization preserves
 selected-target metadata and host outputs. See [ADR-0025](adr/ADR-0025-input-model.md).
 
+For Bluetooth UHID, the first input report after open reflects the current input state.
+
 | Realization | Scope |
 | --- | --- |
 | `linux.uinput` | One gamepad with the Linux xpad evdev layout. It exposes A/B/X/Y, bumpers, View/Menu/Guide/Share, stick clicks, the D-pad hat, four signed stick axes and two 10-bit triggers. Conventional force feedback carries strong and weak main-motor playback. |
