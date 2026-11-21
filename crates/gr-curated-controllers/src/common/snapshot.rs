@@ -17,6 +17,7 @@ pub(crate) struct SnapshotProtocol<S: Clone, R: OutputState = ()> {
     pub period: Option<u64>,
     initial_encode: fn(&S, u64, u8) -> Report,
     enhance_on_feature: Option<([u8; 2], fn(&S, u64, u8) -> Report)>,
+    drop_invalid_output: bool,
     sequence: u8,
     next: Option<u64>,
     active: bool,
@@ -42,6 +43,7 @@ impl<S: Clone, R: OutputState> SnapshotProtocol<S, R> {
             period,
             initial_encode: encode,
             enhance_on_feature: None,
+            drop_invalid_output: false,
             sequence: 1,
             next: Some(0),
             active: true,
@@ -58,6 +60,11 @@ impl<S: Clone, R: OutputState> SnapshotProtocol<S, R> {
         full_encode: fn(&S, u64, u8) -> Report,
     ) -> Self {
         self.enhance_on_feature = Some((ids, full_encode));
+        self
+    }
+
+    pub(crate) fn reject_invalid_host_output(mut self) -> Self {
+        self.drop_invalid_output = true;
         self
     }
 }
@@ -147,6 +154,8 @@ impl<S: Clone, R: OutputState> Protocol for SnapshotProtocol<S, R> {
             if let Some((_, full_encode)) = self.enhance_on_feature {
                 self.encode = full_encode;
             }
+        } else if self.drop_invalid_output {
+            return Ok(None);
         }
         Ok(Some(RawReverseEvent::HidOutput {
             report_id: report.id(),
