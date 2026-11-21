@@ -267,7 +267,7 @@ impl Session {
     pub fn playback_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
         self.playback_observer.as_ref().map(PcmObserver::accounting)
     }
-    /// Retained for Samples and NativeClient ownership alike.
+    /// Retained for Samples and `NativeClient` ownership alike.
     #[must_use]
     pub fn microphone_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
         self.microphone_observer
@@ -852,7 +852,15 @@ fn process(stream: &pw::stream::Stream, data: &mut Callback) {
             *chunk.stride_mut() = i32::try_from(channels * 2).unwrap_or(0);
         }
     }
-    if let Some(time) = clock_time {
+    record_callback_timing(data, clock_time.as_ref(), transferred);
+}
+
+fn record_callback_timing(
+    data: &mut Callback,
+    time: Option<&pw::stream::Time>,
+    transferred: usize,
+) {
+    if let Some(time) = time {
         let rate = time.rate();
         data.tracker.record(
             &data.clock,
@@ -1057,13 +1065,13 @@ fn prepare(
     }
     Ok(Prepared {
         specs,
+        playback_source_underruns,
+        microphone_source_underruns,
         endpoints,
         playback,
         playback_observer,
         microphone_observer,
         microphone,
-        playback_source_underruns,
-        microphone_source_underruns,
     })
 }
 
