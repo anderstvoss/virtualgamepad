@@ -7,10 +7,13 @@ use virtualgamepad::{
 #[test]
 fn sony_reports_are_validated_and_retained_without_pairing_identity() {
     let ds = DualSenseDeviceData::default();
-    let mut ds_firmware = ds.feature_report(0x20).unwrap().to_vec();
-    ds_firmware[10] = 0x5a;
-    let supplied = ds.with_feature_report(0x20, &ds_firmware).unwrap();
-    assert_eq!(supplied.feature_report(0x20), Some(ds_firmware.as_slice()));
+    let mut dualsense_firmware = ds.feature_report(0x20).unwrap().to_vec();
+    dualsense_firmware[10] = 0x5a;
+    let supplied = ds.with_feature_report(0x20, &dualsense_firmware).unwrap();
+    assert_eq!(
+        supplied.feature_report(0x20),
+        Some(dualsense_firmware.as_slice())
+    );
     assert_eq!(supplied.feature_report(0x05), ds.feature_report(0x05));
     assert!(supplied.feature_report(0x09).is_none());
 

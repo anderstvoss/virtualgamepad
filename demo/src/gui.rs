@@ -1,4 +1,5 @@
 mod audio_lab;
+mod audio_panel;
 mod audio_topology;
 mod editor;
 mod families;
@@ -273,8 +274,10 @@ fn draw_advanced_options(
     target: RealizationId,
     kind: Kind,
     audio_creation: &mut audio_lab::CreationAudio,
-    steam_options: &mut SteamController2026Options,
-    sony_data: &mut sony_device_data::Selections,
+    (steam_options, sony_data): (
+        &mut SteamController2026Options,
+        &mut sony_device_data::Selections,
+    ),
     (wii_revision, wii_imports, wii_compat): (
         &mut WiiRemoteRevision,
         &mut wii_import::Imports,
@@ -1384,6 +1387,7 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
 #[derive(Clone, Default)]
 struct ReverseIndicators {
     wii_player_leds: Option<[bool; 4]>,
+    switch_home_light: Option<virtualgamepad::SwitchProHomeLight>,
     led: Option<[u8; 3]>,
     mute_led: Option<DualSenseMuteLed>,
     player_leds: Option<u8>,
@@ -2066,8 +2070,7 @@ impl eframe::App for App {
                                     self.target,
                                     self.kind,
                                     &mut self.audio_creation,
-                                    &mut self.steam_options,
-                                    &mut self.sony_data,
+                                    (&mut self.steam_options, &mut self.sony_data),
                                     (&mut self.wii_revision, &mut self.wii_imports, &mut self.wii_compat),
                                 )
                                 .panel_rect;
@@ -2672,7 +2675,7 @@ fn draw_controller_state(
                 );
             },
             |ui| {
-                audio_action = audio_lab::draw_diagnostics(ui, audio_view);
+                audio_action = audio_lab::draw_diagnostics(ui, controller.options.target, audio_view);
             },
             |ui| {
                 let (label, help) = if controller.kind == Kind::WiiRemote {
@@ -2796,6 +2799,17 @@ fn draw_controller_output_cards(
             draw_feedback_rows(ui, indicators);
         }
     });
+    if kind == Kind::SwitchPro {
+        wide_card(ui, "HOME light (host request)", |ui| {
+            if let Some(light) = indicators.switch_home_light {
+                ui.label(format!("Brightness: {}/15", light.brightness));
+                ui.monospace(format!("Raw mini-cycle: {:?}", light.mini_cycle));
+            } else {
+                ui.weak("No HOME light command observed");
+            }
+            ui.small("Separate from the four player indicators; physical brightness unverified.");
+        });
+    }
     if kind == Kind::WiiRemote {
         wide_card(ui, "Speaker (planned)", |ui| {
             ui.add_enabled_ui(false, |ui| {
@@ -3010,6 +3024,40 @@ fn draw_feedback_indicator(ui: &mut egui::Ui, label: &str, color: Color32, toolt
 }
 
 fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable: bool) {
+    if let ControllerView::SwitchPro(editor) = view {
+        let mut battery = editor.battery();
+        card(ui, "Switch Pro battery", |ui| {
+            ui.set_min_width(BATTERY_CARD_CONTENT_WIDTH);
+            ui.add_enabled_ui(editable, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Level");
+                    egui::ComboBox::from_id_salt("switch-pro-battery-level")
+                        .selected_text(format!("{:?}", battery.level))
+                        .show_ui(ui, |ui| {
+                            for level in [
+                                virtualgamepad::SwitchProBatteryLevel::Empty,
+                                virtualgamepad::SwitchProBatteryLevel::Critical,
+                                virtualgamepad::SwitchProBatteryLevel::Low,
+                                virtualgamepad::SwitchProBatteryLevel::Medium,
+                                virtualgamepad::SwitchProBatteryLevel::Full,
+                            ] {
+                                ui.selectable_value(
+                                    &mut battery.level,
+                                    level,
+                                    format!("{level:?}"),
+                                );
+                            }
+                        });
+                });
+                ui.checkbox(&mut battery.charging, "Charging");
+                ui.checkbox(&mut battery.usb_powered, "USB powered");
+            });
+        });
+        if battery != editor.battery() {
+            let _ = editor.set_battery(battery);
+        }
+        return;
+    }
     let supported = view.supports_battery_emulation();
     let battery = view.battery();
     let mut exposed = battery.is_exposed();
@@ -4579,6 +4627,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)] // One egui frame mirrors the full sidebar layout being measured.
     fn advanced_options_use_their_own_scroll_area_and_expand_with_space() {
         for (screen_height, should_scroll_inside_advanced) in [(600.0, true), (900.0, false)] {
             let context = egui::Context::default();
@@ -4586,6 +4635,15 @@ mod tests {
             let mut sidebar_content_height = 0.0;
             let mut advanced_layout = None;
             let mut audio_creation = audio_lab::CreationAudio::default();
+            let mut family = (
+                SteamController2026Options::default(),
+                sony_device_data::Selections::default(),
+            );
+            let mut wii = (
+                WiiRemoteRevision::Original,
+                wii_import::Imports::default(),
+                WiiRemoteOptions::default(),
+            );
             let _ = context.run(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
@@ -4625,13 +4683,8 @@ mod tests {
                                                 audio_lab::default_creation_target(),
                                                 Kind::DualSense,
                                                 &mut audio_creation,
-                                                &mut SteamController2026Options::default(),
-                                                &mut sony_device_data::Selections::default(),
-                                                (
-                                                    &mut WiiRemoteRevision::Original,
-                                                    &mut wii_import::Imports::default(),
-                                                    &mut WiiRemoteOptions::default(),
-                                                ),
+                                                (&mut family.0, &mut family.1),
+                                                (&mut wii.0, &mut wii.1, &mut wii.2),
                                             ));
                                             ui.add_sized(
                                                 [SIDEBAR_WIDTH, 1.0],

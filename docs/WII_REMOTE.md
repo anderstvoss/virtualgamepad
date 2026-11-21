@@ -144,8 +144,10 @@ The final input/status contract and neutralization rules are recorded in
 ## Realization limits
 
 - Uinput follows the six `hid-wiimote` interface names and capability sets: core,
-  accelerometer, IR, Nunchuk, Classic and MotionPlus. The provider advertises
-  USB bus 3 and cannot express the kernel consumer's nonzero fuzz. Minimum,
+  accelerometer, IR, Nunchuk, Classic and MotionPlus. It advertises Bluetooth
+  bus 5 and, for the Original, version 0x8601, like the `hid-wiimote` nodes of
+  the one measured retail Original remote (#158 comment 7061259225). It cannot
+  express the kernel consumer's nonzero fuzz. Minimum,
   maximum and flat values match the extracted source table. Decoder values can
   exceed the advertised ABS bounds; they are preserved, including the missing
   IR 1023/1023 sentinel. There is no explicit evdev point-visibility/blob field.
@@ -155,6 +157,15 @@ The final input/status contract and neutralization rules are recorded in
   Generic Desktop/Game Pad collection with vendor-page fields and source-backed
   report sizes (W2 option B; retail-evidence successor #238). It is not a retail
   descriptor. Bus 5 is local kernel metadata: no radio, pairing or BlueZ.
+  The Original reports version 0x8601, measured on one retail remote. No -TR
+  value has been measured, so -TR keeps version 0.
+- SDL and Steam pick a gamepad mapping from device identity. On a real remote
+  and on Bluetooth-bus UHID, native A shows as gamepad B and native B as
+  gamepad A in Steam's tester. That is the consumers' real-remote mapping, not
+  a vg swap. When uinput advertised USB bus 3, it got a generic mapping: A and
+  B unswapped, and 1, 2, +, - and the D-pad unmapped (#158 comment
+  7061259225). Uinput now presents the real remote's identity, so the same
+  mapping is expected, but this has not yet been re-measured in Steam.
 - Classic Pro wire identity, early Plus discrimination, encrypted extension
   workflows, factory calibration/default registers, retail EEPROM size and
   visible extended/full IR blob metadata remain **No evidence**. Basic point

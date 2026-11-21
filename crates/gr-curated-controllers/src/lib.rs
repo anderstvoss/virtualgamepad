@@ -176,11 +176,12 @@ pub use dualshock4::{
     create_dualshock4,
 };
 pub use switch_pro::{
-    SwitchProAxis, SwitchProControl, SwitchProController, SwitchProIdentity, SwitchProInputs,
-    SwitchProMotionSample, SwitchProOptions, SwitchProOutputEvent, SwitchProRumble,
-    SwitchProRumbleBand, SwitchProRumbleDecoded, SwitchProRumbleSample, SwitchProRumbleSamples,
-    SwitchProRumbleWord, SwitchProStatus, SwitchProSurface, create_switch_pro,
-    decode_switch_pro_rumble_word, decode_switch_pro_rumble_word_with_previous,
+    SwitchProAxis, SwitchProBattery, SwitchProBatteryLevel, SwitchProControl, SwitchProController,
+    SwitchProHomeLight, SwitchProIdentity, SwitchProInputs, SwitchProMotionSample,
+    SwitchProOptions, SwitchProOutputEvent, SwitchProRumble, SwitchProRumbleBand,
+    SwitchProRumbleDecoded, SwitchProRumbleSample, SwitchProRumbleSamples, SwitchProRumbleWord,
+    SwitchProStatus, SwitchProSurface, create_switch_pro, decode_switch_pro_rumble_word,
+    decode_switch_pro_rumble_word_with_previous,
 };
 pub use xbox360::{
     Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360Inputs, Xbox360Options,
