@@ -3437,6 +3437,7 @@
         "struct.XboxSeriesController.html": {
           "declarations": [
             "pub struct XboxSeriesController { /* private fields */ }",
+            "pub fn identity(&self) -> XboxSeriesIdentity",
             "pub fn inputs(&self) -> &XboxSeriesInputs",
             "pub fn status(&self) -> XboxSeriesStatus",
             "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
@@ -3466,6 +3467,27 @@
             "impl Unpin for XboxSeriesController"
           ]
         },
+        "struct.XboxSeriesIdentity.html": {
+          "declarations": [
+            "pub struct XboxSeriesIdentity(/* private fields */);",
+            "pub fn generate() -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesIdentity",
+            "impl Copy for XboxSeriesIdentity",
+            "impl Debug for XboxSeriesIdentity",
+            "impl Eq for XboxSeriesIdentity",
+            "impl Hash for XboxSeriesIdentity",
+            "impl PartialEq for XboxSeriesIdentity",
+            "impl RefUnwindSafe for XboxSeriesIdentity",
+            "impl Send for XboxSeriesIdentity",
+            "impl Sync for XboxSeriesIdentity",
+            "impl Unpin for XboxSeriesIdentity",
+            "impl UnwindSafe for XboxSeriesIdentity"
+          ]
+        },
         "struct.XboxSeriesInputs.html": {
           "declarations": [
             "pub struct XboxSeriesInputs { pub sticks: [[i16; 2]; 2], /* private fields */ }",
@@ -3491,7 +3513,9 @@
         },
         "struct.XboxSeriesOptions.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesOptions {}"
+            "#[non_exhaustive]pub struct XboxSeriesOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: XboxSeriesIdentity, ) -> XboxSeriesOptions",
+            "pub const fn identity(self) -> Option<XboxSeriesIdentity>"
           ],
           "traits": [
             "impl Clone for XboxSeriesOptions",
@@ -7013,6 +7037,7 @@
         "struct.XboxSeriesController.html": {
           "declarations": [
             "pub struct XboxSeriesController { /* private fields */ }",
+            "pub fn identity(&self) -> XboxSeriesIdentity",
             "pub fn inputs(&self) -> &XboxSeriesInputs",
             "pub fn status(&self) -> XboxSeriesStatus",
             "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
@@ -7042,6 +7067,27 @@
             "impl Unpin for XboxSeriesController"
           ]
         },
+        "struct.XboxSeriesIdentity.html": {
+          "declarations": [
+            "pub struct XboxSeriesIdentity(/* private fields */);",
+            "pub fn generate() -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesIdentity",
+            "impl Copy for XboxSeriesIdentity",
+            "impl Debug for XboxSeriesIdentity",
+            "impl Eq for XboxSeriesIdentity",
+            "impl Hash for XboxSeriesIdentity",
+            "impl PartialEq for XboxSeriesIdentity",
+            "impl RefUnwindSafe for XboxSeriesIdentity",
+            "impl Send for XboxSeriesIdentity",
+            "impl Sync for XboxSeriesIdentity",
+            "impl Unpin for XboxSeriesIdentity",
+            "impl UnwindSafe for XboxSeriesIdentity"
+          ]
+        },
         "struct.XboxSeriesInputs.html": {
           "declarations": [
             "pub struct XboxSeriesInputs { pub sticks: [[i16; 2]; 2], /* private fields */ }",
@@ -7067,7 +7113,9 @@
         },
         "struct.XboxSeriesOptions.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesOptions {}"
+            "#[non_exhaustive]pub struct XboxSeriesOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: XboxSeriesIdentity, ) -> XboxSeriesOptions",
+            "pub const fn identity(self) -> Option<XboxSeriesIdentity>"
           ],
           "traits": [
             "impl Clone for XboxSeriesOptions",
