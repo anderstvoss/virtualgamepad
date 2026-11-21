@@ -8,10 +8,9 @@ use std::{
     time::{Duration, Instant},
 };
 use virtualgamepad::{
-    CreationOptions, DualSenseController, DualSenseOptions, DualShock4Controller,
-    DualShock4Options, RealizationId, SwitchProController, SwitchProOptions,
-    SwitchProOutputEvent, Xbox360Controller, Xbox360Options, create_dualsense,
-    create_dualshock4, create_switch_pro, create_xbox360,
+    CreationOptions, DualSenseController, DualSenseOptions, DualShock4Controller, DualShock4Options,
+    RealizationId, SwitchProController, SwitchProOptions, SwitchProOutputEvent, Xbox360Controller,
+    Xbox360Options, create_dualsense, create_dualshock4, create_switch_pro, create_xbox360,
 };
 
 enum Session {
@@ -26,7 +25,9 @@ impl Session {
         let options = CreationOptions::new(realization);
         Ok(match family {
             "dualsense" => Self::DualSense(create_dualsense(options, DualSenseOptions::default())?),
-            "dualshock4" => Self::DualShock4(create_dualshock4(options, DualShock4Options::default())?),
+            "dualshock4" => {
+                Self::DualShock4(create_dualshock4(options, DualShock4Options::default())?)
+            }
             "switch-pro" => Self::SwitchPro(create_switch_pro(options, SwitchProOptions::default())?),
             "xbox360" => Self::Xbox360(create_xbox360(options, Xbox360Options::default())?),
             _ => return Err("unknown Alpha 1 family".into()),
@@ -40,9 +41,11 @@ impl Session {
             Self::SwitchPro(c) => c.association(),
             Self::Xbox360(c) => c.association(),
         };
-        association.components().iter().filter_map(|part| {
-            part.requested_physical_path().map(str::to_owned)
-        }).collect()
+        association
+            .components()
+            .iter()
+            .filter_map(|part| part.requested_physical_path().map(str::to_owned))
+            .collect()
     }
 
     fn service(&mut self) -> Result<(), Box<dyn Error>> {
@@ -92,7 +95,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     let mut session = Session::open(&args[0], realization)?;
     let labels = session.association_labels();
-    if labels.is_empty() || labels.iter().any(|label| label.chars().any(|ch| matches!(ch, '\n' | '\t' | '|'))) {
+    if labels.is_empty()
+        || labels
+            .iter()
+            .any(|label| label.chars().any(|ch| matches!(ch, '\n' | '\t' | '|')))
+    {
         session.close();
         return Err("controller association is unavailable".into());
     }
