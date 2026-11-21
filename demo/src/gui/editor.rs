@@ -889,7 +889,9 @@ impl SwitchProEditor {
             let Controller::SwitchPro(controller) = controller else {
                 return Err("edit family mismatch".into());
             };
-            controller.set_battery(battery).map_err(|error| error.to_string())
+            controller
+                .set_battery(battery)
+                .map_err(|error| error.to_string())
         }))
     }
     pub(super) fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), String> {

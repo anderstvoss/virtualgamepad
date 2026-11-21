@@ -2960,7 +2960,11 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
                                 virtualgamepad::SwitchProBatteryLevel::Medium,
                                 virtualgamepad::SwitchProBatteryLevel::Full,
                             ] {
-                                ui.selectable_value(&mut battery.level, level, format!("{level:?}"));
+                                ui.selectable_value(
+                                    &mut battery.level,
+                                    level,
+                                    format!("{level:?}"),
+                                );
                             }
                         });
                 });

@@ -9,12 +9,12 @@ use crate::{
     DualShock4Inputs, DualShock4MotionSample, DualShock4OutputEvent, DualShock4Surface,
     DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
     ServiceReadiness, SteamController2026Button, SteamController2026Inputs,
-    SteamController2026OutputEvent, SteamController2026Outputs, SwitchProAxis, SwitchProControl,
-    SwitchProBattery, SwitchProInputs, SwitchProMotionSample, SwitchProOutputEvent, SwitchProSurface, TouchSlot,
-    WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton, WiiRemoteInputs,
-    WiiRemoteOutputEvent, WiiRemoteOutputs, WiiResourceDisposition, Xbox360Axis, Xbox360Control,
-    Xbox360Inputs, Xbox360OutputEvent, Xbox360Surface, Xbox360Trigger, XboxSeriesButton,
-    XboxSeriesInputs, XboxSeriesOutputEvent, XboxSeriesOutputState,
+    SteamController2026OutputEvent, SteamController2026Outputs, SwitchProAxis, SwitchProBattery,
+    SwitchProControl, SwitchProInputs, SwitchProMotionSample, SwitchProOutputEvent,
+    SwitchProSurface, TouchSlot, WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton,
+    WiiRemoteInputs, WiiRemoteOutputEvent, WiiRemoteOutputs, WiiResourceDisposition, Xbox360Axis,
+    Xbox360Control, Xbox360Inputs, Xbox360OutputEvent, Xbox360Surface, Xbox360Trigger,
+    XboxSeriesButton, XboxSeriesInputs, XboxSeriesOutputEvent, XboxSeriesOutputState,
 };
 // The family adapter owns only static dispatch; protocol semantics stay curated.
 trait Family {

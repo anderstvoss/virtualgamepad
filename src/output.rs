@@ -3,7 +3,8 @@ mod rumble;
 pub use rumble::{DualShock4Rumble, WiiRemoteRumble, Xbox360Rumble, XboxSeriesRumble};
 
 use crate::{
-    ControllerError, DualSenseHidOutput, DualShock4HidOutput, ForceFeedbackEvent, SwitchProHomeLight, SwitchProRumble,
+    ControllerError, DualSenseHidOutput, DualShock4HidOutput, ForceFeedbackEvent,
+    SwitchProHomeLight, SwitchProRumble,
 };
 
 /// Host lifecycle observation, not controller destruction or automatic reopening.
@@ -257,7 +258,10 @@ mod tests {
             mini_cycle: [1, 0x70, 0x77, 0x11, 0x11],
         };
         assert_eq!(
-            switch_pro(gr_curated_controllers::SwitchProOutputEvent::HomeLight(home)).unwrap(),
+            switch_pro(gr_curated_controllers::SwitchProOutputEvent::HomeLight(
+                home
+            ))
+            .unwrap(),
             Some(SwitchProOutputEvent::HomeLight(home))
         );
     }

@@ -8,6 +8,18 @@ use gr_hid::{
 };
 use std::collections::VecDeque;
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum ImuActivation {
+    #[default]
+    Disabled,
+    Enabled,
+}
+impl ImuActivation {
+    const fn is_enabled(self) -> bool {
+        matches!(self, Self::Enabled)
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct SwitchUsbProtocol {
     identity: SwitchProIdentity,
@@ -15,7 +27,7 @@ pub(crate) struct SwitchUsbProtocol {
     state: (SwitchProInputs, SwitchProStatus),
     pub(crate) timer: u8,
     pub(crate) stream_enabled: bool,
-    pub(crate) imu_enabled: bool,
+    imu_activation: ImuActivation,
     pending: VecDeque<Report>,
     next: Option<u64>,
     active: bool,
@@ -29,12 +41,15 @@ impl SwitchUsbProtocol {
             retained: crate::retained::SwitchProOutputState::default(),
             timer: 0,
             stream_enabled: false,
-            imu_enabled: false,
+            imu_activation: ImuActivation::Disabled,
             pending: VecDeque::new(),
             next: Some(0),
             active: true,
             valid: true,
         }
+    }
+    pub(super) const fn imu_enabled(&self) -> bool {
+        self.imu_activation.is_enabled()
     }
     fn process(&mut self, report: &Report, now: u64) -> Result<(), ReplyError> {
         let mut next = self.clone();
@@ -68,7 +83,10 @@ impl SwitchUsbProtocol {
                 self.stream_enabled |= enable;
                 if bytes[9] == 0x40 {
                     if let Some(value) = bytes.get(10) {
-                        self.imu_enabled = *value != 0;
+                        self.imu_activation = match *value {
+                            0 => ImuActivation::Disabled,
+                            _ => ImuActivation::Enabled,
+                        };
                     }
                 }
                 self.pending.push_back(common::logical_input(reply));
@@ -106,7 +124,7 @@ impl Protocol for SwitchUsbProtocol {
         self.state = state.clone();
         self.state.1.timer = self.timer;
         self.state.1.stream_enabled = self.stream_enabled;
-        self.state.1.imu_enabled = self.imu_enabled;
+        self.state.1.imu_enabled = self.imu_activation.is_enabled();
         let mut reports: Vec<_> = self.pending.drain(..).collect();
         reports.push(common::logical_input(switch_frame(&self.state)));
         self.timer = self.timer.wrapping_add(1);
@@ -141,7 +159,7 @@ impl Protocol for SwitchUsbProtocol {
             } => {
                 self.valid = numbered_input && numbered_output && !numbered_feature;
                 self.active = true;
-                self.imu_enabled = false;
+                self.imu_activation = ImuActivation::Disabled;
                 self.next = Some(now);
             }
             Lifecycle::Stop => {
@@ -202,7 +220,11 @@ mod tests {
 
         state.1.imu_gating = false;
         let unmodified = ungated.input(&state, 0).unwrap();
-        assert!(unmodified.last().unwrap().payload()[12..48].iter().any(|value| *value != 0));
+        assert!(
+            unmodified.last().unwrap().payload()[12..48]
+                .iter()
+                .any(|value| *value != 0)
+        );
         state.1.imu_gating = true;
 
         let mut subcmd = vec![0; 11];
@@ -212,15 +234,26 @@ mod tests {
         let (reply, observation) = gated.request(&RequestKind::Set(enable), 1);
         assert_eq!(reply, Reply::Set(Ok(())));
         assert!(observation.is_some());
-        assert!(gated.imu_enabled);
+        assert!(gated.imu_enabled());
         let after = gated.input(&state, 2).unwrap();
-        assert!(after.last().unwrap().payload()[12..48].iter().any(|value| *value != 0));
+        assert!(
+            after.last().unwrap().payload()[12..48]
+                .iter()
+                .any(|value| *value != 0)
+        );
 
         subcmd[10] = 0;
         let disable = Report::new(ReportType::Output, Some(1), subcmd).unwrap();
-        assert_eq!(gated.request(&RequestKind::Set(disable), 3).0, Reply::Set(Ok(())));
-        assert!(!gated.imu_enabled);
+        assert_eq!(
+            gated.request(&RequestKind::Set(disable), 3).0,
+            Reply::Set(Ok(()))
+        );
+        assert!(!gated.imu_enabled());
         let disabled = gated.input(&state, 4).unwrap();
-        assert!(disabled.last().unwrap().payload()[12..48].iter().all(|value| *value == 0));
+        assert!(
+            disabled.last().unwrap().payload()[12..48]
+                .iter()
+                .all(|value| *value == 0)
+        );
     }
 }

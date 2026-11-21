@@ -1050,7 +1050,10 @@ impl SwitchProController {
     pub fn status(&self) -> SwitchProStatus {
         SwitchProStatus {
             stream_enabled: self.stream_enabled(),
-            imu_enabled: self.0.optional_protocol().map_or(self.0.state().1.imu_enabled, |p| p.imu_enabled),
+            imu_enabled: self
+                .0
+                .optional_protocol()
+                .map_or(self.0.state().1.imu_enabled, |p| p.imu_enabled()),
             ..self.0.state().1
         }
     }
@@ -1965,11 +1968,15 @@ fn create_switch_pro_configured(
     } else {
         common::create(SwitchProDefinition, realization, o)?
     };
-    controller.update_state(|state| {
-        state.1.battery = family.battery();
-        state.1.imu_gating = family.imu_gating();
-        Ok(())
-    }).map_err(|error| ProviderError::Open { reason: error.to_string() })?;
+    controller
+        .update_state(|state| {
+            state.1.battery = family.battery();
+            state.1.imu_gating = family.imu_gating();
+            Ok(())
+        })
+        .map_err(|error| ProviderError::Open {
+            reason: error.to_string(),
+        })?;
     if is_dummy_hcd {
         // A physical USB attachment should expose a neutral 0x30 report as
         // soon as it appears; host-side controller-info traffic then has a
@@ -2552,15 +2559,23 @@ mod tests {
         ] {
             for charging in [false, true] {
                 for usb_powered in [false, true] {
-                    let battery = SwitchProBattery { level, charging, usb_powered };
+                    let battery = SwitchProBattery {
+                        level,
+                        charging,
+                        usb_powered,
+                    };
                     state.1.battery = battery;
                     let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
                         unreachable!()
                     };
                     let expected = prefix | (u8::from(charging) << 4) | u8::from(usb_powered);
                     assert_eq!(bytes[1], expected);
-                    let (reply, enabled) =
-                        switch_subcommand_reply(&state, 0x38, &[1, 0x50, 0x55, 0x11, 0x11], fixture_identity());
+                    let (reply, enabled) = switch_subcommand_reply(
+                        &state,
+                        0x38,
+                        &[1, 0x50, 0x55, 0x11, 0x11],
+                        fixture_identity(),
+                    );
                     assert!(!enabled);
                     let ProviderFrame::HidInput { bytes, .. } = reply else {
                         unreachable!()
@@ -2614,14 +2629,19 @@ mod tests {
     fn home_light_keeps_generic_ack_and_typed_minicycle_separate_from_players() {
         let state = <(SwitchProInputs, SwitchProStatus)>::default();
         let payload = [0x01, 0xb0, 0xbb, 0x11, 0x11];
-        let (reply, enabled) =
-            switch_subcommand_reply(&state, 0x38, &payload, fixture_identity());
+        let (reply, enabled) = switch_subcommand_reply(&state, 0x38, &payload, fixture_identity());
         assert!(!enabled);
         let mut expected = vec![0; 63];
         expected[..12].copy_from_slice(&switch_input_prefix(&state));
         expected[12] = 0x80;
         expected[13] = 0x38;
-        assert_eq!(reply, ProviderFrame::HidInput { report_id: Some(0x21), bytes: expected });
+        assert_eq!(
+            reply,
+            ProviderFrame::HidInput {
+                report_id: Some(0x21),
+                bytes: expected
+            }
+        );
         let mut raw = vec![0; 63];
         raw[9] = 0x38;
         raw[10..15].copy_from_slice(&payload);
@@ -2644,7 +2664,10 @@ mod tests {
             }),
             SwitchProOutputEvent::Output { .. }
         ));
-        assert_eq!(NATIVE_OUTPUT_KINDS[1], OutputKind::PlayerIndicator { count: 4 });
+        assert_eq!(
+            NATIVE_OUTPUT_KINDS[1],
+            OutputKind::PlayerIndicator { count: 4 }
+        );
     }
 
     #[test]
@@ -2656,14 +2679,17 @@ mod tests {
             [true, true, false],
         );
         let mut controller = SwitchProController(session, fixture_identity());
-        controller.0.update_state(|state| {
-            state.1.imu_gating = true;
-            state.0.motion = SwitchProMotionSample {
-                accelerometer: [400, -800, 1200],
-                gyroscope: [1, -2, 3],
-            };
-            Ok(())
-        }).unwrap();
+        controller
+            .0
+            .update_state(|state| {
+                state.1.imu_gating = true;
+                state.0.motion = SwitchProMotionSample {
+                    accelerometer: [400, -800, 1200],
+                    gyroscope: [1, -2, 3],
+                };
+                Ok(())
+            })
+            .unwrap();
         let ProviderFrame::HidInput { bytes, .. } = switch_frame(controller.test_state()) else {
             unreachable!()
         };
@@ -2671,10 +2697,13 @@ mod tests {
         let mut enable = vec![0; 63];
         enable[9] = 0x40;
         enable[10] = 1;
-        io.lock().unwrap().events.push_back(RawReverseEvent::HidOutput {
-            report_id: Some(1),
-            bytes: enable,
-        });
+        io.lock()
+            .unwrap()
+            .events
+            .push_back(RawReverseEvent::HidOutput {
+                report_id: Some(1),
+                bytes: enable,
+            });
         controller.service(&mut |_| {}).unwrap();
         assert!(controller.status().imu_enabled());
         assert!(controller.status().imu_gating());
