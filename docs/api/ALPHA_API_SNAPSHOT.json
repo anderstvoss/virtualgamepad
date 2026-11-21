@@ -1182,6 +1182,24 @@
             "impl UnwindSafe for AudioRead"
           ]
         },
+        "struct.AudioSidecarAssociation.html": {
+          "declarations": [
+            "pub struct AudioSidecarAssociation { /* private fields */ }",
+            "pub fn key(&self) -> &str",
+            "pub fn node_names(&self) -> &[String]"
+          ],
+          "traits": [
+            "impl Clone for AudioSidecarAssociation",
+            "impl Debug for AudioSidecarAssociation",
+            "impl Eq for AudioSidecarAssociation",
+            "impl PartialEq for AudioSidecarAssociation",
+            "impl RefUnwindSafe for AudioSidecarAssociation",
+            "impl Send for AudioSidecarAssociation",
+            "impl Sync for AudioSidecarAssociation",
+            "impl Unpin for AudioSidecarAssociation",
+            "impl UnwindSafe for AudioSidecarAssociation"
+          ]
+        },
         "struct.AuxiliaryButtonInput.html": {
           "declarations": [
             "pub struct AuxiliaryButtonInput { pub id: InputControlId, pub label: &'static str, }"
@@ -1308,6 +1326,7 @@
             "pub struct ControllerAudio { /* private fields */ }",
             "pub fn diagnostics(&self) -> AudioDiagnostics",
             "pub fn endpoints(&self) -> &[AudioEndpoint]",
+            "pub fn sidecar_association(&self) -> Option<&AudioSidecarAssociation>",
             "pub const fn onboard_speaker_source(&self) -> Option<AudioChannel>",
             "pub const fn limitation(&self) -> &'static str",
             "pub fn read_playback( &mut self, dest: &mut [i16], ) -> Result<AudioRead, AudioError>",
@@ -2915,7 +2934,7 @@
             "pub fn import(bytes: Vec<u8>) -> Result<WiiEepromImage, ControlError>",
             "pub fn with_extension_calibration( self, calibration: WiiExtensionCalibration, ) -> WiiEepromImage",
             "pub fn extension_calibration(&self) -> &WiiExtensionCalibration",
-            "pub fn bytes(&self) -> &[u8] \u24d8"
+            "pub fn bytes(&self) -> &[u8] ⓘ"
           ],
           "traits": [
             "impl Clone for WiiEepromImage",
@@ -4741,6 +4760,24 @@
             "impl UnwindSafe for AudioRead"
           ]
         },
+        "struct.AudioSidecarAssociation.html": {
+          "declarations": [
+            "pub struct AudioSidecarAssociation { /* private fields */ }",
+            "pub fn key(&self) -> &str",
+            "pub fn node_names(&self) -> &[String]"
+          ],
+          "traits": [
+            "impl Clone for AudioSidecarAssociation",
+            "impl Debug for AudioSidecarAssociation",
+            "impl Eq for AudioSidecarAssociation",
+            "impl PartialEq for AudioSidecarAssociation",
+            "impl RefUnwindSafe for AudioSidecarAssociation",
+            "impl Send for AudioSidecarAssociation",
+            "impl Sync for AudioSidecarAssociation",
+            "impl Unpin for AudioSidecarAssociation",
+            "impl UnwindSafe for AudioSidecarAssociation"
+          ]
+        },
         "struct.AuxiliaryButtonInput.html": {
           "declarations": [
             "pub struct AuxiliaryButtonInput { pub id: InputControlId, pub label: &'static str, }"
@@ -4867,6 +4904,7 @@
             "pub struct ControllerAudio { /* private fields */ }",
             "pub fn diagnostics(&self) -> AudioDiagnostics",
             "pub fn endpoints(&self) -> &[AudioEndpoint]",
+            "pub fn sidecar_association(&self) -> Option<&AudioSidecarAssociation>",
             "pub const fn onboard_speaker_source(&self) -> Option<AudioChannel>",
             "pub const fn limitation(&self) -> &'static str",
             "pub fn read_playback( &mut self, dest: &mut [i16], ) -> Result<AudioRead, AudioError>",
@@ -6474,7 +6512,7 @@
             "pub fn import(bytes: Vec<u8>) -> Result<WiiEepromImage, ControlError>",
             "pub fn with_extension_calibration( self, calibration: WiiExtensionCalibration, ) -> WiiEepromImage",
             "pub fn extension_calibration(&self) -> &WiiExtensionCalibration",
-            "pub fn bytes(&self) -> &[u8] \u24d8"
+            "pub fn bytes(&self) -> &[u8] ⓘ"
           ],
           "traits": [
             "impl Clone for WiiEepromImage",

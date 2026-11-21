@@ -928,3 +928,22 @@ optional raw observations as an authoritative stream. Wii supporting snapshot:
 
 Existing events, raw payloads, FF effect types and retained snapshots are unchanged.
 These additive ordinary-root declarations do not change protocol admission or qualify physical output.
+
+
+## Audio Round 2 — cooperative Native HID PipeWire sidecar association
+
+- Added `AudioSidecarAssociation` and `ControllerAudio::sidecar_association()
+  -> Option<&AudioSidecarAssociation>`. The borrowed value exposes a stable
+  creation-scoped `key() -> &str` and `node_names() -> &[String]`; it is
+  `None` for Real USB audio, disabled audio and non-sidecar backends.
+- New PipeWire sidecar nodes publish `device.vendor.id`, `device.product.id`,
+  `device.product.name`, `device.serial` (exact pre-existing UHID uniq),
+  `virtualgamepad.realization.id` and `virtualgamepad.association.key`.
+  These are cooperative lookup metadata, not a stock SDL/Steam/WirePlumber
+  association, kernel USB ancestry, or host-validated routing.
+- UHID creation now precedes its companion PipeWire stream opening so the
+  sidecar receives the **actual** curated UHID uniq, including restored IDs.
+  Any audio-open error closes the already-created HID controller; no fallback
+  or persistent orphan audio is allowed. Real USB broker/IPC formats unchanged.
+- Unit tests construct properties/accessors without PipeWire; host verification
+  is planned in `docs/CONTROLLER_AUDIO.md` and **not run**.
