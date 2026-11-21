@@ -2460,3 +2460,64 @@ fn xbox_series_converged_constructors_reject_unavailable_targets_and_audio() {
 }
 
 mod input_snapshots;
+
+#[test]
+fn sony_root_device_data_readback_survives_close_without_hardware() {
+    let selected_dualsense = {
+        let base = DualSenseDeviceData::default();
+        let mut firmware = base.feature_report(0x20).unwrap().to_vec();
+        firmware[3] = 0x2a;
+        base.with_feature_report(0x20, &firmware).unwrap()
+    };
+    let options = CreationOptions::new(RealizationId::LINUX_UINPUT)
+        .internal()
+        .unwrap();
+    let record = Arc::new(Mutex::new(Record::default()));
+    let inner =
+        gr_curated_controllers::dualsense::test_controller(Box::new(Fake(record))).unwrap();
+    let association = ControllerAssociation::single(
+        ControllerId::new("virtualgamepad.dualsense"),
+        options,
+        inner.association(),
+        inner.surface().common(),
+    );
+    let mut dualsense = DualSenseController::from_parts(
+        association,
+        inner,
+        None,
+        selected_dualsense,
+        None,
+    );
+    assert_eq!(dualsense.device_data(), &selected_dualsense);
+    dualsense.close();
+    assert_eq!(dualsense.device_data(), &selected_dualsense);
+
+    let selected_dualshock4 = {
+        let base = DualShock4DeviceData::default();
+        let mut firmware = base.feature_report(0xa3).unwrap().to_vec();
+        firmware[3] = 0x2a;
+        base.with_feature_report(0xa3, &firmware).unwrap()
+    };
+    let options = CreationOptions::new(RealizationId::LINUX_UINPUT)
+        .internal()
+        .unwrap();
+    let record = Arc::new(Mutex::new(Record::default()));
+    let inner =
+        gr_curated_controllers::dualshock4::test_controller(Box::new(Fake(record))).unwrap();
+    let association = ControllerAssociation::single(
+        ControllerId::new("virtualgamepad.dualshock4"),
+        options,
+        inner.association(),
+        inner.surface().common(),
+    );
+    let mut dualshock4 = DualShock4Controller::from_parts(
+        association,
+        inner,
+        None,
+        selected_dualshock4,
+        None,
+    );
+    assert_eq!(dualshock4.device_data(), &selected_dualshock4);
+    dualshock4.close();
+    assert_eq!(dualshock4.device_data(), &selected_dualshock4);
+}
