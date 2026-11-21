@@ -752,6 +752,7 @@ pub(super) struct Activity {
     pub discontinuities: u64,
     pub first_playback_frame: Option<u64>,
     pub peak: u16,
+    pub microphone_peak: u16,
     pub tone: bool,
     pub routing: RoutingState,
     pub playback_devices: Vec<HostDevice>,
@@ -780,6 +781,7 @@ impl Activity {
             discontinuities: 0,
             first_playback_frame: None,
             peak: 0,
+            microphone_peak: 0,
             tone: false,
             routing: RoutingState::for_topology(
                 AudioTopology::for_family(ControllerFamily::SwitchPro),
@@ -801,6 +803,7 @@ impl Activity {
             discontinuities: 0,
             first_playback_frame: None,
             peak: 0,
+            microphone_peak: 0,
             tone: false,
             routing: RoutingState::for_topology(AudioTopology::for_family(family), backend),
             playback_devices: host_devices(backend).to_vec(),
@@ -881,6 +884,9 @@ impl Activity {
         playback: Option<&PcmFormat>,
         microphone: Option<&PcmFormat>,
     ) -> Result<(), AudioError> {
+        // Values are the most recent serviced batch, never stale maxima.
+        self.peak = 0;
+        self.microphone_peak = 0;
         if let Some(format) = playback {
             let channels = format.channels().len();
             let mut buffer = vec![0; FRAMES * channels];
@@ -1002,8 +1008,14 @@ impl Activity {
             }
             if !self.pending.is_empty() {
                 let frames = io.write(&self.pending[self.accepted_samples..])?;
+                let accepted_end = self.accepted_samples + frames * channels;
+                self.microphone_peak = self.pending[self.accepted_samples..accepted_end]
+                    .iter()
+                    .map(|sample| sample.unsigned_abs())
+                    .max()
+                    .unwrap_or(0);
                 self.microphone_frames = self.microphone_frames.saturating_add(frames as u64);
-                self.accepted_samples += frames * channels;
+                self.accepted_samples = accepted_end;
                 if self.accepted_samples == self.pending.len() {
                     self.pending.clear();
                     self.accepted_samples = 0;
@@ -1146,7 +1158,11 @@ fn selector_text(selector: &virtualgamepad::AudioEndpointSelector) -> String {
     }
 }
 
-pub(super) fn draw_diagnostics(ui: &mut egui::Ui, view: Option<&View>) -> Option<Action> {
+pub(super) fn draw_diagnostics(
+    ui: &mut egui::Ui,
+    target: RealizationId,
+    view: Option<&View>,
+) -> Option<Action> {
     let mut action = None;
     draw_audio_info_header(ui, view);
     let Some(view) = view else {
@@ -1161,6 +1177,9 @@ pub(super) fn draw_diagnostics(ui: &mut egui::Ui, view: Option<&View>) -> Option
         action = Some(Action::RetryDiscovery);
     }
 
+    super::audio_panel::draw_overview(ui, target, view);
+    ui.separator();
+    ui.strong("Retained loss and continuity");
     let status = if view.health.failed() {
         "Failed"
     } else if view.health.is_closed() {
@@ -1172,14 +1191,13 @@ pub(super) fn draw_diagnostics(ui: &mut egui::Ui, view: Option<&View>) -> Option
         ui,
         &[
             ("Status", status.to_owned()),
-            ("Underrun frames", view.health.underrun_frames().to_string()),
+            ("Playback underrun frames", view.health.underrun_frames().to_string()),
             (
-                "Dropped playback",
+                "Dropped playback frames",
                 view.health.dropped_playback_frames().to_string(),
             ),
             ("Playback frames", view.activity.playback_frames.to_string()),
-            ("Discontinuities", view.activity.discontinuities.to_string()),
-            ("Playback peak", view.activity.peak.to_string()),
+            ("Playback read discontinuities", view.activity.discontinuities.to_string()),
             (
                 "Latest segment",
                 view.activity
@@ -1187,11 +1205,15 @@ pub(super) fn draw_diagnostics(ui: &mut egui::Ui, view: Option<&View>) -> Option
                     .map_or_else(|| "—".to_owned(), |frame| frame.to_string()),
             ),
             (
-                "Microphone test",
-                format!("{} accepted frames", view.activity.microphone_frames),
+                "Microphone accepted",
+                format!("{} frames", view.activity.microphone_frames),
             ),
         ],
     );
+    // ar1 (#425) is unmerged: do not manufacture microphone or per-direction
+    // drop counts from playback-only diagnostics. Integrate its typed fields
+    // here after the telemetry API reaches main.
+    ui.weak("Per-direction loss accounting: pending audio telemetry PR #425 (not yet available).");
     ui.horizontal(|ui| {
         if let Some(error) = &view.routing_error {
             ui.colored_label(egui::Color32::YELLOW, "Host routing: error")
@@ -1226,7 +1248,7 @@ fn draw_audio_info_header(ui: &mut egui::Ui, view: Option<&View>) {
                 if let Some(view) = view {
                     ui.label(view.limitation);
                 }
-                ui.label("Playback samples are monitored here. The meters and device selectors in Output and Input belong to this controller's physical audio endpoints.");
+                ui.label("Peaks use the most recent demo-owned PCM batch in each direction. Native-client-owned audio cannot be sampled by this demo; these meters do not measure physical levels.");
                 ui.label("Endpoint selectors belong to this open creation; resolve them again after recreating the controller.");
         });
     });
@@ -2041,7 +2063,11 @@ while True:
                 ..AudioRouter::default()
             };
             let fake_router = FakeRouter::default();
-            let mut io = Fake::default();
+            let mut io = Fake {
+                accepted: FRAMES,
+                write_channels: 1,
+                ..Fake::default()
+            };
             for level in [5_i16, 20, 100, 0] {
                 assert_eq!(router.configure(&activity.routing, true, true), sentinel);
                 fake_router
@@ -2053,6 +2079,7 @@ while True:
                     .unwrap();
                 assert_eq!(activity.routing.outputs[0].peak, [7]);
                 assert_eq!(activity.routing.inputs[0].peak, [level.unsigned_abs()]);
+                assert_eq!(activity.microphone_peak, level.unsigned_abs());
                 assert_eq!(router.configure(&activity.routing, true, true), sentinel);
                 assert_eq!(router.config, Some(config.clone()));
             }
@@ -2885,6 +2912,7 @@ while True:
         assert_eq!(fake.writes[0].len(), FRAMES);
         assert_eq!(fake.writes[1], fake.writes[0][13..]);
         assert_eq!(activity.microphone_frames, 26);
+        assert_eq!(activity.microphone_peak, 1024);
         activity.apply(&mut fake, Action::FlushPlayback).unwrap();
         assert_eq!(activity.pending.len(), FRAMES);
         activity.apply(&mut fake, Action::Tone(false)).unwrap();
@@ -2892,6 +2920,7 @@ while True:
             .tick_without_routes(&mut fake, None, Some(&format))
             .unwrap();
         assert_eq!(fake.writes.len(), 2);
+        assert_eq!(activity.microphone_peak, 0);
         assert_eq!(
             fake.flushes,
             [
@@ -2956,6 +2985,7 @@ while True:
                 .is_err()
         );
         assert_eq!(activity.microphone_frames, 0);
+        assert_eq!(activity.microphone_peak, 0);
         assert_eq!(activity.pending.len(), FRAMES);
     }
     #[test]
