@@ -1566,6 +1566,12 @@ pub fn create_dualshock4(
     options: CreationOptions,
     family: DualShock4Options,
 ) -> Result<DualShock4Controller, ProviderError> {
+    if matches!(
+        options.target,
+        RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+    ) {
+        common::require_linux_platform(options.target)?;
+    }
     let identity = match (options.target, family.identity()) {
         (RealizationTarget::LINUX_UHID_BLUETOOTH, None) => {
             Some(DualShock4Identity::generate()?)
@@ -1587,12 +1593,6 @@ pub fn create_dualshock4(
             });
         }
     };
-    if matches!(
-        options.target,
-        RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
-    ) {
-        common::require_linux_platform(options.target)?;
-    }
     if let (Some(identity), NativeControllerRealization::Uhid(spec)) = (identity, &mut realization)
     {
         spec.unique_id = if options.target == RealizationTarget::LINUX_UHID_BLUETOOTH {
