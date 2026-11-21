@@ -2585,6 +2585,36 @@ mod tests {
     }
 
     #[test]
+    fn live_battery_edits_update_hid_and_preserve_native_inputs() {
+        use common::session_tests::snapshot_session;
+        let (session, _) = snapshot_session(
+            SwitchProDefinition,
+            RealizationTarget::LINUX_UHID_USB,
+            [true, true, false],
+        );
+        let mut controller = SwitchProController(session, fixture_identity());
+        let before = controller.inputs().clone();
+        assert_eq!(controller.battery(), SwitchProBattery::default());
+        let selected = SwitchProBattery {
+            level: SwitchProBatteryLevel::Low,
+            charging: true,
+            usb_powered: true,
+        };
+        controller.set_battery(selected).unwrap();
+        assert_eq!(controller.battery(), selected);
+        assert_eq!(controller.status().battery(), selected);
+        assert_eq!(controller.inputs(), &before);
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(controller.test_state()) else {
+            unreachable!()
+        };
+        assert_eq!(bytes[1], 0x51);
+        controller.commit().unwrap();
+        controller.close();
+        assert_eq!(controller.set_battery(selected), Err(ControlError::Closed));
+        assert_eq!(controller.battery(), selected);
+    }
+
+    #[test]
     fn home_light_keeps_generic_ack_and_typed_minicycle_separate_from_players() {
         let state = <(SwitchProInputs, SwitchProStatus)>::default();
         let payload = [0x01, 0xb0, 0xbb, 0x11, 0x11];
