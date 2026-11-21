@@ -2530,6 +2530,125 @@ mod tests {
     }
 
     #[test]
+    fn battery_status_encodes_native_level_charging_and_pro_power() {
+        let mut state = <(SwitchProInputs, SwitchProStatus)>::default();
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
+            unreachable!()
+        };
+        assert_eq!(bytes[1], 0x80, "legacy default byte is unchanged");
+        assert_eq!(state.1.battery(), SwitchProBattery::default());
+        for (level, prefix) in [
+            (SwitchProBatteryLevel::Empty, 0x00),
+            (SwitchProBatteryLevel::Critical, 0x20),
+            (SwitchProBatteryLevel::Low, 0x40),
+            (SwitchProBatteryLevel::Medium, 0x60),
+            (SwitchProBatteryLevel::Full, 0x80),
+        ] {
+            for charging in [false, true] {
+                for usb_powered in [false, true] {
+                    let battery = SwitchProBattery { level, charging, usb_powered };
+                    state.1.battery = battery;
+                    let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
+                        unreachable!()
+                    };
+                    let expected = prefix | (u8::from(charging) << 4) | u8::from(usb_powered);
+                    assert_eq!(bytes[1], expected);
+                    let (reply, enabled) =
+                        switch_subcommand_reply(&state, 0x38, &[1, 0x50, 0x55, 0x11, 0x11], fixture_identity());
+                    assert!(!enabled);
+                    let ProviderFrame::HidInput { bytes, .. } = reply else {
+                        unreachable!()
+                    };
+                    assert_eq!(bytes[1], expected, "0x21 prefix uses current battery");
+                }
+            }
+        }
+        let selected = SwitchProBattery {
+            level: SwitchProBatteryLevel::Critical,
+            charging: true,
+            usb_powered: true,
+        };
+        let options = SwitchProOptions::default().with_battery(selected);
+        assert_eq!(options.battery(), selected);
+        assert!(!options.imu_gating());
+        assert!(options.with_imu_gating(true).imu_gating());
+    }
+
+    #[test]
+    fn home_light_keeps_generic_ack_and_typed_minicycle_separate_from_players() {
+        let state = <(SwitchProInputs, SwitchProStatus)>::default();
+        let payload = [0x01, 0xb0, 0xbb, 0x11, 0x11];
+        let (reply, enabled) =
+            switch_subcommand_reply(&state, 0x38, &payload, fixture_identity());
+        assert!(!enabled);
+        let mut expected = vec![0; 63];
+        expected[..12].copy_from_slice(&switch_input_prefix(&state));
+        expected[12] = 0x80;
+        expected[13] = 0x38;
+        assert_eq!(reply, ProviderFrame::HidInput { report_id: Some(0x21), bytes: expected });
+        let mut raw = vec![0; 63];
+        raw[9] = 0x38;
+        raw[10..15].copy_from_slice(&payload);
+        assert_eq!(
+            SwitchProOutputEvent::from(RawReverseEvent::HidOutput {
+                report_id: Some(1),
+                bytes: raw,
+            }),
+            SwitchProOutputEvent::HomeLight(SwitchProHomeLight {
+                brightness: 11,
+                mini_cycle: payload,
+            })
+        );
+        let mut truncated = vec![0; 14];
+        truncated[9] = 0x38;
+        assert!(matches!(
+            SwitchProOutputEvent::from(RawReverseEvent::HidOutput {
+                report_id: Some(1),
+                bytes: truncated,
+            }),
+            SwitchProOutputEvent::Output { .. }
+        ));
+        assert_eq!(NATIVE_OUTPUT_KINDS[1], OutputKind::PlayerIndicator { count: 4 });
+    }
+
+    #[test]
+    fn native_service_retains_imu_enable_status_for_opted_in_frames() {
+        use common::session_tests::snapshot_session;
+        let (session, io) = snapshot_session(
+            SwitchProDefinition,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            [true, true, false],
+        );
+        let mut controller = SwitchProController(session, fixture_identity());
+        controller.0.update_state(|state| {
+            state.1.imu_gating = true;
+            state.0.motion = SwitchProMotionSample {
+                accelerometer: [400, -800, 1200],
+                gyroscope: [1, -2, 3],
+            };
+            Ok(())
+        }).unwrap();
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(controller.test_state()) else {
+            unreachable!()
+        };
+        assert!(bytes[12..48].iter().all(|byte| *byte == 0));
+        let mut enable = vec![0; 63];
+        enable[9] = 0x40;
+        enable[10] = 1;
+        io.lock().unwrap().events.push_back(RawReverseEvent::HidOutput {
+            report_id: Some(1),
+            bytes: enable,
+        });
+        controller.service(&mut |_| {}).unwrap();
+        assert!(controller.status().imu_enabled());
+        assert!(controller.status().imu_gating());
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(controller.test_state()) else {
+            unreachable!()
+        };
+        assert!(bytes[12..48].iter().any(|byte| *byte != 0));
+    }
+
+    #[test]
     fn openpuck_motion_triplicates_and_maps_axes() {
         let s = (
             SwitchProInputs {
