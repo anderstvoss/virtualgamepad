@@ -71,9 +71,7 @@ fn restored_identity_values_round_trip_through_all_available_family_options() {
         switch
     );
     assert_eq!(
-        SwitchProOptions::default()
-            .with_identity(switch)
-            .identity(),
+        SwitchProOptions::default().with_identity(switch).identity(),
         Some(switch)
     );
 
