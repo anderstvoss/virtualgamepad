@@ -91,6 +91,33 @@ fn steam_demo_neutral(
     state
 }
 
+fn apply_dualsense_output_event(event: &DualSenseOutputEvent, indicators: &mut ReverseIndicators) {
+    match event {
+        DualSenseOutputEvent::ForceFeedback(event) => {
+            indicators.apply_force_feedback(*event);
+        }
+        DualSenseOutputEvent::HidOutput(DualSenseHidOutput::UsbOutput {
+            right_motor,
+            left_motor,
+            lightbar_rgb,
+            mute_button_led,
+            player_leds,
+            player_led_instant,
+            led_brightness,
+            ..
+        }) => {
+            indicators.apply_hid_output(*right_motor, *left_motor, *lightbar_rgb, None);
+            indicators.apply_dualsense_led_output(
+                *mute_button_led,
+                *player_leds,
+                *player_led_instant,
+                *led_brightness,
+            );
+        }
+        _ => {}
+    }
+}
+
 impl Kind {
     pub(super) fn id(self) -> virtualgamepad::ControllerId {
         virtualgamepad::ControllerId::new(match self {
@@ -364,24 +391,7 @@ impl Controller {
                 .map_err(|error| error.to_string()),
             Self::DualSense(controller) => controller
                 .service(&mut |event| {
-                    match &event {
-                        DualSenseOutputEvent::ForceFeedback(event) => {
-                            indicators.apply_force_feedback(*event);
-                        }
-                        DualSenseOutputEvent::HidOutput(DualSenseHidOutput::UsbOutput {
-                            right_motor,
-                            left_motor,
-                            lightbar_rgb,
-                            mute_button_led,
-                            ..
-                        }) => indicators.apply_hid_output(
-                            *right_motor,
-                            *left_motor,
-                            *lightbar_rgb,
-                            *mute_button_led,
-                        ),
-                        _ => {}
-                    }
+                    apply_dualsense_output_event(&event, indicators);
                     log.push(format!("DualSense: {event:?}"));
                 })
                 .map_err(|error| error.to_string()),
