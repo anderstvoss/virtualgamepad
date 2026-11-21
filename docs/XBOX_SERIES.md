@@ -134,7 +134,7 @@ candidate, kernel and driver scope with the answers.
 
 | Steam Input consumer | Status |
 | --- | --- |
-| `linux.uinput` | Earlier owner checks confirmed Xbox Series identity and controls excluding Guide; Steam Ping retained 32767/32767 playback and stops. Alpha 2 Guide check: the test screen closed before the owner could determine whether its Guide indicator registered. Big Picture did not open. Registration remains unverified. |
+| `linux.uinput` | Earlier owner checks confirmed Xbox Series identity and controls excluding Guide; Steam Ping retained 32767/32767 playback and stops. On Steam `1794424036`, the test screen closed before the owner could observe the Guide indicator. On Steam `1794536281`, the owner saw the indicator briefly on a retry, then the test closed and focused the main Steam window. Neither run entered Big Picture. |
 | `linux.uhid.bluetooth` | With the temporary active-seat dev override on stock `microsoft`, Steam listed the controller as Xbox Series, displayed movement for the other controls, and Ping retained native 50/50 main rumble and stops. For Guide on Steam `1794424036`, the owner saw the indicator briefly before the test closed to the storefront. On Steam `1794536281`, the test closed immediately and focused the main Steam window, so the indicator could not be observed. Neither run entered Big Picture. |
 
 The Alpha 2 Guide observations used candidate
@@ -146,11 +146,11 @@ probe and verified removal of its owned nodes. The real Valve controller was
 disconnected. The temporary Steam visibility override was removed afterwards.
 These are Steam consumer observations, not a protocol-correctness oracle.
 
-The Bluetooth Guide rerun used candidate
-`b51e525bf5128492442fcd54ab276cfbe0985ee0`, kernel `7.3.0-1-mainline`,
-and installed SDL `3.4.20` on x86-64 kalux. The probe sent one Guide press
-and release on the stock `microsoft` binding with the temporary seat0
-override. The probe and its device nodes were removed, the override was
+The Guide reruns used candidate `b51e525bf5128492442fcd54ab276cfbe0985ee0`,
+kernel `7.3.0-1-mainline`, and installed SDL `3.4.20` on x86-64 kalux.
+Each attempt sent one isolated Guide press and release. Uinput had no
+hardware HID driver. Bluetooth used stock `microsoft` and a temporary seat0
+override. Both probes and their device nodes were removed, the override was
 removed, and the original xpadneo module setup was restored.
 See the [kalux evidence](https://github.com/anderstvoss/virtualgamepad/issues/160#issuecomment-7060633638).
 
