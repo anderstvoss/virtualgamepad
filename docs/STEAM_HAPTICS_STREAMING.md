@@ -78,8 +78,8 @@ clearly heard/felt on both sides. This is not calibrated acoustic testing.
 
 The source pins are Singer `d809a28`, Pixel player `e06e48d` / TritonLib
 `d470e0d`, and iczero `83c46d7`. See research records
-`steam-d9-midi-lfo-framing`, `steam-d9-midi-channel-routing`,
-`steam-d9-pcm-framing-feedback` and `steam-d9-pcm-stimulus-correspondence` in the
+[steam-d9-midi-lfo-framing](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/steam-d9-midi-lfo-framing.json), [steam-d9-midi-channel-routing](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/steam-d9-midi-channel-routing.json),
+[steam-d9-pcm-framing-feedback](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/steam-d9-pcm-framing-feedback.json) and [steam-d9-pcm-stimulus-correspondence](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/steam-d9-pcm-stimulus-correspondence.json) in the
 [merged research #106 audio/MIDI evidence](https://github.com/anderstvoss/controller-protocol-research/blob/023206316fe4acde366cc54cb15d8980f3508913/docs/steam-d9-audio-midi-2026-11-05.md). No raw capture or identifying value is
 imported into this implementation.
 

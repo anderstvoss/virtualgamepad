@@ -886,3 +886,45 @@ VG-1b final merge ledger: a #353 `2890223`; b #363 `5bea7a0`; c1 #364
 `8cd1000`, #375 `26168b3`, #387 `685479b`, #389 `edeea68`, #390 `a0398b7`.
 Step e records this consumer/documentation completion; its merge SHA belongs in
 the closing #322 status after owner merge, not as a predicted SHA here.
+
+## Switch Pro HD rumble typed decode (Alpha 2 G2)
+
+- Existing `SwitchProRumble` fields and `SwitchProOutputEvent::rumble()` remain
+  unchanged. New `decode()` and `decode_with_previous(left, right)` return
+  `SwitchProRumbleDecoded` with independent `SwitchProRumbleWord` sides;
+  each carries the original four bytes and bounded `SwitchProRumbleSamples`.
+- The new root functions `decode_switch_pro_rumble_word(raw)` and
+  `decode_switch_pro_rumble_word_with_previous(raw, previous)` are pure. Each
+  `SwitchProRumbleSample` exposes high/low `SwitchProRumbleBand` values;
+  `frequency_hz()` and `amplitude_ratio()` return optional quantities.
+  Amplitude is the dimensionless compatibility-model ratio, not physical
+  output or the community table's amplitude scale.
+- Recognized relative encodings can leave individual values unknown unless
+  prior contiguous motor state is provided. Preserve previous state across
+  no-sample words, but discard it on unpinned encodings, gaps, or resets.
+  Raw words remain available in all cases; no uinput or journal change.
+- Source-only research: [pinned draft corpus commit](https://github.com/anderstvoss/controller-protocol-research/commit/79f919f22d9c587eb4b3b15383b41c296de1e797);
+  `swpro-l0-rumble-absolute-layout`, `swpro-l0-rumble-sample-layouts`,
+  `swpro-l0-rumble-logarithmic-units`, `swpro-l0-rumble-relative-commands`.
+  Formal acceptance evidence awaits corpus merge and adopted pin. No host or
+  physical run was performed.
+
+### Wii speaker S1 decode-only (Alpha 2)
+
+The Wii supporting API adds `WiiSpeakerDecoder::decode` and the six typed
+`WiiSpeaker*` control, configuration, format, data, disposition and output
+records. No ordinary-root API removal or addition, no changed retained outputs,
+and no journal, playback or transport API. Decode is a pure value transition;
+callers must advance it at the later journal acceptance boundary. Do not treat
+optional raw observations as an authoritative stream. Wii supporting snapshot:
+23 → 30 items; root and Steam unchanged.
+
+### #365 · Typed rumble observations (c4-rumble-records)
+
+- Xbox Series: add `XboxSeriesRumble`, `XboxSeriesOutputEvent::rumble()`, and pure `XboxSeriesRumble::decode()` / `XboxSeriesBluetoothRumble::decode()`; four-channel native report versus two-channel FF. No trigger emulation.
+- DualShock 4: add `DualShock4Rumble`, `DualShock4OutputEvent::rumble()`, and `DualShock4Rumble::decode()`; preserve both validity flags and distinguish no update from stop. Bluetooth parsing is source-only.
+- Xbox 360: add `Xbox360Rumble`, `Xbox360OutputEvent::rumble()`, and source-only `Xbox360Rumble::decode_xusb()`; existing standard HID does not admit XUSB outputs.
+- Wii Remote: add `WiiRemoteRumble`, `WiiRemoteOutputEvent::rumble()`, and `WiiRemoteRumble::decode()`; binary intent from shared bit or conventional FF.
+
+Existing events, raw payloads, FF effect types and retained snapshots are unchanged.
+These additive ordinary-root declarations do not change protocol admission or qualify physical output.

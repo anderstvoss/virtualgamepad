@@ -48,10 +48,10 @@ id = "lifecycle"
 [[functions]]
 id = "rumble"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = ["x360-vg-exp0010-evdev-ff", "x360-vg-exp0011-evdev-mapping"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = ["x360-vg-exp0010-evdev-ff", "x360-vg-exp0011-evdev-mapping", "x360-l0-consumer-sdl360-rumble-led"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted. Decode sub-check: ff_rumble_decode_preserves_native_effect_and_stop_semantics; source only." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = ["x360-l0-consumer-sdl360-rumble-led", "x360-l0-device-xusb-output-ff-led"], reason = "Current standard HID does not admit XUSB. Decode sub-check: x360_native_rumble_decode is source-only XUSB parsing, not realization acceptance; existing grade unchanged." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = ["x360-l0-consumer-sdl360-rumble-led", "x360-l0-device-xusb-output-ff-led"], reason = "Current standard HID does not admit XUSB. Decode sub-check: x360_native_rumble_decode is source-only XUSB parsing, not realization acceptance; existing grade unchanged." }
 
 [[functions]]
 id = "battery"
@@ -64,7 +64,7 @@ id = "battery"
 [[functions]]
 id = "headset-audio"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "not-supported", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "uinput has no audio endpoint or audio sidecar creation path." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "Opt-in functional stereo playback/mono capture beside standard HID; no proprietary Xbox headset transport or sustained acceptance established." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "Opt-in functional stereo playback/mono capture beside standard HID; no proprietary Xbox headset transport or sustained acceptance established." }

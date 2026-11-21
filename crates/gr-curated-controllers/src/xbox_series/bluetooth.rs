@@ -114,40 +114,52 @@ pub struct XboxSeriesBluetoothRumble {
     pub repeat: u8,
 }
 
+impl XboxSeriesBluetoothRumble {
+    /// Decode the eight ID-excluded bytes of native Bluetooth output 0x03.
+    /// Values outside the declared selection mask and magnitude range are invalid.
+    #[must_use]
+    pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<XboxSeriesBluetoothRumble> {
+        if report_id != Some(3) {
+            return None;
+        }
+        let &[
+            motor_mask,
+            left_trigger,
+            right_trigger,
+            strong,
+            weak,
+            duration,
+            delay,
+            repeat,
+        ] = payload
+        else {
+            return None;
+        };
+        if motor_mask & 0xf0 != 0
+            || [left_trigger, right_trigger, strong, weak]
+                .iter()
+                .any(|&x| x > 100)
+        {
+            return None;
+        }
+        Some(Self {
+            motor_mask,
+            left_trigger,
+            right_trigger,
+            strong,
+            weak,
+            duration,
+            delay,
+            repeat,
+        })
+    }
+}
+
 pub(super) fn rumble(report: &Report) -> Result<XboxSeriesBluetoothRumble, ReplyError> {
     if report.kind != ReportType::Output || report.id() != Some(3) {
         return Err(ReplyError::Unsupported);
     }
-    let &[
-        motor_mask,
-        left_trigger,
-        right_trigger,
-        strong,
-        weak,
-        duration,
-        delay,
-        repeat,
-    ] = report.payload()
-    else {
-        return Err(ReplyError::Invalid);
-    };
-    if motor_mask & 0xf0 != 0
-        || [left_trigger, right_trigger, strong, weak]
-            .iter()
-            .any(|&x| x > 100)
-    {
-        return Err(ReplyError::Invalid);
-    }
-    Ok(XboxSeriesBluetoothRumble {
-        motor_mask,
-        left_trigger,
-        right_trigger,
-        strong,
-        weak,
-        duration,
-        delay,
-        repeat,
-    })
+    XboxSeriesBluetoothRumble::decode(report.id(), report.payload()).ok_or(ReplyError::Invalid)
 }
 
 pub(super) fn validate_output(report: &Report) -> Result<(), ReplyError> {
