@@ -58,9 +58,12 @@ impl SilenceLedger {
 struct Metrics {
     timings: Mutex<Vec<crate::audio::AudioStreamTiming>>,
     loss_trace: Mutex<Vec<crate::audio::AudioInputLossTrace>>,
+    playback_accounting: Mutex<Option<gr_audio_contract::queue::PcmQueueAccounting>>,
+    microphone_accounting: Mutex<Option<gr_audio_contract::queue::PcmQueueAccounting>>,
     bridge_snapshot: Mutex<BridgeSnapshot>,
     silence_ledger: Mutex<SilenceLedger>,
     source_underruns: AtomicU64,
+    playback_source_underruns: AtomicU64,
     graph_input_dropped: AtomicU64,
     graph_input_empty: AtomicU64,
     graph_input_corrupted: AtomicU64,
@@ -163,8 +166,20 @@ impl Metrics {
             .fetch_max(host.saturating_sub(previous), Ordering::Relaxed);
     }
     fn capture(&self, session: &gr_audio_linux::Session) {
+        *self
+            .playback_accounting
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = session.playback_accounting();
+        *self
+            .microphone_accounting
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = session.microphone_accounting();
         self.source_underruns
             .store(session.underrun_frames(), Ordering::Release);
+        self.playback_source_underruns.store(
+            session.playback_silence_frames().unwrap_or(0),
+            Ordering::Release,
+        );
         self.graph_input_dropped
             .store(session.dropped_playback_frames(), Ordering::Release);
         *self
@@ -512,8 +527,32 @@ impl Bridge {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
     }
+    pub(crate) fn playback_accounting(
+        &self,
+    ) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        *self
+            .metrics
+            .playback_accounting
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+    pub(crate) fn microphone_accounting(
+        &self,
+    ) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        *self
+            .metrics
+            .microphone_accounting
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
     pub(crate) fn source_underrun_frames(&self) -> u64 {
         self.metrics.source_underruns.load(Ordering::Acquire)
+    }
+    /// H→C sidecar-specific source padding, unlike the legacy aggregate.
+    pub(crate) fn playback_source_silence_frames(&self) -> u64 {
+        self.metrics
+            .playback_source_underruns
+            .load(Ordering::Acquire)
     }
     pub(crate) fn graph_input_dropped_frames(&self) -> u64 {
         self.metrics.graph_input_dropped.load(Ordering::Acquire)
@@ -952,7 +991,10 @@ mod tests {
                     }],
                     omitted_events: 3,
                 }]),
+                playback_accounting: Mutex::new(None),
+                microphone_accounting: Mutex::new(None),
                 source_underruns: AtomicU64::new(512),
+                playback_source_underruns: AtomicU64::new(0),
                 graph_input_dropped: AtomicU64::new(24),
                 graph_input_empty: AtomicU64::new(8),
                 graph_input_corrupted: AtomicU64::new(4),
