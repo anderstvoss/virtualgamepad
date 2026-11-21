@@ -75,7 +75,10 @@ pub struct Session {
     phases: BTreeMap<&'static str, u64>,
 }
 
-fn matching_nodes(physical_paths: &[String]) -> BTreeSet<PathBuf> {
+fn matching_nodes(physical_paths: &[String]) -> Result<BTreeSet<PathBuf>, String> {
+    if physical_paths.is_empty() {
+        return Err("no creation-owned node selector for this realization".into());
+    }
     let mut result = BTreeSet::new();
     for (class, prefix) in [("input", "event"), ("hidraw", "hidraw")] {
         let Ok(entries) = fs::read_dir(format!("/sys/class/{class}")) else {
@@ -106,7 +109,7 @@ fn matching_nodes(physical_paths: &[String]) -> BTreeSet<PathBuf> {
             }
         }
     }
-    result
+    Ok(result)
 }
 fn open_consumer(node: &Path, wait_for_udev: bool) -> std::io::Result<File> {
     open_consumer_diagnostics(node, wait_for_udev).map(|(file, _)| file)
@@ -542,7 +545,7 @@ impl Backend for Linux {
                 let deadline=Instant::now()+Duration::from_secs(2);
                 loop {
                     for peer in peers.iter_mut() { peer.service.service(|| peer.controller.service()); }
-                    let nodes=matching_nodes(&s.physical_paths);
+                    let nodes=matching_nodes(&s.physical_paths)?;
                     if stage == "node_present" {
                         if probe_node(&nodes, true).is_some() { s.phases.entry("hidraw_appearance_ns").or_insert_with(|| elapsed_ns(s.created)); }
                         if probe_node(&nodes, false).is_some() { s.phases.entry("input_appearance_ns").or_insert_with(|| elapsed_ns(s.created)); }
@@ -667,6 +670,14 @@ impl Backend for Linux {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn missing_node_selector_cannot_report_empty_owned_set() {
+        assert_eq!(
+            super::matching_nodes(&[]),
+            Err("no creation-owned node selector for this realization".into())
+        );
+    }
+
     #[test]
     fn explicit_usbip_acceptance_requests_emulated_audio() {
         use super::{AudioExposure, AudioOptions, RealizationId, acceptance_creation_options};
