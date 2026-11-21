@@ -1136,6 +1136,46 @@ mod tests {
     use super::*;
     use gr_audio_contract::{AudioChannel as C, AudioStreamDescription};
     #[test]
+    fn source_silence_is_directional_without_changing_legacy_total() {
+        let total = AtomicU64::new(0);
+        let playback = AtomicU64::new(0);
+        let microphone = AtomicU64::new(0);
+        record_source_silence(&total, &playback, 3);
+        record_source_silence(&total, &microphone, 5);
+        record_source_silence(&total, &microphone, 0);
+        assert_eq!(playback.load(Ordering::Relaxed), 3);
+        assert_eq!(microphone.load(Ordering::Relaxed), 5);
+        assert_eq!(total.load(Ordering::Relaxed), 8);
+    }
+
+    #[test]
+    fn native_client_direction_tracks_only_its_own_source() {
+        let format = PcmFormat::new(48_000, &[C::AudibleLeft, C::AudibleRight]).unwrap();
+        let options = AudioOptions::new(gr_audio_contract::AudioExposure::Emulated)
+            .with_playback_access(AudioAccess::NativeClient)
+            .with_microphone_access(AudioAccess::NativeClient);
+        for direction in [
+            SampleDirection::HostToController,
+            SampleDirection::ControllerToHost,
+        ] {
+            let profile = AudioProfile::new(
+                "direction-only",
+                &[AudioStreamDescription::new("only", direction, format.clone())],
+                "test",
+            );
+            let prepared = prepare(&profile, options, 9, 0).unwrap();
+            assert_eq!(
+                prepared.playback_source_underruns.is_some(),
+                direction == SampleDirection::HostToController
+            );
+            assert_eq!(
+                prepared.microphone_source_underruns.is_some(),
+                direction == SampleDirection::ControllerToHost
+            );
+        }
+    }
+
+    #[test]
     fn usb_source_preroll_uses_requested_graph_block_and_rearms_after_gap() {
         assert!(!source_ready(false, 383, 256, 128));
         assert!(source_ready(false, 384, 256, 128));
