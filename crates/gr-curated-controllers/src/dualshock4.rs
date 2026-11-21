@@ -2964,4 +2964,93 @@ mod tests {
             }
         );
     }
+    #[test]
+    fn bluetooth_has_restrictions_and_no_implicit_usb_selection() {
+        let realization = bluetooth::realization();
+        let NativeControllerRealization::Uhid(spec) = realization else { panic!("Bluetooth UHID"); };
+        assert_eq!(spec.target, RealizationTarget::LINUX_UHID_BLUETOOTH);
+        assert_eq!(spec.bus_type, 5);
+        assert_eq!(spec.identity.product_id, 0x05c4);
+        assert!(BT_SURFACE.common.restrictions().iter().any(|r| r.feature == "Bluetooth audio"));
+        assert!(BT_SURFACE.common.restrictions().iter().any(|r| r.feature == "Bluetooth device fidelity"));
+        let manifest = DualShock4Definition.realization_manifest();
+        assert!(manifest.entries().iter().any(|r| r.target == RealizationTarget::LINUX_UHID_BLUETOOTH));
+        let usb = hid(RealizationSessionId(1));
+        let NativeControllerRealization::Uhid(usb_spec) = usb else { panic!("USB UHID"); };
+        assert_eq!(usb_spec.target, RealizationTarget::LINUX_UHID_USB);
+        assert_ne!(usb_spec.descriptor, spec.descriptor);
+        let one = common::test_address(1);
+        let two = common::test_address(2);
+        let mut reversed = one;
+        reversed.reverse();
+        let mut reversed_two = two;
+        reversed_two.reverse();
+        let one_label = common::address_label(reversed);
+        let two_label = common::address_label(reversed_two);
+        assert_ne!(one_label, two_label);
+        assert_eq!(one_label.split(':').count(), 6);
+    }
+
+    #[test]
+    fn bluetooth_mode_neutral_and_two_controllers_are_isolated_from_usb() {
+        use crate::retained::RetainedProtocol;
+        use common::HidDriver;
+        use gr_hid::{Protocol, Reply, Report, ReportType, RequestKind};
+
+        let mut first = DualShock4Definition::bluetooth()
+            .hid_protocol(RealizationSessionId(1), common::test_address(1));
+        let mut second = DualShock4Definition::bluetooth()
+            .hid_protocol(RealizationSessionId(2), common::test_address(2));
+        let mut usb = DualShock4Definition
+            .hid_protocol(RealizationSessionId(3), common::test_address(3));
+        let neutral = DualShock4SessionState::default();
+        let minimal = first.input(&neutral, 0).unwrap();
+        assert_eq!(minimal.len(), 1);
+        assert_eq!(minimal[0].wire().len(), 10);
+        assert_eq!(minimal[0].id(), Some(1));
+        assert_eq!(second.input(&neutral, 0).unwrap()[0].wire().len(), 10);
+        assert_eq!(usb.input(&neutral, 0).unwrap()[0].wire().len(), 64);
+        let get_calibration = RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(0x05),
+        };
+        let Reply::Get(Ok(report)) = first.request(&get_calibration, 1).0 else {
+            panic!("Bluetooth calibration must be available");
+        };
+        assert_eq!(report.wire().len(), 41);
+        assert_eq!(first.input(&neutral, 2).unwrap()[0].wire().len(), 78);
+        assert_eq!(second.input(&neutral, 2).unwrap()[0].wire().len(), 10);
+        assert_eq!(usb.input(&neutral, 2).unwrap()[0].wire().len(), 64);
+
+        let get_pairing = RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(0x12),
+        };
+        assert_eq!(first.request(&get_pairing, 3).0, Reply::Get(Err(gr_hid::ReplyError::Unsupported)));
+        assert!(matches!(usb.request(&get_pairing, 3).0, Reply::Get(Ok(_))));
+
+        // Known synthetic Bluetooth effect; CRC computed independently from
+        // report byte 0x11 with HID output seed 0xa2, not from device capture.
+        let mut payload = vec![0_u8; 77];
+        payload[0] = 0xc0;
+        payload[2] = 0x07;
+        payload[5..12].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7]);
+        payload[73..].copy_from_slice(&[206, 157, 236, 19]);
+        let set = RequestKind::Set(
+            Report::new(ReportType::Output, Some(0x11), payload.clone()).unwrap()
+        );
+        assert_eq!(first.request(&set, 4).0, Reply::Set(Ok(())));
+        assert_eq!(first.retained().motors, Some([2, 1]));
+        assert_eq!(first.retained().lightbar_rgb, Some([3, 4, 5]));
+        assert_eq!(first.retained().blink, Some([6, 7]));
+        assert_eq!(second.retained().revision, 0);
+        let old = first.retained().clone();
+        payload[5] ^= 1;
+        let invalid = RequestKind::Set(
+            Report::new(ReportType::Output, Some(0x11), payload).unwrap()
+        );
+        assert_eq!(first.request(&invalid, 5).0, Reply::Set(Err(gr_hid::ReplyError::Invalid)));
+        assert_eq!(*first.retained(), old);
+    }
+
 }
