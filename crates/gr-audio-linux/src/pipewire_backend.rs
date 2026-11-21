@@ -1253,8 +1253,14 @@ mod tests {
             assert_eq!(props.get("device.product.name"), Some("Synthetic Gamepad"));
             assert_eq!(props.get("device.serial"), Some("test-unique-a"));
             assert_eq!(props.get("virtualgamepad.realization.id"), Some("linux.uhid.usb"));
-            assert_eq!(props.get("virtualgamepad.association.key"), Some("virtualgamepad.test.creation-a"));
-            assert_eq!(props.get("media.class"), Some(if input { "Audio/Sink" } else { "Audio/Source" }));
+            assert_eq!(
+                props.get("virtualgamepad.association.key"),
+                Some("virtualgamepad.test.creation-a")
+            );
+            assert_eq!(
+                props.get("media.class"),
+                Some(if input { "Audio/Sink" } else { "Audio/Source" })
+            );
         }
         let unrelated = endpoint_properties("test.usb.bridge", false, 48_000, None);
         assert_eq!(unrelated.get("virtualgamepad.association.key"), None);
