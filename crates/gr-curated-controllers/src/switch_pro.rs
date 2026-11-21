@@ -1053,7 +1053,7 @@ impl SwitchProController {
             imu_enabled: self
                 .0
                 .optional_protocol()
-                .map_or(self.0.state().1.imu_enabled, |p| p.imu_enabled()),
+                .map_or(self.0.state().1.imu_enabled, protocol::SwitchUsbProtocol::imu_enabled),
             ..self.0.state().1
         }
     }

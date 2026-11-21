@@ -3839,9 +3839,9 @@ Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
 ```rust
 #[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }
 pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions
-pub const fn with_battery( self, battery: SwitchProBattery, ) -> SwitchProOptions
+pub const fn with_battery(self, battery: SwitchProBattery) -> SwitchProOptions
 pub const fn battery(self) -> SwitchProBattery
-pub const fn with_imu_gating( self, enabled: bool, ) -> SwitchProOptions
+pub const fn with_imu_gating(self, enabled: bool) -> SwitchProOptions
 pub const fn imu_gating(self) -> bool
 pub const fn identity(self) -> Option<SwitchProIdentity>
 ```

@@ -108,15 +108,6 @@ def main():
         WII_BASELINE.write_text(json.dumps(wii, indent=2, sort_keys=True) + '\n')
         STEAM_BASELINE.write_text(json.dumps(steam, indent=2, sort_keys=True) + '\n')
     elif any(json.loads(BASELINE.read_text())['views'].get(view) != data for view, data in views.items()):
-        baseline_views = json.loads(BASELINE.read_text())['views']
-        for view, actual in views.items():
-            previous = baseline_views.get(view, {}).get('items', {})
-            current_items = actual['items']
-            for name in sorted(previous.keys() | current_items.keys()):
-                if previous.get(name) != current_items.get(name):
-                    print(f'Alpha API mismatch {view}/{name}', flush=True)
-                    print(f'  baseline: {previous.get(name)!r}', flush=True)
-                    print(f'  generated: {current_items.get(name)!r}', flush=True)
         parser.exit(1, 'Alpha root API changed. Review necessity and migration notes before refreshing the snapshot.\n')
     elif not WII_BASELINE.exists() or json.loads(WII_BASELINE.read_text()) != wii:
         parser.exit(1, 'Wii supporting API changed. Review the imported-resource API before refreshing the snapshot.\n')
