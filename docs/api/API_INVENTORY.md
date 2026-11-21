@@ -1152,33 +1152,6 @@ impl UnsafeUnpin for SwitchProBatteryLevel
 impl UnwindSafe for SwitchProBatteryLevel
 ```
 
-### `SwitchProBattery`
-
-Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
-
-```rust
-pub struct SwitchProBattery { pub level: SwitchProBatteryLevel, pub charging: bool, pub usb_powered: bool, }
-```
-
-Trait implementations:
-
-```rust
-impl Clone for SwitchProBattery
-impl Debug for SwitchProBattery
-impl PartialEq for SwitchProBattery
-impl Default for SwitchProBattery
-impl Copy for SwitchProBattery
-impl Eq for SwitchProBattery
-impl StructuralPartialEq for SwitchProBattery
-impl Freeze for SwitchProBattery
-impl RefUnwindSafe for SwitchProBattery
-impl Send for SwitchProBattery
-impl Sync for SwitchProBattery
-impl Unpin for SwitchProBattery
-impl UnsafeUnpin for SwitchProBattery
-impl UnwindSafe for SwitchProBattery
-```
-
 ### `SwitchProControl`
 
 Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
@@ -3579,6 +3552,33 @@ impl Sync for SwitchProAxis
 impl Unpin for SwitchProAxis
 impl UnsafeUnpin for SwitchProAxis
 impl UnwindSafe for SwitchProAxis
+```
+
+### `SwitchProBattery`
+
+Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
+
+```rust
+pub struct SwitchProBattery { pub level: SwitchProBatteryLevel, pub charging: bool, pub usb_powered: bool, }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for SwitchProBattery
+impl Debug for SwitchProBattery
+impl PartialEq for SwitchProBattery
+impl Default for SwitchProBattery
+impl Copy for SwitchProBattery
+impl Eq for SwitchProBattery
+impl StructuralPartialEq for SwitchProBattery
+impl Freeze for SwitchProBattery
+impl RefUnwindSafe for SwitchProBattery
+impl Send for SwitchProBattery
+impl Sync for SwitchProBattery
+impl Unpin for SwitchProBattery
+impl UnsafeUnpin for SwitchProBattery
+impl UnwindSafe for SwitchProBattery
 ```
 
 ### `SwitchProController`
