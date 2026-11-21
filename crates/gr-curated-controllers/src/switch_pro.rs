@@ -2368,7 +2368,7 @@ mod tests {
         }
     }
 
-    fn fixture_identity() -> SwitchProIdentity {
+    pub(super) fn fixture_identity() -> SwitchProIdentity {
         SwitchProIdentity::from_bytes(common::test_address(1)).unwrap()
     }
 
