@@ -2492,13 +2492,8 @@ fn sony_root_device_data_readback_survives_close_without_hardware() {
         inner.association(),
         inner.surface().common(),
     );
-    let mut dualsense = DualSenseController::from_parts(
-        association,
-        inner,
-        None,
-        selected_dualsense,
-        None,
-    );
+    let mut dualsense =
+        DualSenseController::from_parts(association, inner, None, selected_dualsense, None);
     assert_eq!(dualsense.device_data(), &selected_dualsense);
     dualsense.close();
     assert_eq!(dualsense.device_data(), &selected_dualsense);
@@ -2521,13 +2516,8 @@ fn sony_root_device_data_readback_survives_close_without_hardware() {
         inner.association(),
         inner.surface().common(),
     );
-    let mut dualshock4 = DualShock4Controller::from_parts(
-        association,
-        inner,
-        None,
-        selected_dualshock4,
-        None,
-    );
+    let mut dualshock4 =
+        DualShock4Controller::from_parts(association, inner, None, selected_dualshock4, None);
     assert_eq!(dualshock4.device_data(), &selected_dualshock4);
     dualshock4.close();
     assert_eq!(dualshock4.device_data(), &selected_dualshock4);

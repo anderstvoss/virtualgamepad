@@ -1,8 +1,7 @@
 //! Synthetic-only P10b device-data regression tests. No provider or hardware access.
 use virtualgamepad::{
-    ControllerError, CreationOptions, DualSenseDeviceData, DualSenseOptions,
-    DualShock4DeviceData, DualShock4Options, RealizationId, create_dualsense,
-    create_dualshock4,
+    ControllerError, CreationOptions, DualSenseDeviceData, DualSenseOptions, DualShock4DeviceData,
+    DualShock4Options, RealizationId, create_dualsense, create_dualshock4,
 };
 
 #[test]
@@ -44,10 +43,8 @@ fn sony_reports_reject_malformed_ids_lengths_and_zero_denominators() {
 #[test]
 fn caller_selected_files_roundtrip_without_identity() {
     let ds = DualSenseDeviceData::default();
-    let path = std::env::temp_dir().join(format!(
-        "vg-p10b-dualsense-{}.sonydata",
-        std::process::id()
-    ));
+    let path =
+        std::env::temp_dir().join(format!("vg-p10b-dualsense-{}.sonydata", std::process::id()));
     ds.save_file(&path).unwrap();
     assert_eq!(DualSenseDeviceData::load_file(&path).unwrap(), ds);
     assert!(DualShock4DeviceData::load_file(&path).is_err());

@@ -496,7 +496,9 @@ pub fn create_dualsense(
         && family.device_data().is_some()
     {
         return Err(ControllerError::Unsupported {
-            reason: "caller-supplied DualSense device data is unsupported by the USB/IP audio worker".into(),
+            reason:
+                "caller-supplied DualSense device data is unsupported by the USB/IP audio worker"
+                    .into(),
         });
     }
     let device_data = family.device_data().unwrap_or_default();
@@ -609,7 +611,9 @@ pub fn create_dualshock4(
         && family.device_data().is_some()
     {
         return Err(ControllerError::Unsupported {
-            reason: "caller-supplied DualShock 4 device data is unsupported by the USB/IP audio worker".into(),
+            reason:
+                "caller-supplied DualShock 4 device data is unsupported by the USB/IP audio worker"
+                    .into(),
         });
     }
     let device_data = family.device_data().unwrap_or_default();

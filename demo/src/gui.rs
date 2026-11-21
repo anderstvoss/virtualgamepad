@@ -715,7 +715,10 @@ fn recreation_options(
     saved: &ControllerOptions,
     choices: ControllerOptions,
 ) -> ControllerOptions {
-    if matches!(kind, Kind::WiiRemote | Kind::Steam | Kind::DualSense | Kind::DualShock4) {
+    if matches!(
+        kind,
+        Kind::WiiRemote | Kind::Steam | Kind::DualSense | Kind::DualShock4
+    ) {
         ControllerOptions {
             id: choices.id,
             ..saved.clone()
