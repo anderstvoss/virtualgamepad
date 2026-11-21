@@ -42,18 +42,14 @@ pub struct SwitchProMotionSample {
 }
 /// Source-supported Switch Pro battery level; no voltage thresholds are inferred.
 /// Research: `swpro-l0-device-battery-connection-bits`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SwitchProBatteryLevel {
     Empty,
     Critical,
     Low,
     Medium,
+    #[default]
     Full,
-}
-impl Default for SwitchProBatteryLevel {
-    fn default() -> Self {
-        Self::Full
-    }
 }
 
 /// Native battery report status. Pro connection nibble 0 means unpowered;
