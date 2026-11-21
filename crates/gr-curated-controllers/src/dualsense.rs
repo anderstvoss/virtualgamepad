@@ -1260,11 +1260,11 @@ pub enum DualSenseHidOutput {
         /// Raw brightness byte, without interpreting disputed encoding.
         /// See `ds-cgap-led-brightness-encoding-disagreement`.
         led_brightness: u8,
-        /// Raw lightbar setup byte, only when valid_flag2 bit 1 is set.
+        /// Raw lightbar setup byte, only when `valid_flag2` bit 1 is set.
         lightbar_setup: Option<u8>,
-        /// Release/reset LEDs command; present only when valid_flag1 bit 3 is set.
+        /// Release/reset LEDs command; present only when `valid_flag1` bit 3 is set.
         release_leds: Option<bool>,
-        /// Five indicator bits (0..4), only when valid_flag1 bit 4 is set.
+        /// Five indicator bits (0..4), only when `valid_flag1` bit 4 is set.
         player_leds: Option<u8>,
         /// Instant (true) versus fade (false), bit 5 of the player LED byte.
         /// Source-only mapping: `ds-cgap-player-led-instant-source-mapping`.
@@ -1865,6 +1865,8 @@ impl crate::registry::ControllerFamily for DualSenseDefinition {
         crate::registry::refusal(RESTRICTIONS[4], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(RESTRICTIONS[5], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(RESTRICTIONS[6], &[RealizationTarget::LINUX_UINPUT]),
+        crate::registry::refusal(RESTRICTIONS[7], &[RealizationTarget::LINUX_UINPUT]),
+        crate::registry::refusal(RESTRICTIONS[8], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(HID_RESTRICTIONS[0], &[RealizationTarget::LINUX_UHID_USB]),
         crate::registry::FamilyOperation {
             name: "UHID physical-device fidelity",
