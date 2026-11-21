@@ -2865,11 +2865,16 @@ mod tests {
                     .filter(|r| r.name == restriction.feature && r.detail == restriction.reason)
                     .collect();
             assert_eq!(entries.len(), 1);
-            assert!(entries[0]
-                .targets
-                .contains(&RealizationTarget::LINUX_UHID_BLUETOOTH));
+            assert!(
+                entries[0]
+                    .targets
+                    .contains(&RealizationTarget::LINUX_UHID_BLUETOOTH)
+            );
             if index > 0 {
-                assert_eq!(entries[0].targets, &[RealizationTarget::LINUX_UHID_BLUETOOTH]);
+                assert_eq!(
+                    entries[0].targets,
+                    &[RealizationTarget::LINUX_UHID_BLUETOOTH]
+                );
             }
         }
     }
