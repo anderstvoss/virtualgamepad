@@ -744,12 +744,12 @@ fn endpoint_properties(
         "node.latency" => format!("{}/{}", rate.div_ceil(375), rate),
     };
     if let Some(identity) = association {
-        result.insert("device.vendor.id", &format!("0x{:04x}", identity.vendor_id));
-        result.insert("device.product.id", &format!("0x{:04x}", identity.product_id));
-        result.insert("device.product.name", &identity.product_name);
-        result.insert("device.serial", &identity.hid_unique_id);
-        result.insert("virtualgamepad.realization.id", &identity.realization_id);
-        result.insert("virtualgamepad.association.key", &identity.key);
+        result.insert("device.vendor.id", format!("0x{:04x}", identity.vendor_id));
+        result.insert("device.product.id", format!("0x{:04x}", identity.product_id));
+        result.insert("device.product.name", identity.product_name.as_str());
+        result.insert("device.serial", identity.hid_unique_id.as_str());
+        result.insert("virtualgamepad.realization.id", identity.realization_id.as_str());
+        result.insert("virtualgamepad.association.key", identity.key.as_str());
     }
     result
 }
