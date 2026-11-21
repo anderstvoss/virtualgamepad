@@ -3020,6 +3020,16 @@ mod tests {
             panic!("Bluetooth calibration must be available");
         };
         assert_eq!(report.wire().len(), 41);
+        for (id, size) in [(0x02, 37), (0x05, 41), (0xa3, 49)] {
+            let get = RequestKind::Get {
+                kind: ReportType::Feature,
+                id: Some(id),
+            };
+            let Reply::Get(Ok(response)) = first.request(&get, 1).0 else {
+                panic!("missing source-required DS4 feature reply");
+            };
+            assert_eq!(response.wire().len(), size);
+        }
         assert_eq!(first.input(&neutral, 2).unwrap()[0].wire().len(), 78);
         assert_eq!(second.input(&neutral, 2).unwrap()[0].wire().len(), 10);
         assert_eq!(usb.input(&neutral, 2).unwrap()[0].wire().len(), 64);
@@ -3038,6 +3048,16 @@ mod tests {
         payload[2] = 0x07;
         payload[5..12].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7]);
         payload[73..].copy_from_slice(&[206, 157, 236, 19]);
+        assert_eq!(
+            decode_ds4_hid_output(Some(0x11), payload.clone()),
+            DualShock4HidOutput::BluetoothOutput {
+                raw: payload.clone(),
+                right_motor: 1,
+                left_motor: 2,
+                lightbar_rgb: Some([3, 4, 5]),
+                blink: Some([6, 7]),
+            }
+        );
         let set = RequestKind::Set(
             Report::new(ReportType::Output, Some(0x11), payload.clone()).unwrap()
         );
