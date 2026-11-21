@@ -937,6 +937,7 @@ fn hid(identity: SwitchProIdentity) -> NativeControllerRealization {
 }
 fn evdev_realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
+        bus_type: 0x03,
         physical_path: None,
         device_name: "Pro Controller".into(),
         identity: NativeDeviceIdentity {

@@ -23,8 +23,9 @@ pub fn open(
     options: AudioOptions,
     family: Family,
     creation: u64,
+    hid_uniq: Option<&str>,
 ) -> Result<Option<ControllerAudio>, OpenError> {
-    audio::open(options, family, creation)
+    audio::open(options, family, creation, hid_uniq)
 }
 #[cfg(feature = "experimental")]
 #[must_use]

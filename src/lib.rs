@@ -63,7 +63,7 @@ mod creation;
 mod usb_audio;
 pub use audio::{
     AudioDiagnostics, AudioDirectionAccounting, AudioEndpoint, AudioEndpointSelector, AudioRead,
-    ControllerAudio,
+    AudioSidecarAssociation, ControllerAudio,
 };
 mod controllers;
 mod output;

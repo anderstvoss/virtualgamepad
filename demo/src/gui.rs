@@ -1,4 +1,5 @@
 mod audio_lab;
+mod audio_panel;
 mod audio_topology;
 mod editor;
 mod families;
@@ -2662,7 +2663,7 @@ fn draw_controller_state(
                 );
             },
             |ui| {
-                audio_action = audio_lab::draw_diagnostics(ui, audio_view);
+                audio_action = audio_lab::draw_diagnostics(ui, controller.options.target, audio_view);
             },
             |ui| {
                 let (label, help) = if controller.kind == Kind::WiiRemote {

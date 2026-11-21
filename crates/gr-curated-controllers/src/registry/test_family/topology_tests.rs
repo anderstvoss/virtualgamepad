@@ -14,6 +14,7 @@ fn open(target: RealizationTarget) -> (ControllerSession<Fifth>, Arc<Mutex<Recor
     let view = View::new(&TOPOLOGY, &BASE_TOPOLOGY, native_protocol).unwrap(); // before I/O
     let realization = if target == RealizationTarget::LINUX_UINPUT {
         NativeControllerRealization::Evdev(NativeEvdevRealization {
+            bus_type: 0x03,
             physical_path: None,
             device_name: "synthetic-fifth".into(),
             identity: NativeDeviceIdentity {

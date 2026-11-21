@@ -231,6 +231,10 @@ pub struct NativeEvdevRealization {
     /// Prepared correlation label passed unchanged to `UI_SET_PHYS`, not a file path.
     pub physical_path: Option<String>,
     pub device_name: String,
+    /// Linux input bus advertised through `UI_DEV_SETUP` (`BUS_USB` is 0x03,
+    /// `BUS_BLUETOOTH` is 0x05). It matches the bus of the native driver node
+    /// that the realization emulates.
+    pub bus_type: u16,
     pub identity: NativeDeviceIdentity,
     pub event_codes: Vec<u16>,
     pub key_codes: Vec<u16>,
@@ -717,6 +721,7 @@ mod tests {
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
+                bus_type: 0x03,
                 physical_path: None,
                 device_name: "test".into(),
                 identity: NativeDeviceIdentity {
