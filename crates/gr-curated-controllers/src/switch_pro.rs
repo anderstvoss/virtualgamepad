@@ -337,7 +337,8 @@ static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "console pairing",
     reason: "Steam/Linux mode deliberately omits Switch-console pairing and SPI calibration persistence",
 }];
-static BT_RESTRICTIONS: [TargetRestriction; 3] = [
+static BT_RESTRICTIONS: [TargetRestriction; 4] = [
+    RESTRICTIONS[0],
     TargetRestriction {
         feature: "Bluetooth radio and reconnection",
         reason: "Bluetooth-bus UHID is a local HID presentation, with no radio, BlueZ, discovery, pairing or reconnection transport",
@@ -1992,9 +1993,9 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             ],
         ),
-        crate::registry::refusal(BT_RESTRICTIONS[0], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
         crate::registry::refusal(BT_RESTRICTIONS[1], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
         crate::registry::refusal(BT_RESTRICTIONS[2], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
+        crate::registry::refusal(BT_RESTRICTIONS[3], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
         crate::registry::refusal(
             RETAINED_DUMMY[1],
             &[RealizationTarget::LINUX_DUMMY_HCD_USB_HID],
@@ -2766,7 +2767,7 @@ mod tests {
             unreachable!()
         };
         assert_eq!(usb.bus_type, 3);
-        assert_eq!(usb.descriptor, SWITCH_PRO_USB_DESCRIPTOR);
+        assert_eq!(usb.descriptor.as_slice(), SWITCH_PRO_USB_DESCRIPTOR);
         assert_ne!(bt.descriptor, usb.descriptor);
     }
 
