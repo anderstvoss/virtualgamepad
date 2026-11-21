@@ -1,7 +1,7 @@
 //! Stateful USB personality shared by HID presentation and future USB adapters.
 use super::{
     BTreeMap, DualSenseDefinition, DualSenseSessionState, NativeHidReportKey, ProviderFrame,
-    RawReverseEvent, RealizationSessionId, common, dualsense_feature_responses,
+    RawReverseEvent, RealizationSessionId, common, dualsense_feature_responses_with_data,
     dualsense_hid_input_report,
 };
 use gr_hid::{
@@ -22,9 +22,16 @@ pub(crate) struct DualSenseUsbProtocol<
     last_input: Option<Report>,
 }
 impl DualSenseUsbProtocol {
+    #[cfg(test)]
     pub(crate) fn new(identity: [u8; 6]) -> Self {
+        Self::with_device_data(identity, None)
+    }
+    pub(crate) fn with_device_data(
+        identity: [u8; 6],
+        data: Option<super::DualSenseDeviceData>,
+    ) -> Self {
         Self {
-            features: dualsense_feature_responses(identity),
+            features: dualsense_feature_responses_with_data(identity, data),
             retained: crate::retained::DualSenseOutputState::default(),
             sequence: 1,
             next_input: 0,
@@ -166,7 +173,7 @@ impl common::HidDriver for DualSenseDefinition {
         common::creation_identity()
     }
     fn hid_protocol(&self, _: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
-        DualSenseUsbProtocol::new(identity)
+        DualSenseUsbProtocol::with_device_data(identity, self.device_data)
     }
 }
 
@@ -191,7 +198,7 @@ mod tests {
             id: Some(9),
         };
         for session in [7, 7 + (1 << 16)] {
-            let driver = DualSenseDefinition;
+            let driver = DualSenseDefinition::default();
             let mut first = driver.hid_protocol(RealizationSessionId(session), [2, 1, 2, 3, 4, 5]);
             let mut second = driver.hid_protocol(RealizationSessionId(session), [2, 1, 2, 3, 4, 6]);
             let reply = first.request(&get, 0).0;
