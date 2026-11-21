@@ -492,6 +492,13 @@ pub fn create_dualsense(
     options: CreationOptions,
     mut family: DualSenseOptions,
 ) -> Result<DualSenseController, ControllerError> {
+    if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO
+        && family.device_data().is_some()
+    {
+        return Err(ControllerError::Unsupported {
+            reason: "caller-supplied DualSense device data is unsupported by the USB/IP audio worker".into(),
+        });
+    }
     let device_data = family.device_data().unwrap_or_default();
     let identity = sony_identity(options, family.identity(), DualSenseIdentity::generate)?;
     if let Some(identity) = identity {
@@ -598,6 +605,13 @@ pub fn create_dualshock4(
     options: CreationOptions,
     mut family: DualShock4Options,
 ) -> Result<DualShock4Controller, ControllerError> {
+    if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO
+        && family.device_data().is_some()
+    {
+        return Err(ControllerError::Unsupported {
+            reason: "caller-supplied DualShock 4 device data is unsupported by the USB/IP audio worker".into(),
+        });
+    }
     let device_data = family.device_data().unwrap_or_default();
     let identity = sony_identity(options, family.identity(), DualShock4Identity::generate)?;
     if let Some(identity) = identity {
@@ -1058,7 +1072,7 @@ fn create_dualsense_usb(
     let audio_options = options.audio();
     let options = options.internal()?;
     let (bridge, mut audio) =
-        crate::usb_audio::dualsense(identity.bytes(), audio_options, options.session.0, Some((device_data.feature_report(0x05).unwrap().to_vec(), device_data.feature_report(0x20).unwrap().to_vec())))?;
+        crate::usb_audio::dualsense(identity.bytes(), audio_options, options.session.0)?;
     let mut inner = gr_curated_controllers::create_dualsense_usb_worker(bridge);
     if let Err(error) = inner.commit() {
         audio.close();
@@ -1101,7 +1115,7 @@ fn create_dualshock4_usb(
     let audio_options = options.audio();
     let options = options.internal()?;
     let (bridge, mut audio) =
-        crate::usb_audio::dualshock4(identity.bytes(), audio_options, options.session.0, Some((device_data.feature_report(0x02).unwrap().to_vec(), device_data.feature_report(0xa3).unwrap().to_vec())))?;
+        crate::usb_audio::dualshock4(identity.bytes(), audio_options, options.session.0)?;
     let mut inner = gr_curated_controllers::create_dualshock4_usb_worker(bridge);
     if let Err(error) = inner.commit() {
         audio.close();
