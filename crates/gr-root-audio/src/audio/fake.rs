@@ -154,6 +154,7 @@ pub fn open(creation: u64, access: AudioAccess) -> (ControllerAudio, Arc<Mutex<R
     .collect();
     (
         ControllerAudio {
+            sidecar_association: None,
             endpoints,
             onboard_speaker_source: None,
             limitation: "Synthetic I/O only",
@@ -165,6 +166,25 @@ pub fn open(creation: u64, access: AudioAccess) -> (ControllerAudio, Arc<Mutex<R
         },
         record,
     )
+}
+
+#[test]
+fn sidecar_lookup_is_typed_and_creation_scoped_without_a_live_graph() {
+    use super::AudioSidecarAssociation;
+    let (mut audio, _) = open(11, AudioAccess::Samples);
+    assert!(audio.sidecar_association().is_none());
+    let key = "virtualgamepad.synthetic.creation-11".to_owned();
+    let association = AudioSidecarAssociation::from_endpoints(key.clone(), audio.endpoints());
+    assert_eq!(association.key(), key);
+    assert_eq!(association.node_names().len(), 2);
+    assert!(association.node_names().iter().all(|name| name.contains("11")));
+    audio.sidecar_association = Some(association);
+    assert_eq!(audio.sidecar_association().unwrap().key(), key);
+    audio.close();
+    assert_eq!(audio.sidecar_association().unwrap().node_names().len(), 2);
+    let (other, _) = open(12, AudioAccess::Samples);
+    assert_ne!(audio.endpoints()[0].host(), other.endpoints()[0].host());
+    assert!(other.sidecar_association().is_none());
 }
 
 #[test]

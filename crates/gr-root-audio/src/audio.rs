@@ -254,10 +254,47 @@ pub struct AudioUsbMicrophoneProgress {
     pub maximum_pcm_pump_lateness_us: u64,
 }
 
+/// Cooperative, creation-scoped link between an owning UHID controller and its
+/// PipeWire sidecar nodes. Names are valid only within the owning audio session;
+/// they do not represent a USB composite or an automatically linked sound card.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioSidecarAssociation {
+    key: String,
+    node_names: Vec<String>,
+}
+impl AudioSidecarAssociation {
+    /// Shared by every PipeWire node owned by this controller creation.
+    #[must_use]
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+    /// Exact PipeWire node names (including NativeClient caller nodes if present).
+    #[must_use]
+    pub fn node_names(&self) -> &[String] {
+        &self.node_names
+    }
+    fn from_endpoints(key: String, endpoints: &[AudioEndpoint]) -> Self {
+        let node_names = endpoints
+            .iter()
+            .flat_map(|endpoint| {
+                [
+                    endpoint.host().pipewire_node(),
+                    endpoint.caller().and_then(AudioEndpointSelector::pipewire_node),
+                ]
+                .into_iter()
+                .flatten()
+            })
+            .map(str::to_owned)
+            .collect();
+        Self { key, node_names }
+    }
+}
+
 /// Audio is borrowed from a controller, never independently reopened or detached.
 /// Endpoint association distinguishes `PipeWire` companions from USB composite
 /// audio interfaces. Emulated profiles do not claim physical-controller fidelity.
 pub struct ControllerAudio {
+    sidecar_association: Option<AudioSidecarAssociation>,
     endpoints: Vec<AudioEndpoint>,
     onboard_speaker_source: Option<AudioChannel>,
     limitation: &'static str,
@@ -279,6 +316,12 @@ impl ControllerAudio {
     #[must_use]
     pub fn endpoints(&self) -> &[AudioEndpoint] {
         &self.endpoints
+    }
+    /// Cooperative Native HID audio lookup; `None` on Real USB audio.
+    /// Metadata stays inspectable after close, but node names stop resolving.
+    #[must_use]
+    pub fn sidecar_association(&self) -> Option<&AudioSidecarAssociation> {
+        self.sidecar_association.as_ref()
     }
     /// Semantic playback channel the provider maps to the controller's
     /// built-in speaker, when documented by the selected profile.
@@ -387,6 +430,7 @@ pub(crate) fn open(
     options: AudioOptions,
     family: Family,
     creation: u64,
+    hid_uniq: Option<&str>,
 ) -> Result<Option<ControllerAudio>, ControllerError> {
     if options.exposure() == AudioExposure::Disabled {
         return Ok(None);
@@ -402,7 +446,29 @@ pub(crate) fn open(
             reason: e.to_string(),
         })?;
         let onboard_speaker_source = profile.onboard_speaker_source();
-        let session = gr_audio_linux::Session::open(&profile, options, creation).map_err(|e| {
+        // Curated creation has already assigned the final UHID uniq. Reusing the
+        // selected HID value avoids confusing a restored identity with a new one.
+        let hid_uniq = hid_uniq.ok_or_else(|| ControllerError::Open {
+            reason: "audio sidecar requires the owning UHID unique ID".into(),
+        })?;
+        let (vendor_id, product_id, product_name) = match family {
+            Family::DualSense => (0x054c, 0x0ce6, "DualSense Wireless Controller"),
+            Family::DualShock4 => (0x054c, 0x05c4, "Wireless Controller"),
+            Family::Xbox360 => {
+                let (vendor, product) = gr_controller_wire::STANDARD_GAMEPAD_VIRTUAL_IDENTITY;
+                (vendor, product, "Virtual Xbox 360 (standard HID)")
+            }
+        };
+        let association_key = format!("virtualgamepad.{}.{}", std::process::id(), creation);
+        let identity = gr_audio_linux::SidecarIdentity {
+            vendor_id,
+            product_id,
+            product_name: product_name.into(),
+            hid_unique_id: hid_uniq.into(),
+            realization_id: "linux.uhid.usb".into(),
+            key: association_key.clone(),
+        };
+        let session = gr_audio_linux::Session::open_associated(&profile, options, creation, identity).map_err(|e| {
             ControllerError::Open {
                 reason: e.to_string(),
             }
@@ -427,6 +493,10 @@ pub(crate) fn open(
             })
             .collect();
         Ok(Some(ControllerAudio {
+            sidecar_association: Some(AudioSidecarAssociation::from_endpoints(
+                association_key,
+                &endpoints,
+            )),
             endpoints,
             onboard_speaker_source,
             limitation: profile.limitation(),
@@ -435,7 +505,7 @@ pub(crate) fn open(
     }
     #[cfg(not(all(target_os = "linux", feature = "audio-pipewire")))]
     {
-        let _ = (family, creation);
+        let _ = (family, creation, hid_uniq);
         Err(ControllerError::Unsupported {
             reason: "audio-pipewire support is not enabled on this platform".into(),
         })
@@ -508,6 +578,7 @@ pub(crate) fn usb_audio(
         })
         .collect::<Result<Vec<_>, ControllerError>>()?;
     Ok(ControllerAudio {
+        sidecar_association: None,
         endpoints,
         onboard_speaker_source,
         limitation: profile.limitation(),
