@@ -194,7 +194,7 @@ mod tests {
             id: Some(9),
         };
         for session in [7, 7 + (1 << 16)] {
-            let driver = DualSenseDefinition;
+            let driver = DualSenseDefinition::default();
             let mut first = driver.hid_protocol(RealizationSessionId(session), [2, 1, 2, 3, 4, 5]);
             let mut second = driver.hid_protocol(RealizationSessionId(session), [2, 1, 2, 3, 4, 6]);
             let reply = first.request(&get, 0).0;
