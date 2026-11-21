@@ -184,8 +184,14 @@ mod tests {
         let NativeControllerRealization::Uhid(second_spec) = realization(second) else {
             panic!("expected Bluetooth UHID");
         };
-        assert_eq!(first_spec.unique_id, crate::common::address_label(first.bytes()));
-        assert_eq!(second_spec.unique_id, crate::common::address_label(second.bytes()));
+        assert_eq!(
+            first_spec.unique_id,
+            crate::common::address_label(first.bytes())
+        );
+        assert_eq!(
+            second_spec.unique_id,
+            crate::common::address_label(second.bytes())
+        );
         assert_ne!(first_spec.unique_id, second_spec.unique_id);
         let restored = XboxSeriesIdentity::from_bytes(first.bytes()).unwrap();
         let NativeControllerRealization::Uhid(reopened) = realization(restored) else {

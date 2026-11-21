@@ -20,6 +20,7 @@ A transport-only `physical_path` suffix is not a controller-reported identity. O
 | Switch Pro | User calibration, colours and serial region, USB UHID | SPI read subcommand `0x10` | Unpopulated synthetic response; **not required** | None; P10c | Planned P10c |
 | Xbox 360 | Device-reported serial, uinput | **Not emitted** (ordinary evdev keys/axes/FF only) | Not applicable | No identity API needed | No |
 | Xbox 360 | Transport path, uinput | uinput `phys` label | Per-instance suffix; **yes** (not a reported serial) | No override; `Xbox360Options` empty | No |
+| Xbox 360 | Standard gamepad presentation, USB UHID | UHID `uniq` and `phys` transport labels; no serial feature | Per-instance suffix; **yes** (transport label, not controller serial) | No override; `Xbox360Options` empty | No |
 | Xbox Series | Bluetooth identity, Bluetooth UHID | `uniq` only; no serial feature in declared report map | Locally generated; **yes** | `XboxSeriesIdentity::from_bytes`, `XboxSeriesOptions::with_identity`, handle `identity()` | No direct loader; caller restores bytes at runtime |
 | Xbox Series | Bluetooth feature-reported serial | **Not emitted** | Not applicable | No extra feature API | No |
 | Xbox Series | Transport path, uinput | uinput `phys` label; **no `uniq`** | Per-instance suffix; **yes** (transport only) | Identity stored on handle but not emitted | No |
@@ -28,7 +29,7 @@ A transport-only `physical_path` suffix is not a controller-reported identity. O
 | Wii Remote | Bluetooth identity, Bluetooth UHID | `uniq` and device-facing identity | Generated locally; **yes** | `WiiRemoteIdentity::from_bytes`, `WiiRemoteOptions::with_identity` | No direct loader; caller restores bytes at runtime |
 | Wii Remote | EEPROM extent / custom calibration | Memory read/write and extension blocks | Empty by default; **not required** | `WiiEepromImage::import`, `WiiRemoteOptions::with_eeprom_image` | **Yes**, caller reads at runtime; demo Save/Load, never commit files |
 
-Families with uinput targets expose per-session path suffixes but **not** device calibration, firmware reports or identity features. A caller-restored identity on the controller handle does not imply uinput serial presentation. USB composite/dummy-HCD paths have separately owned protocol resources; this matrix is not evidence of physical identity replay on those targets.
+The Xbox 360 USB UHID presentation uses the project-standard gamepad descriptor rather than native Xbox identity; its `uniq` is not a controller-reported serial. Families with uinput targets expose per-session path suffixes but **not** device calibration, firmware reports or identity features. A caller-restored identity on the controller handle does not imply uinput serial presentation. USB composite/dummy-HCD paths have separately owned protocol resources; this matrix is not evidence of physical identity replay on those targets.
 
 ## Conformance and outstanding work
 

@@ -5,8 +5,8 @@ use gr_curated_controllers::{
     steam_controller_2026::{SteamController2026Identity, SteamController2026Options},
     switch_pro::{SwitchProIdentity, SwitchProOptions},
     wii_remote::{WiiRemoteIdentity, WiiRemoteOptions},
-    xbox360::Xbox360Options,
     xbox_series::{XboxSeriesIdentity, XboxSeriesOptions},
+    xbox360::Xbox360Options,
 };
 
 /// Deterministic synthetic-only identity source for restoration test paths.
@@ -66,16 +66,26 @@ fn restored_identity_values_round_trip_through_all_available_family_options() {
     );
 
     let switch = SwitchProIdentity::from_bytes(source.next()).unwrap();
-    assert_eq!(SwitchProIdentity::from_bytes(switch.bytes()).unwrap(), switch);
     assert_eq!(
-        SwitchProOptions::default().with_identity(switch).identity(),
+        SwitchProIdentity::from_bytes(switch.bytes()).unwrap(),
+        switch
+    );
+    assert_eq!(
+        SwitchProOptions::default()
+            .with_identity(switch)
+            .identity(),
         Some(switch)
     );
 
     let series = XboxSeriesIdentity::from_bytes(source.next()).unwrap();
-    assert_eq!(XboxSeriesIdentity::from_bytes(series.bytes()).unwrap(), series);
     assert_eq!(
-        XboxSeriesOptions::default().with_identity(series).identity(),
+        XboxSeriesIdentity::from_bytes(series.bytes()).unwrap(),
+        series
+    );
+    assert_eq!(
+        XboxSeriesOptions::default()
+            .with_identity(series)
+            .identity(),
         Some(series)
     );
 

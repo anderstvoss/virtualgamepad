@@ -48,7 +48,9 @@ pub fn create_xbox_series(
 ) -> Result<XboxSeriesController, ProviderError> {
     require_target(options.target)?;
     common::require_linux_platform(options.target)?;
-    let identity = family.identity().map_or_else(XboxSeriesIdentity::generate, Ok)?;
+    let identity = family
+        .identity()
+        .map_or_else(XboxSeriesIdentity::generate, Ok)?;
     create(options, XboxSeriesDefinition::default(), identity)
 }
 
