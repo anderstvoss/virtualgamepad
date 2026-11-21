@@ -128,7 +128,9 @@ pub(super) fn draw_overview(ui: &mut egui::Ui, target: RealizationId, view: &Vie
             ui.monospace(format!("Caller: {}", selector_text(caller)));
         }
     }
-    ui.weak("Endpoint selectors are creation-scoped; do not reuse ALSA card numbers after recreation.");
+    ui.weak(
+        "Endpoint selectors are creation-scoped; do not reuse ALSA card numbers after recreation.",
+    );
 }
 
 #[cfg(test)]
@@ -138,7 +140,10 @@ mod tests {
     #[test]
     fn realization_levels_classify_current_audio_and_generic_targets() {
         assert_eq!(realization_level(RealizationId::LINUX_UINPUT), "Generic");
-        assert_eq!(realization_level(RealizationId::LINUX_UHID_USB), "Native HID");
+        assert_eq!(
+            realization_level(RealizationId::LINUX_UHID_USB),
+            "Native HID"
+        );
         assert_eq!(
             realization_level(RealizationId::LINUX_UHID_BLUETOOTH),
             "Native HID"
@@ -151,7 +156,10 @@ mod tests {
             realization_level(RealizationId::LINUX_DUMMY_HCD_USB_HID),
             "Real USB"
         );
-        assert_eq!(realization_level(RealizationId::new("synthetic.other")), "Unclassified");
+        assert_eq!(
+            realization_level(RealizationId::new("synthetic.other")),
+            "Unclassified"
+        );
     }
 
     #[test]
@@ -183,7 +191,10 @@ mod tests {
 
     #[test]
     fn directions_are_labeled_from_typed_values() {
-        assert_eq!(direction_label(SampleDirection::HostToController), "Playback");
+        assert_eq!(
+            direction_label(SampleDirection::HostToController),
+            "Playback"
+        );
         assert_eq!(
             direction_label(SampleDirection::ControllerToHost),
             "Microphone"
