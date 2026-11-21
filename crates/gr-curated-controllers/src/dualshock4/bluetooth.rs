@@ -151,11 +151,21 @@ mod tests {
         assert_eq!(bytes[34], 1);
         // Independent synthetic golden checksum for the neutral full frame;
         // not a physical-device packet or a measured report.
-        assert_eq!(&bytes[73..], &[0x00, 0x00, 0x00, 0x00]);
+        assert_eq!(&bytes[73..], &[0xef, 0x96, 0xe5, 0x8a]);
         let mut prefix = vec![0x11];
         prefix.extend_from_slice(&bytes[..73]);
         assert_eq!(&bytes[73..], &crc32(0xa1, &prefix).to_le_bytes());
     }
+    #[test]
+    fn bluetooth_battery_level_uses_wireless_deciles() {
+        let mut state = DualShock4SessionState::default();
+        state.status.battery.set_exposed(true);
+        state.status.battery.set_level(crate::BatteryLevel::new(37).unwrap());
+        let ProviderFrame::HidInput { bytes, .. } = full_frame(&state) else { panic!("BT HID"); };
+        assert_eq!(bytes[31], 3);
+        assert_eq!(bytes[31] & 0x10, 0);
+    }
+
     #[test]
     fn feature_calibration_and_host_output_crc() {
         let f = features(super::super::common::test_address(42));
