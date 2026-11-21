@@ -1157,7 +1157,7 @@ fn create_xbox360_usb(options: CreationOptions) -> Result<Xbox360Controller, Con
         .map_err(controller_error)?
         .bytes();
     let (bridge, mut audio) =
-        crate::usb_audio::xbox360(identity, audio_options, options.session.0, None)?;
+        crate::usb_audio::xbox360(identity, audio_options, options.session.0)?;
     let mut inner = gr_curated_controllers::create_xbox360_usb_worker(bridge);
     if let Err(error) = inner.commit() {
         audio.close();
