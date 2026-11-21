@@ -15,6 +15,7 @@ pub(crate) struct SwitchUsbProtocol {
     state: (SwitchProInputs, SwitchProStatus),
     pub(crate) timer: u8,
     pub(crate) stream_enabled: bool,
+    pub(crate) imu_enabled: bool,
     pending: VecDeque<Report>,
     next: Option<u64>,
     active: bool,
@@ -28,6 +29,7 @@ impl SwitchUsbProtocol {
             retained: crate::retained::SwitchProOutputState::default(),
             timer: 0,
             stream_enabled: false,
+            imu_enabled: false,
             pending: VecDeque::new(),
             next: Some(0),
             active: true,
@@ -64,6 +66,11 @@ impl SwitchUsbProtocol {
                 let (reply, enable) =
                     switch_subcommand_reply(&self.state, bytes[9], &bytes[10..], self.identity);
                 self.stream_enabled |= enable;
+                if bytes[9] == 0x40 {
+                    if let Some(value) = bytes.get(10) {
+                        self.imu_enabled = *value != 0;
+                    }
+                }
                 self.pending.push_back(common::logical_input(reply));
             }
             Some(0x10) if bytes.len() >= 9 => {} // Rumble-only report; typed raw output preserved.
@@ -99,6 +106,7 @@ impl Protocol for SwitchUsbProtocol {
         self.state = state.clone();
         self.state.1.timer = self.timer;
         self.state.1.stream_enabled = self.stream_enabled;
+        self.state.1.imu_enabled = self.imu_enabled;
         let mut reports: Vec<_> = self.pending.drain(..).collect();
         reports.push(common::logical_input(switch_frame(&self.state)));
         self.timer = self.timer.wrapping_add(1);
@@ -133,6 +141,7 @@ impl Protocol for SwitchUsbProtocol {
             } => {
                 self.valid = numbered_input && numbered_output && !numbered_feature;
                 self.active = true;
+                self.imu_enabled = false;
                 self.next = Some(now);
             }
             Lifecycle::Stop => {
