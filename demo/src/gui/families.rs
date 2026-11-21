@@ -440,6 +440,9 @@ impl Controller {
                     if let virtualgamepad::SwitchProOutputEvent::ForceFeedback(event) = event {
                         indicators.apply_force_feedback(event);
                     }
+                    if let virtualgamepad::SwitchProOutputEvent::HomeLight(light) = &event {
+                        indicators.switch_home_light = Some(*light);
+                    }
                     log.push(format!("Switch Pro: {event:?}"));
                 })
                 .map_err(|error| error.to_string()),
