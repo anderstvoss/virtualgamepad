@@ -7,6 +7,7 @@ macro_rules! factory {
             identity: [u8; 6],
             options: crate::AudioOptions,
             creation: u64,
+            device_data: Option<(Vec<u8>, Vec<u8>)>,
         ) -> Result<
             (
                 Box<dyn gr_curated_controllers::WorkerBridge<$state>>,
@@ -14,7 +15,7 @@ macro_rules! factory {
             ),
             crate::ControllerError,
         > {
-            gr_root_audio::integration::usb::$name(identity, options, creation)
+            gr_root_audio::integration::usb::$name(identity, options, creation, device_data)
                 .map_err(crate::audio::open_error)
         }
     };
