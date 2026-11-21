@@ -544,7 +544,6 @@ pub(crate) fn open<S: Send + 'static>(
     identity: [u8; 6],
     options: AudioOptions,
     creation: u64,
-    device_data: Option<(Vec<u8>, Vec<u8>)>,
     to_native: fn(&S) -> NativeState,
 ) -> Result<(Box<dyn WorkerBridge<S>>, crate::ControllerAudio), ControllerError> {
     let (mut broker, [control, playback, microphone]) =
@@ -564,10 +563,6 @@ pub(crate) fn open<S: Send + 'static>(
         };
         let mut control =
             Control::new(control, broker.generation(), family).map_err(|error| io_open(&error))?;
-        // The worker must acknowledge immutable feature data before the USB
-        // serving thread starts, so no host probe can observe a partial profile.
-        control.configure_device_data(device_data.as_ref().map(|(a, b)| (a.as_slice(), b.as_slice())))
-            .map_err(|error| ControllerError::Open { reason: format!("USB device-data setup: {error}") })?;
         control.microphone_host_frames().map_err(|error| ControllerError::Open {
         reason: format!("installed audio worker lacks host-frame progress: {error}; reinstall the matching broker and worker"),
     })?;
