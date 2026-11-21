@@ -1267,6 +1267,41 @@ mod tests {
         assert_eq!(unrelated.get("device.serial"), None);
     }
     #[test]
+    fn prepared_native_client_nodes_inherit_one_association() {
+        let identity = SidecarIdentity {
+            vendor_id: 0x1234,
+            product_id: 0x5678,
+            product_name: "Synthetic Gamepad".into(),
+            hid_unique_id: "test-unique-b".into(),
+            realization_id: "linux.uhid.usb".into(),
+            key: "virtualgamepad.test.creation-b".into(),
+        };
+        let profile = gr_curated_controllers::audio::dualsense(
+            gr_audio_contract::AudioExposure::Emulated,
+        )
+        .unwrap();
+        let options = AudioOptions::new(gr_audio_contract::AudioExposure::Emulated)
+            .with_playback_access(AudioAccess::NativeClient)
+            .with_microphone_access(AudioAccess::NativeClient);
+        let prepared = prepare(&profile, options, 23, 0, Some(&identity)).unwrap();
+        assert_eq!(prepared.endpoints.len(), 2);
+        assert_eq!(prepared.specs.len(), 4);
+        for spec in &prepared.specs {
+            assert_eq!(spec.association.as_ref(), Some(&identity));
+            let props = endpoint_properties(
+                &spec.name,
+                matches!(&spec.io, Io::Sink(_)),
+                spec.format.sample_rate_hz(),
+                spec.association.as_ref(),
+            );
+            assert_eq!(
+                props.get("virtualgamepad.association.key"),
+                Some(identity.key.as_str())
+            );
+            assert_eq!(props.get("device.serial"), Some(identity.hid_unique_id.as_str()));
+        }
+    }
+    #[test]
     fn negotiated_format_keeps_audible_and_haptic_positions_explicit() {
         let format = PcmFormat::new(
             48_000,
