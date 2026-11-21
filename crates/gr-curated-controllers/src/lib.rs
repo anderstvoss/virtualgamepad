@@ -30,8 +30,8 @@
 
 pub mod audio;
 mod common;
-mod sony_evdev;
 mod sony_device_data;
+mod sony_evdev;
 pub mod steam_controller_2026;
 pub use common::WorkerBridge;
 pub use dualsense::create_dualsense_usb_worker;
@@ -161,16 +161,17 @@ impl BatteryState {
 }
 
 pub use dualsense::{
-    DualSenseAudioPath, DualSenseAxis, DualSenseControl, DualSenseController, DualSenseFeature,
-    DualSenseHidOutput, DualSenseIdentity, DualSenseDeviceData, DualSenseInputs, DualSenseOptions, DualSenseOutputEvent,
-    DualSenseSessionState, DualSenseStatus, DualSenseSurface, DualSenseTouchContact,
-    DualSenseTrigger, MotionSample, TouchSlot, create_dualsense,
+    DualSenseAudioPath, DualSenseAxis, DualSenseControl, DualSenseController, DualSenseDeviceData,
+    DualSenseFeature, DualSenseHidOutput, DualSenseIdentity, DualSenseInputs, DualSenseOptions,
+    DualSenseOutputEvent, DualSenseSessionState, DualSenseStatus, DualSenseSurface,
+    DualSenseTouchContact, DualSenseTrigger, MotionSample, TouchSlot, create_dualsense,
 };
 pub use dualshock4::{
-    DualShock4Axis, DualShock4Control, DualShock4Controller, DualShock4HidOutput,
-    DualShock4Identity, DualShock4DeviceData, DualShock4Inputs, DualShock4MotionSample, DualShock4Options,
-    DualShock4OutputEvent, DualShock4SessionState, DualShock4Status, DualShock4Surface,
-    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, create_dualshock4,
+    DualShock4Axis, DualShock4Control, DualShock4Controller, DualShock4DeviceData,
+    DualShock4HidOutput, DualShock4Identity, DualShock4Inputs, DualShock4MotionSample,
+    DualShock4Options, DualShock4OutputEvent, DualShock4SessionState, DualShock4Status,
+    DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger,
+    create_dualshock4,
 };
 pub use switch_pro::{
     SwitchProAxis, SwitchProControl, SwitchProController, SwitchProIdentity, SwitchProInputs,
