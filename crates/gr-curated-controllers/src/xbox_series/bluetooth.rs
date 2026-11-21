@@ -175,6 +175,30 @@ mod tests {
     use gr_realization_api::RealizationSessionId;
 
     #[test]
+    fn bluetooth_uniq_uses_generated_identity_and_restoration_is_stable() {
+        let first = XboxSeriesIdentity::from_bytes(crate::common::test_address(101)).unwrap();
+        let second = XboxSeriesIdentity::from_bytes(crate::common::test_address(102)).unwrap();
+        let NativeControllerRealization::Uhid(first_spec) = realization(first) else {
+            panic!("expected Bluetooth UHID");
+        };
+        let NativeControllerRealization::Uhid(second_spec) = realization(second) else {
+            panic!("expected Bluetooth UHID");
+        };
+        assert_eq!(first_spec.unique_id, crate::common::address_label(first.bytes()));
+        assert_eq!(second_spec.unique_id, crate::common::address_label(second.bytes()));
+        assert_ne!(first_spec.unique_id, second_spec.unique_id);
+        let restored = XboxSeriesIdentity::from_bytes(first.bytes()).unwrap();
+        let NativeControllerRealization::Uhid(reopened) = realization(restored) else {
+            panic!("expected Bluetooth UHID");
+        };
+        assert_eq!(reopened.unique_id, first_spec.unique_id);
+        assert_eq!(reopened.bus_type, 5);
+        let mut invalid = first.bytes();
+        invalid[0] |= 1;
+        assert!(XboxSeriesIdentity::from_bytes(invalid).is_err());
+    }
+
+    #[test]
     fn physical_input_shape_keeps_controls_independent_and_endpoints_exact() {
         let mut state = XboxSeriesInputs {
             sticks: [[i16::MIN, 0], [i16::MAX, -1]],

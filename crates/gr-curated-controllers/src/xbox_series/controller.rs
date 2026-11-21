@@ -1,7 +1,6 @@
 use super::{
     XboxSeriesBluetoothRumble, XboxSeriesButton, XboxSeriesIdentity, XboxSeriesInputs,
-    XboxSeriesOptions, bluetooth,
-    definition::XboxSeriesDefinition, evdev,
+    XboxSeriesOptions, bluetooth, definition::XboxSeriesDefinition, evdev,
 };
 use crate::{
     ControllerAssociation, CreationOptions, common,
@@ -276,7 +275,8 @@ mod input_ownership_tests {
                 &super::super::definition::BLUETOOTH
             };
             let mut controller = XboxSeriesController(
-                Box::new(session), surface,
+                Box::new(session),
+                surface,
                 XboxSeriesIdentity::from_bytes(common::test_address(77)).unwrap(),
             );
             controller.service(&mut |_| {}).unwrap();

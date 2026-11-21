@@ -2,11 +2,11 @@
 use gr_curated_controllers::{
     dualsense::{DualSenseIdentity, DualSenseOptions},
     dualshock4::{DualShock4Identity, DualShock4Options},
+    steam_controller_2026::{SteamController2026Identity, SteamController2026Options},
     switch_pro::{SwitchProIdentity, SwitchProOptions},
+    wii_remote::{WiiRemoteIdentity, WiiRemoteOptions},
     xbox360::Xbox360Options,
     xbox_series::{XboxSeriesIdentity, XboxSeriesOptions},
-    steam_controller_2026::{SteamController2026Identity, SteamController2026Options},
-    wii_remote::{WiiRemoteIdentity, WiiRemoteOptions},
 };
 
 /// Deterministic synthetic-only identity source for restoration test paths.
@@ -22,11 +22,26 @@ impl SyntheticIdentitySource {
 
 #[test]
 fn default_identity_generators_vary_across_instances() {
-    assert_ne!(DualSenseIdentity::generate().unwrap(), DualSenseIdentity::generate().unwrap());
-    assert_ne!(DualShock4Identity::generate().unwrap(), DualShock4Identity::generate().unwrap());
-    assert_ne!(SwitchProIdentity::generate().unwrap(), SwitchProIdentity::generate().unwrap());
-    assert_ne!(XboxSeriesIdentity::generate().unwrap(), XboxSeriesIdentity::generate().unwrap());
-    assert_ne!(WiiRemoteIdentity::generate().unwrap(), WiiRemoteIdentity::generate().unwrap());
+    assert_ne!(
+        DualSenseIdentity::generate().unwrap(),
+        DualSenseIdentity::generate().unwrap()
+    );
+    assert_ne!(
+        DualShock4Identity::generate().unwrap(),
+        DualShock4Identity::generate().unwrap()
+    );
+    assert_ne!(
+        SwitchProIdentity::generate().unwrap(),
+        SwitchProIdentity::generate().unwrap()
+    );
+    assert_ne!(
+        XboxSeriesIdentity::generate().unwrap(),
+        XboxSeriesIdentity::generate().unwrap()
+    );
+    assert_ne!(
+        WiiRemoteIdentity::generate().unwrap(),
+        WiiRemoteIdentity::generate().unwrap()
+    );
     assert_ne!(
         SteamController2026Identity::generate().unwrap(),
         SteamController2026Identity::generate().unwrap()
@@ -38,29 +53,46 @@ fn restored_identity_values_round_trip_through_all_available_family_options() {
     let mut source = SyntheticIdentitySource(100);
     let sony = DualSenseIdentity::from_bytes(source.next()).unwrap();
     assert_eq!(DualSenseIdentity::from_bytes(sony.bytes()).unwrap(), sony);
-    assert_eq!(DualSenseOptions::default().with_identity(sony).identity(), Some(sony));
+    assert_eq!(
+        DualSenseOptions::default().with_identity(sony).identity(),
+        Some(sony)
+    );
 
     let ds4 = DualShock4Identity::from_bytes(source.next()).unwrap();
     assert_eq!(DualShock4Identity::from_bytes(ds4.bytes()).unwrap(), ds4);
-    assert_eq!(DualShock4Options::default().with_identity(ds4).identity(), Some(ds4));
+    assert_eq!(
+        DualShock4Options::default().with_identity(ds4).identity(),
+        Some(ds4)
+    );
 
     let switch = SwitchProIdentity::from_bytes(source.next()).unwrap();
     assert_eq!(SwitchProIdentity::from_bytes(switch.bytes()).unwrap(), switch);
-    assert_eq!(SwitchProOptions::default().with_identity(switch).identity(), Some(switch));
+    assert_eq!(
+        SwitchProOptions::default().with_identity(switch).identity(),
+        Some(switch)
+    );
 
     let series = XboxSeriesIdentity::from_bytes(source.next()).unwrap();
     assert_eq!(XboxSeriesIdentity::from_bytes(series.bytes()).unwrap(), series);
-    assert_eq!(XboxSeriesOptions::default().with_identity(series).identity(), Some(series));
+    assert_eq!(
+        XboxSeriesOptions::default().with_identity(series).identity(),
+        Some(series)
+    );
 
     let wii = WiiRemoteIdentity::from_bytes(source.next()).unwrap();
     assert_eq!(WiiRemoteIdentity::from_bytes(wii.bytes()).unwrap(), wii);
-    assert_eq!(WiiRemoteOptions::default().with_identity(wii).identity(), Some(wii));
+    assert_eq!(
+        WiiRemoteOptions::default().with_identity(wii).identity(),
+        Some(wii)
+    );
 
     let steam = SteamController2026Identity::generate().unwrap();
     let restored = SteamController2026Identity::from_serial(steam.serial().to_owned()).unwrap();
     assert_eq!(restored, steam);
     assert_eq!(
-        SteamController2026Options::default().with_identity(restored.clone()).identity(),
+        SteamController2026Options::default()
+            .with_identity(restored.clone())
+            .identity(),
         Some(&restored)
     );
 }
