@@ -161,7 +161,7 @@ impl BatteryState {
 
 pub use dualsense::{
     DualSenseAudioPath, DualSenseAxis, DualSenseControl, DualSenseController, DualSenseFeature,
-    DualSenseHidOutput, DualSenseIdentity, DualSenseInputs, DualSenseOptions, DualSenseOutputEvent,
+    DualSenseHidOutput, DualSenseIdentity, DualSenseMuteLed, DualSenseInputs, DualSenseOptions, DualSenseOutputEvent,
     DualSenseSessionState, DualSenseStatus, DualSenseSurface, DualSenseTouchContact,
     DualSenseTrigger, MotionSample, TouchSlot, create_dualsense,
 };
