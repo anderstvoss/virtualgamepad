@@ -1377,6 +1377,7 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
 #[derive(Clone, Default)]
 struct ReverseIndicators {
     wii_player_leds: Option<[bool; 4]>,
+    switch_home_light: Option<virtualgamepad::SwitchProHomeLight>,
     led: Option<[u8; 3]>,
     mute_led: Option<bool>,
     rumble_until: Option<Instant>,
@@ -2760,6 +2761,17 @@ fn draw_controller_output_cards(
             draw_feedback_rows(ui, indicators);
         }
     });
+    if kind == Kind::SwitchPro {
+        wide_card(ui, "HOME light (host request)", |ui| {
+            if let Some(light) = indicators.switch_home_light {
+                ui.label(format!("Brightness: {}/15", light.brightness));
+                ui.monospace(format!("Raw mini-cycle: {:?}", light.mini_cycle));
+            } else {
+                ui.weak("No HOME light command observed");
+            }
+            ui.small("Separate from the four player indicators; physical brightness unverified.");
+        });
+    }
     if kind == Kind::WiiRemote {
         wide_card(ui, "Speaker (planned)", |ui| {
             ui.add_enabled_ui(false, |ui| {
@@ -2931,6 +2943,36 @@ fn draw_feedback_indicator(ui: &mut egui::Ui, label: &str, color: Color32, toolt
 }
 
 fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable: bool) {
+    if let ControllerView::SwitchPro(editor) = view {
+        let mut battery = editor.battery();
+        card(ui, "Switch Pro battery", |ui| {
+            ui.set_min_width(BATTERY_CARD_CONTENT_WIDTH);
+            ui.add_enabled_ui(editable, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Level");
+                    egui::ComboBox::from_id_salt("switch-pro-battery-level")
+                        .selected_text(format!("{:?}", battery.level))
+                        .show_ui(ui, |ui| {
+                            for level in [
+                                virtualgamepad::SwitchProBatteryLevel::Empty,
+                                virtualgamepad::SwitchProBatteryLevel::Critical,
+                                virtualgamepad::SwitchProBatteryLevel::Low,
+                                virtualgamepad::SwitchProBatteryLevel::Medium,
+                                virtualgamepad::SwitchProBatteryLevel::Full,
+                            ] {
+                                ui.selectable_value(&mut battery.level, level, format!("{level:?}"));
+                            }
+                        });
+                });
+                ui.checkbox(&mut battery.charging, "Charging");
+                ui.checkbox(&mut battery.usb_powered, "USB powered");
+            });
+        });
+        if battery != editor.battery() {
+            let _ = editor.set_battery(battery);
+        }
+        return;
+    }
     let supported = view.supports_battery_emulation();
     let battery = view.battery();
     let mut exposed = battery.is_exposed();
