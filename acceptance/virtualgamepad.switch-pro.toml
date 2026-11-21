@@ -72,9 +72,9 @@ id = "player-indicators"
 [[functions]]
 id = "hd-rumble"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "evdev FF_RUMBLE carries two magnitudes, not native Switch frequency/amplitude encoding; conventional rumble is distinct." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/hd-rumble", evidence = ["swpro-l0-device-rumble-word-tables"], reason = "Decode sub-check: raw-word preservation, bounded absolute/relative/mixed samples, neutral and unknown encodings; source-only claims swpro-l0-rumble-absolute-layout, swpro-l0-rumble-sample-layouts, swpro-l0-rumble-logarithmic-units, swpro-l0-rumble-relative-commands at research commit 79f919f22d9c587eb4b3b15383b41c296de1e797 (pending merge and pin adoption). No host or physical run; acceptance remains pending." }
-"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.uinput" = { status = "not-supported", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "evdev FF_RUMBLE carries two magnitudes, not native Switch frequency/amplitude encoding; conventional rumble is distinct. Level: Generic." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/hd-rumble", evidence = ["swpro-l0-device-rumble-word-tables"], reason = "Decode sub-check: raw-word preservation, bounded absolute/relative/mixed samples, neutral and unknown encodings; source-only claims swpro-l0-rumble-absolute-layout, swpro-l0-rumble-sample-layouts, swpro-l0-rumble-logarithmic-units, swpro-l0-rumble-relative-commands at research commit 79f919f22d9c587eb4b3b15383b41c296de1e797 (pending merge and pin adoption). No host or physical run; acceptance remains pending. Level: Native HID." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources. Level: Real USB (experimental)." }
 "linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }
 
 [[functions]]
