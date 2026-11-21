@@ -102,7 +102,7 @@ pub use gr_curated_controllers::{
     DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
     DualShock4HidOutput, DualShock4Inputs, DualShock4MotionSample, DualShock4Status,
     DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger,
-    MotionSample, SwitchProAxis, SwitchProControl, SwitchProInputs, SwitchProMotionSample,
+    MotionSample, SwitchProAxis, SwitchProBattery, SwitchProBatteryLevel, SwitchProControl, SwitchProHomeLight, SwitchProInputs, SwitchProMotionSample,
     SwitchProRumble, SwitchProRumbleBand, SwitchProRumbleDecoded, SwitchProRumbleSample,
     SwitchProRumbleSamples, SwitchProRumbleWord, SwitchProStatus, SwitchProSurface, TouchSlot,
     Xbox360Axis, Xbox360Control, Xbox360Inputs, Xbox360Status, Xbox360Surface, Xbox360Trigger,
