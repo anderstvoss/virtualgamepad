@@ -488,7 +488,7 @@ impl UnwindSafe for DualSenseControl
 Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
-pub enum DualSenseFeature { Touch, Motion, Lightbar, AdaptiveTriggers, Audio, }
+pub enum DualSenseFeature { Touch, Motion, Lightbar, PlayerIndicators, MicrophoneLed, AdaptiveTriggers, Audio, }
 ```
 
 Trait implementations:
@@ -514,7 +514,7 @@ impl UnwindSafe for DualSenseFeature
 Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
-#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }
+#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 20 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<DualSenseMuteLed>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, led_brightness: u8, lightbar_setup: Option<u8>, release_leds: Option<bool>, player_leds: Option<u8>, player_led_instant: Option<bool>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }
 ```
 
 Trait implementations:
@@ -532,6 +532,32 @@ impl Sync for DualSenseHidOutput
 impl Unpin for DualSenseHidOutput
 impl UnsafeUnpin for DualSenseHidOutput
 impl UnwindSafe for DualSenseHidOutput
+```
+
+### `DualSenseMuteLed`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+pub enum DualSenseMuteLed { Off, On, Pulse, Unknown(u8), }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for DualSenseMuteLed
+impl Debug for DualSenseMuteLed
+impl PartialEq for DualSenseMuteLed
+impl Copy for DualSenseMuteLed
+impl Eq for DualSenseMuteLed
+impl StructuralPartialEq for DualSenseMuteLed
+impl Freeze for DualSenseMuteLed
+impl RefUnwindSafe for DualSenseMuteLed
+impl Send for DualSenseMuteLed
+impl Sync for DualSenseMuteLed
+impl Unpin for DualSenseMuteLed
+impl UnsafeUnpin for DualSenseMuteLed
+impl UnwindSafe for DualSenseMuteLed
 ```
 
 ### `DualSenseOutputEvent`
