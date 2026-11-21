@@ -4629,6 +4629,7 @@ Owner/source: `../src/virtualgamepad/controllers.rs.html`
 
 ```rust
 pub struct XboxSeriesController { /* private fields */ }
+pub fn identity(&self) -> XboxSeriesIdentity
 pub fn inputs(&self) -> &XboxSeriesInputs
 pub fn status(&self) -> XboxSeriesStatus
 pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>
@@ -4695,12 +4696,44 @@ impl UnsafeUnpin for XboxSeriesInputs
 impl UnwindSafe for XboxSeriesInputs
 ```
 
+### `XboxSeriesIdentity`
+
+Owner/source: `../src/gr_curated_controllers/xbox_series.rs.html`
+
+```rust
+pub struct XboxSeriesIdentity(/* private fields */);
+pub fn generate() -> Result<XboxSeriesIdentity, ProviderError>
+pub fn from_bytes(bytes: [u8; 6]) -> Result<XboxSeriesIdentity, ProviderError>
+pub const fn bytes(self) -> [u8; 6]
+```
+
+Trait implementations:
+
+```rust
+impl Clone for XboxSeriesIdentity
+impl Debug for XboxSeriesIdentity
+impl PartialEq for XboxSeriesIdentity
+impl Copy for XboxSeriesIdentity
+impl Eq for XboxSeriesIdentity
+impl Hash for XboxSeriesIdentity
+impl StructuralPartialEq for XboxSeriesIdentity
+impl Freeze for XboxSeriesIdentity
+impl RefUnwindSafe for XboxSeriesIdentity
+impl Send for XboxSeriesIdentity
+impl Sync for XboxSeriesIdentity
+impl Unpin for XboxSeriesIdentity
+impl UnsafeUnpin for XboxSeriesIdentity
+impl UnwindSafe for XboxSeriesIdentity
+```
+
 ### `XboxSeriesOptions`
 
 Owner/source: `../src/gr_curated_controllers/xbox_series.rs.html`
 
 ```rust
-#[non_exhaustive]pub struct XboxSeriesOptions {}
+#[non_exhaustive]pub struct XboxSeriesOptions { /* private fields */ }
+pub const fn with_identity( self, identity: XboxSeriesIdentity, ) -> XboxSeriesOptions
+pub const fn identity(self) -> Option<XboxSeriesIdentity>
 ```
 
 Trait implementations:
