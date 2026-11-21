@@ -99,7 +99,7 @@ impl Session {
         profile: &AudioProfile,
         options: AudioOptions,
         creation: u64,
-        identity: SidecarIdentity,
+        identity: &SidecarIdentity,
     ) -> Result<Self, AudioError> {
         Self::open_inner(profile, options, creation, 0, true, Some(identity))
     }
@@ -109,7 +109,7 @@ impl Session {
         creation: u64,
         source_preroll: usize,
         input_initially_active: bool,
-        association: Option<SidecarIdentity>,
+        association: Option<&SidecarIdentity>,
     ) -> Result<Self, AudioError> {
         if source_preroll > 512 {
             return Err(AudioError::InvalidRequirement);
@@ -127,13 +127,7 @@ impl Session {
             playback,
             playback_observer,
             microphone,
-        } = prepare(
-            profile,
-            options,
-            creation,
-            source_preroll,
-            association.as_ref(),
-        )?;
+        } = prepare(profile, options, creation, source_preroll, association)?;
         let clocks = specs
             .iter()
             .map(|s| (s.name.clone(), s.clock.clone()))

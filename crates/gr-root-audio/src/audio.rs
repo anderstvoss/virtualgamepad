@@ -472,7 +472,7 @@ pub(crate) fn open(
             key: association_key.clone(),
         };
         let session =
-            gr_audio_linux::Session::open_associated(&profile, options, creation, identity)
+            gr_audio_linux::Session::open_associated(&profile, options, creation, &identity)
                 .map_err(|e| ControllerError::Open {
                     reason: e.to_string(),
                 })?;
