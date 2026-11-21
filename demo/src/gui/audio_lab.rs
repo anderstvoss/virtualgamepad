@@ -1216,10 +1216,24 @@ pub(super) fn draw_diagnostics(
             ),
         ],
     );
-    // ar1 (#425) is unmerged: do not manufacture microphone or per-direction
-    // drop counts from playback-only diagnostics. Integrate its typed fields
-    // here after the telemetry API reaches main.
-    ui.weak("Per-direction loss accounting: pending audio telemetry PR #425 (not yet available).");
+    ui.strong("Per-direction loss accounting");
+    for (label, record) in [
+        ("Playback", view.health.playback_accounting()),
+        ("Microphone", view.health.microphone_accounting()),
+    ] {
+        match record {
+            Some(record) => {
+                ui.label(label);
+                ui.push_id(label, |ui| {
+                    draw_diagnostic_metric_rows(ui, &accounting_rows(record));
+                });
+            }
+            None => {
+                ui.weak(format!("{label}: not instrumented for this stream"));
+            }
+        }
+    }
+    ui.weak("Queue-local snapshots; stage counters may overlap and are not end-to-end delivery.");
     ui.horizontal(|ui| {
         if let Some(error) = &view.routing_error {
             ui.colored_label(egui::Color32::YELLOW, "Host routing: error")
@@ -1243,6 +1257,46 @@ pub(super) fn draw_diagnostics(
 
     draw_endpoint_details(ui, &view.endpoints);
     draw_audio_actions(ui, view).or(action)
+}
+
+fn optional_frames(value: Option<u64>) -> String {
+    value.map_or_else(|| "not observable".to_owned(), |frames| frames.to_string())
+}
+
+fn accounting_rows(
+    record: &virtualgamepad::AudioDirectionAccounting,
+) -> Vec<(&'static str, String)> {
+    vec![
+        ("Generation", record.generation.to_string()),
+        ("Produced", record.produced_frames.to_string()),
+        ("Consumed", record.consumed_frames.to_string()),
+        ("Queued", record.queued_frames.to_string()),
+        (
+            "Dropped at ingress",
+            record.dropped_at_ingress_frames.to_string(),
+        ),
+        (
+            "Dropped on flush",
+            record.dropped_on_flush_frames.to_string(),
+        ),
+        (
+            "Dropped on close",
+            record.dropped_on_close_frames.to_string(),
+        ),
+        (
+            "Dropped in callback",
+            optional_frames(record.dropped_in_callback_frames),
+        ),
+        (
+            "Dropped in worker",
+            optional_frames(record.dropped_in_worker_frames),
+        ),
+        (
+            "Silence inserted",
+            optional_frames(record.silence_inserted_frames),
+        ),
+        ("Discontinuities", record.discontinuities.to_string()),
+    ]
 }
 
 fn draw_audio_info_header(ui: &mut egui::Ui, view: Option<&View>) {
