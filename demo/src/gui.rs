@@ -3,6 +3,7 @@ mod audio_topology;
 mod editor;
 mod families;
 mod native_editor;
+mod sony_device_data;
 mod wii_eeprom;
 mod wii_host;
 mod wii_import;
@@ -53,6 +54,7 @@ struct ControllerOptions {
     wii_imports: wii_import::Imports,
     wii_compat: WiiRemoteOptions,
     steam_options: SteamController2026Options,
+    sony_data: sony_device_data::Selections,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
@@ -272,6 +274,7 @@ fn draw_advanced_options(
     kind: Kind,
     audio_creation: &mut audio_lab::CreationAudio,
     steam_options: &mut SteamController2026Options,
+    sony_data: &mut sony_device_data::Selections,
     (wii_revision, wii_imports, wii_compat): (
         &mut WiiRemoteRevision,
         &mut wii_import::Imports,
@@ -318,6 +321,7 @@ fn draw_advanced_options(
                     if kind == Kind::Steam {
                         families::draw_steam_toggles(ui, target, steam_options);
                     }
+                    sony_data.draw(ui, kind);
                     ui.strong("Audio configuration");
                     audio_lab::draw_creation(ui, audio_creation, target, kind.supports_audio());
                 })
@@ -711,7 +715,7 @@ fn recreation_options(
     saved: &ControllerOptions,
     choices: ControllerOptions,
 ) -> ControllerOptions {
-    if matches!(kind, Kind::WiiRemote | Kind::Steam) {
+    if matches!(kind, Kind::WiiRemote | Kind::Steam | Kind::DualSense | Kind::DualShock4) {
         ControllerOptions {
             id: choices.id,
             ..saved.clone()
@@ -1452,6 +1456,7 @@ pub struct App {
     wii_imports: wii_import::Imports,
     wii_compat: WiiRemoteOptions,
     steam_options: SteamController2026Options,
+    sony_data: sony_device_data::Selections,
     name_draft: String,
     create_count: u32,
     advanced_options_open: bool,
@@ -1477,6 +1482,7 @@ impl Default for App {
             wii_imports: wii_import::Imports::default(),
             wii_compat: WiiRemoteOptions::default(),
             steam_options: SteamController2026Options::default(),
+            sony_data: sony_device_data::Selections::default(),
             name_draft: String::new(),
             create_count: 1,
             advanced_options_open: false,
@@ -1659,6 +1665,7 @@ impl App {
             wii_imports: self.wii_imports.clone(),
             wii_compat: self.wii_compat.clone(),
             steam_options: self.steam_options.clone(),
+            sony_data: self.sony_data.clone(),
         }
     }
 
@@ -2032,6 +2039,7 @@ impl eframe::App for App {
                                     self.kind,
                                     &mut self.audio_creation,
                                     &mut self.steam_options,
+                                    &mut self.sony_data,
                                     (&mut self.wii_revision, &mut self.wii_imports, &mut self.wii_compat),
                                 )
                                 .panel_rect;
@@ -4547,6 +4555,7 @@ mod tests {
                                                 Kind::DualSense,
                                                 &mut audio_creation,
                                                 &mut SteamController2026Options::default(),
+                                                &mut sony_device_data::Selections::default(),
                                                 (
                                                     &mut WiiRemoteRevision::Original,
                                                     &mut wii_import::Imports::default(),
