@@ -795,23 +795,6 @@
             "impl UnwindSafe for SwitchProRumbleSamples"
           ]
         },
-        "enum.TouchpadActuation.html": {
-          "declarations": [
-            "pub enum TouchpadActuation { None, Button(AuxiliaryButtonInput), Deflection { id: InputControlId, range: InputAxisRange, }, }"
-          ],
-          "traits": [
-            "impl Clone for TouchpadActuation",
-            "impl Copy for TouchpadActuation",
-            "impl Debug for TouchpadActuation",
-            "impl Eq for TouchpadActuation",
-            "impl PartialEq for TouchpadActuation",
-            "impl RefUnwindSafe for TouchpadActuation",
-            "impl Send for TouchpadActuation",
-            "impl Sync for TouchpadActuation",
-            "impl Unpin for TouchpadActuation",
-            "impl UnwindSafe for TouchpadActuation"
-          ]
-        },
         "enum.TouchSlot.html": {
           "declarations": [
             "pub enum TouchSlot { First, Second, }"
@@ -827,6 +810,23 @@
             "impl Sync for TouchSlot",
             "impl Unpin for TouchSlot",
             "impl UnwindSafe for TouchSlot"
+          ]
+        },
+        "enum.TouchpadActuation.html": {
+          "declarations": [
+            "pub enum TouchpadActuation { None, Button(AuxiliaryButtonInput), Deflection { id: InputControlId, range: InputAxisRange, }, }"
+          ],
+          "traits": [
+            "impl Clone for TouchpadActuation",
+            "impl Copy for TouchpadActuation",
+            "impl Debug for TouchpadActuation",
+            "impl Eq for TouchpadActuation",
+            "impl PartialEq for TouchpadActuation",
+            "impl RefUnwindSafe for TouchpadActuation",
+            "impl Send for TouchpadActuation",
+            "impl Sync for TouchpadActuation",
+            "impl Unpin for TouchpadActuation",
+            "impl UnwindSafe for TouchpadActuation"
           ]
         },
         "enum.TriggerInputKind.html": {
@@ -1049,27 +1049,27 @@
           ],
           "traits": []
         },
-        "fn.create_xbox_series.html": {
-          "declarations": [
-            "pub fn create_xbox_series( options: CreationOptions, family: XboxSeriesOptions, ) -> Result<XboxSeriesController, ControllerError>"
-          ],
-          "traits": []
-        },
         "fn.create_xbox360.html": {
           "declarations": [
             "pub fn create_xbox360( options: CreationOptions, family: Xbox360Options, ) -> Result<Xbox360Controller, ControllerError>"
           ],
           "traits": []
         },
-        "fn.decode_switch_pro_rumble_word_with_previous.html": {
+        "fn.create_xbox_series.html": {
           "declarations": [
-            "pub fn decode_switch_pro_rumble_word_with_previous( raw: [u8; 4], previous: Option<SwitchProRumbleSample>, ) -> SwitchProRumbleWord"
+            "pub fn create_xbox_series( options: CreationOptions, family: XboxSeriesOptions, ) -> Result<XboxSeriesController, ControllerError>"
           ],
           "traits": []
         },
         "fn.decode_switch_pro_rumble_word.html": {
           "declarations": [
             "pub fn decode_switch_pro_rumble_word(raw: [u8; 4]) -> SwitchProRumbleWord"
+          ],
+          "traits": []
+        },
+        "fn.decode_switch_pro_rumble_word_with_previous.html": {
+          "declarations": [
+            "pub fn decode_switch_pro_rumble_word_with_previous( raw: [u8; 4], previous: Option<SwitchProRumbleSample>, ) -> SwitchProRumbleWord"
           ],
           "traits": []
         },
@@ -4313,23 +4313,6 @@
             "impl UnwindSafe for SwitchProRumbleSamples"
           ]
         },
-        "enum.TouchpadActuation.html": {
-          "declarations": [
-            "pub enum TouchpadActuation { None, Button(AuxiliaryButtonInput), Deflection { id: InputControlId, range: InputAxisRange, }, }"
-          ],
-          "traits": [
-            "impl Clone for TouchpadActuation",
-            "impl Copy for TouchpadActuation",
-            "impl Debug for TouchpadActuation",
-            "impl Eq for TouchpadActuation",
-            "impl PartialEq for TouchpadActuation",
-            "impl RefUnwindSafe for TouchpadActuation",
-            "impl Send for TouchpadActuation",
-            "impl Sync for TouchpadActuation",
-            "impl Unpin for TouchpadActuation",
-            "impl UnwindSafe for TouchpadActuation"
-          ]
-        },
         "enum.TouchSlot.html": {
           "declarations": [
             "pub enum TouchSlot { First, Second, }"
@@ -4345,6 +4328,23 @@
             "impl Sync for TouchSlot",
             "impl Unpin for TouchSlot",
             "impl UnwindSafe for TouchSlot"
+          ]
+        },
+        "enum.TouchpadActuation.html": {
+          "declarations": [
+            "pub enum TouchpadActuation { None, Button(AuxiliaryButtonInput), Deflection { id: InputControlId, range: InputAxisRange, }, }"
+          ],
+          "traits": [
+            "impl Clone for TouchpadActuation",
+            "impl Copy for TouchpadActuation",
+            "impl Debug for TouchpadActuation",
+            "impl Eq for TouchpadActuation",
+            "impl PartialEq for TouchpadActuation",
+            "impl RefUnwindSafe for TouchpadActuation",
+            "impl Send for TouchpadActuation",
+            "impl Sync for TouchpadActuation",
+            "impl Unpin for TouchpadActuation",
+            "impl UnwindSafe for TouchpadActuation"
           ]
         },
         "enum.TriggerInputKind.html": {
@@ -4567,27 +4567,27 @@
           ],
           "traits": []
         },
-        "fn.create_xbox_series.html": {
-          "declarations": [
-            "pub fn create_xbox_series( options: CreationOptions, family: XboxSeriesOptions, ) -> Result<XboxSeriesController, ControllerError>"
-          ],
-          "traits": []
-        },
         "fn.create_xbox360.html": {
           "declarations": [
             "pub fn create_xbox360( options: CreationOptions, family: Xbox360Options, ) -> Result<Xbox360Controller, ControllerError>"
           ],
           "traits": []
         },
-        "fn.decode_switch_pro_rumble_word_with_previous.html": {
+        "fn.create_xbox_series.html": {
           "declarations": [
-            "pub fn decode_switch_pro_rumble_word_with_previous( raw: [u8; 4], previous: Option<SwitchProRumbleSample>, ) -> SwitchProRumbleWord"
+            "pub fn create_xbox_series( options: CreationOptions, family: XboxSeriesOptions, ) -> Result<XboxSeriesController, ControllerError>"
           ],
           "traits": []
         },
         "fn.decode_switch_pro_rumble_word.html": {
           "declarations": [
             "pub fn decode_switch_pro_rumble_word(raw: [u8; 4]) -> SwitchProRumbleWord"
+          ],
+          "traits": []
+        },
+        "fn.decode_switch_pro_rumble_word_with_previous.html": {
+          "declarations": [
+            "pub fn decode_switch_pro_rumble_word_with_previous( raw: [u8; 4], previous: Option<SwitchProRumbleSample>, ) -> SwitchProRumbleWord"
           ],
           "traits": []
         },
