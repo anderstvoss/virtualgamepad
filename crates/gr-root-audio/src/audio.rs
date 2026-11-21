@@ -468,12 +468,12 @@ pub(crate) fn open(
             realization_id: "linux.uhid.usb".into(),
             key: association_key.clone(),
         };
-        let session = gr_audio_linux::Session::open_associated(&profile, options, creation, identity).map_err(|e| {
-            ControllerError::Open {
-                reason: e.to_string(),
-            }
-        })?;
-        let endpoints = session
+        let session =
+            gr_audio_linux::Session::open_associated(&profile, options, creation, identity)
+                .map_err(|e| ControllerError::Open {
+                    reason: e.to_string(),
+                })?;
+        let endpoints: Vec<AudioEndpoint> = session
             .endpoints()
             .iter()
             .enumerate()
