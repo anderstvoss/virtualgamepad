@@ -3056,7 +3056,7 @@ mod tests {
         let mut bad = vec![0_u8; 77];
         bad[2] = 1;
         let invalid_raw = Report::new(ReportType::Output, Some(0x11), bad).unwrap();
-        assert_eq!(first.output(invalid_raw, 6), Ok(None));
+        assert!(matches!(first.output(invalid_raw, 6), Ok(None)));
         assert_eq!(*first.retained(), old);
     }
 
