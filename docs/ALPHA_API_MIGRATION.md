@@ -11,6 +11,24 @@ Source padding is now attributed to the specific PipeWire direction while the or
 
 **Migration:** Existing `diagnostics()` consumers require no change; the five existing getters keep their meanings. New getters return `None` for an uninstrumented direction; optional stage fields are not numerical zeros. A record is a nontransactional **queue-local** snapshot: graph/worker/USB stage counts may overlap, so never sum unrelated counters to claim end-to-end frames. `generation` distinguishes explicit flush/reset from numerical counter wrap; the queue refuses generation overflow. See [A0 loss inventory](AUDIO_LOSS_ACCOUNTING.md) and [synthetic receipt](../crates/gr-audio-contract/tests/fake_clock_receipt.rs). The alpha API snapshot is regenerated/reviewed separately in this PR; live host and physical qualification were **not run**.
 
+## P10a · Xbox Series synthetic identity (Alpha 2)
+
+`XboxSeriesIdentity` is added to the ordinary root and supporting Xbox Series
+API. Applications can call `generate()`, `from_bytes([u8; 6])`, and `bytes()`
+to persist a locally administered synthetic identity; `XboxSeriesOptions`
+now carries an optional identity via `with_identity()` / `identity()`.
+`XboxSeriesController::identity()` returns the selected identity after close.
+
+**Migration:** Existing `XboxSeriesOptions::default()` callers require no
+source change. Default sessions now allocate an independent identity using OS
+entropy. Bluetooth UHID exposes that identity in `uniq` instead of a fixed
+prefix plus creation suffix; explicitly restored sessions keep it stable across
+reopen, while `phys` remains unique for each opening. Uinput still has no
+controller-reported identity; the handle retains the value only. No physical
+radio or host acceptance is claimed. Root snapshot declarations and the
+generated inventory's Xbox Series pages are updated for this delta.
+
+
 
 This is a deliberate breaking candidate update before the final alpha freeze.
 Start with the [final alpha.1 → alpha.2 consumer table](#alpha1--alpha2-final-consumer-table).
@@ -940,3 +958,11 @@ optional raw observations as an authoritative stream. Wii supporting snapshot:
 
 Existing events, raw payloads, FF effect types and retained snapshots are unchanged.
 These additive ordinary-root declarations do not change protocol admission or qualify physical output.
+
+## P2 DualSense LED output decoding (#154, #365; 2026-11-20)
+
+- `DualSenseFeature` adds `PlayerIndicators` and `MicrophoneLed`. `Lightbar` now denotes only the RGB lightbar. The feature query still does not offer an application-side native LED command; output is reverse/host-observed. Linux uinput cannot receive native DualSense LED reports.
+- New `DualSenseMuteLed` has `Off`, `On`, `Pulse`, and `Unknown(u8)`. Change exhaustive consumers of `DualSenseHidOutput::UsbOutput.mute_button_led` from `Option<bool>` to `Option<DualSenseMuteLed>`; pulse and unknown bytes no longer collapse to `true`.
+- `DualSenseHidOutput::UsbOutput` adds `led_brightness: u8` (raw; conflicting encoding in research claim `ds-cgap-led-brightness-encoding-disagreement`), `lightbar_setup: Option<u8>` (valid_flag2 bit 1), `release_leds: Option<bool>` (Some(true) for valid_flag1 bit 3, otherwise None), and `player_led_instant: Option<bool>` (valid_flag1 bit 4). `player_leds` now contains only five indicator bits (0–4), with bit 5 exposed separately.
+- Consumers needing the complete original packet should continue to use `raw`. The legacy retained `DualSenseOutputState.player_leds` remains the original player-LED byte; it does not adopt the new event field's mask. No other retained-state ABI or wire serialization changes.
+- Updated GUI presents five indicators, instant/fade, mute pulse/unknown, and uninterpreted brightness. The changes and tests are source-only; L1–L8 physical checks are not run.
