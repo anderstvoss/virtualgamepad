@@ -40,6 +40,32 @@ pub struct SwitchProMotionSample {
     pub accelerometer: [i16; 3],
     pub gyroscope: [i16; 3],
 }
+/// Source-supported Switch Pro battery level; no voltage thresholds are inferred.
+/// Research: `swpro-l0-device-battery-connection-bits`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SwitchProBatteryLevel {
+    Empty = 0,
+    Critical = 2,
+    Low = 4,
+    Medium = 6,
+    #[default]
+    Full = 8,
+}
+
+/// Native battery report status. Pro connection nibble 0 means unpowered;
+/// bit zero indicates host/USB power (other controller types are out of scope).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SwitchProBattery {
+    pub level: SwitchProBatteryLevel,
+    pub charging: bool,
+    pub usb_powered: bool,
+}
+impl SwitchProBattery {
+    const fn wire_byte(self) -> u8 {
+        ((self.level as u8) | (self.charging as u8)) << 4 | (self.usb_powered as u8)
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SwitchProControl {
     B,
@@ -182,6 +208,9 @@ impl SwitchProInputs {
 pub struct SwitchProStatus {
     timer: u8,
     stream_enabled: bool,
+    battery: SwitchProBattery,
+    imu_gating: bool,
+    imu_enabled: bool,
 }
 impl SwitchProStatus {
     /// Accepted motion clock; the transport has a separate report counter.
@@ -192,6 +221,21 @@ impl SwitchProStatus {
     #[must_use]
     pub const fn stream_enabled(self) -> bool {
         self.stream_enabled
+    }
+    /// Current caller-selected battery and Pro power status.
+    #[must_use]
+    pub const fn battery(self) -> SwitchProBattery {
+        self.battery
+    }
+    /// Whether source-only IMU gating was selected at creation.
+    #[must_use]
+    pub const fn imu_gating(self) -> bool {
+        self.imu_gating
+    }
+    /// Latest accepted 0x40 IMU enable state.
+    #[must_use]
+    pub const fn imu_enabled(self) -> bool {
+        self.imu_enabled
     }
 }
 
@@ -703,7 +747,7 @@ fn pack(out: &mut [u8], x: i16, y: i16) {
 fn switch_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
     let mut b = vec![0; 63];
     b[0] = s.1.timer;
-    b[1] = 0x80;
+    b[1] = s.1.battery.wire_byte();
     // `FaceButton` follows the host gamepad layout, so its South/East controls
     // map to Nintendo B/A respectively (the printed labels are reversed).
     b[2] = u8::from(s.0.face[2])
@@ -738,6 +782,14 @@ fn switch_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
         s.0.right.1.raw().saturating_neg(),
     );
     b[11] = 9;
+    // Optional source-only compatibility gate; default keeps the prior raw
+    // samples even before the host's 0x40 command.
+    if s.1.imu_gating && !s.1.imu_enabled {
+        return ProviderFrame::HidInput {
+            report_id: Some(0x30),
+            bytes: b,
+        };
+    }
     let ax = s.0.motion.accelerometer[1] / 4;
     let ay = s.0.motion.accelerometer[0].wrapping_neg() / 4;
     let az = s.0.motion.accelerometer[2] / 4;
@@ -945,6 +997,17 @@ impl SwitchProController {
             .map_or(self.0.state().1.stream_enabled, |p| p.stream_enabled)
     }
     #[must_use]
+    pub fn battery(&self) -> SwitchProBattery {
+        self.0.state().1.battery
+    }
+    /// Live caller battery metadata; updates the subsequent 0x30 and 0x21 prefixes.
+    pub fn set_battery(&mut self, battery: SwitchProBattery) -> Result<(), ControlError> {
+        self.0.update_state(|state| {
+            state.1.battery = battery;
+            Ok(())
+        })
+    }
+    #[must_use]
     pub fn motion_report_counter(&self) -> u8 {
         self.0
             .optional_protocol()
@@ -981,6 +1044,7 @@ impl SwitchProController {
     pub fn status(&self) -> SwitchProStatus {
         SwitchProStatus {
             stream_enabled: self.stream_enabled(),
+            imu_enabled: self.0.optional_protocol().map_or(self.0.state().1.imu_enabled, |p| p.imu_enabled),
             ..self.0.state().1
         }
     }
@@ -1126,6 +1190,7 @@ impl SwitchProController {
         self.0
             .with_sink(|sink| sink.drain(&mut |event| events.push(event)))?;
         let mut enable = false;
+        let mut requested_imu = None;
         let state = self.0.state().clone();
         let mut replies = Vec::new();
         for event in events {
@@ -1142,6 +1207,9 @@ impl SwitchProController {
                         switch_subcommand_reply(&state, bytes[9], &bytes[10..], self.1);
                     replies.push(reply);
                     enable |= stream;
+                    if bytes[9] == 0x40 {
+                        requested_imu = bytes.get(10).map(|value| *value != 0);
+                    }
                 }
                 RawReverseEvent::HidSetReportRequest { request_id, .. } => {
                     replies.push(ProviderFrame::HidSetReportReply {
@@ -1160,10 +1228,15 @@ impl SwitchProController {
             }
             Ok::<(), ProviderError>(())
         })?;
-        if enable {
+        if enable || requested_imu.is_some() {
             self.0
                 .update_state(|s| {
-                    s.1.stream_enabled = true;
+                    if enable {
+                        s.1.stream_enabled = true;
+                    }
+                    if let Some(enabled) = requested_imu {
+                        s.1.imu_enabled = enabled;
+                    }
                     Ok(())
                 })
                 .map_err(|e| ProviderError::Open {
@@ -1705,9 +1778,21 @@ mod rumble_decode_tests {
     }
 }
 
+/// Source-only HOME light request via subcommand 0x38.
+/// `mini_cycle` retains all five request bytes; only Linux's brightness
+/// nibble is interpreted. Not a player indicator.
+/// Claim: `swpro-cgap-home-led-consumer`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchProHomeLight {
+    pub brightness: u8,
+    pub mini_cycle: [u8; 5],
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SwitchProOutputEvent {
     ForceFeedback(gr_realization_api::ForceFeedbackEvent),
+    /// Accepted HOME light command, distinct from the four player indicators.
+    HomeLight(SwitchProHomeLight),
     ProviderEvent(Vec<EvdevEvent>),
     HidLifecycle(gr_hid::Lifecycle),
     Output {
@@ -1750,6 +1835,18 @@ impl From<RawReverseEvent> for SwitchProOutputEvent {
             RawReverseEvent::ForceFeedback(event) => Self::ForceFeedback(event),
             RawReverseEvent::Evdev(events) => Self::ProviderEvent(events),
             RawReverseEvent::HidLifecycle(event) => Self::HidLifecycle(event),
+            RawReverseEvent::HidOutput {
+                report_id: Some(1),
+                bytes,
+            } if bytes.len() >= 15 && bytes[9] == 0x38 => {
+                let mini_cycle: [u8; 5] = bytes[10..15]
+                    .try_into()
+                    .expect("validated HOME mini-cycle payload");
+                Self::HomeLight(SwitchProHomeLight {
+                    brightness: mini_cycle[1] >> 4,
+                    mini_cycle,
+                })
+            }
             RawReverseEvent::HidOutput { report_id, bytes } => Self::Output { report_id, bytes },
             RawReverseEvent::HidGetReportRequest {
                 request_id,
@@ -1778,6 +1875,8 @@ impl From<RawReverseEvent> for SwitchProOutputEvent {
 #[non_exhaustive]
 pub struct SwitchProOptions {
     identity: Option<SwitchProIdentity>,
+    battery: SwitchProBattery,
+    imu_gating: bool,
 }
 
 impl SwitchProOptions {
@@ -1787,6 +1886,34 @@ impl SwitchProOptions {
     pub const fn with_identity(mut self, identity: SwitchProIdentity) -> Self {
         self.identity = Some(identity);
         self
+    }
+
+    /// Set the initial battery report status (defaults to full, not charging,
+    /// Pro connection nibble zero, preserving report byte 0x80).
+    #[must_use]
+    pub const fn with_battery(mut self, battery: SwitchProBattery) -> Self {
+        self.battery = battery;
+        self
+    }
+
+    /// Initial battery status for the new session.
+    #[must_use]
+    pub const fn battery(self) -> SwitchProBattery {
+        self.battery
+    }
+
+    /// Opt into gating the IMU sample bytes until subcommand 0x40 enables them.
+    /// Defaults to false to preserve existing emissions.
+    /// Source-only: `swpro-l0-consumer-imu-rumble-ack-gates`.
+    #[must_use]
+    pub const fn with_imu_gating(mut self, enabled: bool) -> Self {
+        self.imu_gating = enabled;
+        self
+    }
+
+    #[must_use]
+    pub const fn imu_gating(self) -> bool {
+        self.imu_gating
     }
 
     /// An explicitly supplied identity, if any.
@@ -1832,6 +1959,11 @@ fn create_switch_pro_configured(
     } else {
         common::create(SwitchProDefinition, realization, o)?
     };
+    controller.update_state(|state| {
+        state.1.battery = family.battery();
+        state.1.imu_gating = family.imu_gating();
+        Ok(())
+    }).map_err(|error| ProviderError::Open { reason: error.to_string() })?;
     if is_dummy_hcd {
         // A physical USB attachment should expose a neutral 0x30 report as
         // soon as it appears; host-side controller-info traffic then has a
@@ -2201,7 +2333,7 @@ mod tests {
                 (snapshot.clone()).0,
                 SwitchProStatus {
                     timer: current.1.timer.wrapping_add(u8::from(motion_changed)),
-                    stream_enabled: current.1.stream_enabled,
+                    ..current.1
                 },
             );
             let mut bad = snapshot.clone();
@@ -2321,6 +2453,7 @@ mod tests {
             SwitchProStatus {
                 timer: 77,
                 stream_enabled: true,
+                ..Default::default()
             },
         );
         let mut state = expected.clone();
