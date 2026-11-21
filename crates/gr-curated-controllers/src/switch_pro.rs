@@ -2374,7 +2374,7 @@ mod tests {
     #[test]
     fn undeclared_target_is_rejected_before_resolving_identity() {
         let options = CreationOptions {
-            target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+            target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
             session: RealizationSessionId(7),
         };
         assert!(matches!(
@@ -2391,6 +2391,7 @@ mod tests {
         for target in [
             RealizationTarget::LINUX_UINPUT,
             RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_UHID_BLUETOOTH,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
             let options = CreationOptions {
@@ -2414,6 +2415,7 @@ mod tests {
         }
         assert!(EVDEV_SURFACE.common.input_topology().motion().is_empty());
         assert_eq!(HID_SURFACE.common.input_topology().motion().len(), 1);
+        assert_eq!(BT_SURFACE.common.input_topology().motion().len(), 1);
         assert_eq!(USB_SURFACE.common.input_topology().motion().len(), 1);
     }
 
@@ -2736,6 +2738,88 @@ mod tests {
             unpack_y(&bytes[8..11]) >= 4094,
             "negative public Y must become high Switch-wire Y so Linux reports up"
         );
+    }
+
+    #[test]
+    fn bt_descriptor_and_identity_use_explicit_local_transport_metadata() {
+        let first = bluetooth_hid(fixture_identity());
+        let second_identity = SwitchProIdentity::from_bytes(common::test_address(2)).unwrap();
+        let second = bluetooth_hid(second_identity);
+        let first_uniq = crate::ControllerAssociation::requested(&first).requested_unique_id;
+        let second_uniq = crate::ControllerAssociation::requested(&second).requested_unique_id;
+        assert_ne!(first_uniq, second_uniq);
+        let NativeControllerRealization::Uhid(bt) = first else {
+            unreachable!()
+        };
+        assert_eq!(bt.target, RealizationTarget::LINUX_UHID_BLUETOOTH);
+        assert_eq!(bt.bus_type, 5);
+        assert_eq!((bt.identity.vendor_id, bt.identity.product_id), (0x057e, 0x2009));
+        assert!(bt.numbered_input_reports && bt.numbered_output_reports);
+        assert!(!bt.numbered_feature_reports);
+        for id in [0x3f, 0x30, 0x21, 0x01, 0x10] {
+            assert!(bt.descriptor.windows(2).any(|pair| pair == [0x85, id]));
+        }
+        for usb_id in [0x80, 0x81, 0x82] {
+            assert!(!bt.descriptor.windows(2).any(|pair| pair == [0x85, usb_id]));
+        }
+        let NativeControllerRealization::Uhid(usb) = hid(fixture_identity()) else {
+            unreachable!()
+        };
+        assert_eq!(usb.bus_type, 3);
+        assert_eq!(usb.descriptor, SWITCH_PRO_USB_DESCRIPTOR);
+        assert_ne!(bt.descriptor, usb.descriptor);
+    }
+
+    #[test]
+    fn bt_simple_report_has_source_derived_synthetic_golden_bytes() {
+        // SDL 535d80b lines 137-152, 2183-2257, not a physical capture.
+        let mut inputs = SwitchProInputs::default();
+        inputs.set_native(SwitchProControl::B, true);
+        inputs.set_native(SwitchProControl::L, true);
+        inputs.set_native(SwitchProControl::Zr, true);
+        inputs.set_native(SwitchProControl::Minus, true);
+        inputs.set_native(SwitchProControl::Home, true);
+        inputs.set_digital(DigitalControlUpdate::Dpad {
+            direction: gr_controller_contract::DpadDirection::Up,
+            pressed: true,
+        });
+        inputs.set_sticks(
+            (SwitchProAxis::new(-1234), SwitchProAxis::new(2345)),
+            (SwitchProAxis::new(0), SwitchProAxis::new(0)),
+        );
+        assert_eq!(
+            switch_simple_frame(&(inputs, SwitchProStatus::default())),
+            ProviderFrame::HidInput {
+                report_id: Some(0x3f),
+                bytes: vec![0x91, 0x11, 0, 0x2e, 0xfb, 0x29, 0x09, 0, 0, 0, 0],
+            }
+        );
+        assert_eq!(
+            switch_simple_frame(&(SwitchProInputs::default(), SwitchProStatus::default())),
+            ProviderFrame::HidInput {
+                report_id: Some(0x3f),
+                bytes: vec![0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0],
+            }
+        );
+    }
+
+    #[test]
+    fn bluetooth_surface_has_every_provider_specific_refusal() {
+        use crate::registry::ControllerFamily as _;
+        let family = <SwitchProDefinition as crate::registry::ControllerFamily>::realizations();
+        let bt = family.iter().find(|r| r.surface.target() == RealizationTarget::LINUX_UHID_BLUETOOTH).unwrap();
+        assert_eq!(bt.tier, crate::registry::RealizationTier::PlayableFull);
+        assert_eq!(bt.permission, crate::registry::PermissionClass::Uhid);
+        for restriction in BT_RESTRICTIONS {
+            assert!(bt.surface.restrictions().contains(&restriction));
+            assert!(
+                <SwitchProDefinition as crate::registry::ControllerFamily>::REFUSED_OPERATIONS
+                    .iter()
+                    .any(|r| r.name == restriction.feature
+                        && r.detail == restriction.reason
+                        && r.targets == [RealizationTarget::LINUX_UHID_BLUETOOTH])
+            );
+        }
     }
 
     #[test]
