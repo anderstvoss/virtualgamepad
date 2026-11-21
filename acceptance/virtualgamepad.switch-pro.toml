@@ -84,4 +84,3 @@ id = "spi-calibration"
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/spi-calibration", evidence = ["swpro-l0-device-factory-spi-map"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/spi-calibration", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/spi-calibration", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }
-
