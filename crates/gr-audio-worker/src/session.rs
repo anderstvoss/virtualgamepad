@@ -171,59 +171,6 @@ impl Drop for Threads {
     }
 }
 
-/// Feature data is received on the private unprivileged control socket before
-/// any USB or PCM worker threads are created. The broker has already relayed
-/// the readiness frame, but the USB endpoint cannot answer host requests yet.
-enum SonyData {
-    DualSense(gr_curated_controllers::dualsense::DualSenseDeviceData),
-    DualShock4(gr_curated_controllers::dualshock4::DualShock4DeviceData),
-}
-fn initial_device_data(
-    control: &UnixStream,
-    generation: u64,
-    profile: ControllerId,
-) -> io::Result<Option<SonyData>> {
-    use gr_privileged_broker::{socket_wire::read_frame, write_message};
-    let mut socket = control;
-    let mut ready = vec![1];
-    ready.extend(generation.to_le_bytes());
-    write_message(&mut socket, 0, &ready)?;
-    let configured = (|| {
-        let (tag, body) = read_frame(control, Duration::from_secs(2))?;
-        if tag != 8 || body.len() < 10 || body[..8] != generation.to_le_bytes()
-            || body[8] != 1
-        {
-            return Err(io::Error::other("invalid initial USB device-data operation"));
-        }
-        let data = match (profile, body[9], &body[10..]) {
-            (gr_usbip::profile::ids::DUALSENSE, 1, bytes) if bytes.len() == 41 + 64 => {
-                let data = gr_curated_controllers::dualsense::DualSenseDeviceData::from_feature_reports(
-                    &bytes[..41], &bytes[41..],
-                )?;
-                Some(SonyData::DualSense(data))
-            }
-            (gr_usbip::profile::ids::DUALSHOCK4, 1, bytes) if bytes.len() == 37 + 49 => {
-                let data = gr_curated_controllers::dualshock4::DualShock4DeviceData::from_feature_reports(
-                    &bytes[..37], &bytes[37..],
-                )?;
-                Some(SonyData::DualShock4(data))
-            }
-            (gr_usbip::profile::ids::XBOX360, 0, []) => None,
-            _ => return Err(io::Error::other("incorrect initial USB device-data family or length")),
-        };
-        let mut response = generation.to_le_bytes().to_vec();
-        response.push(1);
-        write_message(&mut socket, 8, &response)?;
-        Ok(data)
-    })();
-    if let Err(error) = &configured {
-        let mut failure = generation.to_le_bytes().to_vec();
-        failure.extend_from_slice(error.to_string().as_bytes());
-        let _ = write_message(&mut socket, 0x81, &failure);
-    }
-    configured
-}
-
 pub fn run(setup: Setup, channels: Channels) -> io::Result<()> {
     Profile::for_session(
         gr_usbip::profile::spec(setup.profile)?,
@@ -241,22 +188,12 @@ pub fn run(setup: Setup, channels: Channels) -> io::Result<()> {
     ] {
         socket.peer_addr()?;
     }
-    let device_data = initial_device_data(&channels.control, setup.generation, setup.profile)?;
     macro_rules! protocol {
         (xbox360, $identity:expr) => {
             usb_personality::xbox360()
         };
-        (dualsense, $identity:expr) => {
-            usb_personality::dualsense_with_device_data($identity, match device_data {
-                Some(SonyData::DualSense(data)) => data,
-                _ => return Err(io::Error::other("invalid DualSense device data")),
-            })
-        };
-        (dualshock4, $identity:expr) => {
-            usb_personality::dualshock4_with_device_data($identity, match device_data {
-                Some(SonyData::DualShock4(data)) => data,
-                _ => return Err(io::Error::other("invalid DualShock 4 device data")),
-            })
+        ($module:ident, $identity:expr) => {
+            usb_personality::$module($identity)
         };
     }
     macro_rules! attempt {
@@ -512,6 +449,9 @@ fn control_loop(
 ) -> io::Result<CloseReply> {
     use gr_privileged_broker::{socket_wire::read_frame, write_message};
     let mut socket = socket;
+    let mut ready = vec![1];
+    ready.extend(generation.to_le_bytes());
+    write_message(&mut socket, 0, &ready)?;
     loop {
         let (tag, body) = read_frame(socket, Duration::from_secs(1))?;
         if body.len() < 8 || body[..8] != generation.to_le_bytes() {
@@ -757,32 +697,6 @@ mod tests {
             (0x81, b"bounded cause".to_vec())
         );
     }
-    fn configure_test_worker(
-        socket: &mut UnixStream,
-        profile: ControllerId,
-        generation: u64,
-    ) {
-        let mut payload = generation.to_le_bytes().to_vec();
-        payload.push(1);
-        if profile == gr_usbip::profile::ids::XBOX360 {
-            payload.push(0);
-        } else if profile == gr_usbip::profile::ids::DUALSENSE {
-            let data = gr_curated_controllers::dualsense::DualSenseDeviceData::default();
-            payload.push(1);
-            payload.extend(data.feature_report(0x05).unwrap());
-            payload.extend(data.feature_report(0x20).unwrap());
-        } else {
-            let data = gr_curated_controllers::dualshock4::DualShock4DeviceData::default();
-            payload.push(1);
-            payload.extend(data.feature_report(0x02).unwrap());
-            payload.extend(data.feature_report(0xa3).unwrap());
-        }
-        gr_privileged_broker::write_message(&mut &*socket, 8, &payload).unwrap();
-        assert_eq!(
-            gr_privileged_broker::read_message(socket).unwrap(),
-            (8, [generation.to_le_bytes().as_slice(), &[1]].concat()),
-        );
-    }
     #[test]
     fn every_family_updates_without_host_polling_and_closes_owned_channels() {
         for (profile, state) in [
@@ -824,7 +738,6 @@ mod tests {
                 read_message(&mut client).unwrap(),
                 (0, [vec![1], 9_u64.to_le_bytes().to_vec()].concat())
             );
-            configure_test_worker(&mut client, profile, 9);
             let mut update = 9_u64.to_le_bytes().to_vec();
             update.extend(1_u64.to_le_bytes());
             update.extend(state.encode());
@@ -886,12 +799,12 @@ mod tests {
             )
         });
         read_message(&mut client).unwrap();
-        write_message(&mut client, 8, &8_u64.to_le_bytes()).unwrap();
+        write_message(&mut client, 3, &8_u64.to_le_bytes()).unwrap();
         assert!(worker.join().unwrap().is_err());
         let (tag, reason) = read_message(&mut client).unwrap();
         assert_eq!(tag, 0x81);
         assert_eq!(&reason[..8], &9_u64.to_le_bytes());
-        assert!(String::from_utf8_lossy(&reason[8..]).contains("initial USB device-data"));
+        assert!(String::from_utf8_lossy(&reason[8..]).contains("generation mismatch"));
         assert_eq!(samples.read(&mut [0]).unwrap(), 0);
     }
     #[test]
@@ -918,7 +831,6 @@ mod tests {
             )
         });
         assert_eq!(read_message(&mut client).unwrap().0, 0);
-        configure_test_worker(&mut client, gr_usbip::profile::ids::DUALSENSE, 17);
         drop(host);
         let (tag, reason) = read_message(&mut client).unwrap();
         assert_eq!(tag, 0x81);
