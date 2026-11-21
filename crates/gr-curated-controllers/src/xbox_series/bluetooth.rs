@@ -1,4 +1,4 @@
-use super::{XboxSeriesButton as Button, XboxSeriesInputs};
+use super::{XboxSeriesButton as Button, XboxSeriesIdentity, XboxSeriesInputs};
 use gr_hid::{ReplyError, Report, ReportType};
 use gr_realization_api::{
     NativeControllerRealization, NativeDeviceIdentity, NativeHidRealization, ProviderFrame,
@@ -41,13 +41,13 @@ const BUTTONS: [(Button, u8); 11] = [
     (Button::RightStickPress, 14),
 ];
 
-pub(super) fn realization() -> NativeControllerRealization {
+pub(super) fn realization(identity: XboxSeriesIdentity) -> NativeControllerRealization {
     NativeControllerRealization::Uhid(NativeHidRealization {
         target: RealizationTarget::LINUX_UHID_BLUETOOTH,
         bus_type: 5,
         device_name: "Xbox Wireless Controller".into(),
         physical_path: "virtualgamepad/uhid/xbox-series".into(),
-        unique_id: "virtualgamepad-xbox-series".into(),
+        unique_id: crate::common::address_label(identity.bytes()),
         identity: NativeDeviceIdentity {
             vendor_id: 0x045e,
             product_id: 0x0b13,

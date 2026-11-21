@@ -93,7 +93,7 @@ pub use gr_curated_controllers::wii_remote::{
     WiiRemoteOutputs, WiiRemoteRevision, WiiRemoteStatus, WiiResourceDisposition,
 };
 pub use gr_curated_controllers::xbox_series::{
-    XboxSeriesBluetoothRumble, XboxSeriesButton, XboxSeriesInputs, XboxSeriesOutputState,
+    XboxSeriesBluetoothRumble, XboxSeriesButton, XboxSeriesIdentity, XboxSeriesInputs, XboxSeriesOutputState,
     XboxSeriesStatus, XboxSeriesTrigger,
 };
 pub use gr_curated_controllers::{

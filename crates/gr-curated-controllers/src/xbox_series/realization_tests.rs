@@ -58,6 +58,7 @@ fn create(factory: &Arc<Factory>) -> Result<XboxSeriesController, ProviderError>
         XboxSeriesDefinition {
             provider: Some(factory.clone()),
         },
+        XboxSeriesIdentity::from_bytes(crate::common::test_address(13)).unwrap(),
     )
 }
 
