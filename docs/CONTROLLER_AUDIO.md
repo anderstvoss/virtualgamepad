@@ -4,8 +4,10 @@ Sustained audio continuity and latency are not validated in alpha; occasional au
 
 This is an opt-in alpha implementation with bounded functional acceptance, not
 a completed fidelity or latency qualification. The ordinary-root API review and
-110-item snapshot are complete. Existing constructors keep audio disabled by
-default. Current dispositions are in the [alpha remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
+110-item snapshot were Alpha 1 milestones, not the current API inventory.
+Existing constructors keep audio disabled by default. See [current status](STATUS.md)
+and [API migration](ALPHA_API_MIGRATION.md); the
+[Alpha 1 remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md) is historical.
 
 | Family | Emulated playback / microphone channels | Controller matching |
 | --- | --- | --- |
@@ -162,7 +164,7 @@ service detects required audio failure without promising a fixed polling cadence
 USB/IP remains opt-in WIP despite the seven scoped broker security/recovery
 phases passing (#115 closed); streaming and full routing remain deferred.
 See [migration](ALPHA_API_MIGRATION.md) and the
-[current remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
+[current status](STATUS.md).
 
 ## Current release evidence boundary
 
@@ -173,7 +175,8 @@ assertion is relaxed. Three measured 60-second trials per sustained cell and
 duplex/mixed ownership remain post-alpha requirements (#143/#145).
 VM observations cannot establish native
 host latency or physical microphone fidelity. See
-[the remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
+[historical Alpha 1 remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md)
+for those observations and [current status](STATUS.md) for current dispositions.
 
 Host-device discovery belongs to the GUI coordinator, with one active command
 and one coalesced refresh, generation filtering, a two-second per-command deadline
