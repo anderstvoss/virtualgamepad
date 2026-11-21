@@ -85,7 +85,10 @@ impl SwitchProSpiImage {
     /// colour advertising; an untouched synthetic default does not.
     #[must_use]
     pub fn colors_available(&self) -> bool {
+        // A complete erased RGB block is not a valid colour announcement.
+        // Preserve default flag after exporting and re-importing an empty image.
         (0x6050..=0x605b).all(|address| self.supplied.contains_key(&address))
+            && (0x6050..=0x605b).any(|address| self.read(address) != 0xff)
     }
 }
 
@@ -103,6 +106,11 @@ mod tests {
             assert_eq!(image.read(address), super::super::switch_spi_byte(address));
         }
         assert!(!image.colors_available());
+        // Full raw export/re-import cannot turn synthetic erased RGB into a
+        // claim that the device offers real colour fields.
+        let full = image.export_raw(FACTORY_START, 0x1000).unwrap();
+        let imported = SwitchProSpiImage::import_raw(FACTORY_START, &full).unwrap();
+        assert!(!imported.colors_available());
     }
 
     #[test]

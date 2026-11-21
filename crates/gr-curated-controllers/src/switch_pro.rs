@@ -1806,7 +1806,7 @@ impl SwitchProOptions {
 
     /// An explicitly supplied identity, if any.
     #[must_use]
-    pub const fn identity(self) -> Option<SwitchProIdentity> {
+    pub const fn identity(&self) -> Option<SwitchProIdentity> {
         self.identity
     }
 

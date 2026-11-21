@@ -3671,7 +3671,7 @@ Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
 ```rust
 #[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }
 pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions
-pub const fn identity(self) -> Option<SwitchProIdentity>
+pub const fn identity(&self) -> Option<SwitchProIdentity>
 pub fn with_spi_image( self, image: SwitchProSpiImage, ) -> SwitchProOptions
 pub const fn spi_image(&self) -> Option<&SwitchProSpiImage>
 ```
