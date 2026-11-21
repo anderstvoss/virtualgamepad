@@ -1,7 +1,7 @@
 //! Stateful USB personality shared by HID presentation and future USB adapters.
 use super::{
     BTreeMap, DualSenseDefinition, DualSenseSessionState, NativeHidReportKey, ProviderFrame,
-    RawReverseEvent, RealizationSessionId, common, dualsense_feature_responses,
+    RawReverseEvent, RealizationSessionId, common, dualsense_feature_responses_with_data,
     dualsense_hid_input_report,
 };
 use gr_hid::{
@@ -23,8 +23,11 @@ pub(crate) struct DualSenseUsbProtocol<
 }
 impl DualSenseUsbProtocol {
     pub(crate) fn new(identity: [u8; 6]) -> Self {
+        Self::with_device_data(identity, None)
+    }
+    pub(crate) fn with_device_data(identity: [u8; 6], data: Option<super::DualSenseDeviceData>) -> Self {
         Self {
-            features: dualsense_feature_responses(identity),
+            features: dualsense_feature_responses_with_data(identity, data),
             retained: crate::retained::DualSenseOutputState::default(),
             sequence: 1,
             next_input: 0,
@@ -166,7 +169,7 @@ impl common::HidDriver for DualSenseDefinition {
         common::creation_identity()
     }
     fn hid_protocol(&self, _: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
-        DualSenseUsbProtocol::new(identity)
+        DualSenseUsbProtocol::with_device_data(identity, self.device_data)
     }
 }
 
