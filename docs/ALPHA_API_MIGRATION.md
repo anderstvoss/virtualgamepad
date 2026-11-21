@@ -921,6 +921,8 @@ These additive ordinary-root declarations do not change protocol admission or qu
   synthetic values remain unchanged. To restore a custom profile, capture
   `controller.device_data()` before disposal and pass a copy in the next
   creation's family options. Restore pairing identity separately.
-- USB/IP installs validated feature data through a pre-thread control
-  handshake; no physical capture, host observation or Bluetooth
-  qualification is claimed. See [Device data](DEVICE_DATA.md).
+- Explicit Sony device data on `linux.usbip.usb-audio` returns typed
+  `ControllerError::Unsupported` before opening a worker. USB/IP continues
+  using its existing synthetic feature replies and unchanged worker protocol.
+  No physical capture, host observation or Bluetooth qualification is claimed.
+  See [Device data](DEVICE_DATA.md).
