@@ -33,13 +33,13 @@ use std::{
 use virtualgamepad::ControllerSurfaceInfo;
 use virtualgamepad::{
     BatteryLevel, BatteryState, ControllerStatus, DigitalControlUpdate, DualSenseAxis,
-    DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseOutputEvent,
-    DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
-    DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample, DualShock4TouchContact,
-    DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId, SwitchProAxis,
-    SwitchProControl, SwitchProController, SwitchProMotionSample, TouchSlot, Xbox360Axis,
-    Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360Trigger, create_dualsense,
-    create_dualshock4, create_switch_pro, create_xbox360,
+    DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseMuteLed,
+    DualSenseOutputEvent, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis,
+    DualShock4Control, DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample,
+    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
+    SwitchProAxis, SwitchProControl, SwitchProController, SwitchProMotionSample, TouchSlot,
+    Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360Trigger,
+    create_dualsense, create_dualshock4, create_switch_pro, create_xbox360,
 };
 
 // Controller IDs are demo-local labels. The Wii supporting constructor also
@@ -1378,7 +1378,10 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
 struct ReverseIndicators {
     wii_player_leds: Option<[bool; 4]>,
     led: Option<[u8; 3]>,
-    mute_led: Option<bool>,
+    mute_led: Option<DualSenseMuteLed>,
+    player_leds: Option<u8>,
+    player_led_instant: Option<bool>,
+    led_brightness: Option<u8>,
     rumble_until: Option<Instant>,
     rumble_active: bool,
     rumble_seen: bool,
@@ -1439,8 +1442,30 @@ impl ReverseIndicators {
             self.led = Some(lightbar_rgb);
         }
         if let Some(mute_button_led) = mute_button_led {
-            self.mute_led = Some(mute_button_led);
+            self.mute_led = Some(if mute_button_led {
+                DualSenseMuteLed::On
+            } else {
+                DualSenseMuteLed::Off
+            });
         }
+    }
+    fn apply_dualsense_led_output(
+        &mut self,
+        mute: Option<DualSenseMuteLed>,
+        player_leds: Option<u8>,
+        player_led_instant: Option<bool>,
+        led_brightness: u8,
+    ) {
+        if let Some(mode) = mute {
+            self.mute_led = Some(mode);
+        }
+        if let Some(indicators) = player_leds {
+            self.player_leds = Some(indicators);
+        }
+        if let Some(instant) = player_led_instant {
+            self.player_led_instant = Some(instant);
+        }
+        self.led_brightness = Some(led_brightness);
     }
 }
 
@@ -2828,19 +2853,62 @@ fn draw_feedback_rows(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
                 draw_feedback_indicator(
                     ui,
                     "Mute",
-                    if indicators.mute_led == Some(true) {
+                    if matches!(
+                        indicators.mute_led,
+                        Some(DualSenseMuteLed::On | DualSenseMuteLed::Pulse)
+                    ) {
                         Color32::from_rgb(255, 130, 40)
                     } else {
                         Color32::DARK_GRAY
                     },
                     match indicators.mute_led {
-                        Some(true) => "Mute LED on",
-                        Some(false) => "Mute LED off",
+                        Some(DualSenseMuteLed::On) => "Mute LED on",
+                        Some(DualSenseMuteLed::Off) => "Mute LED off",
+                        Some(DualSenseMuteLed::Pulse) => "Mute LED pulse (source decoding)",
+                        Some(DualSenseMuteLed::Unknown(_)) => "Mute LED unrecognized mode",
                         None => "Mute LED unknown",
                     },
                 );
             });
             ui.end_row();
+            if indicators.led_brightness.is_some() {
+                ui.label("Player LEDs");
+                ui.horizontal_wrapped(|ui| {
+                    for index in 0..5 {
+                        let on = indicators
+                            .player_leds
+                            .is_some_and(|bits| bits & (1 << index) != 0);
+                        draw_feedback_indicator(
+                            ui,
+                            &format!("{}", index + 1),
+                            if on {
+                                Color32::WHITE
+                            } else {
+                                Color32::DARK_GRAY
+                            },
+                            if indicators.player_leds.is_none() {
+                                "Player LED state not yet observed"
+                            } else if on {
+                                "Player LED enabled (source decoding)"
+                            } else {
+                                "Player LED disabled (source decoding)"
+                            },
+                        );
+                    }
+                    ui.label(match indicators.player_led_instant {
+                        Some(true) => "Instant",
+                        Some(false) => "Fade",
+                        None => "Transition unknown",
+                    });
+                });
+                ui.end_row();
+                ui.label("LED brightness");
+                ui.monospace(format!(
+                    "Raw 0x{:02X} (encoding disputed)",
+                    indicators.led_brightness.unwrap_or_default()
+                ));
+                ui.end_row();
+            }
             ui.label("Rumble");
             draw_rumble_contents(ui, indicators);
             ui.end_row();
@@ -5302,12 +5370,32 @@ mod tests {
         assert!(!indicators.rumble_seen);
 
         indicators.apply_hid_output(None, None, None, Some(false));
-        assert_eq!(indicators.mute_led, Some(false));
+        assert_eq!(indicators.mute_led, Some(DualSenseMuteLed::Off));
         assert!(!indicators.rumble_seen);
 
         indicators.apply_hid_output(Some(0), Some(0), None, None);
         assert!(indicators.rumble_seen);
         assert!(!indicators.rumble_active);
+    }
+
+    #[test]
+    fn dualsense_led_state_preserves_partial_updates_and_pulse() {
+        let mut indicators = ReverseIndicators::default();
+        indicators.apply_dualsense_led_output(
+            Some(DualSenseMuteLed::Pulse),
+            Some(0x15),
+            Some(true),
+            0xa5,
+        );
+        assert_eq!(indicators.mute_led, Some(DualSenseMuteLed::Pulse));
+        assert_eq!(indicators.player_leds, Some(0x15));
+        assert_eq!(indicators.player_led_instant, Some(true));
+        assert_eq!(indicators.led_brightness, Some(0xa5));
+        indicators.apply_dualsense_led_output(None, None, None, 0x03);
+        assert_eq!(indicators.mute_led, Some(DualSenseMuteLed::Pulse));
+        assert_eq!(indicators.player_leds, Some(0x15));
+        assert_eq!(indicators.player_led_instant, Some(true));
+        assert_eq!(indicators.led_brightness, Some(3));
     }
 
     #[test]
@@ -5336,19 +5424,19 @@ mod tests {
         indicators.apply_hid_output(None, Some(0), None, None);
         assert!(!indicators.rumble_active);
         assert_eq!(indicators.led, Some([1, 2, 3]));
-        assert_eq!(indicators.mute_led, Some(true));
+        assert_eq!(indicators.mute_led, Some(DualSenseMuteLed::On));
     }
 
     #[test]
     fn rumble_only_dualsense_output_preserves_prior_led_indicators() {
         let mut indicators = ReverseIndicators {
             led: Some([0x11, 0x22, 0x33]),
-            mute_led: Some(true),
+            mute_led: Some(DualSenseMuteLed::On),
             ..ReverseIndicators::default()
         };
         indicators.apply_hid_output(Some(0x40), Some(0x20), None, None);
         assert_eq!(indicators.led, Some([0x11, 0x22, 0x33]));
-        assert_eq!(indicators.mute_led, Some(true));
+        assert_eq!(indicators.mute_led, Some(DualSenseMuteLed::On));
         assert!(indicators.rumble_active);
     }
 }
