@@ -4,17 +4,17 @@ use crate::audio::AudioLifecycle;
 use crate::{
     BatteryLevel, CommitError, ControlError, ControllerAssociation, ControllerDiagnostics,
     ControllerError, ControllerId, CreationOptions, DigitalControlUpdate, DualSenseAxis,
-    DualSenseControl, DualSenseFeature, DualSenseDeviceData, DualSenseInputs, DualSenseOutputEvent, DualSenseStatus,
-    DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
-    DualShock4DeviceData, DualShock4Inputs, DualShock4MotionSample, DualShock4OutputEvent, DualShock4Surface,
-    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
-    ServiceReadiness, SteamController2026Button, SteamController2026Inputs,
-    SteamController2026OutputEvent, SteamController2026Outputs, SwitchProAxis, SwitchProControl,
-    SwitchProInputs, SwitchProMotionSample, SwitchProOutputEvent, SwitchProSurface, TouchSlot,
-    WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton, WiiRemoteInputs,
-    WiiRemoteOutputEvent, WiiRemoteOutputs, WiiResourceDisposition, Xbox360Axis, Xbox360Control,
-    Xbox360Inputs, Xbox360OutputEvent, Xbox360Surface, Xbox360Trigger, XboxSeriesButton,
-    XboxSeriesInputs, XboxSeriesOutputEvent, XboxSeriesOutputState,
+    DualSenseControl, DualSenseDeviceData, DualSenseFeature, DualSenseInputs, DualSenseOutputEvent,
+    DualSenseStatus, DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis,
+    DualShock4Control, DualShock4DeviceData, DualShock4Inputs, DualShock4MotionSample,
+    DualShock4OutputEvent, DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot,
+    DualShock4Trigger, MotionSample, RealizationId, ServiceReadiness, SteamController2026Button,
+    SteamController2026Inputs, SteamController2026OutputEvent, SteamController2026Outputs,
+    SwitchProAxis, SwitchProControl, SwitchProInputs, SwitchProMotionSample, SwitchProOutputEvent,
+    SwitchProSurface, TouchSlot, WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton,
+    WiiRemoteInputs, WiiRemoteOutputEvent, WiiRemoteOutputs, WiiResourceDisposition, Xbox360Axis,
+    Xbox360Control, Xbox360Inputs, Xbox360OutputEvent, Xbox360Surface, Xbox360Trigger,
+    XboxSeriesButton, XboxSeriesInputs, XboxSeriesOutputEvent, XboxSeriesOutputState,
 };
 // The family adapter owns only static dispatch; protocol semantics stay curated.
 trait Family {
