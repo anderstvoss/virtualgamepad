@@ -36,6 +36,7 @@ Each numbered file is a self-contained agent brief. To dispatch one, give an age
 | 27 | [Xbox Elite Series 3 and Xbox Nano plan](27-xbox-elite-3-and-nano-plan.md) (steps 27a–27h) | #358, #357 | Controller | Evidence-gated: research before any implementation |
 | 28 | [Wii Remote speaker, audio step S1](28-wii-speaker-s1.md) (steps 28a–28e) | #158 | Audio | VG-1b complete; VG-2 (ADR-0024 journal) and the D7 speaker gate; refines brief 16 S1 |
 | 29 | [Receiver lifecycle package](29-receiver-lifecycle-package.md) (steps 29a–29i) | #165, #159 | Runtime / Controller | Post-Alpha 2; VG-1b complete; reviewed source records; VG-2 for journals; #168 and #258 gates for native USB |
+| 30 | [Wii speaker as a host audio source](30-wii-speaker-host-audio-source.md) (A caller-owned playback vs B optional PipeWire source; design only) | #158, #365 | Audio | V2a/S1 accepted journal wiring for A; separate approval and host-audit gate for B |
 | 16 | [Audio and haptics buildout](16-audio-haptics-buildout.md) (new checkpoint proposed) | #116, #126, #135, #143, #145 | Audio | S0 option 3 **decided** ([#347](https://github.com/anderstvoss/virtualgamepad/pull/347)); #344 shared stream design/authorization for S1/S2; S1 D7 speaker gate; A0 before live gates; #203 worker recovery separate |
 
 ## Order
