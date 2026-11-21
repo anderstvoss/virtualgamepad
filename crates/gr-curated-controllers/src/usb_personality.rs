@@ -37,7 +37,7 @@ retained_protocol!(
 pub fn dualsense(
     identity: [u8; 6],
 ) -> impl WorkerProtocol<State = dualsense::DualSenseSessionState, Output = RawReverseEvent> {
-    dualsense::DualSenseDefinition.hid_protocol(RealizationSessionId(0), identity)
+    dualsense::DualSenseDefinition::default().hid_protocol(RealizationSessionId(0), identity)
 }
 
 /// Use an explicitly validated immutable feature profile for USB/IP.
@@ -53,7 +53,7 @@ pub fn dualsense_with_device_data(
 pub fn dualshock4(
     identity: [u8; 6],
 ) -> impl WorkerProtocol<State = dualshock4::DualShock4SessionState, Output = RawReverseEvent> {
-    dualshock4::DualShock4Definition.hid_protocol(RealizationSessionId(0), identity)
+    dualshock4::DualShock4Definition::default().hid_protocol(RealizationSessionId(0), identity)
 }
 
 /// Use an explicitly validated immutable DualShock 4 USB/IP feature profile.
