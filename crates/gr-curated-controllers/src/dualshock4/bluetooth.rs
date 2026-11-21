@@ -81,12 +81,30 @@ pub(super) fn full_frame(state: &DualShock4SessionState) -> ProviderFrame {
     }
 }
 
-pub(super) fn minimal_report(state: &DualShock4SessionState, _: u64, _: u8) -> Report {
-    super::common::logical_input(minimal_frame(state))
+#[allow(clippy::cast_possible_truncation)] // DS4 timing/sequence counters wrap at wire width.
+fn encode_at(
+    state: &DualShock4SessionState,
+    now: u64,
+    sequence: u8,
+    full: bool,
+) -> Report {
+    let mut wire = state.clone();
+    wire.status.sequence = sequence;
+    wire.status.sensor_timestamp = ((now / 16).wrapping_mul(3)) as u16;
+    wire.status.touch_sequence = sequence;
+    super::common::logical_input(if full {
+        full_frame(&wire)
+    } else {
+        minimal_frame(&wire)
+    })
 }
 
-pub(super) fn full_report(state: &DualShock4SessionState, _: u64, _: u8) -> Report {
-    super::common::logical_input(full_frame(state))
+pub(super) fn minimal_report(state: &DualShock4SessionState, now: u64, sequence: u8) -> Report {
+    encode_at(state, now, sequence, false)
+}
+
+pub(super) fn full_report(state: &DualShock4SessionState, now: u64, sequence: u8) -> Report {
+    encode_at(state, now, sequence, true)
 }
 
 pub(super) fn validate_output(report: &Report) -> Result<(), ReplyError> {
