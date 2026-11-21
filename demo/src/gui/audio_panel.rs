@@ -164,9 +164,9 @@ mod tests {
 
     #[test]
     fn peak_meter_covers_silence_full_scale_and_signed_sample_minimum() {
-        assert_eq!(peak_fraction(0), 0.0);
-        assert_eq!(peak_fraction(16_384), 0.5);
-        assert_eq!(peak_fraction(i16::MIN.unsigned_abs()), 1.0);
+        assert!(peak_fraction(0).abs() <= f32::EPSILON);
+        assert!((peak_fraction(16_384) - 0.5).abs() <= f32::EPSILON);
+        assert!((peak_fraction(i16::MIN.unsigned_abs()) - 1.0).abs() <= f32::EPSILON);
         assert_eq!(peak_text(0), "Silence (−∞ dBFS)");
         assert_eq!(peak_text(32_768), "0.0 dBFS");
     }
