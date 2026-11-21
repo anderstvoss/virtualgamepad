@@ -782,6 +782,11 @@ pub struct DualShock4Definition {
 }
 #[allow(non_upper_case_globals)]
 pub const DualShock4Definition: DualShock4Definition = DualShock4Definition { device_data: None };
+impl DualShock4Definition {
+    pub(crate) const fn configured(device_data: DualShock4DeviceData) -> Self {
+        Self { device_data: Some(device_data) }
+    }
+}
 impl RealizationControllerDefinition for DualShock4Definition {
     fn controller_id(&self) -> ControllerId {
         ControllerId::new("virtualgamepad.dualshock4")
