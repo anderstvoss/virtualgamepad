@@ -985,3 +985,15 @@ These additive ordinary-root declarations do not change protocol admission or qu
 - `DualSenseHidOutput::UsbOutput` adds `led_brightness: u8` (raw; conflicting encoding in research claim `ds-cgap-led-brightness-encoding-disagreement`), `lightbar_setup: Option<u8>` (valid_flag2 bit 1), `release_leds: Option<bool>` (Some(true) for valid_flag1 bit 3, otherwise None), and `player_led_instant: Option<bool>` (valid_flag1 bit 4). `player_leds` now contains only five indicator bits (0–4), with bit 5 exposed separately.
 - Consumers needing the complete original packet should continue to use `raw`. The legacy retained `DualSenseOutputState.player_leds` remains the original player-LED byte; it does not adopt the new event field's mask. No other retained-state ABI or wire serialization changes.
 - Updated GUI presents five indicators, instant/fade, mute pulse/unknown, and uninterpreted brightness. The changes and tests are source-only; L1–L8 physical checks are not run.
+
+## Alpha 2 p2b — Switch Pro native battery, HOME light and optional IMU gating (#156 / #365)
+
+Source-only implementation (no physical Switch Pro, voltage/timing qualification, or support-matrix promotion). Research claims: `swpro-l0-device-battery-connection-bits`, `swpro-cgap-home-led-consumer`, `swpro-l0-consumer-imu-rumble-ack-gates`.
+
+- New ordinary-root public types: `SwitchProBatteryLevel` (five encoded bands), `SwitchProBattery` (`level`, `charging`, `usb_powered`) and `SwitchProHomeLight` (`brightness` and unmodified five-byte `mini_cycle`). The battery state is native band/power metadata, **not** a percentage estimate. The default encodes input-report battery/connection byte `0x80`, unchanged.
+- `SwitchProOptions::with_battery` / `battery` set/read creation-time state; `with_imu_gating` / `imu_gating` opt into zero IMU samples until subcommand `0x40` enables sensors (default `false` preserves old streaming behavior). Callers selecting new behavior must opt in.
+- `SwitchProController::battery` and `set_battery` expose current and live typed battery metadata. `SwitchProStatus::battery`, `imu_gating`, and `imu_enabled` expose accepted values without mixing session metadata into caller-owned inputs.
+- `SwitchProOutputEvent::HomeLight(SwitchProHomeLight)` reports accepted 0x38 requests independently of `OutputKind::PlayerIndicator { count: 4 }`. The previous generic ACK remains; malformed/truncated 0x38 request bodies retain their original output form. Matchers on the non-exhaustive output enum should account for the new variant. The raw mini-cycle data are intentionally not assigned unsourced semantics.
+- Existing `SwitchProInputs` mutators and default constructor remain unchanged. No new dependencies.
+
+Regression IDs: `battery_status_encodes_native_level_charging_and_pro_power`, `home_light_keeps_generic_ack_and_typed_minicycle_separate_from_players`, `native_service_retains_imu_enable_status_for_opted_in_frames`, `imu_samples_are_gated_only_with_opt_in_and_host_enable`, `switch_home_request_remains_typed_at_application_boundary`. These are deterministic source-only tests; no device or host acceptance claim.

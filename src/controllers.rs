@@ -9,12 +9,12 @@ use crate::{
     DualShock4Inputs, DualShock4MotionSample, DualShock4OutputEvent, DualShock4Surface,
     DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
     ServiceReadiness, SteamController2026Button, SteamController2026Inputs,
-    SteamController2026OutputEvent, SteamController2026Outputs, SwitchProAxis, SwitchProControl,
-    SwitchProInputs, SwitchProMotionSample, SwitchProOutputEvent, SwitchProSurface, TouchSlot,
-    WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton, WiiRemoteInputs,
-    WiiRemoteOutputEvent, WiiRemoteOutputs, WiiResourceDisposition, Xbox360Axis, Xbox360Control,
-    Xbox360Inputs, Xbox360OutputEvent, Xbox360Surface, Xbox360Trigger, XboxSeriesButton,
-    XboxSeriesInputs, XboxSeriesOutputEvent, XboxSeriesOutputState,
+    SteamController2026OutputEvent, SteamController2026Outputs, SwitchProAxis, SwitchProBattery,
+    SwitchProControl, SwitchProInputs, SwitchProMotionSample, SwitchProOutputEvent,
+    SwitchProSurface, TouchSlot, WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton,
+    WiiRemoteInputs, WiiRemoteOutputEvent, WiiRemoteOutputs, WiiResourceDisposition, Xbox360Axis,
+    Xbox360Control, Xbox360Inputs, Xbox360OutputEvent, Xbox360Surface, Xbox360Trigger,
+    XboxSeriesButton, XboxSeriesInputs, XboxSeriesOutputEvent, XboxSeriesOutputState,
 };
 // The family adapter owns only static dispatch; protocol semantics stay curated.
 trait Family {
@@ -673,11 +673,17 @@ impl SwitchProController {
     pub fn inputs(&self) -> &SwitchProInputs {
         self.controller.inner.inputs()
     }
-    /// Read accepted motion timing and host-selected stream state.
+    /// Read accepted motion timing, battery and host-selected stream state.
     #[must_use]
     pub fn status(&self) -> crate::SwitchProStatus {
         self.controller.inner.status()
     }
+    /// Current native battery state (source-backed level, charge and USB power).
+    #[must_use]
+    pub fn battery(&self) -> SwitchProBattery {
+        self.controller.inner.battery()
+    }
+    edits! { fn set_battery(battery: SwitchProBattery); }
     shared!(edit_inputs, SwitchProInputs);
     shared!(set_inputs, SwitchProInputs);
     shared!(host_outputs, crate::SwitchProOutputState);
