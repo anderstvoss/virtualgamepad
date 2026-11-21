@@ -625,6 +625,8 @@ pub(crate) fn open<S: Send + 'static>(
             reverse_events_drained: 0,
             write_failures: 0,
             lifecycle_events: 0,
+            dropped_writes: 0,
+            last_dropped_write: None,
             last_error: None,
         },
         microphone_silence,
@@ -829,6 +831,8 @@ mod tests {
             reverse_events_drained: 3,
             write_failures: 0,
             lifecycle_events: 0,
+            dropped_writes: 0,
+            last_dropped_write: None,
             last_error: Some(initiating.clone()),
         };
         for _ in 0..2 {
@@ -866,6 +870,8 @@ mod tests {
                     reverse_events_drained: 3,
                     write_failures: 1,
                     lifecycle_events: 0,
+                    dropped_writes: 0,
+                    last_dropped_write: None,
                     last_error: Some("original transport failure".into()),
                 };
                 let outcome = |failed, reason| {

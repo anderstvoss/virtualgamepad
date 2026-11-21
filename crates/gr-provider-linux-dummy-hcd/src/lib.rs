@@ -202,6 +202,8 @@ impl NativeProviderSession for Session {
             reverse_events_drained: self.reverse,
             write_failures: self.failures,
             lifecycle_events: 0,
+            dropped_writes: 0,
+            last_dropped_write: None,
             last_error: self.last_error.clone(),
         }
     }
