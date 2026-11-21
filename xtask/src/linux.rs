@@ -11,7 +11,10 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use virtualgamepad::{CreationOptions, DigitalControlUpdate, InputTopology, RealizationId};
+use virtualgamepad::{
+    AudioExposure, AudioOptions, CreationOptions, DigitalControlUpdate, InputTopology,
+    RealizationId,
+};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -22,12 +25,21 @@ impl Drop for Capture {
     }
 }
 
+fn acceptance_creation_options(target: RealizationId) -> CreationOptions {
+    let options = CreationOptions::new(target);
+    if target == RealizationId::LINUX_USBIP_USB_AUDIO {
+        options.with_audio(AudioOptions::new(AudioExposure::Emulated))
+    } else {
+        options
+    }
+}
+
 macro_rules! controllers {
     ($(($variant:ident,$ty:ident,$create:ident,$id:literal $(,$common:ident)?)),+ $(,)?) => {
         pub enum Controller { $($variant(virtualgamepad::$ty),)+ }
         impl Controller {
             fn create(id:&str,target:RealizationId)->Result<Self,String>{
-                match id { $($id=>virtualgamepad::$create(CreationOptions::new(target), Default::default()).map(Self::$variant).map_err(|e|e.to_string()),)+ _=>Err("unmapped compiled family".into()) }
+                match id { $($id=>virtualgamepad::$create(acceptance_creation_options(target), Default::default()).map(Self::$variant).map_err(|e|e.to_string()),)+ _=>Err("unmapped compiled family".into()) }
             }
             fn physical_paths(&self)->Vec<String> { match self { $(Self::$variant(c)=>c.association().components().iter().filter_map(|c|c.requested_physical_path().map(str::to_owned)).collect(),)+ } }
             fn topology(&self)->&InputTopology { match self { $(Self::$variant(c)=>c.surface()$(.$common())?.input_topology(),)+ } }
@@ -655,6 +667,24 @@ impl Backend for Linux {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn explicit_usbip_acceptance_requests_emulated_audio() {
+        use super::{AudioExposure, AudioOptions, RealizationId, acceptance_creation_options};
+
+        assert_eq!(
+            acceptance_creation_options(RealizationId::LINUX_USBIP_USB_AUDIO).audio(),
+            AudioOptions::new(AudioExposure::Emulated)
+        );
+        assert_eq!(
+            acceptance_creation_options(RealizationId::LINUX_UHID_USB).audio(),
+            AudioOptions::default()
+        );
+        assert_eq!(
+            acceptance_creation_options(RealizationId::LINUX_UINPUT).audio(),
+            AudioOptions::default()
+        );
+    }
+
     #[test]
     fn failed_probe_keeps_actionable_diagnostics_without_device_identifiers() {
         let record = serde_json::json!({"path":"private", "guid":"private", "failure_detail":{
