@@ -1160,7 +1160,11 @@ mod tests {
         ] {
             let profile = AudioProfile::new(
                 "direction-only",
-                &[AudioStreamDescription::new("only", direction, format.clone())],
+                &[AudioStreamDescription::new(
+                    "only",
+                    direction,
+                    format.clone(),
+                )],
                 "test",
             );
             let prepared = prepare(&profile, options, 9, 0).unwrap();
