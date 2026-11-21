@@ -749,17 +749,17 @@
             "pub enum SwitchProBatteryLevel { Empty, Critical, Low, Medium, Full, }"
           ],
           "traits": [
-            "impl Clone for SwitchProControl",
-            "impl Copy for SwitchProControl",
-            "impl Debug for SwitchProControl",
+            "impl Clone for SwitchProBatteryLevel",
+            "impl Copy for SwitchProBatteryLevel",
+            "impl Debug for SwitchProBatteryLevel",
             "impl Default for SwitchProBatteryLevel",
-            "impl Eq for SwitchProControl",
-            "impl PartialEq for SwitchProControl",
-            "impl RefUnwindSafe for SwitchProControl",
-            "impl Send for SwitchProControl",
-            "impl Sync for SwitchProControl",
-            "impl Unpin for SwitchProControl",
-            "impl UnwindSafe for SwitchProControl"
+            "impl Eq for SwitchProBatteryLevel",
+            "impl PartialEq for SwitchProBatteryLevel",
+            "impl RefUnwindSafe for SwitchProBatteryLevel",
+            "impl Send for SwitchProBatteryLevel",
+            "impl Sync for SwitchProBatteryLevel",
+            "impl Unpin for SwitchProBatteryLevel",
+            "impl UnwindSafe for SwitchProBatteryLevel"
           ]
         },
         "enum.SwitchProControl.html": {
@@ -2552,17 +2552,17 @@
             "pub struct SwitchProBattery { pub level: SwitchProBatteryLevel, pub charging: bool, pub usb_powered: bool, }"
           ],
           "traits": [
-            "impl Clone for SwitchProMotionSample",
-            "impl Copy for SwitchProMotionSample",
-            "impl Debug for SwitchProMotionSample",
+            "impl Clone for SwitchProBattery",
+            "impl Copy for SwitchProBattery",
+            "impl Debug for SwitchProBattery",
             "impl Default for SwitchProBattery",
-            "impl Eq for SwitchProMotionSample",
-            "impl PartialEq for SwitchProMotionSample",
-            "impl RefUnwindSafe for SwitchProMotionSample",
-            "impl Send for SwitchProMotionSample",
-            "impl Sync for SwitchProMotionSample",
-            "impl Unpin for SwitchProMotionSample",
-            "impl UnwindSafe for SwitchProMotionSample"
+            "impl Eq for SwitchProBattery",
+            "impl PartialEq for SwitchProBattery",
+            "impl RefUnwindSafe for SwitchProBattery",
+            "impl Send for SwitchProBattery",
+            "impl Sync for SwitchProBattery",
+            "impl Unpin for SwitchProBattery",
+            "impl UnwindSafe for SwitchProBattery"
           ]
         },
         "struct.SwitchProController.html": {
@@ -2609,16 +2609,16 @@
             "pub struct SwitchProHomeLight { pub brightness: u8, pub mini_cycle: [u8; 5], }"
           ],
           "traits": [
-            "impl Clone for SwitchProMotionSample",
-            "impl Copy for SwitchProMotionSample",
-            "impl Debug for SwitchProMotionSample",
-            "impl Eq for SwitchProMotionSample",
-            "impl PartialEq for SwitchProMotionSample",
-            "impl RefUnwindSafe for SwitchProMotionSample",
-            "impl Send for SwitchProMotionSample",
-            "impl Sync for SwitchProMotionSample",
-            "impl Unpin for SwitchProMotionSample",
-            "impl UnwindSafe for SwitchProMotionSample"
+            "impl Clone for SwitchProHomeLight",
+            "impl Copy for SwitchProHomeLight",
+            "impl Debug for SwitchProHomeLight",
+            "impl Eq for SwitchProHomeLight",
+            "impl PartialEq for SwitchProHomeLight",
+            "impl RefUnwindSafe for SwitchProHomeLight",
+            "impl Send for SwitchProHomeLight",
+            "impl Sync for SwitchProHomeLight",
+            "impl Unpin for SwitchProHomeLight",
+            "impl UnwindSafe for SwitchProHomeLight"
           ]
         },
         "struct.SwitchProIdentity.html": {
@@ -4370,17 +4370,17 @@
             "pub enum SwitchProBatteryLevel { Empty, Critical, Low, Medium, Full, }"
           ],
           "traits": [
-            "impl Clone for SwitchProControl",
-            "impl Copy for SwitchProControl",
-            "impl Debug for SwitchProControl",
+            "impl Clone for SwitchProBatteryLevel",
+            "impl Copy for SwitchProBatteryLevel",
+            "impl Debug for SwitchProBatteryLevel",
             "impl Default for SwitchProBatteryLevel",
-            "impl Eq for SwitchProControl",
-            "impl PartialEq for SwitchProControl",
-            "impl RefUnwindSafe for SwitchProControl",
-            "impl Send for SwitchProControl",
-            "impl Sync for SwitchProControl",
-            "impl Unpin for SwitchProControl",
-            "impl UnwindSafe for SwitchProControl"
+            "impl Eq for SwitchProBatteryLevel",
+            "impl PartialEq for SwitchProBatteryLevel",
+            "impl RefUnwindSafe for SwitchProBatteryLevel",
+            "impl Send for SwitchProBatteryLevel",
+            "impl Sync for SwitchProBatteryLevel",
+            "impl Unpin for SwitchProBatteryLevel",
+            "impl UnwindSafe for SwitchProBatteryLevel"
           ]
         },
         "enum.SwitchProControl.html": {
@@ -6173,17 +6173,17 @@
             "pub struct SwitchProBattery { pub level: SwitchProBatteryLevel, pub charging: bool, pub usb_powered: bool, }"
           ],
           "traits": [
-            "impl Clone for SwitchProMotionSample",
-            "impl Copy for SwitchProMotionSample",
-            "impl Debug for SwitchProMotionSample",
+            "impl Clone for SwitchProBattery",
+            "impl Copy for SwitchProBattery",
+            "impl Debug for SwitchProBattery",
             "impl Default for SwitchProBattery",
-            "impl Eq for SwitchProMotionSample",
-            "impl PartialEq for SwitchProMotionSample",
-            "impl RefUnwindSafe for SwitchProMotionSample",
-            "impl Send for SwitchProMotionSample",
-            "impl Sync for SwitchProMotionSample",
-            "impl Unpin for SwitchProMotionSample",
-            "impl UnwindSafe for SwitchProMotionSample"
+            "impl Eq for SwitchProBattery",
+            "impl PartialEq for SwitchProBattery",
+            "impl RefUnwindSafe for SwitchProBattery",
+            "impl Send for SwitchProBattery",
+            "impl Sync for SwitchProBattery",
+            "impl Unpin for SwitchProBattery",
+            "impl UnwindSafe for SwitchProBattery"
           ]
         },
         "struct.SwitchProController.html": {
@@ -6230,16 +6230,16 @@
             "pub struct SwitchProHomeLight { pub brightness: u8, pub mini_cycle: [u8; 5], }"
           ],
           "traits": [
-            "impl Clone for SwitchProMotionSample",
-            "impl Copy for SwitchProMotionSample",
-            "impl Debug for SwitchProMotionSample",
-            "impl Eq for SwitchProMotionSample",
-            "impl PartialEq for SwitchProMotionSample",
-            "impl RefUnwindSafe for SwitchProMotionSample",
-            "impl Send for SwitchProMotionSample",
-            "impl Sync for SwitchProMotionSample",
-            "impl Unpin for SwitchProMotionSample",
-            "impl UnwindSafe for SwitchProMotionSample"
+            "impl Clone for SwitchProHomeLight",
+            "impl Copy for SwitchProHomeLight",
+            "impl Debug for SwitchProHomeLight",
+            "impl Eq for SwitchProHomeLight",
+            "impl PartialEq for SwitchProHomeLight",
+            "impl RefUnwindSafe for SwitchProHomeLight",
+            "impl Send for SwitchProHomeLight",
+            "impl Sync for SwitchProHomeLight",
+            "impl Unpin for SwitchProHomeLight",
+            "impl UnwindSafe for SwitchProHomeLight"
           ]
         },
         "struct.SwitchProIdentity.html": {
