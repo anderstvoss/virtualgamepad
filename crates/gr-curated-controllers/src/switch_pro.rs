@@ -2477,7 +2477,7 @@ mod tests {
             matches!(frame, ProviderFrame::DummyHcdInput(bytes) if bytes.len() == 64 && bytes[0] == 0x30)
         );
         assert!(
-            SwitchProDefinition
+            SwitchProDefinition::default()
                 .realization_manifest()
                 .entries()
                 .iter()
@@ -2771,5 +2771,54 @@ mod tests {
         assert!(
             matches!(calibration, ProviderFrame::HidInput { report_id: Some(0x21), bytes } if bytes[12] == 0x90 && bytes[14..25] == [0x20, 0x60, 0, 0, 6, 0, 0, 0, 0, 0, 0])
         );
+    }
+
+
+    #[test]
+    fn supplied_spi_bytes_reach_subcommand_replies_and_colour_flag() {
+        // Synthetic patterned factory and user values, never captured calibration.
+        let image = SwitchProSpiImage::default()
+            .with_region(0x6020, &[0x15, 0x2a, 0x3c])
+            .unwrap()
+            .with_region(0x8010, &[0x42, 0x24])
+            .unwrap()
+            .with_region(0x6050, &[0x20; 12])
+            .unwrap();
+        let state = <(SwitchProInputs, SwitchProStatus)>::default();
+        for (address, expected) in [(0x6020, vec![0x15, 0x2a, 0x3c]), (0x8010, vec![0x42, 0x24])] {
+            let mut arguments = address.to_le_bytes().to_vec();
+            arguments.push(expected.len() as u8);
+            let (frame, enabled) =
+                switch_subcommand_reply(&state, 0x10, &arguments, fixture_identity(), &image);
+            assert!(!enabled);
+            let ProviderFrame::HidInput { bytes, .. } = frame else { panic!("HID expected") };
+            assert_eq!(&bytes[19..19 + expected.len()], expected);
+        }
+        let (info, _) = switch_subcommand_reply(&state, 0x02, &[], fixture_identity(), &image);
+        let ProviderFrame::HidInput { bytes, .. } = info else { panic!("HID expected") };
+        assert_eq!(bytes[25], 1);
+        let partial = SwitchProSpiImage::default().with_region(0x6050, &[0x20; 3]).unwrap();
+        let (info, _) = switch_subcommand_reply(&state, 0x02, &[], fixture_identity(), &partial);
+        let ProviderFrame::HidInput { bytes, .. } = info else { panic!("HID expected") };
+        assert_eq!(bytes[25], 0);
+    }
+
+    #[test]
+    fn spi_host_writes_leave_caller_image_unchanged_and_options_restore_it() {
+        let image = SwitchProSpiImage::default().with_region(0x8010, &[0x11, 0x22]).unwrap();
+        let options = SwitchProOptions::default().with_spi_image(image.clone());
+        assert_eq!(options.clone().spi_image(), Some(&image));
+        let recreated = options.with_identity(fixture_identity());
+        assert_eq!(recreated.spi_image(), Some(&image));
+        let state = <(SwitchProInputs, SwitchProStatus)>::default();
+        for command in [0x11, 0x12] {
+            let (reply, enabled) =
+                switch_subcommand_reply(&state, command, &[0x10, 0x80, 0, 0, 2, 1, 2], fixture_identity(), &image);
+            assert!(!enabled);
+            let ProviderFrame::HidInput { bytes, .. } = reply else { panic!("HID expected") };
+            assert_eq!(bytes[13], command);
+            assert_eq!(bytes[12], 0x80); // Existing generic reply, no write mutation.
+            assert_eq!(image.export_raw(0x8010, 2).unwrap(), [0x11, 0x22]);
+        }
     }
 }

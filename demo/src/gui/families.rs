@@ -171,7 +171,11 @@ impl Kind {
                     .map(Controller::DualShock4)
             }
             Self::SwitchPro => {
-                create_switch_pro(creation, virtualgamepad::SwitchProOptions::default())
+                create_switch_pro(
+                    creation,
+                    virtualgamepad::SwitchProOptions::default()
+                        .with_spi_image(options.switch_spi.image().clone()),
+                )
                     .map(Controller::SwitchPro)
             }
             Self::WiiRemote => create_wii_session(
@@ -676,6 +680,7 @@ mod steam_tests {
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteOptions::default(),
                 steam_options: super::super::SteamController2026Options::default(),
+                switch_spi: super::super::switch_pro_spi::Settings::default(),
             };
             let mut captured = Vec::new();
             for (enabled, streaming, lizard) in [
@@ -731,6 +736,7 @@ mod wii_tests {
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteOptions::default(),
                 steam_options: super::super::SteamController2026Options::default(),
+                switch_spi: super::super::switch_pro_spi::Settings::default(),
             };
             let state = create_wii_session(&options, |common, family| {
                 assert_eq!(common.target, options.target);
@@ -809,6 +815,7 @@ mod wii_tests {
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteOptions::default(),
                 steam_options: super::super::SteamController2026Options::default(),
+                switch_spi: super::super::switch_pro_spi::Settings::default(),
             };
             let received = create_wii_session(&options, |common, family| {
                 assert_eq!(family.revision(), super::super::WiiRemoteRevision::Original);
@@ -852,6 +859,7 @@ mod compat_creation_tests {
                                 wii_imports: super::super::wii_import::Imports::default(),
                                 wii_compat: compat.clone(),
                                 steam_options: super::super::SteamController2026Options::default(),
+                switch_spi: super::super::switch_pro_spi::Settings::default(),
                             };
                             assert_eq!(
                                 create_wii_session(&options, |_, received| Ok::<_, String>(

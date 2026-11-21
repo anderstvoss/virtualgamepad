@@ -88,3 +88,67 @@ impl SwitchProSpiImage {
         (0x6050..=0x605b).all(|address| self.supplied.contains_key(&address))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn untouched_regions_match_existing_synthetic_responses_exhaustively() {
+        let image = SwitchProSpiImage::default();
+        for address in (FACTORY_START..FACTORY_END).chain(USER_START..USER_END) {
+            assert_eq!(image.read(address), super::super::switch_spi_byte(address), "SPI {address:#x}");
+        }
+        for address in [0x5fff, 0x7000, 0x7fff, 0x9000, u32::MAX] {
+            assert_eq!(image.read(address), super::super::switch_spi_byte(address));
+        }
+        assert!(!image.colors_available());
+    }
+
+    #[test]
+    fn imports_are_atomic_and_reject_unmapped_extents() {
+        let original = SwitchProSpiImage::default().with_region(0x6000, &[0x31]).unwrap();
+        for (base, bytes) in [
+            (0x5fff, vec![0x32; 2]),
+            (0x6fff, vec![0x33; 2]),
+            (0x7000, vec![0x34]),
+            (0x7fff, vec![0x35; 2]),
+            (0x8fff, vec![0x36; 2]),
+            (0x9000, vec![0x37]),
+            (u32::MAX, vec![0x38; 2]),
+            (0x6000, vec![]),
+        ] {
+            assert!(original.clone().with_region(base, &bytes).is_err());
+            assert!(SwitchProSpiImage::import_raw(base, &bytes).is_err());
+            assert_eq!(original.read(0x6000), 0x31);
+        }
+        assert!(original.export_raw(0x6fff, 2).is_err());
+        assert!(original.export_raw(0x8000, 0).is_err());
+    }
+
+    #[test]
+    fn raw_round_trip_preserves_both_regions_without_invented_device_data() {
+        let image = SwitchProSpiImage::default()
+            .with_region(0x603d, &[0x46, 0x57])
+            .unwrap()
+            .with_region(0x6050, &[0x28; 12])
+            .unwrap()
+            .with_region(0x8010, &[0x68, 0x79])
+            .unwrap();
+        let factory = image.export_raw(FACTORY_START, 0x1000).unwrap();
+        let user = image.export_raw(USER_START, 0x1000).unwrap();
+        let loaded = SwitchProSpiImage::import_raw(FACTORY_START, &factory)
+            .unwrap()
+            .with_region(USER_START, &user)
+            .unwrap();
+        for address in (FACTORY_START..FACTORY_END).chain(USER_START..USER_END) {
+            assert_eq!(image.read(address), loaded.read(address));
+        }
+        assert!(loaded.colors_available());
+        assert!(image.colors_available());
+        let separate = image.clone();
+        let changed = separate.with_region(0x8010, &[0x23]).unwrap();
+        assert_eq!(image.read(0x8010), 0x68);
+        assert_eq!(changed.read(0x8010), 0x23);
+    }
+}

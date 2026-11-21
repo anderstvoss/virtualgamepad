@@ -6,6 +6,7 @@ mod native_editor;
 mod wii_eeprom;
 mod wii_host;
 mod wii_import;
+mod switch_pro_spi;
 #[cfg(test)]
 mod wii_tests;
 use families::{Controller, Kind};
@@ -53,6 +54,7 @@ struct ControllerOptions {
     wii_imports: wii_import::Imports,
     wii_compat: WiiRemoteOptions,
     steam_options: SteamController2026Options,
+    switch_spi: switch_pro_spi::Settings,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
@@ -272,6 +274,7 @@ fn draw_advanced_options(
     kind: Kind,
     audio_creation: &mut audio_lab::CreationAudio,
     steam_options: &mut SteamController2026Options,
+    switch_spi: &mut switch_pro_spi::Settings,
     (wii_revision, wii_imports, wii_compat): (
         &mut WiiRemoteRevision,
         &mut wii_import::Imports,
@@ -310,6 +313,9 @@ fn draw_advanced_options(
                                 bottom: 2,
                             }),
                     );
+                    if kind == Kind::SwitchPro {
+                        switch_spi.draw(ui);
+                    }
                     draw_wii_revision_selector(ui, kind, wii_revision);
                     if kind == Kind::WiiRemote {
                         wii_imports.draw(ui, target);
@@ -711,7 +717,7 @@ fn recreation_options(
     saved: &ControllerOptions,
     choices: ControllerOptions,
 ) -> ControllerOptions {
-    if matches!(kind, Kind::WiiRemote | Kind::Steam) {
+    if matches!(kind, Kind::WiiRemote | Kind::Steam | Kind::SwitchPro) {
         ControllerOptions {
             id: choices.id,
             ..saved.clone()
@@ -1452,6 +1458,7 @@ pub struct App {
     wii_imports: wii_import::Imports,
     wii_compat: WiiRemoteOptions,
     steam_options: SteamController2026Options,
+    switch_spi: switch_pro_spi::Settings,
     name_draft: String,
     create_count: u32,
     advanced_options_open: bool,
@@ -1477,6 +1484,7 @@ impl Default for App {
             wii_imports: wii_import::Imports::default(),
             wii_compat: WiiRemoteOptions::default(),
             steam_options: SteamController2026Options::default(),
+            switch_spi: switch_pro_spi::Settings::default(),
             name_draft: String::new(),
             create_count: 1,
             advanced_options_open: false,
@@ -1659,6 +1667,7 @@ impl App {
             wii_imports: self.wii_imports.clone(),
             wii_compat: self.wii_compat.clone(),
             steam_options: self.steam_options.clone(),
+            switch_spi: self.switch_spi.clone(),
         }
     }
 
@@ -2032,6 +2041,7 @@ impl eframe::App for App {
                                     self.kind,
                                     &mut self.audio_creation,
                                     &mut self.steam_options,
+                                    &mut self.switch_spi,
                                     (&mut self.wii_revision, &mut self.wii_imports, &mut self.wii_compat),
                                 )
                                 .panel_rect;
