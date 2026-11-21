@@ -3,6 +3,7 @@
 This is a deliberate breaking candidate update before the final alpha freeze.
 
 **P9c Switch Pro (Bluetooth-bus UHID):** the family now declares an additional explicitly selectable `linux.uhid.bluetooth` realization with source-only restrictions for MCU, radio and audio. Existing `SwitchProOptions`, handle input/status/output types, and root public signatures are unchanged. No API snapshot delta is expected; the checked-in snapshot remains authoritative. Consumer code must request this target explicitly; never fall back to USB.
+
 Start with the [final alpha.1 → alpha.2 consumer table](#alpha1--alpha2-final-consumer-table).
 The PR sections below are chronological history: intermediate combined state
 closures and standalone identity/image/options constructors are superseded by
@@ -44,6 +45,32 @@ Post-GUI audit: the empty root `audio-alsa` feature is removed. ALSA host-device
 routing belongs to the demo's `audio-alsa` feature, whose defaults are unchanged.
 Library users enable `audio-pipewire` for local UHID audio or `audio-usbip` for the
 WIP composite; ALSA routing does not add a library realization.
+
+## Alpha 2 G2 · DualSense adaptive trigger effects (c3b)
+
+Root default/all-feature API snapshots add `DualSenseTriggerEffect`,
+`DualSenseTriggerZoneForces`, `DualSenseTriggerEffectUpdate` and
+`decode_dualsense_trigger_effect([u8; 11]) -> DualSenseTriggerEffect`;
+`DualSenseHidOutput::trigger_effects()` returns
+`Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>` in
+right, left order. Matching types/function are re-exported from curated and
+experimental surfaces. The existing `UsbOutput` fields and raw 11-byte blocks
+are unchanged. For each side, `valid = false` means the host did **not**
+update that effect; `effect = None` is not equivalent to `Off`.
+
+Source-supported modes are Off 0x05, Feedback 0x21, Weapon 0x25 and
+Vibration 0x26. Zones are indices 0..9; 3-bit encoder strength codes expose
+levels 1..8; vibration frequency is the native code, not proven Hz.
+Noncanonical parameters, unknown mode bytes and SDL demonstration 0x01/0x06
+are `Unknown` with full original bytes. This is pure interpretation of
+accepted USB host-output bytes, not a new output path, journal or physical
+actuation. Bluetooth output framing remains unparsed in the current HID
+output decoder. The uinput adaptive-trigger refusal remains unchanged.
+Research: ds-l0-device-adaptive-trigger-mode-block,
+ds-l0-device-adaptive-trigger-mode-parameters,
+ds-l0-sdl-trigger-demo-modes,
+ds-l0-physical-adaptive-trigger-unknown,
+ds-vg-exp0016-steam-trigger-disagreement. Source evidence only.
 
 ## Historical capability and supporting-API ledger
 
