@@ -1,4 +1,4 @@
-# Brief 30: Wii Remote speaker as a host audio source (design only)
+# Brief 31: Wii Remote speaker as a host audio source (design only)
 
 Read [ground-rules.md](ground-rules.md) first. **Status:** proposal; no implementation, API approval, host test or acceptance promotion. **Refs:** #158, #365; audio round 2, ar5. **Recommendation:** Option A first; defer Option B to a separate explicitly approved feature.
 
