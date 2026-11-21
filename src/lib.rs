@@ -93,21 +93,22 @@ pub use gr_curated_controllers::wii_remote::{
     WiiRemoteOutputs, WiiRemoteRevision, WiiRemoteStatus, WiiResourceDisposition,
 };
 pub use gr_curated_controllers::xbox_series::{
-    XboxSeriesBluetoothRumble, XboxSeriesButton, XboxSeriesInputs, XboxSeriesOutputState,
-    XboxSeriesStatus, XboxSeriesTrigger,
+    XboxSeriesBluetoothRumble, XboxSeriesButton, XboxSeriesIdentity, XboxSeriesInputs,
+    XboxSeriesOutputState, XboxSeriesStatus, XboxSeriesTrigger,
 };
 pub use gr_curated_controllers::{
     BatteryLevel, BatteryState, DualSenseAudioPath, DualSenseAxis, DualSenseControl,
-    DualSenseFeature, DualSenseHidOutput, DualSenseInputs, DualSenseStatus, DualSenseSurface,
-    DualSenseTouchContact, DualSenseTrigger, DualSenseTriggerEffect, DualSenseTriggerEffectUpdate,
-    DualSenseTriggerZoneForces, DualShock4Axis, DualShock4Control, DualShock4HidOutput,
-    DualShock4Inputs, DualShock4MotionSample, DualShock4Status, DualShock4Surface,
-    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, SwitchProAxis,
-    SwitchProControl, SwitchProInputs, SwitchProMotionSample, SwitchProRumble, SwitchProRumbleBand,
-    SwitchProRumbleDecoded, SwitchProRumbleSample, SwitchProRumbleSamples, SwitchProRumbleWord,
-    SwitchProStatus, SwitchProSurface, TouchSlot, Xbox360Axis, Xbox360Control, Xbox360Inputs,
-    Xbox360Status, Xbox360Surface, Xbox360Trigger, decode_dualsense_trigger_effect,
-    decode_switch_pro_rumble_word, decode_switch_pro_rumble_word_with_previous,
+    DualSenseFeature, DualSenseHidOutput, DualSenseInputs, DualSenseMuteLed, DualSenseStatus,
+    DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, DualSenseTriggerEffect,
+    DualSenseTriggerEffectUpdate, DualSenseTriggerZoneForces, DualShock4Axis, DualShock4Control,
+    DualShock4HidOutput, DualShock4Inputs, DualShock4MotionSample, DualShock4Status,
+    DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger,
+    MotionSample, SwitchProAxis, SwitchProControl, SwitchProInputs, SwitchProMotionSample,
+    SwitchProRumble, SwitchProRumbleBand, SwitchProRumbleDecoded, SwitchProRumbleSample,
+    SwitchProRumbleSamples, SwitchProRumbleWord, SwitchProStatus, SwitchProSurface, TouchSlot,
+    Xbox360Axis, Xbox360Control, Xbox360Inputs, Xbox360Status, Xbox360Surface, Xbox360Trigger,
+    decode_dualsense_trigger_effect, decode_switch_pro_rumble_word,
+    decode_switch_pro_rumble_word_with_previous,
 };
 pub use gr_realization_api::{
     ControllerId, ForceFeedbackEffect, ForceFeedbackEvent, RealizationId, RealizationTargetSet,

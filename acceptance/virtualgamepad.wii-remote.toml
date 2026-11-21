@@ -80,14 +80,14 @@ id = "live-player-led-control"
 [[functions]]
 id = "rumble"
 [functions.cells]
-"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = ["wii-c5-evdev-consumer-shape", "wii-kernel-outputs-battery"], reason = "Conventional upload/erase ACKs and retained playback tested; both channels collapse to one native binary motor. Decode sub-check: ff_rumble_decode_preserves_native_effect_and_stop_semantics; source only." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::tests::malformed_outputs_are_atomic_and_identical_values_do_not_advance_revision", evidence = ["wii-c5-report-layouts", "wii-gap-wiibrew-rumble-bit-retention"], reason = "Raw interrupt rumble and combined LED/rumble acceptance tested. No physical motor-delivery claim. Decode sub-check: wii_shared_rumble_decode; source only." }
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = ["wii-c5-evdev-consumer-shape", "wii-kernel-outputs-battery"], reason = "Conventional upload/erase ACKs and retained playback tested; both channels collapse to one native binary motor. Decode sub-check: ff_rumble_decode_preserves_native_effect_and_stop_semantics; source only. Level: Generic." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::tests::malformed_outputs_are_atomic_and_identical_values_do_not_advance_revision", evidence = ["wii-c5-report-layouts", "wii-gap-wiibrew-rumble-bit-retention"], reason = "Raw interrupt rumble and combined LED/rumble acceptance tested. No physical motor-delivery claim. Decode sub-check: wii_shared_rumble_decode; source only. Level: Native HID." }
 
 [[functions]]
 id = "live-rumble-consumer"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "untested: native uinput live rumble not run; deterministic fake-provider path covered." }
-"linux.uhid.bluetooth" = { status = "virtual-live", live_evidence = "docs/WII_REMOTE.md#bounded-host-evidence", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding"], reason = "Virtual bus 5 kernel evdev upload/play/stop/erase succeeded and retained native rumble was seen. This is software intent delivery, not physical vibration." }
+"linux.uinput" = { status = "wip", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "untested: native uinput live rumble not run; deterministic fake-provider path covered. Level: Generic." }
+"linux.uhid.bluetooth" = { status = "virtual-live", live_evidence = "docs/WII_REMOTE.md#bounded-host-evidence", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding"], reason = "Virtual bus 5 kernel evdev upload/play/stop/erase succeeded and retained native rumble was seen. This is software intent delivery, not physical vibration. Level: Native HID." }
 
 [[functions]]
 id = "battery"
@@ -200,32 +200,32 @@ id = "dolphin"
 [[functions]]
 id = "speaker-audio"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "No HID output-report channel or audio endpoint; playback remains gated under D7/ADR-0023." }
-"linux.uhid.bluetooth" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Speaker audio bytes are discarded; control acknowledgement is separate from playback, which remains gated under D7/ADR-0023." }
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "No HID output-report channel or audio endpoint; playback remains gated under D7/ADR-0023. Level: Generic." }
+"linux.uhid.bluetooth" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "Speaker audio bytes are discarded; control acknowledgement is separate from playback, which remains gated under D7/ADR-0023. Level: Native HID." }
 
 [[functions]]
 id = "speaker-control-ack"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "uinput has no HID output-report or addressed memory channel; its existing rumble behavior is unchanged." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_tests::control_acknowledgements_retain_state_and_shared_rumble", evidence = ["wii-gap-wiibrew-speaker-control-reports", "audio-wii-dolphin-control-and-stream-reports", "wii-gap-wiibrew-speaker-init-config-registers", "audio-wii-dolphin-speaker-register-model", "wii-gap-wiibrew-status-20-resend"], reason = "Control intent and bounded register writes are retained and ACKed without producing audio; speaker data has only its shared rumble effect. Deterministic source-model regression, not audio acceptance." }
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "uinput has no HID output-report or addressed memory channel; its existing rumble behavior is unchanged. Level: Generic." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_tests::control_acknowledgements_retain_state_and_shared_rumble", evidence = ["wii-gap-wiibrew-speaker-control-reports", "audio-wii-dolphin-control-and-stream-reports", "wii-gap-wiibrew-speaker-init-config-registers", "audio-wii-dolphin-speaker-register-model", "wii-gap-wiibrew-status-20-resend"], reason = "Control intent and bounded register writes are retained and ACKed without producing audio; speaker data has only its shared rumble effect. Deterministic source-model regression, not audio acceptance. Level: Native HID." }
 
 [[functions]]
 id = "speaker-configuration-decode"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "No HID speaker control or data channel." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_decode::tests::configuration_formats_rates_and_activation_order", evidence = ["audio-wii-dolphin-pcm-adpcm-rate","audio-wii-dolphin-speaker-register-model","wii-gap-speaker-libogc-startup-status","wii-gap-speaker-cwiid-beep-sequence"], reason = "Pure source-model decode of bounded register writes and ordered consumer initialization; activation latch and physical sample clock remain unknown." }
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "No HID speaker control or data channel. Level: Generic." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_decode::tests::configuration_formats_rates_and_activation_order", evidence = ["audio-wii-dolphin-pcm-adpcm-rate","audio-wii-dolphin-speaker-register-model","wii-gap-speaker-libogc-startup-status","wii-gap-speaker-cwiid-beep-sequence"], reason = "Pure source-model decode of bounded register writes and ordered consumer initialization; activation latch and physical sample clock remain unknown. Level: Native HID." }
 
 [[functions]]
 id = "speaker-adpcm-decode"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "No HID speaker control or data channel." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_decode::tests::adpcm_vectors_and_state_across_packets_and_reconfiguration", evidence = ["audio-wii-dolphin-yamaha-adpcm-nibbles","audio-wii-dolphin-pcm-adpcm-rate","wii-gap-speaker-physical-decoder-behavior-unknown"], reason = "Pure mathematical vectors and compatibility-model state continuity; no journal delivery or physical decoder claim." }
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "No HID speaker control or data channel. Level: Generic." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_decode::tests::adpcm_vectors_and_state_across_packets_and_reconfiguration", evidence = ["audio-wii-dolphin-yamaha-adpcm-nibbles","audio-wii-dolphin-pcm-adpcm-rate","wii-gap-speaker-physical-decoder-behavior-unknown"], reason = "Pure mathematical vectors and compatibility-model state continuity; no journal delivery or physical decoder claim. Level: Native HID." }
 
 [[functions]]
 id = "speaker-data-decode"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "No HID speaker control or data channel." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_decode::tests::pcm_length_and_control_dispositions_preserve_raw_and_state", evidence = ["audio-wii-dolphin-control-and-stream-reports","audio-wii-dolphin-pcm-adpcm-rate","wii-gap-speaker-physical-decoder-behavior-unknown"], reason = "Pure source-model PCM and bounded packet disposition including mute and disabled status; no journal wiring or audio acceptance." }
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "No HID speaker control or data channel. Level: Generic." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::speaker_decode::tests::pcm_length_and_control_dispositions_preserve_raw_and_state", evidence = ["audio-wii-dolphin-control-and-stream-reports","audio-wii-dolphin-pcm-adpcm-rate","wii-gap-speaker-physical-decoder-behavior-unknown"], reason = "Pure source-model PCM and bounded packet disposition including mute and disabled status; no journal wiring or audio acceptance. Level: Native HID." }
 
 [[functions]]
 id = "real-bluetooth"

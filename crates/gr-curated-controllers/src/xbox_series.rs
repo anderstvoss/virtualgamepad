@@ -10,10 +10,51 @@ pub use controller::{XboxSeriesController, XboxSeriesOutputState, create_xbox_se
 pub(crate) use definition::XboxSeriesDefinition;
 use gr_controller_contract::{ControlError, DigitalControlUpdate, DpadDirection, FaceButton};
 
-/// Xbox Series has no per-controller creation settings.
+/// Locally generated, restorable synthetic Xbox Series Bluetooth identity.
+///
+/// Store only caller-owned values outside public repositories. This identity
+/// is not a radio pairing operation and is not presented by evdev/uinput.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct XboxSeriesIdentity([u8; 6]);
+
+impl XboxSeriesIdentity {
+    /// Generate a fresh synthetic identity using OS entropy, without opening a provider.
+    pub fn generate() -> Result<Self, gr_realization_api::ProviderError> {
+        crate::common::creation_identity().map(Self)
+    }
+
+    /// Restore a locally administered unicast identity from caller storage.
+    pub fn from_bytes(bytes: [u8; 6]) -> Result<Self, gr_realization_api::ProviderError> {
+        crate::common::validate_address(bytes, "Xbox Series").map(Self)
+    }
+
+    #[must_use]
+    pub const fn bytes(self) -> [u8; 6] {
+        self.0
+    }
+}
+
+/// Creation options for the Xbox Series family.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
-pub struct XboxSeriesOptions {}
+pub struct XboxSeriesOptions {
+    identity: Option<XboxSeriesIdentity>,
+}
+
+impl XboxSeriesOptions {
+    /// Supply a caller-owned identity to restore on Bluetooth UHID.
+    /// On uinput the identity remains on the handle but is not emitted.
+    #[must_use]
+    pub const fn with_identity(mut self, identity: XboxSeriesIdentity) -> Self {
+        self.identity = Some(identity);
+        self
+    }
+
+    #[must_use]
+    pub const fn identity(self) -> Option<XboxSeriesIdentity> {
+        self.identity
+    }
+}
 
 /// A digital control of the standard Xbox Series pad.
 /// See research records `xbox-series-xpad-identity-share` and
