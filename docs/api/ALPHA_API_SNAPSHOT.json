@@ -726,6 +726,24 @@
             "impl UnwindSafe for SteamController2026StreamPacket"
           ]
         },
+        "enum.SwitchProBatteryLevel.html": {
+          "declarations": [
+            "pub enum SwitchProBatteryLevel { Empty, Critical, Low, Medium, Full, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProControl",
+            "impl Copy for SwitchProControl",
+            "impl Debug for SwitchProControl",
+            "impl Default for SwitchProBatteryLevel",
+            "impl Eq for SwitchProControl",
+            "impl PartialEq for SwitchProControl",
+            "impl RefUnwindSafe for SwitchProControl",
+            "impl Send for SwitchProControl",
+            "impl Sync for SwitchProControl",
+            "impl Unpin for SwitchProControl",
+            "impl UnwindSafe for SwitchProControl"
+          ]
+        },
         "enum.SwitchProControl.html": {
           "declarations": [
             "pub enum SwitchProControl { Show 14 variants B, A, Y, X, L, R, Zl, Zr, Minus, Plus, Home, Capture, LeftStickPress, RightStickPress, }"
@@ -745,7 +763,7 @@
         },
         "enum.SwitchProOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HomeLight(SwitchProHomeLight), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }",
             "pub fn rumble(&self) -> Option<SwitchProRumble>"
           ],
           "traits": [
@@ -2471,6 +2489,24 @@
             "impl UnwindSafe for SwitchProAxis"
           ]
         },
+        "struct.SwitchProBattery.html": {
+          "declarations": [
+            "pub struct SwitchProBattery { pub level: SwitchProBatteryLevel, pub charging: bool, pub usb_powered: bool, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProMotionSample",
+            "impl Copy for SwitchProMotionSample",
+            "impl Debug for SwitchProMotionSample",
+            "impl Default for SwitchProBattery",
+            "impl Eq for SwitchProMotionSample",
+            "impl PartialEq for SwitchProMotionSample",
+            "impl RefUnwindSafe for SwitchProMotionSample",
+            "impl Send for SwitchProMotionSample",
+            "impl Sync for SwitchProMotionSample",
+            "impl Unpin for SwitchProMotionSample",
+            "impl UnwindSafe for SwitchProMotionSample"
+          ]
+        },
         "struct.SwitchProController.html": {
           "declarations": [
             "pub struct SwitchProController { /* private fields */ }",
@@ -2482,6 +2518,8 @@
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn inputs(&self) -> &SwitchProInputs",
             "pub fn status(&self) -> SwitchProStatus",
+            "pub fn battery(&self) -> SwitchProBattery",
+            "pub fn set_battery( &mut self, battery: SwitchProBattery, ) -> Result<(), ControlError>",
             "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
             "pub fn set_inputs(&mut self, state: SwitchProInputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>",
@@ -2506,6 +2544,23 @@
             "impl !UnwindSafe for SwitchProController",
             "impl Send for SwitchProController",
             "impl Unpin for SwitchProController"
+          ]
+        },
+        "struct.SwitchProHomeLight.html": {
+          "declarations": [
+            "pub struct SwitchProHomeLight { pub brightness: u8, pub mini_cycle: [u8; 5], }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProMotionSample",
+            "impl Copy for SwitchProMotionSample",
+            "impl Debug for SwitchProMotionSample",
+            "impl Eq for SwitchProMotionSample",
+            "impl PartialEq for SwitchProMotionSample",
+            "impl RefUnwindSafe for SwitchProMotionSample",
+            "impl Send for SwitchProMotionSample",
+            "impl Sync for SwitchProMotionSample",
+            "impl Unpin for SwitchProMotionSample",
+            "impl UnwindSafe for SwitchProMotionSample"
           ]
         },
         "struct.SwitchProIdentity.html": {
@@ -2576,6 +2631,10 @@
           "declarations": [
             "#[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }",
             "pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions",
+            "pub const fn with_battery( self, battery: SwitchProBattery, ) -> SwitchProOptions",
+            "pub const fn battery(self) -> SwitchProBattery",
+            "pub const fn with_imu_gating( self, enabled: bool, ) -> SwitchProOptions",
+            "pub const fn imu_gating(self) -> bool",
             "pub const fn identity(self) -> Option<SwitchProIdentity>"
           ],
           "traits": [
@@ -2702,7 +2761,10 @@
           "declarations": [
             "pub struct SwitchProStatus { /* private fields */ }",
             "pub const fn timer(self) -> u8",
-            "pub const fn stream_enabled(self) -> bool"
+            "pub const fn stream_enabled(self) -> bool",
+            "pub const fn battery(self) -> SwitchProBattery",
+            "pub const fn imu_gating(self) -> bool",
+            "pub const fn imu_enabled(self) -> bool"
           ],
           "traits": [
             "impl Clone for SwitchProStatus",
@@ -4227,6 +4289,24 @@
             "impl UnwindSafe for SteamController2026StreamPacket"
           ]
         },
+        "enum.SwitchProBatteryLevel.html": {
+          "declarations": [
+            "pub enum SwitchProBatteryLevel { Empty, Critical, Low, Medium, Full, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProControl",
+            "impl Copy for SwitchProControl",
+            "impl Debug for SwitchProControl",
+            "impl Default for SwitchProBatteryLevel",
+            "impl Eq for SwitchProControl",
+            "impl PartialEq for SwitchProControl",
+            "impl RefUnwindSafe for SwitchProControl",
+            "impl Send for SwitchProControl",
+            "impl Sync for SwitchProControl",
+            "impl Unpin for SwitchProControl",
+            "impl UnwindSafe for SwitchProControl"
+          ]
+        },
         "enum.SwitchProControl.html": {
           "declarations": [
             "pub enum SwitchProControl { Show 14 variants B, A, Y, X, L, R, Zl, Zr, Minus, Plus, Home, Capture, LeftStickPress, RightStickPress, }"
@@ -4246,7 +4326,7 @@
         },
         "enum.SwitchProOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HomeLight(SwitchProHomeLight), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }",
             "pub fn rumble(&self) -> Option<SwitchProRumble>"
           ],
           "traits": [
@@ -5972,6 +6052,24 @@
             "impl UnwindSafe for SwitchProAxis"
           ]
         },
+        "struct.SwitchProBattery.html": {
+          "declarations": [
+            "pub struct SwitchProBattery { pub level: SwitchProBatteryLevel, pub charging: bool, pub usb_powered: bool, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProMotionSample",
+            "impl Copy for SwitchProMotionSample",
+            "impl Debug for SwitchProMotionSample",
+            "impl Default for SwitchProBattery",
+            "impl Eq for SwitchProMotionSample",
+            "impl PartialEq for SwitchProMotionSample",
+            "impl RefUnwindSafe for SwitchProMotionSample",
+            "impl Send for SwitchProMotionSample",
+            "impl Sync for SwitchProMotionSample",
+            "impl Unpin for SwitchProMotionSample",
+            "impl UnwindSafe for SwitchProMotionSample"
+          ]
+        },
         "struct.SwitchProController.html": {
           "declarations": [
             "pub struct SwitchProController { /* private fields */ }",
@@ -5983,6 +6081,8 @@
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn inputs(&self) -> &SwitchProInputs",
             "pub fn status(&self) -> SwitchProStatus",
+            "pub fn battery(&self) -> SwitchProBattery",
+            "pub fn set_battery( &mut self, battery: SwitchProBattery, ) -> Result<(), ControlError>",
             "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
             "pub fn set_inputs(&mut self, state: SwitchProInputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>",
@@ -6007,6 +6107,23 @@
             "impl !UnwindSafe for SwitchProController",
             "impl Send for SwitchProController",
             "impl Unpin for SwitchProController"
+          ]
+        },
+        "struct.SwitchProHomeLight.html": {
+          "declarations": [
+            "pub struct SwitchProHomeLight { pub brightness: u8, pub mini_cycle: [u8; 5], }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProMotionSample",
+            "impl Copy for SwitchProMotionSample",
+            "impl Debug for SwitchProMotionSample",
+            "impl Eq for SwitchProMotionSample",
+            "impl PartialEq for SwitchProMotionSample",
+            "impl RefUnwindSafe for SwitchProMotionSample",
+            "impl Send for SwitchProMotionSample",
+            "impl Sync for SwitchProMotionSample",
+            "impl Unpin for SwitchProMotionSample",
+            "impl UnwindSafe for SwitchProMotionSample"
           ]
         },
         "struct.SwitchProIdentity.html": {
@@ -6077,6 +6194,10 @@
           "declarations": [
             "#[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }",
             "pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions",
+            "pub const fn with_battery( self, battery: SwitchProBattery, ) -> SwitchProOptions",
+            "pub const fn battery(self) -> SwitchProBattery",
+            "pub const fn with_imu_gating( self, enabled: bool, ) -> SwitchProOptions",
+            "pub const fn imu_gating(self) -> bool",
             "pub const fn identity(self) -> Option<SwitchProIdentity>"
           ],
           "traits": [
@@ -6203,7 +6324,10 @@
           "declarations": [
             "pub struct SwitchProStatus { /* private fields */ }",
             "pub const fn timer(self) -> u8",
-            "pub const fn stream_enabled(self) -> bool"
+            "pub const fn stream_enabled(self) -> bool",
+            "pub const fn battery(self) -> SwitchProBattery",
+            "pub const fn imu_gating(self) -> bool",
+            "pub const fn imu_enabled(self) -> bool"
           ],
           "traits": [
             "impl Clone for SwitchProStatus",
