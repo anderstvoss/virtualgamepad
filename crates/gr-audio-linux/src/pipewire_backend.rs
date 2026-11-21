@@ -250,7 +250,9 @@ impl Session {
     /// Retained for Samples and NativeClient ownership alike.
     #[must_use]
     pub fn microphone_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
-        self.microphone_observer.as_ref().map(PcmObserver::accounting)
+        self.microphone_observer
+            .as_ref()
+            .map(PcmObserver::accounting)
     }
     #[must_use]
     pub fn microphone_callback_rejected_frames(&self) -> Option<u64> {
@@ -260,7 +262,10 @@ impl Session {
                 ep.direction == SampleDirection::ControllerToHost
                     && ep.access == AudioAccess::NativeClient
             })
-            .then(|| self.microphone_accounting().map_or(0, |a| a.discarded_frames))
+            .then(|| {
+                self.microphone_accounting()
+                    .map_or(0, |a| a.discarded_frames)
+            })
     }
     #[must_use]
     pub fn queued_playback_frames(&self) -> Option<usize> {

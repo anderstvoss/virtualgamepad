@@ -135,7 +135,9 @@ impl Shared {
     }
     fn advance_generation(&self) -> Result<(), AudioError> {
         self.generation
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| value.checked_add(1))
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1)
+            })
             .map(|_| ())
             .map_err(|_| AudioError::InvalidRequirement)
     }
@@ -286,7 +288,8 @@ impl PcmConsumer {
             result.frames += 1;
             tail = (tail + 1) % q.slots;
         }
-        q.consumed.fetch_add(result.frames as u64, Ordering::Relaxed);
+        q.consumed
+            .fetch_add(result.frames as u64, Ordering::Relaxed);
         if result.discontinuity {
             q.discontinuities.fetch_add(1, Ordering::Relaxed);
         }
@@ -302,7 +305,9 @@ impl PcmConsumer {
         let head = self.shared.head.load(Ordering::Acquire);
         let tail = self.shared.tail.load(Ordering::Relaxed);
         let count = (head + self.shared.slots - tail) % self.shared.slots;
-        self.shared.flushed.fetch_add(count as u64, Ordering::Relaxed);
+        self.shared
+            .flushed
+            .fetch_add(count as u64, Ordering::Relaxed);
         self.shared.tail.store(head, Ordering::Release);
         Ok(())
     }

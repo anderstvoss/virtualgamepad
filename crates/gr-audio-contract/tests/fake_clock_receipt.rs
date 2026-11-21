@@ -38,7 +38,10 @@ impl Receipt {
         );
         assert_eq!(self.delivered as usize, self.markers.len());
         assert!(self.at_ns.windows(2).all(|w| w[0] < w[1]));
-        assert!(self.markers.iter().all(|m| *m > 0), "zero or malformed marker");
+        assert!(
+            self.markers.iter().all(|m| *m > 0),
+            "zero or malformed marker"
+        );
         assert!(
             self.markers.windows(2).all(|w| w[0] < w[1]),
             "duplicate or out-of-order marker"
@@ -120,7 +123,10 @@ fn fake_clock_producer_reset_exposes_generation_gap_and_exact_flush() {
     producer.flush().unwrap(); // three old frames are discarded on next read
     producer.push(&[5]).unwrap();
     let second = consumer.read(&mut output).unwrap();
-    assert_eq!((second.first_frame, second.frames, second.discontinuity), (4, 1, true));
+    assert_eq!(
+        (second.first_frame, second.frames, second.discontinuity),
+        (4, 1, true)
+    );
     receipt.deliver(&mut clock, &output[..second.frames]);
     receipt.dropped = 3;
     receipt.verify();
