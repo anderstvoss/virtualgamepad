@@ -1596,7 +1596,11 @@ pub fn create_dualshock4(
     if let (Some(identity), NativeControllerRealization::Uhid(spec)) = (identity, &mut realization)
     {
         spec.unique_id = if options.target == RealizationTarget::LINUX_UHID_BLUETOOTH {
-            common::address_label(identity.bytes())
+            // Linux renders the six USB pairing bytes in reverse wire order.
+            // Preserve the exact controller-owned identity across bus choices.
+            let mut bytes = identity.bytes();
+            bytes.reverse();
+            common::address_label(bytes)
         } else {
             identity.unique_id()
         };
