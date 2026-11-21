@@ -840,7 +840,12 @@ const fn supports_motion(target: RealizationTarget) -> bool {
     motion_targets().contains(target)
 }
 
-pub struct DualSenseDefinition;
+pub struct DualSenseDefinition {
+    device_data: Option<DualSenseDeviceData>,
+}
+// Retain the existing zero-configuration family value used by protocol fixtures.
+#[allow(non_upper_case_globals)]
+pub const DualSenseDefinition: DualSenseDefinition = DualSenseDefinition { device_data: None };
 impl RealizationControllerDefinition for DualSenseDefinition {
     fn controller_id(&self) -> ControllerId {
         ControllerId::new("virtualgamepad.dualsense")
@@ -1286,8 +1291,13 @@ pub(crate) fn decode_dualsense_hid_output(
     }
     DualSenseHidOutput::Unknown { report_id, raw }
 }
-pub struct DualSenseController(common::ControllerSession<DualSenseDefinition>);
+pub struct DualSenseController(common::ControllerSession<DualSenseDefinition>, DualSenseDeviceData);
 impl DualSenseController {
+    /// The validated device data used for this instance, including after close.
+    #[must_use]
+    pub const fn device_data(&self) -> &DualSenseDeviceData {
+        &self.1
+    }
     /// Pairing identity of a local USB/UHID session, if available.
     #[must_use]
     pub fn identity(&self) -> Option<DualSenseIdentity> {
@@ -1604,6 +1614,9 @@ pub(crate) fn realization() -> NativeControllerRealization {
     })
 }
 fn dualsense_feature_responses(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
+    dualsense_feature_responses_with_data(identity, None)
+}
+fn dualsense_feature_responses_with_data(identity: [u8; 6], data: Option<DualSenseDeviceData>) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     // `uhid_report_type`: feature=0, output=1, input=2. This is distinct
     // from the HID class-request values and is the value Linux sends in a
     // `UHID_GET_REPORT` event.
@@ -1614,26 +1627,8 @@ fn dualsense_feature_responses(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey
     let mut capabilities = vec![0_u8; 48];
     capabilities[0] = 0x03;
     capabilities[2..6].copy_from_slice(&[0x28, 0x01, 0x00, 0x0e]);
-    let mut calibration = vec![0_u8; 41];
-    calibration[0] = 0x05;
-    // Consistent synthetic calibration values. `hid-playstation` uses these
-    // fields to derive per-axis denominators; zero-filled placeholder values
-    // make it take its broken-device fallback and prevent reliable motion
-    // handling by host software. No physical controller data is captured.
-    for offset in [7, 11, 15] {
-        calibration[offset..offset + 2].copy_from_slice(&32_000_i16.to_le_bytes());
-    }
-    for offset in [9, 13, 17] {
-        calibration[offset..offset + 2].copy_from_slice(&(-32_000_i16).to_le_bytes());
-    }
-    calibration[19..21].copy_from_slice(&2_000_i16.to_le_bytes());
-    calibration[21..23].copy_from_slice(&2_000_i16.to_le_bytes());
-    for offset in [23, 27, 31] {
-        calibration[offset..offset + 2].copy_from_slice(&8_192_i16.to_le_bytes());
-    }
-    for offset in [25, 29, 33] {
-        calibration[offset..offset + 2].copy_from_slice(&(-8_192_i16).to_le_bytes());
-    }
+    let data = data.unwrap_or_default();
+    let calibration = data.calibration.to_vec();
     let mut pairing = vec![0_u8; 20];
     pairing[0] = 0x09;
     // `hid-playstation` de-duplicates DualSense connections by this address.
@@ -1641,17 +1636,7 @@ fn dualsense_feature_responses(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey
     // from OS entropy. Keep it unchanged for this personality, independently
     // of caller session IDs. This is not a captured physical address.
     pairing[1..7].copy_from_slice(&identity);
-    let mut firmware = vec![0_u8; 64];
-    firmware[0] = 0x20;
-    // OpenPuck's PS5 USB personality exposes non-zero hardware and firmware
-    // versions at these report offsets.
-    firmware[24] = 1;
-    firmware[28] = 1;
-    // Current SDL/Steam HIDAPI accepts the USB controller path only with this
-    // feature/update version populated. OpenPuck leaves this reserved field
-    // zero, so retain this host-observed compatibility extension separately
-    // from its hardware/firmware version bytes above.
-    firmware[44..46].copy_from_slice(&0x0224_u16.to_le_bytes());
+    let firmware = data.firmware.to_vec();
     [
         (0x03, capabilities),
         (0x05, calibration),
@@ -1691,6 +1676,87 @@ fn hid_realization(_session: RealizationSessionId) -> NativeControllerRealizatio
         numbered_feature_reports: true,
     })
 }
+/// Validated USB calibration and firmware feature reports, without pairing identity.
+///
+/// Caller bytes are accepted only for the two device-data reports. Pairing
+/// feature replies always come from the separate, validated creation identity.
+/// All default values are deterministic synthetic calibration and firmware,
+/// not captured physical-device data. Bluetooth report framing is not accepted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DualSenseDeviceData {
+    calibration: [u8; 41],
+    firmware: [u8; 64],
+}
+impl Default for DualSenseDeviceData {
+    fn default() -> Self {
+        let mut calibration = [0; 41];
+        calibration[0] = 0x05;
+        for offset in [7, 11, 15] {
+            calibration[offset..offset + 2].copy_from_slice(&32_000_i16.to_le_bytes());
+        }
+        for offset in [9, 13, 17] {
+            calibration[offset..offset + 2].copy_from_slice(&(-32_000_i16).to_le_bytes());
+        }
+        calibration[19..21].copy_from_slice(&2_000_i16.to_le_bytes());
+        calibration[21..23].copy_from_slice(&2_000_i16.to_le_bytes());
+        for offset in [23, 27, 31] {
+            calibration[offset..offset + 2].copy_from_slice(&8_192_i16.to_le_bytes());
+        }
+        for offset in [25, 29, 33] {
+            calibration[offset..offset + 2].copy_from_slice(&(-8_192_i16).to_le_bytes());
+        }
+        let mut firmware = [0; 64];
+        firmware[0] = 0x20;
+        firmware[24] = 1;
+        firmware[28] = 1;
+        firmware[44..46].copy_from_slice(&0x0224_u16.to_le_bytes());
+        Self { calibration, firmware }
+    }
+}
+impl DualSenseDeviceData {
+    /// Atomically validate the two numbered USB feature reports.
+    pub fn from_feature_reports(calibration: &[u8], firmware: &[u8]) -> std::io::Result<Self> {
+        Self::default()
+            .with_feature_report(0x05, calibration)?
+            .with_feature_report(0x20, firmware)
+    }
+    /// Validate a single supported USB report; on error the original value survives.
+    ///
+    /// Address-bearing pairing reports are never accepted here, even if they
+    /// contain a locally valid identity: identity belongs in `DualSenseIdentity`.
+    pub fn with_feature_report(mut self, id: u8, bytes: &[u8]) -> std::io::Result<Self> {
+        match id {
+            0x05 => {
+                let data = crate::sony_device_data::validate::<41>(id, bytes, 0x05)?;
+                crate::sony_device_data::validate_motion(&data)?;
+                self.calibration = data;
+            }
+            0x20 => self.firmware = crate::sony_device_data::validate::<64>(id, bytes, 0x20)?,
+            _ => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
+                "unsupported DualSense device-data feature report")),
+        }
+        Ok(self)
+    }
+    /// Return an exact, numbered validated feature report, excluding pairing.
+    #[must_use]
+    pub fn feature_report(&self, id: u8) -> Option<&[u8]> {
+        match id {
+            0x05 => Some(&self.calibration),
+            0x20 => Some(&self.firmware),
+            _ => None,
+        }
+    }
+    /// Import validated reports from a caller-selected UTF-8 file, never a repo fixture.
+    pub fn load_file(path: impl AsRef<std::path::Path>) -> std::io::Result<Self> {
+        let (cal, fw) = crate::sony_device_data::load(path, 0x05, 0x20, 41, 64)?;
+        Self::from_feature_reports(&cal, &fw)
+    }
+    /// Save only calibration and firmware; pairing identity is excluded.
+    pub fn save_file(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        crate::sony_device_data::save(path, &self.calibration, &self.firmware)
+    }
+}
+
 /// Controller-owned identity material for explicit USB/UHID recreation.
 ///
 /// Store `bytes()` in application-owned storage and restore with `from_bytes`.
@@ -1733,7 +1799,7 @@ pub fn create_dualsense_usb_worker(
     };
     DualSenseController(common::ControllerSession::worker(
         definition, selection, bridge,
-    ))
+    ), DualSenseDeviceData::default())
 }
 
 /// Family options for a new `DualSense` session.
@@ -1741,9 +1807,22 @@ pub fn create_dualsense_usb_worker(
 #[non_exhaustive]
 pub struct DualSenseOptions {
     identity: Option<DualSenseIdentity>,
+    device_data: Option<DualSenseDeviceData>,
 }
 
 impl DualSenseOptions {
+    /// Use a validated calibration/firmware pair for this session.
+    #[must_use]
+    pub const fn with_device_data(mut self, device_data: DualSenseDeviceData) -> Self {
+        self.device_data = Some(device_data);
+        self
+    }
+    /// Explicit caller data, or None for the byte-stable synthetic baseline.
+    #[must_use]
+    pub const fn device_data(self) -> Option<DualSenseDeviceData> {
+        self.device_data
+    }
+
     /// Restore a caller-owned controller identity. Restoration is supported on USB/UHID. Pairing bytes and the UHID
     /// unique ID remain stable, and the physical path and session state are fresh.
     #[must_use]
@@ -1765,6 +1844,7 @@ pub fn create_dualsense(
     family: DualSenseOptions,
 ) -> Result<DualSenseController, ProviderError> {
     let identity = family.identity();
+    let device_data = family.device_data().unwrap_or_default();
     let mut realization = match options.target {
         RealizationTarget::LINUX_UINPUT => realization(),
         RealizationTarget::LINUX_UHID_USB => hid_realization(options.session),
@@ -1787,7 +1867,7 @@ pub fn create_dualsense(
         spec.unique_id = identity.unique_id();
     }
     let mut controller = common::create_restored(
-        DualSenseDefinition,
+        DualSenseDefinition { device_data: family.device_data() },
         realization,
         options,
         identity.map(DualSenseIdentity::bytes),
@@ -1799,7 +1879,7 @@ pub fn create_dualsense(
     controller.commit().map_err(|error| ProviderError::Open {
         reason: format!("send initial DualSense input report: {error}"),
     })?;
-    Ok(DualSenseController(controller))
+    Ok(DualSenseController(controller, device_data))
 }
 
 /// Workspace test seam. Never opens a real provider or accepts runtime profiles.
@@ -1808,7 +1888,8 @@ pub fn create_dualsense(
 pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<DualSenseController, ProviderError> {
-    common::injected(DualSenseDefinition, session).map(DualSenseController)
+    common::injected(DualSenseDefinition, session)
+        .map(|session| DualSenseController(session, DualSenseDeviceData::default()))
 }
 
 impl crate::registry::ControllerFamily for DualSenseDefinition {
