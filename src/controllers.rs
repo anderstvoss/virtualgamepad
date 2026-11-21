@@ -630,6 +630,11 @@ impl SwitchProController {
     pub const fn identity(&self) -> SwitchProIdentity {
         self.controller.inner.identity()
     }
+    /// Borrow the retained SPI image for explicit caller-managed export/recreation.
+    #[must_use]
+    pub fn spi_image(&self) -> &crate::SwitchProSpiImage {
+        self.controller.inner.spi_image()
+    }
     /// Whether the host selected streaming input reports.
     #[must_use]
     pub fn stream_enabled(&self) -> bool {

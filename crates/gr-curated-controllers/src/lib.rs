@@ -173,7 +173,7 @@ pub use dualshock4::{
 };
 pub use switch_pro::{
     SwitchProAxis, SwitchProControl, SwitchProController, SwitchProIdentity, SwitchProInputs,
-    SwitchProMotionSample, SwitchProOptions, SwitchProOutputEvent, SwitchProRumble,
+    SwitchProMotionSample, SwitchProOptions, SwitchProOutputEvent, SwitchProSpiImage, SwitchProRumble,
     SwitchProRumbleBand, SwitchProRumbleDecoded, SwitchProRumbleSample, SwitchProRumbleSamples,
     SwitchProRumbleWord, SwitchProStatus, SwitchProSurface, create_switch_pro,
     decode_switch_pro_rumble_word, decode_switch_pro_rumble_word_with_previous,
