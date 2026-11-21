@@ -15,6 +15,7 @@ pub(crate) struct SnapshotProtocol<S: Clone, R: OutputState = ()> {
     pub features: BTreeMap<gr_realization_api::NativeHidReportKey, Vec<u8>>,
     pub numbered: [bool; 3],
     pub period: Option<u64>,
+    refresh_on_open: bool,
     sequence: u8,
     next: Option<u64>,
     active: bool,
@@ -38,6 +39,7 @@ impl<S: Clone, R: OutputState> SnapshotProtocol<S, R> {
             features,
             numbered,
             period,
+            refresh_on_open: false,
             sequence: 1,
             next: Some(0),
             active: true,
@@ -45,6 +47,12 @@ impl<S: Clone, R: OutputState> SnapshotProtocol<S, R> {
             last: None,
             retained: R::default(),
         }
+    }
+
+    /// Request a fresh current-state snapshot when the consumer opens this HID.
+    pub(crate) fn with_open_refresh(mut self) -> Self {
+        self.refresh_on_open = true;
+        self
     }
 }
 impl<S: Clone, R: OutputState> Protocol for SnapshotProtocol<S, R> {
@@ -138,6 +146,9 @@ impl<S: Clone, R: OutputState> Protocol for SnapshotProtocol<S, R> {
             Lifecycle::Stop => {
                 self.active = false;
                 self.next = None;
+            }
+            Lifecycle::Open if self.refresh_on_open && self.active => {
+                self.next = Some(now);
             }
             Lifecycle::Open | Lifecycle::Close => {}
         }
