@@ -273,6 +273,7 @@ impl AudioSidecarAssociation {
     pub fn node_names(&self) -> &[String] {
         &self.node_names
     }
+    #[cfg(any(test, all(target_os = "linux", feature = "audio-pipewire")))]
     fn from_endpoints(key: String, endpoints: &[AudioEndpoint]) -> Self {
         let node_names = endpoints
             .iter()
