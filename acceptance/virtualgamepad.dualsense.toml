@@ -80,26 +80,26 @@ id = "rumble"
 [[functions]]
 id = "lightbar"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/lightbar", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/lightbar", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/lightbar", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/lightbar", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/lightbar", test_ids = ["dualsense::tests::led_fields_are_validity_gated_and_keep_the_original_report"], evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/lightbar", test_ids = ["dualsense::tests::led_fields_are_validity_gated_and_keep_the_original_report"], evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/lightbar", test_ids = ["dualsense::tests::led_fields_are_validity_gated_and_keep_the_original_report"], evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/lightbar", test_ids = ["dualsense::tests::led_fields_are_validity_gated_and_keep_the_original_report"], evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
 [[functions]]
 id = "player-indicators"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/player-indicators", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/player-indicators", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/player-indicators", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/player-indicators", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/player-indicators", test_ids = ["dualsense::tests::led_fields_are_validity_gated_and_keep_the_original_report", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/player-indicators", test_ids = ["dualsense::tests::led_fields_are_validity_gated_and_keep_the_original_report", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/player-indicators", test_ids = ["dualsense::tests::led_fields_are_validity_gated_and_keep_the_original_report", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/player-indicators", test_ids = ["dualsense::tests::led_fields_are_validity_gated_and_keep_the_original_report", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
 [[functions]]
 id = "microphone-led"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "acceptance/dualsense/microphone-led", evidence = [], reason = "The uinput output surface exposes only conventional rumble; it cannot receive native microphone LED output reports." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/microphone-led", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/microphone-led", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/microphone-led", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "not-supported", test_id = "acceptance/dualsense/microphone-led", test_ids = ["dualsense::tests::mute_led_modes_are_lossless_including_unknown_bytes", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = [], reason = "The uinput output surface exposes only conventional rumble; it cannot receive native microphone LED output reports." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/microphone-led", test_ids = ["dualsense::tests::mute_led_modes_are_lossless_including_unknown_bytes", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/microphone-led", test_ids = ["dualsense::tests::mute_led_modes_are_lossless_including_unknown_bytes", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/microphone-led", test_ids = ["dualsense::tests::mute_led_modes_are_lossless_including_unknown_bytes", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
 [[functions]]
 id = "adaptive-triggers"
