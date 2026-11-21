@@ -120,6 +120,8 @@ pub enum DualSenseFeature {
     Touch,
     Motion,
     Lightbar,
+    PlayerIndicators,
+    MicrophoneLed,
     AdaptiveTriggers,
     Audio,
 }
@@ -538,7 +540,7 @@ static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     event_type: 21,
     event_code: 80,
 }];
-static RESTRICTIONS: [TargetRestriction; 7] = [
+static RESTRICTIONS: [TargetRestriction; 9] = [
     TargetRestriction {
         feature: "touch companion",
         reason: "evdev exposes associated touch contacts separately so udev classifies the primary device as a gamepad; SDL gamepad touch APIs do not consume this companion",
@@ -551,6 +553,14 @@ static RESTRICTIONS: [TargetRestriction; 7] = [
     TargetRestriction {
         feature: "RGB lightbar",
         reason: "generic evdev LEDs cannot faithfully express DualSense lightbar reports",
+    },
+    TargetRestriction {
+        feature: "player indicators",
+        reason: "linux.uinput exposes conventional rumble but no native DualSense player-indicator output reports",
+    },
+    TargetRestriction {
+        feature: "microphone LED",
+        reason: "linux.uinput exposes conventional rumble but no native DualSense microphone LED output reports",
     },
     TargetRestriction {
         feature: "adaptive triggers",
@@ -1194,6 +1204,16 @@ pub enum DualSenseOutputEvent {
     },
 }
 
+/// Source-supported microphone LED mode (`ds-cgap-mute-led-pulse-source-mapping`).
+/// Unknown values remain lossless and are not interpreted as on/off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DualSenseMuteLed {
+    Off,
+    On,
+    Pulse,
+    Unknown(u8),
+}
+
 /// Reverse HID output preserved in its native report form.
 ///
 /// `UsbOutput` exposes the fields whose positions are documented by the Linux
@@ -1224,7 +1244,7 @@ pub enum DualSenseHidOutput {
         right_trigger_effect: [u8; 11],
         left_trigger_effect: [u8; 11],
         /// Present only when the host set the mic-mute LED valid bit.
-        mute_button_led: Option<bool>,
+        mute_button_led: Option<DualSenseMuteLed>,
         /// Native microphone mute request, present only when power-save control
         /// is valid. Independent of the LED; observation does not alter PCM.
         microphone_muted: Option<bool>,
@@ -1237,8 +1257,18 @@ pub enum DualSenseHidOutput {
         microphone_volume: Option<u8>,
         /// Controller-native speaker preamp field, validity-gated and not applied to PCM.
         speaker_preamp: Option<u8>,
-        /// Present only when the host set the player-indicator valid bit.
+        /// Raw brightness byte, without interpreting disputed encoding.
+        /// See `ds-cgap-led-brightness-encoding-disagreement`.
+        led_brightness: u8,
+        /// Raw lightbar setup byte, only when valid_flag2 bit 1 is set.
+        lightbar_setup: Option<u8>,
+        /// Release/reset LEDs command; present only when valid_flag1 bit 3 is set.
+        release_leds: Option<bool>,
+        /// Five indicator bits (0..4), only when valid_flag1 bit 4 is set.
         player_leds: Option<u8>,
+        /// Instant (true) versus fade (false), bit 5 of the player LED byte.
+        /// Source-only mapping: `ds-cgap-player-led-instant-source-mapping`.
+        player_led_instant: Option<bool>,
         /// Present only when the host set the lightbar valid bit.
         lightbar_rgb: Option<[u8; 3]>,
     },
@@ -1267,7 +1297,12 @@ pub(crate) fn decode_dualsense_hid_output(
             left_motor: vibration_enabled.then_some(raw[3]),
             right_trigger_effect,
             left_trigger_effect,
-            mute_button_led: (raw[1] & 0x01 != 0).then_some(raw[8] != 0),
+            mute_button_led: (raw[1] & 0x01 != 0).then(|| match raw[8] {
+                0 => DualSenseMuteLed::Off,
+                1 => DualSenseMuteLed::On,
+                2 => DualSenseMuteLed::Pulse,
+                value => DualSenseMuteLed::Unknown(value),
+            }),
             // Linux hid-playstation: power-save validity bit 1, mic-mute bit 4.
             microphone_muted: (raw[1] & 0x02 != 0).then_some(raw[9] & 0x10 != 0),
             audio_path: (raw[0] & 0x80 != 0).then(|| match (raw[7] >> 4) & 0x03 {
@@ -1279,7 +1314,11 @@ pub(crate) fn decode_dualsense_hid_output(
             speaker_volume: (raw[0] & 0x20 != 0).then_some(raw[5]),
             microphone_volume: (raw[0] & 0x40 != 0).then_some(raw[6]),
             speaker_preamp: (raw[1] & 0x80 != 0).then_some(raw[37] & 0x07),
-            player_leds: (raw[1] & 0x10 != 0).then_some(raw[43]),
+            led_brightness: raw[42],
+            lightbar_setup: (raw[38] & 0x02 != 0).then_some(raw[41]),
+            release_leds: (raw[1] & 0x08 != 0).then_some(true),
+            player_leds: (raw[1] & 0x10 != 0).then_some(raw[43] & 0x1f),
+            player_led_instant: (raw[1] & 0x10 != 0).then_some(raw[43] & 0x20 != 0),
             lightbar_rgb: (raw[1] & 0x04 != 0).then_some([raw[44], raw[45], raw[46]]),
             raw,
         };
@@ -1457,6 +1496,8 @@ impl DualSenseController {
             DualSenseFeature::Touch => Ok(()),
             DualSenseFeature::Motion if supports_motion(self.0.selection().target) => Ok(()),
             DualSenseFeature::Lightbar
+            | DualSenseFeature::PlayerIndicators
+            | DualSenseFeature::MicrophoneLed
             | DualSenseFeature::AdaptiveTriggers
             | DualSenseFeature::Audio => Err(common::unavailable(self.0.selection().target)),
             DualSenseFeature::Motion => Err(ControlError::UnavailableInRealization {
@@ -1910,6 +1951,94 @@ impl crate::common::session_tests::ControllerFixture for DualSenseController {
 mod tests {
     use super::*;
     use crate::common::session_tests::{ControllerFixture as _, InputFixture as _};
+
+    #[test]
+    fn led_fields_are_validity_gated_and_keep_the_original_report() {
+        let mut raw = vec![0_u8; 47];
+        raw[1] = 0x1d; // Mute, lightbar, release, player indicators.
+        raw[38] = 0x02; // Lightbar setup.
+        raw[8] = 2;
+        raw[41] = 0x02;
+        raw[42] = 0xa5;
+        raw[43] = 0x35; // Five bits 0x15, instant bit 0x20.
+        raw[44..47].copy_from_slice(&[1, 2, 3]);
+        let DualSenseHidOutput::UsbOutput {
+            raw: retained,
+            mute_button_led,
+            led_brightness,
+            lightbar_setup,
+            release_leds,
+            player_leds,
+            player_led_instant,
+            lightbar_rgb,
+            ..
+        } = decode_dualsense_hid_output(Some(2), raw.clone()) else {
+            panic!("known USB report");
+        };
+        assert_eq!(retained, raw);
+        assert_eq!(mute_button_led, Some(DualSenseMuteLed::Pulse));
+        assert_eq!(led_brightness, 0xa5);
+        assert_eq!(lightbar_setup, Some(2));
+        assert_eq!(release_leds, Some(true));
+        assert_eq!(player_leds, Some(0x15));
+        assert_eq!(player_led_instant, Some(true));
+        assert_eq!(lightbar_rgb, Some([1, 2, 3]));
+
+        raw[1] = 0;
+        raw[38] = 0;
+        let DualSenseHidOutput::UsbOutput {
+            raw: retained,
+            mute_button_led,
+            led_brightness,
+            lightbar_setup,
+            release_leds,
+            player_leds,
+            player_led_instant,
+            lightbar_rgb,
+            ..
+        } = decode_dualsense_hid_output(Some(2), raw.clone()) else {
+            panic!("known USB report");
+        };
+        assert_eq!(retained, raw);
+        assert_eq!(led_brightness, 0xa5);
+        assert_eq!(mute_button_led, None);
+        assert_eq!(lightbar_setup, None);
+        assert_eq!(release_leds, None);
+        assert_eq!(player_leds, None);
+        assert_eq!(player_led_instant, None);
+        assert_eq!(lightbar_rgb, None);
+    }
+
+    #[test]
+    fn mute_led_modes_are_lossless_including_unknown_bytes() {
+        for (value, expected) in [
+            (0, DualSenseMuteLed::Off),
+            (1, DualSenseMuteLed::On),
+            (2, DualSenseMuteLed::Pulse),
+            (0xfe, DualSenseMuteLed::Unknown(0xfe)),
+        ] {
+            let mut raw = vec![0_u8; 47];
+            raw[1] = 1;
+            raw[8] = value;
+            let DualSenseHidOutput::UsbOutput {
+                raw: retained,
+                mute_button_led,
+                ..
+            } = decode_dualsense_hid_output(Some(2), raw.clone()) else {
+                panic!("known USB report");
+            };
+            assert_eq!(mute_button_led, Some(expected));
+            assert_eq!(retained, raw);
+        }
+    }
+
+    #[test]
+    fn uinput_has_explicit_separate_led_output_restrictions() {
+        for feature in ["RGB lightbar", "player indicators", "microphone LED"] {
+            assert!(RESTRICTIONS.iter().any(|r| r.feature == feature));
+        }
+        assert!(EVDEV_OUTPUT_KINDS.iter().all(|kind| matches!(kind, OutputKind::Rumble { .. })));
+    }
 
     #[test]
     fn input_values_are_independent_of_battery_and_controller_clocks() {
@@ -2953,7 +3082,11 @@ mod tests {
                 left_motor: Some(0x44),
                 right_trigger_effect: [1; 11],
                 left_trigger_effect: [2; 11],
-                mute_button_led: Some(true),
+                mute_button_led: Some(DualSenseMuteLed::On),
+                led_brightness: 0,
+                lightbar_setup: None,
+                release_leds: None,
+                player_led_instant: Some(false),
                 microphone_muted: None,
                 audio_path: None,
                 speaker_volume: None,
@@ -2984,7 +3117,10 @@ mod tests {
                         panic!()
                     };
                     assert_eq!(microphone_muted, valid.then_some(muted));
-                    assert_eq!(mute_button_led, Some(!muted));
+                    assert_eq!(
+                        mute_button_led,
+                        Some(if muted { DualSenseMuteLed::Off } else { DualSenseMuteLed::On })
+                    );
                     assert_eq!(retained, raw);
                 }
             }
