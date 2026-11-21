@@ -1681,7 +1681,9 @@ impl common::HidDriver for DualShock4Definition {
             Some(4000),
         );
         if self.bluetooth {
-            protocol.with_feature_enhancement([0x02, 0x05], bluetooth::full_report)
+            protocol
+                .with_feature_enhancement([0x02, 0x05], bluetooth::full_report)
+                .reject_invalid_host_output()
         } else {
             protocol
         }
@@ -3050,6 +3052,11 @@ mod tests {
             Report::new(ReportType::Output, Some(0x11), payload).unwrap()
         );
         assert_eq!(first.request(&invalid, 5).0, Reply::Set(Err(gr_hid::ReplyError::Invalid)));
+        assert_eq!(*first.retained(), old);
+        let mut bad = vec![0_u8; 77];
+        bad[2] = 1;
+        let invalid_raw = Report::new(ReportType::Output, Some(0x11), bad).unwrap();
+        assert_eq!(first.output(invalid_raw, 6), Ok(None));
         assert_eq!(*first.retained(), old);
     }
 
