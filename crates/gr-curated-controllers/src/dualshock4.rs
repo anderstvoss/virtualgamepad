@@ -1,4 +1,5 @@
 //! `DualShock 4` USB HID-Gyro controller, modelled from `OpenPuck`'s PC mode.
+mod bluetooth;
 #[cfg(test)]
 mod evdev;
 mod worker_state;
@@ -152,6 +153,7 @@ impl Default for DualShock4Inputs {
 const fn motion_targets() -> RealizationTargetSet {
     RealizationTargetSet::new(&[
         RealizationTarget::LINUX_UHID_USB,
+        RealizationTarget::LINUX_UHID_BLUETOOTH,
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         RealizationTarget::LINUX_USBIP_USB_AUDIO,
     ])
@@ -525,6 +527,16 @@ static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "physical-device fidelity",
     reason: "OpenPuck-derived USB HID-Gyro protocol requires external-device comparison",
 }];
+static BT_RESTRICTIONS: [TargetRestriction; 2] = [
+    TargetRestriction {
+        feature: "Bluetooth device fidelity",
+        reason: "Bluetooth-bus UHID is a synthetic local HID node; radio, pairing and retail descriptor/timing equivalence are not provided",
+    },
+    TargetRestriction {
+        feature: "Bluetooth audio",
+        reason: "Bluetooth-bus UHID has no PCM audio transport, headset or speaker endpoint; audio is reserved for other realizations",
+    },
+];
 static EVDEV_RESTRICTIONS: [TargetRestriction; 6] = [
     TargetRestriction {
         feature: "touch companion",
@@ -748,6 +760,19 @@ static HID_SURFACE: DualShock4Surface = DualShock4Surface {
     }
     .build(),
 };
+static BT_SURFACE: DualShock4Surface = DualShock4Surface {
+    common: gr_controller_contract::construction::ControllerSurfaceSpec {
+        target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+        validation_status: RealizationValidationStatus::ResearchBacked,
+        digital_controls: &DIGITAL,
+        axes: &AXES,
+        outputs: &HID_OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
+        restrictions: &BT_RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
+    }
+    .build(),
+};
 static RETAINED_DUMMY: [TargetRestriction; 2] =
     [RESTRICTIONS[0], crate::retained::DUMMY_RESTRICTION];
 static USB_SURFACE: DualShock4Surface = DualShock4Surface {
@@ -777,13 +802,24 @@ static USBIP_SURFACE: DualShock4Surface = DualShock4Surface {
     .build(),
 };
 
-pub struct DualShock4Definition;
+#[derive(Clone, Copy, Default)]
+pub struct DualShock4Definition {
+    bluetooth: bool,
+}
+// Preserve the existing unit-style value syntax in callers of the USB definition.
+#[allow(non_upper_case_globals)]
+pub const DualShock4Definition: DualShock4Definition = DualShock4Definition { bluetooth: false };
+impl DualShock4Definition {
+    const fn bluetooth() -> Self {
+        Self { bluetooth: true }
+    }
+}
 impl RealizationControllerDefinition for DualShock4Definition {
     fn controller_id(&self) -> ControllerId {
         ControllerId::new("virtualgamepad.dualshock4")
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        static ENTRIES: [RealizationManifestEntry; 4] = [
+        static ENTRIES: [RealizationManifestEntry; 5] = [
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
@@ -800,6 +836,13 @@ impl RealizationControllerDefinition for DualShock4Definition {
             },
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UHID_USB,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: true,
+                },
+                audio_sidecar: None,
+            },
+            RealizationManifestEntry {
+                target: RealizationTarget::LINUX_UHID_BLUETOOTH,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -839,6 +882,7 @@ impl TargetAwareControllerDriver for DualShock4Definition {
             selection.target,
             RealizationTarget::LINUX_UINPUT
                 | RealizationTarget::LINUX_UHID_USB
+                | RealizationTarget::LINUX_UHID_BLUETOOTH
                 | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
                 | RealizationTarget::LINUX_USBIP_USB_AUDIO
         ) {
@@ -868,6 +912,9 @@ impl TargetAwareControllerDriver for DualShock4Definition {
             return Ok(ds4_evdev_frame(state));
         }
         let frame = ds4_frame(state);
+        if selection.target == RealizationTarget::LINUX_UHID_BLUETOOTH {
+            return Ok(bluetooth::full_frame(state));
+        }
         if selection.target == RealizationTarget::LINUX_UHID_USB {
             let ProviderFrame::HidInput {
                 report_id: Some(id),
@@ -1089,6 +1136,20 @@ fn features(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
         })
         .collect()
 }
+fn bluetooth_features(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
+    bluetooth::features(identity)
+        .into_iter()
+        .map(|(report_id, bytes)| {
+            (
+                NativeHidReportKey {
+                    report_id,
+                    report_type: 0,
+                },
+                bytes,
+            )
+        })
+        .collect()
+}
 fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
     NativeControllerRealization::Uhid(NativeHidRealization {
         target: RealizationTarget::LINUX_UHID_USB,
@@ -1192,6 +1253,7 @@ impl DualShock4Controller {
         match self.0.selection().target {
             RealizationTarget::LINUX_UINPUT => &EVDEV_SURFACE,
             RealizationTarget::LINUX_UHID_USB => &HID_SURFACE,
+            RealizationTarget::LINUX_UHID_BLUETOOTH => &BT_SURFACE,
             RealizationTarget::LINUX_USBIP_USB_AUDIO => &USBIP_SURFACE,
             _ => &USB_SURFACE,
         }
@@ -1365,6 +1427,14 @@ pub enum DualShock4HidOutput {
         /// Present only when the host enables the RGB lightbar update.
         lightbar_rgb: Option<[u8; 3]>,
     },
+    /// Accepted Bluetooth 0x11 effects with source-derived CRC and validity flags.
+    BluetoothOutput {
+        raw: Vec<u8>,
+        right_motor: u8,
+        left_motor: u8,
+        lightbar_rgb: Option<[u8; 3]>,
+        blink: Option<[u8; 2]>,
+    },
     Unknown {
         report_id: Option<u8>,
         raw: Vec<u8>,
@@ -1380,6 +1450,15 @@ fn decode_ds4_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualShock4HidOu
             } else {
                 None
             },
+            raw,
+        };
+    }
+    if report_id == Some(0x11) && bluetooth::valid_output(&raw) {
+        return DualShock4HidOutput::BluetoothOutput {
+            right_motor: raw[5],
+            left_motor: raw[6],
+            lightbar_rgb: (raw[2] & 2 != 0).then(|| [raw[7], raw[8], raw[9]]),
+            blink: (raw[2] & 4 != 0).then(|| [raw[10], raw[11]]),
             raw,
         };
     }
@@ -1467,7 +1546,7 @@ pub struct DualShock4Options {
 }
 
 impl DualShock4Options {
-    /// Restore a caller-owned controller identity. Restoration is supported on USB/UHID. Pairing bytes and the UHID
+    /// Restore a caller-owned controller identity on an explicit USB- or Bluetooth-bus UHID realization. Pairing bytes and the UHID
     /// unique ID remain stable, and the physical path and session state are fresh.
     #[must_use]
     pub const fn with_identity(mut self, identity: DualShock4Identity) -> Self {
@@ -1487,10 +1566,20 @@ pub fn create_dualshock4(
     options: CreationOptions,
     family: DualShock4Options,
 ) -> Result<DualShock4Controller, ProviderError> {
-    let identity = family.identity();
+    if matches!(
+        options.target,
+        RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+    ) {
+        common::require_linux_platform(options.target)?;
+    }
+    let identity = match (options.target, family.identity()) {
+        (RealizationTarget::LINUX_UHID_BLUETOOTH, None) => Some(DualShock4Identity::generate()?),
+        (_, supplied) => supplied,
+    };
     let mut realization = match options.target {
         RealizationTarget::LINUX_UINPUT => evdev_realization(),
         RealizationTarget::LINUX_UHID_USB => hid(options.session),
+        RealizationTarget::LINUX_UHID_BLUETOOTH => bluetooth::realization(),
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
                 controller: gr_controller_wire::registry::ids::DUALSHOCK4,
@@ -1502,22 +1591,34 @@ pub fn create_dualshock4(
             });
         }
     };
-    if options.target == RealizationTarget::LINUX_UHID_USB {
-        common::require_linux_platform(options.target)?;
-    }
     if let (Some(identity), NativeControllerRealization::Uhid(spec)) = (identity, &mut realization)
     {
-        spec.unique_id = identity.unique_id();
+        spec.unique_id = if options.target == RealizationTarget::LINUX_UHID_BLUETOOTH {
+            // Linux renders the six USB pairing bytes in reverse wire order.
+            // Preserve the exact controller-owned identity across bus choices.
+            let mut bytes = identity.bytes();
+            bytes.reverse();
+            common::address_label(bytes)
+        } else {
+            identity.unique_id()
+        };
     }
+    let definition = if options.target == RealizationTarget::LINUX_UHID_BLUETOOTH {
+        DualShock4Definition::bluetooth()
+    } else {
+        DualShock4Definition
+    };
     let mut c = common::create_restored(
-        DualShock4Definition,
+        definition,
         realization,
         options,
         identity.map(DualShock4Identity::bytes),
     )?;
     if matches!(
         options.target,
-        RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
+        RealizationTarget::LINUX_UHID_USB
+            | RealizationTarget::LINUX_UHID_BLUETOOTH
+            | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
     ) {
         c.commit().map_err(|e| ProviderError::Open {
             reason: e.to_string(),
@@ -1564,14 +1665,36 @@ impl common::HidDriver for DualShock4Definition {
             }
             Ok(())
         }
-        common::SnapshotProtocol::new(
+        let encoder: fn(&DualShock4SessionState, u64, u8) -> gr_hid::Report = if self.bluetooth {
+            bluetooth::minimal_report
+        } else {
+            encode
+        };
+        let validator: fn(&gr_hid::Report) -> Result<(), gr_hid::ReplyError> = if self.bluetooth {
+            bluetooth::validate_output
+        } else {
+            validate
+        };
+        let responses = if self.bluetooth {
+            bluetooth_features(identity)
+        } else {
+            features(identity)
+        };
+        let protocol = common::SnapshotProtocol::new(
             DualShock4SessionState::default(),
-            encode,
-            validate,
-            features(identity),
+            encoder,
+            validator,
+            responses,
             [true; 3],
             Some(4000),
-        )
+        );
+        if self.bluetooth {
+            protocol
+                .with_feature_enhancement([0x02, 0x05], bluetooth::full_report)
+                .reject_invalid_host_output()
+        } else {
+            protocol
+        }
     }
 }
 
@@ -1596,6 +1719,14 @@ impl crate::registry::ControllerFamily for DualShock4Definition {
         crate::registry::refusal(EVDEV_RESTRICTIONS[3], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(EVDEV_RESTRICTIONS[4], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(
+            BT_RESTRICTIONS[0],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[1],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
             RESTRICTIONS[0],
             &[
                 RealizationTarget::LINUX_UINPUT,
@@ -1616,7 +1747,7 @@ impl crate::registry::ControllerFamily for DualShock4Definition {
         &INPUT_TOPOLOGY_WITH_MOTION
     }
     fn manifest() -> RealizationManifest {
-        Self.realization_manifest()
+        DualShock4Definition.realization_manifest()
     }
     fn realizations() -> &'static [crate::registry::FamilyRealization] {
         static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
@@ -1627,6 +1758,11 @@ impl crate::registry::ControllerFamily for DualShock4Definition {
             ),
             crate::registry::FamilyRealization::new(
                 &HID_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
+            ),
+            crate::registry::FamilyRealization::new(
+                &BT_SURFACE.common,
                 crate::registry::RealizationTier::PlayableFull,
                 crate::registry::PermissionClass::Uhid,
             ),
@@ -2144,6 +2280,7 @@ mod tests {
                         selected_target: target,
                         available_in: RealizationTargetSet::new(&[
                             RealizationTarget::LINUX_UHID_USB,
+                            RealizationTarget::LINUX_UHID_BLUETOOTH,
                             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                             RealizationTarget::LINUX_USBIP_USB_AUDIO,
                         ]),
@@ -2843,5 +2980,143 @@ mod tests {
                 lightbar_rgb: None,
             }
         );
+    }
+    #[test]
+    fn bluetooth_has_restrictions_and_no_implicit_usb_selection() {
+        let realization = bluetooth::realization();
+        let NativeControllerRealization::Uhid(spec) = realization else {
+            panic!("Bluetooth UHID");
+        };
+        assert_eq!(spec.target, RealizationTarget::LINUX_UHID_BLUETOOTH);
+        assert_eq!(spec.bus_type, 5);
+        assert_eq!(spec.identity.product_id, 0x05c4);
+        assert!(
+            BT_SURFACE
+                .common
+                .restrictions()
+                .iter()
+                .any(|r| r.feature == "Bluetooth audio")
+        );
+        assert!(
+            BT_SURFACE
+                .common
+                .restrictions()
+                .iter()
+                .any(|r| r.feature == "Bluetooth device fidelity")
+        );
+        let manifest = DualShock4Definition.realization_manifest();
+        assert!(
+            manifest
+                .entries()
+                .iter()
+                .any(|r| r.target == RealizationTarget::LINUX_UHID_BLUETOOTH)
+        );
+        let usb = hid(RealizationSessionId(1));
+        let NativeControllerRealization::Uhid(usb_spec) = usb else {
+            panic!("USB UHID");
+        };
+        assert_eq!(usb_spec.target, RealizationTarget::LINUX_UHID_USB);
+        assert_ne!(usb_spec.descriptor, spec.descriptor);
+        let one = common::test_address(1);
+        let two = common::test_address(2);
+        let mut reversed = one;
+        reversed.reverse();
+        let mut reversed_two = two;
+        reversed_two.reverse();
+        let one_label = common::address_label(reversed);
+        let two_label = common::address_label(reversed_two);
+        assert_ne!(one_label, two_label);
+        assert_eq!(one_label.split(':').count(), 6);
+    }
+
+    #[test]
+    fn bluetooth_mode_neutral_and_two_controllers_are_isolated_from_usb() {
+        use crate::retained::RetainedProtocol;
+        use common::HidDriver;
+        use gr_hid::{Protocol, Reply, Report, ReportType, RequestKind};
+
+        let mut first = DualShock4Definition::bluetooth()
+            .hid_protocol(RealizationSessionId(1), common::test_address(1));
+        let mut second = DualShock4Definition::bluetooth()
+            .hid_protocol(RealizationSessionId(2), common::test_address(2));
+        let mut usb =
+            DualShock4Definition.hid_protocol(RealizationSessionId(3), common::test_address(3));
+        let neutral = DualShock4SessionState::default();
+        let minimal = first.input(&neutral, 0).unwrap();
+        assert_eq!(minimal.len(), 1);
+        assert_eq!(minimal[0].wire().len(), 10);
+        assert_eq!(minimal[0].id(), Some(1));
+        assert_eq!(second.input(&neutral, 0).unwrap()[0].wire().len(), 10);
+        assert_eq!(usb.input(&neutral, 0).unwrap()[0].wire().len(), 64);
+        let get_calibration = RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(0x05),
+        };
+        let Reply::Get(Ok(report)) = first.request(&get_calibration, 1).0 else {
+            panic!("Bluetooth calibration must be available");
+        };
+        assert_eq!(report.wire().len(), 41);
+        for (id, size) in [(0x02, 37), (0x05, 41), (0xa3, 49)] {
+            let get = RequestKind::Get {
+                kind: ReportType::Feature,
+                id: Some(id),
+            };
+            let Reply::Get(Ok(response)) = first.request(&get, 1).0 else {
+                panic!("missing source-required DS4 feature reply");
+            };
+            assert_eq!(response.wire().len(), size);
+        }
+        assert_eq!(first.input(&neutral, 2).unwrap()[0].wire().len(), 78);
+        assert_eq!(second.input(&neutral, 2).unwrap()[0].wire().len(), 10);
+        assert_eq!(usb.input(&neutral, 2).unwrap()[0].wire().len(), 64);
+
+        let get_pairing = RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(0x12),
+        };
+        assert_eq!(
+            first.request(&get_pairing, 3).0,
+            Reply::Get(Err(gr_hid::ReplyError::Unsupported))
+        );
+        assert!(matches!(usb.request(&get_pairing, 3).0, Reply::Get(Ok(_))));
+
+        // Known synthetic Bluetooth effect; CRC computed independently from
+        // report byte 0x11 with HID output seed 0xa2, not from device capture.
+        let mut payload = vec![0_u8; 77];
+        payload[0] = 0xc0;
+        payload[2] = 0x07;
+        payload[5..12].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7]);
+        payload[73..].copy_from_slice(&[206, 157, 236, 19]);
+        assert_eq!(
+            decode_ds4_hid_output(Some(0x11), payload.clone()),
+            DualShock4HidOutput::BluetoothOutput {
+                raw: payload.clone(),
+                right_motor: 1,
+                left_motor: 2,
+                lightbar_rgb: Some([3, 4, 5]),
+                blink: Some([6, 7]),
+            }
+        );
+        let set =
+            RequestKind::Set(Report::new(ReportType::Output, Some(0x11), payload.clone()).unwrap());
+        assert_eq!(first.request(&set, 4).0, Reply::Set(Ok(())));
+        assert_eq!(first.retained().motors, Some([2, 1]));
+        assert_eq!(first.retained().lightbar_rgb, Some([3, 4, 5]));
+        assert_eq!(first.retained().blink, Some([6, 7]));
+        assert_eq!(second.retained().revision, 0);
+        let old = first.retained().clone();
+        payload[5] ^= 1;
+        let invalid =
+            RequestKind::Set(Report::new(ReportType::Output, Some(0x11), payload).unwrap());
+        assert_eq!(
+            first.request(&invalid, 5).0,
+            Reply::Set(Err(gr_hid::ReplyError::Invalid))
+        );
+        assert_eq!(*first.retained(), old);
+        let mut bad = vec![0_u8; 77];
+        bad[2] = 1;
+        let invalid_raw = Report::new(ReportType::Output, Some(0x11), bad).unwrap();
+        assert!(matches!(first.output(invalid_raw, 6), Ok(None)));
+        assert_eq!(*first.retained(), old);
     }
 }

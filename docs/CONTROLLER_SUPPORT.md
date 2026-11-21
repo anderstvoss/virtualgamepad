@@ -26,7 +26,9 @@ support promotion is inferred.
 available only where a compiled family manifest declares it. It provides no
 radio, pairing or BlueZ. Actual Bluetooth remains deferred to #164. USB
 personality over UHID is a virtual HID presentation; dummy_hcd is separate.
-The Xbox 360 HID profiles are standard HID, not USB XInput. This table does not
+The Xbox 360 HID profiles are standard HID, not USB XInput. DualShock 4's
+Bluetooth-bus UHID realization is described in the [DS4 implementation note](dualshock4-bluetooth.md);
+the DS4 table cell remains WIP pending acceptance. This table does not
 claim hardware fidelity, full function parity, audio or composite USB support.
 
 ² The implemented Linux f_hid interface exposes report IDs without full GET_REPORT
