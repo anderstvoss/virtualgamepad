@@ -3,8 +3,10 @@
 Prompt: `p10b-sony-device-data`; tracking: vg #365.
 
 Scope: typed per-instance synthetic-by-default calibration and firmware feature data
-for DualSense and DualShock 4; caller-validated import/export, USB/UHID and USB/IP
+for DualSense and DualShock 4; caller-validated import/export, USB/UHID
 routing, application read-back, demo UI, tests, and public API inventory.
+Explicit device data is unsupported on USB/IP until the broker/audio workstream
+can coordinate the worker protocol; the installed worker retains synthetic data.
 
 Privacy: no physical device data, captured blobs, serials, calibration contents,
 or identifying addresses are stored in this repository. All tests use synthetic
