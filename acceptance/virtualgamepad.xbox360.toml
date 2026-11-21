@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.xbox360"
-research_revision = "3dcf5b6edb4480408c8dd9119d78bc3547fe8770"
+research_revision = "a67781e2412eceea9440d20dbb350ad5d3352c25"
 realizations = ["linux.uinput", "linux.uhid.usb", "linux.dummy_hcd.usb-hid", "linux.usbip.usb-audio"]
 refused_operations = []
 persistent_resources = []
@@ -16,8 +16,8 @@ id = "buttons"
 [[functions]]
 id = "sticks"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/sticks", evidence = ["x360-vg-exp0011-evdev-mapping"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/sticks", evidence = ["x360-vg-exp0009-standard-hid-controls", "x360-vg-exp0017-individual-uhid"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
+"linux.uinput" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/xbox360/sticks", evidence = ["x360-vg-exp0011-evdev-mapping"], reason = "P5a observed both signed endpoints on all four stick axes through SDL evdev." }
+"linux.uhid.usb" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/xbox360/sticks", evidence = ["x360-vg-exp0009-standard-hid-controls", "x360-vg-exp0017-individual-uhid"], reason = "P5a observed both signed endpoints on all four stick axes through SDL evdev. The HIDAPI-requested probe did not open its selected hidraw node." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/sticks", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
@@ -48,10 +48,10 @@ id = "lifecycle"
 [[functions]]
 id = "rumble"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = ["x360-vg-exp0010-evdev-ff", "x360-vg-exp0011-evdev-mapping", "x360-l0-consumer-sdl360-rumble-led"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted. Decode sub-check: ff_rumble_decode_preserves_native_effect_and_stop_semantics; source only." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = ["x360-l0-consumer-sdl360-rumble-led", "x360-l0-device-xusb-output-ff-led"], reason = "Current standard HID does not admit XUSB. Decode sub-check: x360_native_rumble_decode is source-only XUSB parsing, not realization acceptance; existing grade unchanged." }
-"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = ["x360-l0-consumer-sdl360-rumble-led", "x360-l0-device-xusb-output-ff-led"], reason = "Current standard HID does not admit XUSB. Decode sub-check: x360_native_rumble_decode is source-only XUSB parsing, not realization acceptance; existing grade unchanged." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = ["x360-vg-exp0010-evdev-ff", "x360-vg-exp0011-evdev-mapping"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted. Decode sub-check: ff_rumble_decode_preserves_native_effect_and_stop_semantics; source only. Level: Generic." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = ["x360-l0-consumer-sdl360-rumble-led", "x360-l0-device-xusb-output-ff-led"], reason = "Current standard HID does not admit XUSB. Decode sub-check: x360_native_rumble_decode is source-only XUSB parsing, not realization acceptance; existing grade unchanged. Level: Native HID." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources. Level: Real USB (experimental)." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/rumble", evidence = ["x360-l0-consumer-sdl360-rumble-led", "x360-l0-device-xusb-output-ff-led"], reason = "Current standard HID does not admit XUSB. Decode sub-check: x360_native_rumble_decode is source-only XUSB parsing, not realization acceptance; existing grade unchanged. Level: Real USB." }
 
 [[functions]]
 id = "battery"
@@ -64,7 +64,7 @@ id = "battery"
 [[functions]]
 id = "headset-audio"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "uinput has no audio endpoint or audio sidecar creation path." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "Opt-in functional stereo playback/mono capture beside standard HID; no proprietary Xbox headset transport or sustained acceptance established." }
-"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "Opt-in functional stereo playback/mono capture beside standard HID; no proprietary Xbox headset transport or sustained acceptance established." }
+"linux.uinput" = { status = "not-supported", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "uinput has no audio endpoint or audio sidecar creation path. Level: Generic." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "Opt-in functional stereo playback/mono capture beside standard HID; no proprietary Xbox headset transport or sustained acceptance established. Level: Native HID." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources. Level: Real USB (experimental)." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/headset-audio", evidence = [], reason = "Opt-in functional stereo playback/mono capture beside standard HID; no proprietary Xbox headset transport or sustained acceptance established. Level: Real USB." }

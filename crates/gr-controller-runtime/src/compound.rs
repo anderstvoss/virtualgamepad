@@ -524,6 +524,7 @@ mod tests {
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
+                bus_type: 0x03,
                 physical_path: None,
                 device_name: "test".into(),
                 identity: NativeDeviceIdentity {

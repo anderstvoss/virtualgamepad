@@ -309,7 +309,7 @@
         },
         "enum.DualSenseFeature.html": {
           "declarations": [
-            "pub enum DualSenseFeature { Touch, Motion, Lightbar, AdaptiveTriggers, Audio, }"
+            "pub enum DualSenseFeature { Touch, Motion, Lightbar, PlayerIndicators, MicrophoneLed, AdaptiveTriggers, Audio, }"
           ],
           "traits": [
             "impl Clone for DualSenseFeature",
@@ -326,7 +326,8 @@
         },
         "enum.DualSenseHidOutput.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 20 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<DualSenseMuteLed>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, led_brightness: u8, lightbar_setup: Option<u8>, release_leds: Option<bool>, player_leds: Option<u8>, player_led_instant: Option<bool>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }",
+            "pub fn trigger_effects( &self, ) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>"
           ],
           "traits": [
             "impl Clone for DualSenseHidOutput",
@@ -338,6 +339,23 @@
             "impl Sync for DualSenseHidOutput",
             "impl Unpin for DualSenseHidOutput",
             "impl UnwindSafe for DualSenseHidOutput"
+          ]
+        },
+        "enum.DualSenseMuteLed.html": {
+          "declarations": [
+            "pub enum DualSenseMuteLed { Off, On, Pulse, Unknown(u8), }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseMuteLed",
+            "impl Copy for DualSenseMuteLed",
+            "impl Debug for DualSenseMuteLed",
+            "impl Eq for DualSenseMuteLed",
+            "impl PartialEq for DualSenseMuteLed",
+            "impl RefUnwindSafe for DualSenseMuteLed",
+            "impl Send for DualSenseMuteLed",
+            "impl Sync for DualSenseMuteLed",
+            "impl Unpin for DualSenseMuteLed",
+            "impl UnwindSafe for DualSenseMuteLed"
           ]
         },
         "enum.DualSenseOutputEvent.html": {
@@ -354,6 +372,23 @@
             "impl Sync for DualSenseOutputEvent",
             "impl Unpin for DualSenseOutputEvent",
             "impl UnwindSafe for DualSenseOutputEvent"
+          ]
+        },
+        "enum.DualSenseTriggerEffect.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DualSenseTriggerEffect { Off, Feedback { zones: DualSenseTriggerZoneForces, }, Weapon { start_zone: u8, end_zone: u8, strength: u8, }, Vibration { zones: DualSenseTriggerZoneForces, frequency_code: u8, }, Unknown { mode: u8, raw: [u8; 11], }, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTriggerEffect",
+            "impl Copy for DualSenseTriggerEffect",
+            "impl Debug for DualSenseTriggerEffect",
+            "impl Eq for DualSenseTriggerEffect",
+            "impl PartialEq for DualSenseTriggerEffect",
+            "impl RefUnwindSafe for DualSenseTriggerEffect",
+            "impl Send for DualSenseTriggerEffect",
+            "impl Sync for DualSenseTriggerEffect",
+            "impl Unpin for DualSenseTriggerEffect",
+            "impl UnwindSafe for DualSenseTriggerEffect"
           ]
         },
         "enum.DualShock4Control.html": {
@@ -726,6 +761,24 @@
             "impl UnwindSafe for SteamController2026StreamPacket"
           ]
         },
+        "enum.SwitchProBatteryLevel.html": {
+          "declarations": [
+            "pub enum SwitchProBatteryLevel { Empty, Critical, Low, Medium, Full, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProBatteryLevel",
+            "impl Copy for SwitchProBatteryLevel",
+            "impl Debug for SwitchProBatteryLevel",
+            "impl Default for SwitchProBatteryLevel",
+            "impl Eq for SwitchProBatteryLevel",
+            "impl PartialEq for SwitchProBatteryLevel",
+            "impl RefUnwindSafe for SwitchProBatteryLevel",
+            "impl Send for SwitchProBatteryLevel",
+            "impl Sync for SwitchProBatteryLevel",
+            "impl Unpin for SwitchProBatteryLevel",
+            "impl UnwindSafe for SwitchProBatteryLevel"
+          ]
+        },
         "enum.SwitchProControl.html": {
           "declarations": [
             "pub enum SwitchProControl { Show 14 variants B, A, Y, X, L, R, Zl, Zr, Minus, Plus, Home, Capture, LeftStickPress, RightStickPress, }"
@@ -745,7 +798,7 @@
         },
         "enum.SwitchProOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HomeLight(SwitchProHomeLight), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }",
             "pub fn rumble(&self) -> Option<SwitchProRumble>"
           ],
           "traits": [
@@ -1044,6 +1097,12 @@
           ],
           "traits": []
         },
+        "fn.decode_dualsense_trigger_effect.html": {
+          "declarations": [
+            "pub fn decode_dualsense_trigger_effect(raw: [u8; 11]) -> DualSenseTriggerEffect"
+          ],
+          "traits": []
+        },
         "fn.decode_switch_pro_rumble_word.html": {
           "declarations": [
             "pub fn decode_switch_pro_rumble_word(raw: [u8; 4]) -> SwitchProRumbleWord"
@@ -1080,7 +1139,9 @@
             "pub const fn failed(&self) -> bool",
             "pub const fn underrun_frames(&self) -> u64",
             "pub const fn dropped_playback_frames(&self) -> u64",
-            "pub const fn last_error(&self) -> Option<&AudioError>"
+            "pub const fn last_error(&self) -> Option<&AudioError>",
+            "pub const fn playback_accounting(&self) -> Option<&AudioDirectionAccounting>",
+            "pub const fn microphone_accounting(&self) -> Option<&AudioDirectionAccounting>"
           ],
           "traits": [
             "impl Clone for AudioDiagnostics",
@@ -1092,6 +1153,23 @@
             "impl Sync for AudioDiagnostics",
             "impl Unpin for AudioDiagnostics",
             "impl UnwindSafe for AudioDiagnostics"
+          ]
+        },
+        "struct.AudioDirectionAccounting.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct AudioDirectionAccounting {Show 13 fields pub direction: SampleDirection, pub generation: u64, pub produced_frames: u64, pub accepted_frames: u64, pub consumed_frames: u64, pub dropped_at_ingress_frames: u64, pub dropped_on_flush_frames: u64, pub dropped_on_close_frames: u64, pub queued_frames: u64, pub dropped_in_callback_frames: Option<u64>, pub dropped_in_worker_frames: Option<u64>, pub silence_inserted_frames: Option<u64>, pub discontinuities: u64, }"
+          ],
+          "traits": [
+            "impl Clone for AudioDirectionAccounting",
+            "impl Copy for AudioDirectionAccounting",
+            "impl Debug for AudioDirectionAccounting",
+            "impl Eq for AudioDirectionAccounting",
+            "impl PartialEq for AudioDirectionAccounting",
+            "impl RefUnwindSafe for AudioDirectionAccounting",
+            "impl Send for AudioDirectionAccounting",
+            "impl Sync for AudioDirectionAccounting",
+            "impl Unpin for AudioDirectionAccounting",
+            "impl UnwindSafe for AudioDirectionAccounting"
           ]
         },
         "struct.AudioEndpoint.html": {
@@ -1156,6 +1234,24 @@
             "impl Sync for AudioRead",
             "impl Unpin for AudioRead",
             "impl UnwindSafe for AudioRead"
+          ]
+        },
+        "struct.AudioSidecarAssociation.html": {
+          "declarations": [
+            "pub struct AudioSidecarAssociation { /* private fields */ }",
+            "pub fn key(&self) -> &str",
+            "pub fn node_names(&self) -> &[String]"
+          ],
+          "traits": [
+            "impl Clone for AudioSidecarAssociation",
+            "impl Debug for AudioSidecarAssociation",
+            "impl Eq for AudioSidecarAssociation",
+            "impl PartialEq for AudioSidecarAssociation",
+            "impl RefUnwindSafe for AudioSidecarAssociation",
+            "impl Send for AudioSidecarAssociation",
+            "impl Sync for AudioSidecarAssociation",
+            "impl Unpin for AudioSidecarAssociation",
+            "impl UnwindSafe for AudioSidecarAssociation"
           ]
         },
         "struct.AuxiliaryButtonInput.html": {
@@ -1284,6 +1380,7 @@
             "pub struct ControllerAudio { /* private fields */ }",
             "pub fn diagnostics(&self) -> AudioDiagnostics",
             "pub fn endpoints(&self) -> &[AudioEndpoint]",
+            "pub fn sidecar_association(&self) -> Option<&AudioSidecarAssociation>",
             "pub const fn onboard_speaker_source(&self) -> Option<AudioChannel>",
             "pub const fn limitation(&self) -> &'static str",
             "pub fn read_playback( &mut self, dest: &mut [i16], ) -> Result<AudioRead, AudioError>",
@@ -1503,7 +1600,8 @@
             "pub fn association(&self) -> &ControllerAssociation",
             "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
             "pub fn service( &mut self, callback: &mut dyn FnMut(DualSenseOutputEvent), ) -> Result<(), ControllerError>",
-            "pub const fn identity(&self) -> Option<DualSenseIdentity>"
+            "pub const fn identity(&self) -> Option<DualSenseIdentity>",
+            "pub const fn device_data(&self) -> &DualSenseDeviceData"
           ],
           "traits": [
             "impl !RefUnwindSafe for DualSenseController",
@@ -1511,6 +1609,29 @@
             "impl !UnwindSafe for DualSenseController",
             "impl Send for DualSenseController",
             "impl Unpin for DualSenseController"
+          ]
+        },
+        "struct.DualSenseDeviceData.html": {
+          "declarations": [
+            "pub struct DualSenseDeviceData { /* private fields */ }",
+            "pub fn from_feature_reports( calibration: &[u8], firmware: &[u8], ) -> Result<DualSenseDeviceData, Error>",
+            "pub fn with_feature_report( self, id: u8, bytes: &[u8], ) -> Result<DualSenseDeviceData, Error>",
+            "pub fn feature_report(&self, id: u8) -> Option<&[u8]>",
+            "pub fn load_file(path: impl AsRef<Path>) -> Result<DualSenseDeviceData, Error>",
+            "pub fn save_file(&self, path: impl AsRef<Path>) -> Result<(), Error>"
+          ],
+          "traits": [
+            "impl Clone for DualSenseDeviceData",
+            "impl Copy for DualSenseDeviceData",
+            "impl Debug for DualSenseDeviceData",
+            "impl Default for DualSenseDeviceData",
+            "impl Eq for DualSenseDeviceData",
+            "impl PartialEq for DualSenseDeviceData",
+            "impl RefUnwindSafe for DualSenseDeviceData",
+            "impl Send for DualSenseDeviceData",
+            "impl Sync for DualSenseDeviceData",
+            "impl Unpin for DualSenseDeviceData",
+            "impl UnwindSafe for DualSenseDeviceData"
           ]
         },
         "struct.DualSenseIdentity.html": {
@@ -1568,6 +1689,8 @@
         "struct.DualSenseOptions.html": {
           "declarations": [
             "#[non_exhaustive]pub struct DualSenseOptions { /* private fields */ }",
+            "pub const fn with_device_data( self, device_data: DualSenseDeviceData, ) -> DualSenseOptions",
+            "pub const fn device_data(self) -> Option<DualSenseDeviceData>",
             "pub const fn with_identity( self, identity: DualSenseIdentity, ) -> DualSenseOptions",
             "pub const fn identity(self) -> Option<DualSenseIdentity>"
           ],
@@ -1680,6 +1803,40 @@
             "impl UnwindSafe for DualSenseTrigger"
           ]
         },
+        "struct.DualSenseTriggerEffectUpdate.html": {
+          "declarations": [
+            "pub struct DualSenseTriggerEffectUpdate { pub valid: bool, pub raw: [u8; 11], pub effect: Option<DualSenseTriggerEffect>, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTriggerEffectUpdate",
+            "impl Copy for DualSenseTriggerEffectUpdate",
+            "impl Debug for DualSenseTriggerEffectUpdate",
+            "impl Eq for DualSenseTriggerEffectUpdate",
+            "impl PartialEq for DualSenseTriggerEffectUpdate",
+            "impl RefUnwindSafe for DualSenseTriggerEffectUpdate",
+            "impl Send for DualSenseTriggerEffectUpdate",
+            "impl Sync for DualSenseTriggerEffectUpdate",
+            "impl Unpin for DualSenseTriggerEffectUpdate",
+            "impl UnwindSafe for DualSenseTriggerEffectUpdate"
+          ]
+        },
+        "struct.DualSenseTriggerZoneForces.html": {
+          "declarations": [
+            "pub struct DualSenseTriggerZoneForces { pub active_zones: u16, pub start_zone: u8, pub end_zone: u8, pub strengths: [Option<u8>; 10], }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTriggerZoneForces",
+            "impl Copy for DualSenseTriggerZoneForces",
+            "impl Debug for DualSenseTriggerZoneForces",
+            "impl Eq for DualSenseTriggerZoneForces",
+            "impl PartialEq for DualSenseTriggerZoneForces",
+            "impl RefUnwindSafe for DualSenseTriggerZoneForces",
+            "impl Send for DualSenseTriggerZoneForces",
+            "impl Sync for DualSenseTriggerZoneForces",
+            "impl Unpin for DualSenseTriggerZoneForces",
+            "impl UnwindSafe for DualSenseTriggerZoneForces"
+          ]
+        },
         "struct.DualShock4Axis.html": {
           "declarations": [
             "pub struct DualShock4Axis(/* private fields */);",
@@ -1728,7 +1885,8 @@
             "pub fn association(&self) -> &ControllerAssociation",
             "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
             "pub fn service( &mut self, callback: &mut dyn FnMut(DualShock4OutputEvent), ) -> Result<(), ControllerError>",
-            "pub const fn identity(&self) -> Option<DualShock4Identity>"
+            "pub const fn identity(&self) -> Option<DualShock4Identity>",
+            "pub const fn device_data(&self) -> &DualShock4DeviceData"
           ],
           "traits": [
             "impl !RefUnwindSafe for DualShock4Controller",
@@ -1736,6 +1894,29 @@
             "impl !UnwindSafe for DualShock4Controller",
             "impl Send for DualShock4Controller",
             "impl Unpin for DualShock4Controller"
+          ]
+        },
+        "struct.DualShock4DeviceData.html": {
+          "declarations": [
+            "pub struct DualShock4DeviceData { /* private fields */ }",
+            "pub fn from_feature_reports( calibration: &[u8], firmware: &[u8], ) -> Result<DualShock4DeviceData, Error>",
+            "pub fn with_feature_report( self, id: u8, bytes: &[u8], ) -> Result<DualShock4DeviceData, Error>",
+            "pub fn feature_report(&self, id: u8) -> Option<&[u8]>",
+            "pub fn load_file(path: impl AsRef<Path>) -> Result<DualShock4DeviceData, Error>",
+            "pub fn save_file(&self, path: impl AsRef<Path>) -> Result<(), Error>"
+          ],
+          "traits": [
+            "impl Clone for DualShock4DeviceData",
+            "impl Copy for DualShock4DeviceData",
+            "impl Debug for DualShock4DeviceData",
+            "impl Default for DualShock4DeviceData",
+            "impl Eq for DualShock4DeviceData",
+            "impl PartialEq for DualShock4DeviceData",
+            "impl RefUnwindSafe for DualShock4DeviceData",
+            "impl Send for DualShock4DeviceData",
+            "impl Sync for DualShock4DeviceData",
+            "impl Unpin for DualShock4DeviceData",
+            "impl UnwindSafe for DualShock4DeviceData"
           ]
         },
         "struct.DualShock4Identity.html": {
@@ -1810,6 +1991,8 @@
         "struct.DualShock4Options.html": {
           "declarations": [
             "#[non_exhaustive]pub struct DualShock4Options { /* private fields */ }",
+            "pub const fn with_device_data( self, device_data: DualShock4DeviceData, ) -> DualShock4Options",
+            "pub const fn device_data(self) -> Option<DualShock4DeviceData>",
             "pub const fn with_identity( self, identity: DualShock4Identity, ) -> DualShock4Options",
             "pub const fn identity(self) -> Option<DualShock4Identity>"
           ],
@@ -2471,6 +2654,24 @@
             "impl UnwindSafe for SwitchProAxis"
           ]
         },
+        "struct.SwitchProBattery.html": {
+          "declarations": [
+            "pub struct SwitchProBattery { pub level: SwitchProBatteryLevel, pub charging: bool, pub usb_powered: bool, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProBattery",
+            "impl Copy for SwitchProBattery",
+            "impl Debug for SwitchProBattery",
+            "impl Default for SwitchProBattery",
+            "impl Eq for SwitchProBattery",
+            "impl PartialEq for SwitchProBattery",
+            "impl RefUnwindSafe for SwitchProBattery",
+            "impl Send for SwitchProBattery",
+            "impl Sync for SwitchProBattery",
+            "impl Unpin for SwitchProBattery",
+            "impl UnwindSafe for SwitchProBattery"
+          ]
+        },
         "struct.SwitchProController.html": {
           "declarations": [
             "pub struct SwitchProController { /* private fields */ }",
@@ -2482,6 +2683,8 @@
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn inputs(&self) -> &SwitchProInputs",
             "pub fn status(&self) -> SwitchProStatus",
+            "pub fn battery(&self) -> SwitchProBattery",
+            "pub fn set_battery( &mut self, battery: SwitchProBattery, ) -> Result<(), ControlError>",
             "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
             "pub fn set_inputs(&mut self, state: SwitchProInputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>",
@@ -2506,6 +2709,23 @@
             "impl !UnwindSafe for SwitchProController",
             "impl Send for SwitchProController",
             "impl Unpin for SwitchProController"
+          ]
+        },
+        "struct.SwitchProHomeLight.html": {
+          "declarations": [
+            "pub struct SwitchProHomeLight { pub brightness: u8, pub mini_cycle: [u8; 5], }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProHomeLight",
+            "impl Copy for SwitchProHomeLight",
+            "impl Debug for SwitchProHomeLight",
+            "impl Eq for SwitchProHomeLight",
+            "impl PartialEq for SwitchProHomeLight",
+            "impl RefUnwindSafe for SwitchProHomeLight",
+            "impl Send for SwitchProHomeLight",
+            "impl Sync for SwitchProHomeLight",
+            "impl Unpin for SwitchProHomeLight",
+            "impl UnwindSafe for SwitchProHomeLight"
           ]
         },
         "struct.SwitchProIdentity.html": {
@@ -2576,6 +2796,10 @@
           "declarations": [
             "#[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }",
             "pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions",
+            "pub const fn with_battery(self, battery: SwitchProBattery) -> SwitchProOptions",
+            "pub const fn battery(self) -> SwitchProBattery",
+            "pub const fn with_imu_gating(self, enabled: bool) -> SwitchProOptions",
+            "pub const fn imu_gating(self) -> bool",
             "pub const fn identity(self) -> Option<SwitchProIdentity>"
           ],
           "traits": [
@@ -2702,7 +2926,10 @@
           "declarations": [
             "pub struct SwitchProStatus { /* private fields */ }",
             "pub const fn timer(self) -> u8",
-            "pub const fn stream_enabled(self) -> bool"
+            "pub const fn stream_enabled(self) -> bool",
+            "pub const fn battery(self) -> SwitchProBattery",
+            "pub const fn imu_gating(self) -> bool",
+            "pub const fn imu_enabled(self) -> bool"
           ],
           "traits": [
             "impl Clone for SwitchProStatus",
@@ -2857,7 +3084,7 @@
             "pub fn import(bytes: Vec<u8>) -> Result<WiiEepromImage, ControlError>",
             "pub fn with_extension_calibration( self, calibration: WiiExtensionCalibration, ) -> WiiEepromImage",
             "pub fn extension_calibration(&self) -> &WiiExtensionCalibration",
-            "pub fn bytes(&self) -> &[u8] ⓘ"
+            "pub fn bytes(&self) -> &[u8] \u24d8"
           ],
           "traits": [
             "impl Clone for WiiEepromImage",
@@ -3362,6 +3589,7 @@
         "struct.XboxSeriesController.html": {
           "declarations": [
             "pub struct XboxSeriesController { /* private fields */ }",
+            "pub fn identity(&self) -> XboxSeriesIdentity",
             "pub fn inputs(&self) -> &XboxSeriesInputs",
             "pub fn status(&self) -> XboxSeriesStatus",
             "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
@@ -3391,6 +3619,27 @@
             "impl Unpin for XboxSeriesController"
           ]
         },
+        "struct.XboxSeriesIdentity.html": {
+          "declarations": [
+            "pub struct XboxSeriesIdentity(/* private fields */);",
+            "pub fn generate() -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesIdentity",
+            "impl Copy for XboxSeriesIdentity",
+            "impl Debug for XboxSeriesIdentity",
+            "impl Eq for XboxSeriesIdentity",
+            "impl Hash for XboxSeriesIdentity",
+            "impl PartialEq for XboxSeriesIdentity",
+            "impl RefUnwindSafe for XboxSeriesIdentity",
+            "impl Send for XboxSeriesIdentity",
+            "impl Sync for XboxSeriesIdentity",
+            "impl Unpin for XboxSeriesIdentity",
+            "impl UnwindSafe for XboxSeriesIdentity"
+          ]
+        },
         "struct.XboxSeriesInputs.html": {
           "declarations": [
             "pub struct XboxSeriesInputs { pub sticks: [[i16; 2]; 2], /* private fields */ }",
@@ -3416,7 +3665,9 @@
         },
         "struct.XboxSeriesOptions.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesOptions {}"
+            "#[non_exhaustive]pub struct XboxSeriesOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: XboxSeriesIdentity, ) -> XboxSeriesOptions",
+            "pub const fn identity(self) -> Option<XboxSeriesIdentity>"
           ],
           "traits": [
             "impl Clone for XboxSeriesOptions",
@@ -3810,7 +4061,7 @@
         },
         "enum.DualSenseFeature.html": {
           "declarations": [
-            "pub enum DualSenseFeature { Touch, Motion, Lightbar, AdaptiveTriggers, Audio, }"
+            "pub enum DualSenseFeature { Touch, Motion, Lightbar, PlayerIndicators, MicrophoneLed, AdaptiveTriggers, Audio, }"
           ],
           "traits": [
             "impl Clone for DualSenseFeature",
@@ -3827,7 +4078,8 @@
         },
         "enum.DualSenseHidOutput.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 20 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<DualSenseMuteLed>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, led_brightness: u8, lightbar_setup: Option<u8>, release_leds: Option<bool>, player_leds: Option<u8>, player_led_instant: Option<bool>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }",
+            "pub fn trigger_effects( &self, ) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>"
           ],
           "traits": [
             "impl Clone for DualSenseHidOutput",
@@ -3839,6 +4091,23 @@
             "impl Sync for DualSenseHidOutput",
             "impl Unpin for DualSenseHidOutput",
             "impl UnwindSafe for DualSenseHidOutput"
+          ]
+        },
+        "enum.DualSenseMuteLed.html": {
+          "declarations": [
+            "pub enum DualSenseMuteLed { Off, On, Pulse, Unknown(u8), }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseMuteLed",
+            "impl Copy for DualSenseMuteLed",
+            "impl Debug for DualSenseMuteLed",
+            "impl Eq for DualSenseMuteLed",
+            "impl PartialEq for DualSenseMuteLed",
+            "impl RefUnwindSafe for DualSenseMuteLed",
+            "impl Send for DualSenseMuteLed",
+            "impl Sync for DualSenseMuteLed",
+            "impl Unpin for DualSenseMuteLed",
+            "impl UnwindSafe for DualSenseMuteLed"
           ]
         },
         "enum.DualSenseOutputEvent.html": {
@@ -3855,6 +4124,23 @@
             "impl Sync for DualSenseOutputEvent",
             "impl Unpin for DualSenseOutputEvent",
             "impl UnwindSafe for DualSenseOutputEvent"
+          ]
+        },
+        "enum.DualSenseTriggerEffect.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DualSenseTriggerEffect { Off, Feedback { zones: DualSenseTriggerZoneForces, }, Weapon { start_zone: u8, end_zone: u8, strength: u8, }, Vibration { zones: DualSenseTriggerZoneForces, frequency_code: u8, }, Unknown { mode: u8, raw: [u8; 11], }, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTriggerEffect",
+            "impl Copy for DualSenseTriggerEffect",
+            "impl Debug for DualSenseTriggerEffect",
+            "impl Eq for DualSenseTriggerEffect",
+            "impl PartialEq for DualSenseTriggerEffect",
+            "impl RefUnwindSafe for DualSenseTriggerEffect",
+            "impl Send for DualSenseTriggerEffect",
+            "impl Sync for DualSenseTriggerEffect",
+            "impl Unpin for DualSenseTriggerEffect",
+            "impl UnwindSafe for DualSenseTriggerEffect"
           ]
         },
         "enum.DualShock4Control.html": {
@@ -4227,6 +4513,24 @@
             "impl UnwindSafe for SteamController2026StreamPacket"
           ]
         },
+        "enum.SwitchProBatteryLevel.html": {
+          "declarations": [
+            "pub enum SwitchProBatteryLevel { Empty, Critical, Low, Medium, Full, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProBatteryLevel",
+            "impl Copy for SwitchProBatteryLevel",
+            "impl Debug for SwitchProBatteryLevel",
+            "impl Default for SwitchProBatteryLevel",
+            "impl Eq for SwitchProBatteryLevel",
+            "impl PartialEq for SwitchProBatteryLevel",
+            "impl RefUnwindSafe for SwitchProBatteryLevel",
+            "impl Send for SwitchProBatteryLevel",
+            "impl Sync for SwitchProBatteryLevel",
+            "impl Unpin for SwitchProBatteryLevel",
+            "impl UnwindSafe for SwitchProBatteryLevel"
+          ]
+        },
         "enum.SwitchProControl.html": {
           "declarations": [
             "pub enum SwitchProControl { Show 14 variants B, A, Y, X, L, R, Zl, Zr, Minus, Plus, Home, Capture, LeftStickPress, RightStickPress, }"
@@ -4246,7 +4550,7 @@
         },
         "enum.SwitchProOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HomeLight(SwitchProHomeLight), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }",
             "pub fn rumble(&self) -> Option<SwitchProRumble>"
           ],
           "traits": [
@@ -4545,6 +4849,12 @@
           ],
           "traits": []
         },
+        "fn.decode_dualsense_trigger_effect.html": {
+          "declarations": [
+            "pub fn decode_dualsense_trigger_effect(raw: [u8; 11]) -> DualSenseTriggerEffect"
+          ],
+          "traits": []
+        },
         "fn.decode_switch_pro_rumble_word.html": {
           "declarations": [
             "pub fn decode_switch_pro_rumble_word(raw: [u8; 4]) -> SwitchProRumbleWord"
@@ -4581,7 +4891,9 @@
             "pub const fn failed(&self) -> bool",
             "pub const fn underrun_frames(&self) -> u64",
             "pub const fn dropped_playback_frames(&self) -> u64",
-            "pub const fn last_error(&self) -> Option<&AudioError>"
+            "pub const fn last_error(&self) -> Option<&AudioError>",
+            "pub const fn playback_accounting(&self) -> Option<&AudioDirectionAccounting>",
+            "pub const fn microphone_accounting(&self) -> Option<&AudioDirectionAccounting>"
           ],
           "traits": [
             "impl Clone for AudioDiagnostics",
@@ -4593,6 +4905,23 @@
             "impl Sync for AudioDiagnostics",
             "impl Unpin for AudioDiagnostics",
             "impl UnwindSafe for AudioDiagnostics"
+          ]
+        },
+        "struct.AudioDirectionAccounting.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct AudioDirectionAccounting {Show 13 fields pub direction: SampleDirection, pub generation: u64, pub produced_frames: u64, pub accepted_frames: u64, pub consumed_frames: u64, pub dropped_at_ingress_frames: u64, pub dropped_on_flush_frames: u64, pub dropped_on_close_frames: u64, pub queued_frames: u64, pub dropped_in_callback_frames: Option<u64>, pub dropped_in_worker_frames: Option<u64>, pub silence_inserted_frames: Option<u64>, pub discontinuities: u64, }"
+          ],
+          "traits": [
+            "impl Clone for AudioDirectionAccounting",
+            "impl Copy for AudioDirectionAccounting",
+            "impl Debug for AudioDirectionAccounting",
+            "impl Eq for AudioDirectionAccounting",
+            "impl PartialEq for AudioDirectionAccounting",
+            "impl RefUnwindSafe for AudioDirectionAccounting",
+            "impl Send for AudioDirectionAccounting",
+            "impl Sync for AudioDirectionAccounting",
+            "impl Unpin for AudioDirectionAccounting",
+            "impl UnwindSafe for AudioDirectionAccounting"
           ]
         },
         "struct.AudioEndpoint.html": {
@@ -4657,6 +4986,24 @@
             "impl Sync for AudioRead",
             "impl Unpin for AudioRead",
             "impl UnwindSafe for AudioRead"
+          ]
+        },
+        "struct.AudioSidecarAssociation.html": {
+          "declarations": [
+            "pub struct AudioSidecarAssociation { /* private fields */ }",
+            "pub fn key(&self) -> &str",
+            "pub fn node_names(&self) -> &[String]"
+          ],
+          "traits": [
+            "impl Clone for AudioSidecarAssociation",
+            "impl Debug for AudioSidecarAssociation",
+            "impl Eq for AudioSidecarAssociation",
+            "impl PartialEq for AudioSidecarAssociation",
+            "impl RefUnwindSafe for AudioSidecarAssociation",
+            "impl Send for AudioSidecarAssociation",
+            "impl Sync for AudioSidecarAssociation",
+            "impl Unpin for AudioSidecarAssociation",
+            "impl UnwindSafe for AudioSidecarAssociation"
           ]
         },
         "struct.AuxiliaryButtonInput.html": {
@@ -4785,6 +5132,7 @@
             "pub struct ControllerAudio { /* private fields */ }",
             "pub fn diagnostics(&self) -> AudioDiagnostics",
             "pub fn endpoints(&self) -> &[AudioEndpoint]",
+            "pub fn sidecar_association(&self) -> Option<&AudioSidecarAssociation>",
             "pub const fn onboard_speaker_source(&self) -> Option<AudioChannel>",
             "pub const fn limitation(&self) -> &'static str",
             "pub fn read_playback( &mut self, dest: &mut [i16], ) -> Result<AudioRead, AudioError>",
@@ -5004,7 +5352,8 @@
             "pub fn association(&self) -> &ControllerAssociation",
             "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
             "pub fn service( &mut self, callback: &mut dyn FnMut(DualSenseOutputEvent), ) -> Result<(), ControllerError>",
-            "pub const fn identity(&self) -> Option<DualSenseIdentity>"
+            "pub const fn identity(&self) -> Option<DualSenseIdentity>",
+            "pub const fn device_data(&self) -> &DualSenseDeviceData"
           ],
           "traits": [
             "impl !RefUnwindSafe for DualSenseController",
@@ -5012,6 +5361,29 @@
             "impl !UnwindSafe for DualSenseController",
             "impl Send for DualSenseController",
             "impl Unpin for DualSenseController"
+          ]
+        },
+        "struct.DualSenseDeviceData.html": {
+          "declarations": [
+            "pub struct DualSenseDeviceData { /* private fields */ }",
+            "pub fn from_feature_reports( calibration: &[u8], firmware: &[u8], ) -> Result<DualSenseDeviceData, Error>",
+            "pub fn with_feature_report( self, id: u8, bytes: &[u8], ) -> Result<DualSenseDeviceData, Error>",
+            "pub fn feature_report(&self, id: u8) -> Option<&[u8]>",
+            "pub fn load_file(path: impl AsRef<Path>) -> Result<DualSenseDeviceData, Error>",
+            "pub fn save_file(&self, path: impl AsRef<Path>) -> Result<(), Error>"
+          ],
+          "traits": [
+            "impl Clone for DualSenseDeviceData",
+            "impl Copy for DualSenseDeviceData",
+            "impl Debug for DualSenseDeviceData",
+            "impl Default for DualSenseDeviceData",
+            "impl Eq for DualSenseDeviceData",
+            "impl PartialEq for DualSenseDeviceData",
+            "impl RefUnwindSafe for DualSenseDeviceData",
+            "impl Send for DualSenseDeviceData",
+            "impl Sync for DualSenseDeviceData",
+            "impl Unpin for DualSenseDeviceData",
+            "impl UnwindSafe for DualSenseDeviceData"
           ]
         },
         "struct.DualSenseIdentity.html": {
@@ -5069,6 +5441,8 @@
         "struct.DualSenseOptions.html": {
           "declarations": [
             "#[non_exhaustive]pub struct DualSenseOptions { /* private fields */ }",
+            "pub const fn with_device_data( self, device_data: DualSenseDeviceData, ) -> DualSenseOptions",
+            "pub const fn device_data(self) -> Option<DualSenseDeviceData>",
             "pub const fn with_identity( self, identity: DualSenseIdentity, ) -> DualSenseOptions",
             "pub const fn identity(self) -> Option<DualSenseIdentity>"
           ],
@@ -5181,6 +5555,40 @@
             "impl UnwindSafe for DualSenseTrigger"
           ]
         },
+        "struct.DualSenseTriggerEffectUpdate.html": {
+          "declarations": [
+            "pub struct DualSenseTriggerEffectUpdate { pub valid: bool, pub raw: [u8; 11], pub effect: Option<DualSenseTriggerEffect>, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTriggerEffectUpdate",
+            "impl Copy for DualSenseTriggerEffectUpdate",
+            "impl Debug for DualSenseTriggerEffectUpdate",
+            "impl Eq for DualSenseTriggerEffectUpdate",
+            "impl PartialEq for DualSenseTriggerEffectUpdate",
+            "impl RefUnwindSafe for DualSenseTriggerEffectUpdate",
+            "impl Send for DualSenseTriggerEffectUpdate",
+            "impl Sync for DualSenseTriggerEffectUpdate",
+            "impl Unpin for DualSenseTriggerEffectUpdate",
+            "impl UnwindSafe for DualSenseTriggerEffectUpdate"
+          ]
+        },
+        "struct.DualSenseTriggerZoneForces.html": {
+          "declarations": [
+            "pub struct DualSenseTriggerZoneForces { pub active_zones: u16, pub start_zone: u8, pub end_zone: u8, pub strengths: [Option<u8>; 10], }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTriggerZoneForces",
+            "impl Copy for DualSenseTriggerZoneForces",
+            "impl Debug for DualSenseTriggerZoneForces",
+            "impl Eq for DualSenseTriggerZoneForces",
+            "impl PartialEq for DualSenseTriggerZoneForces",
+            "impl RefUnwindSafe for DualSenseTriggerZoneForces",
+            "impl Send for DualSenseTriggerZoneForces",
+            "impl Sync for DualSenseTriggerZoneForces",
+            "impl Unpin for DualSenseTriggerZoneForces",
+            "impl UnwindSafe for DualSenseTriggerZoneForces"
+          ]
+        },
         "struct.DualShock4Axis.html": {
           "declarations": [
             "pub struct DualShock4Axis(/* private fields */);",
@@ -5229,7 +5637,8 @@
             "pub fn association(&self) -> &ControllerAssociation",
             "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
             "pub fn service( &mut self, callback: &mut dyn FnMut(DualShock4OutputEvent), ) -> Result<(), ControllerError>",
-            "pub const fn identity(&self) -> Option<DualShock4Identity>"
+            "pub const fn identity(&self) -> Option<DualShock4Identity>",
+            "pub const fn device_data(&self) -> &DualShock4DeviceData"
           ],
           "traits": [
             "impl !RefUnwindSafe for DualShock4Controller",
@@ -5237,6 +5646,29 @@
             "impl !UnwindSafe for DualShock4Controller",
             "impl Send for DualShock4Controller",
             "impl Unpin for DualShock4Controller"
+          ]
+        },
+        "struct.DualShock4DeviceData.html": {
+          "declarations": [
+            "pub struct DualShock4DeviceData { /* private fields */ }",
+            "pub fn from_feature_reports( calibration: &[u8], firmware: &[u8], ) -> Result<DualShock4DeviceData, Error>",
+            "pub fn with_feature_report( self, id: u8, bytes: &[u8], ) -> Result<DualShock4DeviceData, Error>",
+            "pub fn feature_report(&self, id: u8) -> Option<&[u8]>",
+            "pub fn load_file(path: impl AsRef<Path>) -> Result<DualShock4DeviceData, Error>",
+            "pub fn save_file(&self, path: impl AsRef<Path>) -> Result<(), Error>"
+          ],
+          "traits": [
+            "impl Clone for DualShock4DeviceData",
+            "impl Copy for DualShock4DeviceData",
+            "impl Debug for DualShock4DeviceData",
+            "impl Default for DualShock4DeviceData",
+            "impl Eq for DualShock4DeviceData",
+            "impl PartialEq for DualShock4DeviceData",
+            "impl RefUnwindSafe for DualShock4DeviceData",
+            "impl Send for DualShock4DeviceData",
+            "impl Sync for DualShock4DeviceData",
+            "impl Unpin for DualShock4DeviceData",
+            "impl UnwindSafe for DualShock4DeviceData"
           ]
         },
         "struct.DualShock4Identity.html": {
@@ -5311,6 +5743,8 @@
         "struct.DualShock4Options.html": {
           "declarations": [
             "#[non_exhaustive]pub struct DualShock4Options { /* private fields */ }",
+            "pub const fn with_device_data( self, device_data: DualShock4DeviceData, ) -> DualShock4Options",
+            "pub const fn device_data(self) -> Option<DualShock4DeviceData>",
             "pub const fn with_identity( self, identity: DualShock4Identity, ) -> DualShock4Options",
             "pub const fn identity(self) -> Option<DualShock4Identity>"
           ],
@@ -5972,6 +6406,24 @@
             "impl UnwindSafe for SwitchProAxis"
           ]
         },
+        "struct.SwitchProBattery.html": {
+          "declarations": [
+            "pub struct SwitchProBattery { pub level: SwitchProBatteryLevel, pub charging: bool, pub usb_powered: bool, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProBattery",
+            "impl Copy for SwitchProBattery",
+            "impl Debug for SwitchProBattery",
+            "impl Default for SwitchProBattery",
+            "impl Eq for SwitchProBattery",
+            "impl PartialEq for SwitchProBattery",
+            "impl RefUnwindSafe for SwitchProBattery",
+            "impl Send for SwitchProBattery",
+            "impl Sync for SwitchProBattery",
+            "impl Unpin for SwitchProBattery",
+            "impl UnwindSafe for SwitchProBattery"
+          ]
+        },
         "struct.SwitchProController.html": {
           "declarations": [
             "pub struct SwitchProController { /* private fields */ }",
@@ -5983,6 +6435,8 @@
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn inputs(&self) -> &SwitchProInputs",
             "pub fn status(&self) -> SwitchProStatus",
+            "pub fn battery(&self) -> SwitchProBattery",
+            "pub fn set_battery( &mut self, battery: SwitchProBattery, ) -> Result<(), ControlError>",
             "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
             "pub fn set_inputs(&mut self, state: SwitchProInputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>",
@@ -6007,6 +6461,23 @@
             "impl !UnwindSafe for SwitchProController",
             "impl Send for SwitchProController",
             "impl Unpin for SwitchProController"
+          ]
+        },
+        "struct.SwitchProHomeLight.html": {
+          "declarations": [
+            "pub struct SwitchProHomeLight { pub brightness: u8, pub mini_cycle: [u8; 5], }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProHomeLight",
+            "impl Copy for SwitchProHomeLight",
+            "impl Debug for SwitchProHomeLight",
+            "impl Eq for SwitchProHomeLight",
+            "impl PartialEq for SwitchProHomeLight",
+            "impl RefUnwindSafe for SwitchProHomeLight",
+            "impl Send for SwitchProHomeLight",
+            "impl Sync for SwitchProHomeLight",
+            "impl Unpin for SwitchProHomeLight",
+            "impl UnwindSafe for SwitchProHomeLight"
           ]
         },
         "struct.SwitchProIdentity.html": {
@@ -6077,6 +6548,10 @@
           "declarations": [
             "#[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }",
             "pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions",
+            "pub const fn with_battery(self, battery: SwitchProBattery) -> SwitchProOptions",
+            "pub const fn battery(self) -> SwitchProBattery",
+            "pub const fn with_imu_gating(self, enabled: bool) -> SwitchProOptions",
+            "pub const fn imu_gating(self) -> bool",
             "pub const fn identity(self) -> Option<SwitchProIdentity>"
           ],
           "traits": [
@@ -6203,7 +6678,10 @@
           "declarations": [
             "pub struct SwitchProStatus { /* private fields */ }",
             "pub const fn timer(self) -> u8",
-            "pub const fn stream_enabled(self) -> bool"
+            "pub const fn stream_enabled(self) -> bool",
+            "pub const fn battery(self) -> SwitchProBattery",
+            "pub const fn imu_gating(self) -> bool",
+            "pub const fn imu_enabled(self) -> bool"
           ],
           "traits": [
             "impl Clone for SwitchProStatus",
@@ -6358,7 +6836,7 @@
             "pub fn import(bytes: Vec<u8>) -> Result<WiiEepromImage, ControlError>",
             "pub fn with_extension_calibration( self, calibration: WiiExtensionCalibration, ) -> WiiEepromImage",
             "pub fn extension_calibration(&self) -> &WiiExtensionCalibration",
-            "pub fn bytes(&self) -> &[u8] ⓘ"
+            "pub fn bytes(&self) -> &[u8] \u24d8"
           ],
           "traits": [
             "impl Clone for WiiEepromImage",
@@ -6863,6 +7341,7 @@
         "struct.XboxSeriesController.html": {
           "declarations": [
             "pub struct XboxSeriesController { /* private fields */ }",
+            "pub fn identity(&self) -> XboxSeriesIdentity",
             "pub fn inputs(&self) -> &XboxSeriesInputs",
             "pub fn status(&self) -> XboxSeriesStatus",
             "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
@@ -6892,6 +7371,27 @@
             "impl Unpin for XboxSeriesController"
           ]
         },
+        "struct.XboxSeriesIdentity.html": {
+          "declarations": [
+            "pub struct XboxSeriesIdentity(/* private fields */);",
+            "pub fn generate() -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesIdentity",
+            "impl Copy for XboxSeriesIdentity",
+            "impl Debug for XboxSeriesIdentity",
+            "impl Eq for XboxSeriesIdentity",
+            "impl Hash for XboxSeriesIdentity",
+            "impl PartialEq for XboxSeriesIdentity",
+            "impl RefUnwindSafe for XboxSeriesIdentity",
+            "impl Send for XboxSeriesIdentity",
+            "impl Sync for XboxSeriesIdentity",
+            "impl Unpin for XboxSeriesIdentity",
+            "impl UnwindSafe for XboxSeriesIdentity"
+          ]
+        },
         "struct.XboxSeriesInputs.html": {
           "declarations": [
             "pub struct XboxSeriesInputs { pub sticks: [[i16; 2]; 2], /* private fields */ }",
@@ -6917,7 +7417,9 @@
         },
         "struct.XboxSeriesOptions.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesOptions {}"
+            "#[non_exhaustive]pub struct XboxSeriesOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: XboxSeriesIdentity, ) -> XboxSeriesOptions",
+            "pub const fn identity(self) -> Option<XboxSeriesIdentity>"
           ],
           "traits": [
             "impl Clone for XboxSeriesOptions",

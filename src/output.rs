@@ -3,7 +3,8 @@ mod rumble;
 pub use rumble::{DualShock4Rumble, WiiRemoteRumble, Xbox360Rumble, XboxSeriesRumble};
 
 use crate::{
-    ControllerError, DualSenseHidOutput, DualShock4HidOutput, ForceFeedbackEvent, SwitchProRumble,
+    ControllerError, DualSenseHidOutput, DualShock4HidOutput, ForceFeedbackEvent,
+    SwitchProHomeLight, SwitchProRumble,
 };
 
 /// Host lifecycle observation, not controller destruction or automatic reopening.
@@ -53,6 +54,8 @@ pub enum Xbox360OutputEvent {
 pub enum SwitchProOutputEvent {
     HostLifecycle(HostLifecycle),
     ForceFeedback(ForceFeedbackEvent),
+    /// Source-only HOME button light request, not a player indicator.
+    HomeLight(SwitchProHomeLight),
     /// Native payload retains modes/subcommands beyond the compressed motor words.
     Output {
         report_id: Option<u8>,
@@ -111,6 +114,7 @@ pub(crate) fn switch_pro(
     Ok(match event {
         E::HidLifecycle(e) => Some(SwitchProOutputEvent::HostLifecycle(lifecycle(e))),
         E::ForceFeedback(e) => Some(SwitchProOutputEvent::ForceFeedback(e)),
+        E::HomeLight(light) => Some(SwitchProOutputEvent::HomeLight(light)),
         E::Output { report_id, bytes } => Some(SwitchProOutputEvent::Output { report_id, bytes }),
         E::HostRequest { .. } => return Err(request_leaked()),
         E::Other | E::ProviderEvent(_) => None,
@@ -217,13 +221,17 @@ mod tests {
             left_motor: None,
             right_trigger_effect: [11; 11],
             left_trigger_effect: [22; 11],
-            mute_button_led: Some(true),
+            mute_button_led: Some(crate::DualSenseMuteLed::On),
             microphone_muted: None,
             audio_path: Some(crate::DualSenseAudioPath::HeadphonesStereo),
             speaker_volume: Some(0x64),
             microphone_volume: None,
             speaker_preamp: None,
+            led_brightness: 0,
+            lightbar_setup: None,
+            release_leds: None,
             player_leds: Some(3),
+            player_led_instant: Some(false),
             lightbar_rgb: Some([1, 2, 3]),
         };
         assert_eq!(
@@ -247,6 +255,21 @@ mod tests {
             Some(DualShock4OutputEvent::HidOutput(output))
         );
     }
+    #[test]
+    fn switch_home_request_remains_typed_at_application_boundary() {
+        let home = gr_curated_controllers::SwitchProHomeLight {
+            brightness: 7,
+            mini_cycle: [1, 0x70, 0x77, 0x11, 0x11],
+        };
+        assert_eq!(
+            switch_pro(gr_curated_controllers::SwitchProOutputEvent::HomeLight(
+                home
+            ))
+            .unwrap(),
+            Some(SwitchProOutputEvent::HomeLight(home))
+        );
+    }
+
     #[test]
     fn switch_rumble_and_unknown_native_payloads_survive_conversion() {
         for id in [None, Some(1), Some(0x10), Some(0xff)] {

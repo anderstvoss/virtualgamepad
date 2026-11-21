@@ -23,11 +23,8 @@ support promotion is inferred.
 | Wii Remote | WIP | Unavailable³ | Unavailable³ | WIP | Deferred³ |
 
 ¹ `linux.uhid.bluetooth` is a local UHID node with Bluetooth bus5 metadata,
-now declared by DualSense (synthetic source-backed Bluetooth report descriptor;
-[realization scope](DUALSENSE_BLUETOOTH_UHID.md)), Xbox Series and Wii Remote.
-It remains WIP, and is available only where a compiled family manifest declares
-it. It provides no
-radio, pairing or BlueZ. Actual Bluetooth remains deferred to #164. USB
+available only where a compiled family manifest declares it. It provides no
+radio, pairing or BlueZ. DualSense has a [source-backed Bluetooth-bus UHID realization](DUALSENSE_BLUETOOTH_UHID.md) (P9a, #154) with a synthetic report descriptor, and Switch Pro has a [source-backed Bluetooth-bus UHID realization](SWITCH_PRO_BLUETOOTH.md) (P9c, #156); neither has P5b host acceptance. Actual Bluetooth remains deferred to #164. USB
 personality over UHID is a virtual HID presentation; dummy_hcd is separate.
 The Xbox 360 HID profiles are standard HID, not USB XInput. This table does not
 claim hardware fidelity, full function parity, audio or composite USB support.

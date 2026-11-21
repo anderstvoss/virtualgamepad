@@ -47,13 +47,11 @@ pub(crate) trait HidDriver:
         session: gr_realization_api::RealizationSessionId,
         identity: [u8; 6],
     ) -> Self::Hid;
-    /// Choose the protocol by exact realization; USB remains the default for
-    /// existing families and for DualSense's independent USB worker.
     fn hid_protocol_for_target(
         &self,
-        _: gr_realization_api::RealizationTarget,
         session: gr_realization_api::RealizationSessionId,
         identity: [u8; 6],
+        _target: gr_realization_api::RealizationTarget,
     ) -> Self::Hid {
         self.hid_protocol(session, identity)
     }
@@ -171,7 +169,7 @@ impl<D: HidDriver> ControllerSession<D> {
             Some(identity) => identity,
             None => driver.hid_identity()?,
         };
-        let protocol = driver.hid_protocol_for_target(selection.target, request.session, identity);
+        let protocol = driver.hid_protocol_for_target(request.session, identity, selection.target);
         let id = request.session.0;
         let transport = driver.open_hid(request)?;
         let runtime =
@@ -676,6 +674,7 @@ impl<D: HidDriver, P, W> ControllerSession<D, P, W> {
             available_in: gr_realization_api::RealizationTargetSet::new(&[
                 gr_realization_api::RealizationTarget::LINUX_UINPUT,
                 gr_realization_api::RealizationTarget::LINUX_UHID_USB,
+                gr_realization_api::RealizationTarget::LINUX_UHID_BLUETOOTH,
             ]),
         })
     }
@@ -744,10 +743,13 @@ fn provider_error(error: gr_hid::Error) -> ProviderError {
 }
 
 pub(crate) fn creation_identity() -> Result<[u8; 6], ProviderError> {
-    let mut source = std::fs::File::open("/dev/urandom").map_err(|error| ProviderError::Open {
-        reason: format!("open OS identity entropy: {error}"),
+    // OS-backed entropy on every supported development platform, without
+    // weakening the per-instance synthetic identity requirement.
+    let mut entropy = [0; 6];
+    getrandom::fill(&mut entropy).map_err(|error| ProviderError::Open {
+        reason: format!("read OS identity entropy: {error}"),
     })?;
-    read_identity(&mut source)
+    read_identity(&mut &entropy[..])
 }
 
 fn read_identity(source: &mut impl std::io::Read) -> Result<[u8; 6], ProviderError> {

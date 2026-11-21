@@ -1,9 +1,9 @@
-//! Source-backed, synthetic Bluetooth-bus UHID DualSense framing.
+//! Source-backed, synthetic Bluetooth-bus UHID `DualSense` framing.
 //!
-//! Local UHID bus 5 is not a radio, pairing, or BlueZ implementation.
+//! Local UHID bus 5 is not a radio, pairing, or `BlueZ` implementation.
 //! The HID descriptor is consumer-compatible and NOT a captured retail descriptor.
-//! Linux: https://github.com/torvalds/linux/blob/4056b3c9d3c92ea45955641dbafeb9b960e146ef/drivers/hid/hid-playstation.c#L76-L95
-//! SDL: https://github.com/libsdl-org/SDL/blob/535d80badefc83c5c527ec5748f2a20d6a9310fe/src/joystick/hidapi/SDL_hidapi_ps5.c#L1431-L1475
+//! Linux: <https://github.com/torvalds/linux/blob/4056b3c9d3c92ea45955641dbafeb9b960e146ef/drivers/hid/hid-playstation.c#L76-L95>
+//! SDL: <https://github.com/libsdl-org/SDL/blob/535d80badefc83c5c527ec5748f2a20d6a9310fe/src/joystick/hidapi/SDL_hidapi_ps5.c#L1431-L1475>
 
 use super::{DualSenseSessionState, dualsense_hid_input_report};
 use gr_hid::{ReplyError, Report, ReportType};
@@ -21,14 +21,10 @@ pub(super) const ENHANCED_LENGTH: usize = 78;
 // The generic vendor usage fields intentionally make no physical control-map
 // claim beyond the report sizes and IDs.
 pub(super) const DESCRIPTOR: &[u8] = &[
-    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x06, 0x00, 0xff,
-    0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08,
-    0x85, 0x01, 0x09, 0x01, 0x95, 0x09, 0x81, 0x02,
-    0x85, 0x31, 0x09, 0x02, 0x95, 0x4d, 0x81, 0x02,
-    0x09, 0x03, 0x95, 0x4d, 0x91, 0x02,
-    0x85, 0x05, 0x09, 0x04, 0x95, 0x28, 0xb1, 0x02,
-    0x85, 0x09, 0x09, 0x05, 0x95, 0x13, 0xb1, 0x02,
-    0x85, 0x20, 0x09, 0x06, 0x95, 0x3f, 0xb1, 0x02, 0xc0,
+    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x06, 0x00, 0xff, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08,
+    0x85, 0x01, 0x09, 0x01, 0x95, 0x09, 0x81, 0x02, 0x85, 0x31, 0x09, 0x02, 0x95, 0x4d, 0x81, 0x02,
+    0x09, 0x03, 0x95, 0x4d, 0x91, 0x02, 0x85, 0x05, 0x09, 0x04, 0x95, 0x28, 0xb1, 0x02, 0x85, 0x09,
+    0x09, 0x05, 0x95, 0x13, 0xb1, 0x02, 0x85, 0x20, 0x09, 0x06, 0x95, 0x3f, 0xb1, 0x02, 0xc0,
 ];
 
 fn update_crc(mut crc: u32, byte: u8) -> u32 {
@@ -73,8 +69,8 @@ fn usb_common(state: &DualSenseSessionState) -> Vec<u8> {
 pub(super) fn simple_input(state: &DualSenseSessionState) -> Report {
     let common = usb_common(state);
     let bytes = vec![
-        common[0], common[1], common[2], common[3],
-        common[7], common[8], common[9], common[4], common[5],
+        common[0], common[1], common[2], common[3], common[7], common[8], common[9], common[4],
+        common[5],
     ];
     Report::new(ReportType::Input, Some(1), bytes).expect("fixed synthetic report")
 }
@@ -87,13 +83,6 @@ pub(super) fn enhanced_input(state: &DualSenseSessionState) -> Report {
     wire[2..65].copy_from_slice(&usb_common(state));
     sign(INPUT_SEED, &mut wire);
     Report::from_wire(ReportType::Input, true, &wire).expect("fixed synthetic report")
-}
-
-/// Existing source-only USB feature values are the common source of truth.
-/// On the Bluetooth bus, the last four bytes of each feature are its CRC.
-pub(super) fn feature_wire(mut wire: Vec<u8>) -> Vec<u8> {
-    sign(FEATURE_SEED, &mut wire);
-    wire
 }
 
 /// Validate the full host Bluetooth output before decoding its common block.
@@ -125,7 +114,10 @@ pub(super) fn normalized_output(report: &Report) -> Result<Report, ReplyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dualsense::{DualSenseAxis, DualSenseControl, DualSenseInputs, DualSenseTouchContact, MotionSample, TouchSlot};
+    use crate::dualsense::{
+        DualSenseAxis, DualSenseControl, DualSenseInputs, DualSenseTouchContact, MotionSample,
+        TouchSlot,
+    };
 
     #[test]
     fn synthetic_descriptor_declares_bluetooth_only_report_shapes() {
@@ -138,7 +130,11 @@ mod tests {
             &[0x85, 0x09, 0x09, 0x05, 0x95, 0x13, 0xb1, 0x02],
             &[0x85, 0x20, 0x09, 0x06, 0x95, 0x3f, 0xb1, 0x02],
         ] {
-            assert!(DESCRIPTOR.windows(declaration.len()).any(|w| w == declaration));
+            assert!(
+                DESCRIPTOR
+                    .windows(declaration.len())
+                    .any(|w| w == declaration)
+            );
         }
         assert_ne!(DESCRIPTOR, gr_controller_wire::dualsense::USB_DESCRIPTOR);
     }
@@ -146,7 +142,10 @@ mod tests {
     #[test]
     fn neutral_and_known_state_use_distinct_simple_and_enhanced_framing() {
         let neutral = DualSenseSessionState::default();
-        assert_eq!(simple_input(&neutral).wire(), [1, 128, 128, 128, 128, 8, 0, 0, 0, 0]);
+        assert_eq!(
+            simple_input(&neutral).wire(),
+            [1, 128, 128, 128, 128, 8, 0, 0, 0, 0]
+        );
         let enhanced = enhanced_input(&neutral).wire();
         assert_eq!(enhanced.len(), 78);
         assert_eq!(&enhanced[..10], &[0x31, 0, 128, 128, 128, 128, 0, 0, 1, 8]);
@@ -155,10 +154,19 @@ mod tests {
 
         let mut s = neutral;
         let mut input = DualSenseInputs::default();
-        input.set_sticks((DualSenseAxis::new(12), DualSenseAxis::new(34)), (DualSenseAxis::new(56), DualSenseAxis::new(78)));
+        input.set_sticks(
+            (DualSenseAxis::new(12), DualSenseAxis::new(34)),
+            (DualSenseAxis::new(56), DualSenseAxis::new(78)),
+        );
         input.set_native(DualSenseControl::Cross, true);
-        input.set_touch(TouchSlot::First, Some(DualSenseTouchContact::new(3, 100, 200).unwrap()));
-        input.set_motion(MotionSample { gyroscope: [1, 2, 3], accelerometer: [4, 5, 6] });
+        input.set_touch(
+            TouchSlot::First,
+            Some(DualSenseTouchContact::new(3, 100, 200).unwrap()),
+        );
+        input.set_motion(MotionSample {
+            gyroscope: [1, 2, 3],
+            accelerometer: [4, 5, 6],
+        });
         s.inputs = input;
         let simple = simple_input(&s).wire();
         assert_eq!(simple, [1, 12, 34, 56, 78, 0x28, 0, 0, 0, 0]);
@@ -173,7 +181,11 @@ mod tests {
         for start in [2, 3] {
             let mut wire = vec![0; ENHANCED_LENGTH];
             wire[0] = ENHANCED_ID;
-            if start == 2 { wire[1] = 0x02; } else { wire[2] = 0x10; }
+            if start == 2 {
+                wire[1] = 0x02;
+            } else {
+                wire[2] = 0x10;
+            }
             wire[start] = 0x01; // compatible motor flag
             wire[start + 2] = 13;
             wire[start + 3] = 37;

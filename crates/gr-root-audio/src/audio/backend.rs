@@ -11,6 +11,25 @@ pub(crate) trait Backend: Send + Sync {
     fn is_closed(&self) -> bool;
     fn underrun_frames(&self) -> u64;
     fn dropped_playback_frames(&self) -> u64;
+    /// Stage-local queue accounting. None means that boundary is not instrumented.
+    fn playback_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        None
+    }
+    fn microphone_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        None
+    }
+    fn playback_callback_rejected_frames(&self) -> Option<u64> {
+        None
+    }
+    fn microphone_callback_rejected_frames(&self) -> Option<u64> {
+        None
+    }
+    fn playback_silence_frames(&self) -> Option<u64> {
+        None
+    }
+    fn microphone_silence_frames(&self) -> Option<u64> {
+        None
+    }
     fn native_playback_underrun_frames(&self) -> Option<u64> {
         None
     }
@@ -88,6 +107,24 @@ impl Backend for gr_audio_linux::Session {
     }
     fn dropped_playback_frames(&self) -> u64 {
         Self::dropped_playback_frames(self)
+    }
+    fn playback_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        Self::playback_accounting(self)
+    }
+    fn microphone_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        Self::microphone_accounting(self)
+    }
+    fn playback_callback_rejected_frames(&self) -> Option<u64> {
+        Some(Self::dropped_playback_frames(self))
+    }
+    fn microphone_callback_rejected_frames(&self) -> Option<u64> {
+        Self::microphone_callback_rejected_frames(self)
+    }
+    fn playback_silence_frames(&self) -> Option<u64> {
+        Self::playback_silence_frames(self)
+    }
+    fn microphone_silence_frames(&self) -> Option<u64> {
+        Self::microphone_silence_frames(self)
     }
     fn error(&self) -> Option<&AudioError> {
         Self::error(self)

@@ -1,6 +1,39 @@
 # Pre-alpha API refinement migration
 
+## Brief 16 A0 — per-direction loss accounting (ar1-audio-telemetry)
+
+**Additive ordinary-root API** (both default and all-feature snapshot views; no renamed or removed symbols):
+- `AudioDiagnostics::playback_accounting() -> Option<&AudioDirectionAccounting>` and `AudioDiagnostics::microphone_accounting() -> Option<&AudioDirectionAccounting>`.
+- `AudioDirectionAccounting` (`#[non_exhaustive]`, `Clone + Copy + Debug + PartialEq + Eq`) exposes `direction: SampleDirection`, `generation: u64`, `produced_frames`, `accepted_frames`, `consumed_frames`, `dropped_at_ingress_frames`, `dropped_on_flush_frames`, `dropped_on_close_frames`, `queued_frames`, `discontinuities` (all frame counters `u64`), and optional `dropped_in_callback_frames`, `dropped_in_worker_frames`, `silence_inserted_frames` (`Option<u64>`).
+- Internal/supporting queue SPI adds `PcmQueueAccounting` and `PcmProducer::accounting()`, `PcmConsumer::accounting()`, `PcmConsumer::observer()`, `PcmObserver::accounting()`, with generation and cumulative queue counter fields. PipeWire `Session` and USB client-pump `SampleStreams` expose local queue snapshots; no broker or worker IPC wire change.
+
+Source padding is now attributed to the specific PipeWire direction while the original legacy aggregate `underrun_frames()` is preserved. Real USB Samples mode reports `None` for its unobserved retained silence stage; callers must consult separately queried USB microphone progress.
+
+**Migration:** Existing `diagnostics()` consumers require no change; the five existing getters keep their meanings. New getters return `None` for an uninstrumented direction; optional stage fields are not numerical zeros. A record is a nontransactional **queue-local** snapshot: graph/worker/USB stage counts may overlap, so never sum unrelated counters to claim end-to-end frames. `generation` distinguishes explicit flush/reset from numerical counter wrap; the queue refuses generation overflow. See [A0 loss inventory](AUDIO_LOSS_ACCOUNTING.md) and [synthetic receipt](../crates/gr-audio-contract/tests/fake_clock_receipt.rs). The alpha API snapshot is regenerated/reviewed separately in this PR; live host and physical qualification were **not run**.
+
+## P10a · Xbox Series synthetic identity (Alpha 2)
+
+`XboxSeriesIdentity` is added to the ordinary root and supporting Xbox Series
+API. Applications can call `generate()`, `from_bytes([u8; 6])`, and `bytes()`
+to persist a locally administered synthetic identity; `XboxSeriesOptions`
+now carries an optional identity via `with_identity()` / `identity()`.
+`XboxSeriesController::identity()` returns the selected identity after close.
+
+**Migration:** Existing `XboxSeriesOptions::default()` callers require no
+source change. Default sessions now allocate an independent identity using OS
+entropy. Bluetooth UHID exposes that identity in `uniq` instead of a fixed
+prefix plus creation suffix; explicitly restored sessions keep it stable across
+reopen, while `phys` remains unique for each opening. Uinput still has no
+controller-reported identity; the handle retains the value only. No physical
+radio or host acceptance is claimed. Root snapshot declarations and the
+generated inventory's Xbox Series pages are updated for this delta.
+
+
+
 This is a deliberate breaking candidate update before the final alpha freeze.
+
+**P9c Switch Pro (Bluetooth-bus UHID):** the family now declares an additional explicitly selectable `linux.uhid.bluetooth` realization with source-only restrictions for MCU, radio and audio. Existing `SwitchProOptions`, handle input/status/output types, and root public signatures are unchanged. No API snapshot delta is expected; the checked-in snapshot remains authoritative. Consumer code must request this target explicitly; never fall back to USB.
+
 Start with the [final alpha.1 → alpha.2 consumer table](#alpha1--alpha2-final-consumer-table).
 The PR sections below are chronological history: intermediate combined state
 closures and standalone identity/image/options constructors are superseded by
@@ -42,6 +75,32 @@ Post-GUI audit: the empty root `audio-alsa` feature is removed. ALSA host-device
 routing belongs to the demo's `audio-alsa` feature, whose defaults are unchanged.
 Library users enable `audio-pipewire` for local UHID audio or `audio-usbip` for the
 WIP composite; ALSA routing does not add a library realization.
+
+## Alpha 2 G2 · DualSense adaptive trigger effects (c3b)
+
+Root default/all-feature API snapshots add `DualSenseTriggerEffect`,
+`DualSenseTriggerZoneForces`, `DualSenseTriggerEffectUpdate` and
+`decode_dualsense_trigger_effect([u8; 11]) -> DualSenseTriggerEffect`;
+`DualSenseHidOutput::trigger_effects()` returns
+`Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>` in
+right, left order. Matching types/function are re-exported from curated and
+experimental surfaces. The existing `UsbOutput` fields and raw 11-byte blocks
+are unchanged. For each side, `valid = false` means the host did **not**
+update that effect; `effect = None` is not equivalent to `Off`.
+
+Source-supported modes are Off 0x05, Feedback 0x21, Weapon 0x25 and
+Vibration 0x26. Zones are indices 0..9; 3-bit encoder strength codes expose
+levels 1..8; vibration frequency is the native code, not proven Hz.
+Noncanonical parameters, unknown mode bytes and SDL demonstration 0x01/0x06
+are `Unknown` with full original bytes. This is pure interpretation of
+accepted USB host-output bytes, not a new output path, journal or physical
+actuation. Bluetooth output framing remains unparsed in the current HID
+output decoder. The uinput adaptive-trigger refusal remains unchanged.
+Research: ds-l0-device-adaptive-trigger-mode-block,
+ds-l0-device-adaptive-trigger-mode-parameters,
+ds-l0-sdl-trigger-demo-modes,
+ds-l0-physical-adaptive-trigger-unknown,
+ds-vg-exp0016-steam-trigger-disagreement. Source evidence only.
 
 ## Historical capability and supporting-API ledger
 
@@ -908,3 +967,66 @@ These additive ordinary-root declarations do not change protocol admission or qu
 **Public API delta:** `create_dualsense(CreationOptions::new(RealizationId::LINUX_UHID_BLUETOOTH), DualSenseOptions::default())` now accepts this exact target, with no USB fallback. The existing `RealizationId`, `DualSenseInputs`, `DualSenseStatus`, `DualSenseIdentity`, `set_inputs`, `edit_inputs`, and `host_outputs` signatures do not change. The report codec is internal. The checked-in alpha API snapshot and generated inventory have **no signature additions**, so the snapshot must remain byte-identical after `scripts/check-alpha-api.py`.
 
 The explicit Bluetooth creation path generates one creation-owned identity if none was supplied; that same identity supplies UHID `uniq`, the pairing feature response and restoration. The local UHID node reports bus 5 and 054c:0ce6 but does not pair, connect over radio or expose Bluetooth audio. The descriptor is a synthetic source-compatible report declaration; all per-function acceptance entries remain WIP. Linux host / SDL / Steam tests are not run in this cloud PR and follow in P5b. Source-only research: [p9a gap brief](https://github.com/anderstvoss/controller-protocol-research/blob/40e43c5c1580f0791aa7fae9aa83661c128fc36c/docs/p9a-dualsense-bt-uhid.md).
+
+## Audio Round 2 — cooperative Native HID PipeWire sidecar association
+
+- Added `AudioSidecarAssociation` and
+  `ControllerAudio::sidecar_association() -> Option<&AudioSidecarAssociation>`.
+  The borrowed value exposes a stable
+  creation-scoped `key() -> &str` and `node_names() -> &[String]`; it is
+  `None` for Real USB audio, disabled audio and non-sidecar backends.
+- New PipeWire sidecar nodes publish `device.vendor.id`, `device.product.id`,
+  `device.product.name`, `device.serial` (exact pre-existing UHID uniq),
+  `virtualgamepad.realization.id` and `virtualgamepad.association.key`.
+  These are cooperative lookup metadata, not a stock SDL/Steam/WirePlumber
+  association, kernel USB ancestry, or host-validated routing.
+- UHID creation now precedes its companion PipeWire stream opening so the
+  sidecar receives the **actual** curated UHID uniq, including restored IDs.
+  Any audio-open error closes the already-created HID controller; no fallback
+  or persistent orphan audio is allowed. Real USB broker/IPC formats unchanged.
+- Unit tests construct properties/accessors without PipeWire; host verification
+  is planned in `docs/CONTROLLER_AUDIO.md` and **not run**.
+
+## P2 DualSense LED output decoding (#154, #365; 2026-11-20)
+
+- `DualSenseFeature` adds `PlayerIndicators` and `MicrophoneLed`. `Lightbar` now denotes only the RGB lightbar. The feature query still does not offer an application-side native LED command; output is reverse/host-observed. Linux uinput cannot receive native DualSense LED reports.
+- New `DualSenseMuteLed` has `Off`, `On`, `Pulse`, and `Unknown(u8)`. Change exhaustive consumers of `DualSenseHidOutput::UsbOutput.mute_button_led` from `Option<bool>` to `Option<DualSenseMuteLed>`; pulse and unknown bytes no longer collapse to `true`.
+- `DualSenseHidOutput::UsbOutput` adds `led_brightness: u8` (raw; conflicting encoding in research claim `ds-cgap-led-brightness-encoding-disagreement`), `lightbar_setup: Option<u8>` (valid_flag2 bit 1), `release_leds: Option<bool>` (Some(true) for valid_flag1 bit 3, otherwise None), and `player_led_instant: Option<bool>` (valid_flag1 bit 4). `player_leds` now contains only five indicator bits (0–4), with bit 5 exposed separately.
+- Consumers needing the complete original packet should continue to use `raw`. The legacy retained `DualSenseOutputState.player_leds` remains the original player-LED byte; it does not adopt the new event field's mask. No other retained-state ABI or wire serialization changes.
+- Updated GUI presents five indicators, instant/fade, mute pulse/unknown, and uninterpreted brightness. The changes and tests are source-only; L1–L8 physical checks are not run.
+
+### #365 · Sony caller-supplied device data (P10b)
+
+- Add ordinary-root `DualSenseDeviceData` and `DualShock4DeviceData`.
+  Both default to the existing byte-stable synthetic calibration and firmware
+  USB feature replies; neither includes a device identity.
+- Import with `from_feature_reports(calibration, firmware)`,
+  `with_feature_report(report_id, bytes)`, or `load_file(path)`.
+  Read with `feature_report(report_id)` and export with
+  `save_file(path)`. Imports reject unknown reports, wrong sizes,
+  zero calibration denominators and Bluetooth framing.
+- New `DualSenseOptions::with_device_data(data)` /
+  `DualShock4Options::with_device_data(data)` builders and
+  `device_data()` accessors supply and inspect per-instance settings.
+  Controller handles also expose `device_data()` after close.
+- No existing caller migration is required for defaults; the previous
+  synthetic values remain unchanged. To restore a custom profile, capture
+  `controller.device_data()` before disposal and pass a copy in the next
+  creation's family options. Restore pairing identity separately.
+- Explicit Sony device data on `linux.usbip.usb-audio` returns typed
+  `ControllerError::Unsupported` before opening a worker. USB/IP continues
+  using its existing synthetic feature replies and unchanged worker protocol.
+  No physical capture, host observation or Bluetooth qualification is claimed.
+  See [Device data](DEVICE_DATA.md).
+
+## Alpha 2 p2b — Switch Pro native battery, HOME light and optional IMU gating (#156 / #365)
+
+Source-only implementation (no physical Switch Pro, voltage/timing qualification, or support-matrix promotion). Research claims: `swpro-l0-device-battery-connection-bits`, `swpro-cgap-home-led-consumer`, `swpro-l0-consumer-imu-rumble-ack-gates`.
+
+- New ordinary-root public types: `SwitchProBatteryLevel` (five encoded bands), `SwitchProBattery` (`level`, `charging`, `usb_powered`) and `SwitchProHomeLight` (`brightness` and unmodified five-byte `mini_cycle`). The battery state is native band/power metadata, **not** a percentage estimate. The default encodes input-report battery/connection byte `0x80`, unchanged.
+- `SwitchProOptions::with_battery` / `battery` set/read creation-time state; `with_imu_gating` / `imu_gating` opt into zero IMU samples until subcommand `0x40` enables sensors (default `false` preserves old streaming behavior). Callers selecting new behavior must opt in.
+- `SwitchProController::battery` and `set_battery` expose current and live typed battery metadata. `SwitchProStatus::battery`, `imu_gating`, and `imu_enabled` expose accepted values without mixing session metadata into caller-owned inputs.
+- `SwitchProOutputEvent::HomeLight(SwitchProHomeLight)` reports accepted 0x38 requests independently of `OutputKind::PlayerIndicator { count: 4 }`. The previous generic ACK remains; malformed/truncated 0x38 request bodies retain their original output form. Matchers on the non-exhaustive output enum should account for the new variant. The raw mini-cycle data are intentionally not assigned unsourced semantics.
+- Existing `SwitchProInputs` mutators and default constructor remain unchanged. No new dependencies.
+
+Regression IDs: `battery_status_encodes_native_level_charging_and_pro_power`, `home_light_keeps_generic_ack_and_typed_minicycle_separate_from_players`, `native_service_retains_imu_enable_status_for_opted_in_frames`, `imu_samples_are_gated_only_with_opt_in_and_host_enable`, `switch_home_request_remains_typed_at_application_boundary`. These are deterministic source-only tests; no device or host acceptance claim.
