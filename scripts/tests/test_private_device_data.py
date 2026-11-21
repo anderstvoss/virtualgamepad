@@ -45,7 +45,7 @@ class PrivateDeviceDataTests(unittest.TestCase):
                 'switch-spi.bin': sample,
                 'sony-feature.bin': sample[:41],
                 'ordinary.bin': b'ordinary printable fixture',
-                'notes.md': 'Synthetic feature descriptions only.\\n'.encode(),
+                'notes.md': 'Synthetic feature descriptions only.\n'.encode(),
             }
             for name, data in fixtures.items():
                 (repo / name).write_bytes(data)
@@ -60,7 +60,7 @@ class PrivateDeviceDataTests(unittest.TestCase):
         self.assertEqual(guard.violations(root), [])
         check = subprocess.run(
             ['git', 'check-ignore', '--no-index', '--stdin'], cwd=root,
-            input='private/example.txt\\nsynthetic.private.bin\\n',
+            input='private/example.txt\nsynthetic.private.bin\n',
             text=True, capture_output=True, check=False)
         self.assertEqual(check.returncode, 0)
         self.assertEqual(len(check.stdout.strip().splitlines()), 2)

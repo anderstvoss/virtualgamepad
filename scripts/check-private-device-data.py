@@ -8,7 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-MAGIC = b'VGPWEEP\\0'
+MAGIC = b'VGPWEEP\0'
 DUMP_EXTENSIONS = ('.wii-eeprom', '.switch-spi', '.sony-feature', '.device-dump')
 DATA_EXTENSIONS = ('.bin', '.dump', '.dat', '.raw', '.hex')
 WII_LENGTHS = {0x1700, 0x10000}
@@ -22,14 +22,14 @@ def _looks_binary(content):
     if not content:
         return False
     sample = content[:1024]
-    return b'\\0' in sample or sum(
+    return b'\0' in sample or sum(
         byte < 9 or 13 < byte < 32 or byte > 126 for byte in sample
     ) * 5 >= len(sample)
 
 
 def suspicious(name, content):
     """Conservative shape heuristics; no attempt to identify a physical unit."""
-    lower = name.decode('utf-8', errors='replace').replace('\\\\', '/').lower()
+    lower = name.decode('utf-8', errors='replace').replace('\\', '/').lower()
     parts = lower.split('/')
     basename = parts[-1]
     if 'private' in parts or any('.private.' in segment for segment in parts):
@@ -55,10 +55,10 @@ def suspicious(name, content):
 
 def violations(repo):
     entries = subprocess.check_output(
-        ['git', 'ls-files', '--stage', '-z'], cwd=repo).split(b'\\0')
+        ['git', 'ls-files', '--stage', '-z'], cwd=repo).split(b'\0')
     files = []
     for entry in filter(None, entries):
-        metadata, name = entry.split(b'\\t', 1)
+        metadata, name = entry.split(b'\t', 1)
         mode, oid, _stage = metadata.split()
         if mode != b'160000':
             files.append((name, oid))
@@ -66,12 +66,12 @@ def violations(repo):
         return []
     output = subprocess.run(
         ['git', 'cat-file', '--batch'], cwd=repo,
-        input=b''.join(oid + b'\\n' for _, oid in files),
+        input=b''.join(oid + b'\n' for _, oid in files),
         stdout=subprocess.PIPE, check=True).stdout
     offset = 0
     rejected = set()
     for name, _ in files:
-        end = output.index(b'\\n', offset)
+        end = output.index(b'\n', offset)
         size = int(output[offset:end].rsplit(b' ', 1)[1])
         start = end + 1
         content = output[start:start + size]
