@@ -40,9 +40,10 @@ pub fn dualsense(
     dualsense::DualSenseDefinition::default().hid_protocol(RealizationSessionId(0), identity)
 }
 
-/// Use an explicitly validated immutable feature profile for USB/IP.
+/// Pure protocol test seam; USB/IP worker creation accepts synthetic data only.
+#[cfg(test)]
 #[must_use]
-pub fn dualsense_with_device_data(
+fn dualsense_with_device_data(
     identity: [u8; 6],
     data: dualsense::DualSenseDeviceData,
 ) -> impl WorkerProtocol<State = dualsense::DualSenseSessionState, Output = RawReverseEvent> {
@@ -56,9 +57,10 @@ pub fn dualshock4(
     dualshock4::DualShock4Definition::default().hid_protocol(RealizationSessionId(0), identity)
 }
 
-/// Use an explicitly validated immutable DualShock 4 USB/IP feature profile.
+/// Pure protocol test seam; not an installed USB/IP worker configuration API.
+#[cfg(test)]
 #[must_use]
-pub fn dualshock4_with_device_data(
+fn dualshock4_with_device_data(
     identity: [u8; 6],
     data: dualshock4::DualShock4DeviceData,
 ) -> impl WorkerProtocol<State = dualshock4::DualShock4SessionState, Output = RawReverseEvent> {
