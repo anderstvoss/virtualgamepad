@@ -1,9 +1,9 @@
 //! Opt-in synthetic host output evidence. No contact, motion or PCM injection.
 #![cfg(target_os = "linux")]
 use gr_curated_controllers::{
-    CreationOptions, DualSenseAudioPath, DualSenseHidOutput, DualSenseOutputEvent,
-    DualShock4HidOutput, DualShock4OutputEvent, SwitchProOutputEvent, SwitchProRumble,
-    create_dualsense, create_dualshock4, create_switch_pro,
+    CreationOptions, DualSenseAudioPath, DualSenseHidOutput, DualSenseMuteLed,
+    DualSenseOutputEvent, DualShock4HidOutput, DualShock4OutputEvent, SwitchProOutputEvent,
+    SwitchProRumble, create_dualsense, create_dualshock4, create_switch_pro,
 };
 use gr_realization_api::{RealizationSessionId, RealizationTarget};
 use std::{
@@ -188,6 +188,29 @@ fn player_ack_rejects_wrong_status_truncation_and_nonzero_reserved_bytes() {
     }
 }
 
+fn assert_dualsense_trigger_blocks_and_idle(
+    controller: &mut gr_curated_controllers::DualSenseController,
+    observed: &[DualSenseHidOutput],
+) {
+    // ds-l0-sdl-trigger-demo-modes: fields stay raw if the right/left
+    // update bits were not set. No physical or host interpretation.
+    let (right, left) = observed[0].trigger_effects().expect("USB trigger blocks");
+    assert!(!right.valid && !left.valid);
+    assert!(right.effect.is_none() && left.effect.is_none());
+    assert_eq!(right.raw, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    assert_eq!(left.raw, [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+    for _ in 0..5 {
+        controller
+            .service(&mut |event| {
+                assert!(
+                    !matches!(event, DualSenseOutputEvent::HidOutput(_)),
+                    "idle poll replayed output"
+                );
+            })
+            .unwrap();
+    }
+}
+
 #[test]
 #[ignore = "requires prepared ordinary-user UHID/hidraw access; synthetic outputs only"]
 fn dualsense_exact_host_outputs_and_idle_service() {
@@ -242,13 +265,21 @@ fn dualsense_exact_host_outputs_and_idle_service() {
                 left_motor: Some(motors.1),
                 right_trigger_effect: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
                 left_trigger_effect: [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
-                mute_button_led: Some(index % 2 == 0),
+                mute_button_led: Some(if index % 2 == 0 {
+                    DualSenseMuteLed::On
+                } else {
+                    DualSenseMuteLed::Off
+                }),
                 microphone_muted: Some(index % 2 == 1),
                 audio_path: Some(route),
                 speaker_volume: Some(64),
                 microphone_volume: Some(96),
                 speaker_preamp: Some(5),
+                led_brightness: 0,
+                lightbar_setup: None,
+                release_leds: None,
                 player_leds: Some(0x15),
+                player_led_instant: Some(false),
                 lightbar_rgb: Some([32, 64, 128]),
             };
             let packet: Vec<_> = std::iter::once(2).chain(raw).collect();
@@ -270,23 +301,7 @@ fn dualsense_exact_host_outputs_and_idle_service() {
                 vec![expected],
                 "exact observation and callback order"
             );
-            // ds-l0-sdl-trigger-demo-modes: fields stay raw if the right/left
-            // update bits were not set. No physical or host interpretation.
-            let (right, left) = observed[0].trigger_effects().expect("USB trigger blocks");
-            assert!(!right.valid && !left.valid);
-            assert!(right.effect.is_none() && left.effect.is_none());
-            assert_eq!(right.raw, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-            assert_eq!(left.raw, [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
-            for _ in 0..5 {
-                controller
-                    .service(&mut |event| {
-                        assert!(
-                            !matches!(event, DualSenseOutputEvent::HidOutput(_)),
-                            "idle poll replayed output"
-                        );
-                    })
-                    .unwrap();
-            }
+            assert_dualsense_trigger_blocks_and_idle(&mut controller, &observed);
         }
     }));
     controller.close();
