@@ -49,7 +49,7 @@ impl SwitchUsbProtocol {
             return Err(ReplyError::Unsupported);
         }
         let bytes = report.payload();
-        if bytes.len() > 63 {
+        if bytes.len() > if self.bluetooth { 48 } else { 63 } {
             return Err(ReplyError::Invalid);
         }
         if self.pending.len() == 31 {
@@ -64,9 +64,14 @@ impl SwitchUsbProtocol {
                     )));
             }
             Some(1) if bytes.len() >= 10 => {
-                if self.bluetooth && matches!(bytes[9], 0x20 | 0x21 | 0x22) {
-                    // Pro-specific MCU behavior is unverified; never synthesize
-                    // a successful NFC/IR MCU response on the Bluetooth path.
+                if self.bluetooth && (
+                    matches!(bytes[9], 0x20 | 0x21 | 0x22)
+                    || (bytes[9] == 0x03
+                        && !matches!(bytes.get(10), Some(&0x30) | Some(&0x3f)))
+                ) {
+                    // Only source-defined simple/full input mode is available.
+                    // Pro-specific MCU behavior is unverified; no successful
+                    // NFC/IR MCU or unsupported report-mode response is invented.
                     return Err(ReplyError::Unsupported);
                 }
                 let (reply, enable) =
@@ -246,6 +251,10 @@ mod bluetooth_tests {
         assert_eq!(bt.process_inner(&usb_command, 0), Err(ReplyError::Invalid));
         let mcu = subcommand(0x21, &[0x01]);
         assert_eq!(bt.process_inner(&mcu, 0), Err(ReplyError::Unsupported));
+        assert_eq!(
+            bt.process_inner(&subcommand(0x03, &[0x31]), 0),
+            Err(ReplyError::Unsupported)
+        );
         let mcu_output = Report::new(ReportType::Output, Some(0x11), vec![0; 9]).unwrap();
         assert_eq!(bt.process_inner(&mcu_output, 0), Err(ReplyError::Unsupported));
         assert!(bt.pending.is_empty());
@@ -291,7 +300,7 @@ mod bluetooth_tests {
     #[test]
     fn malformed_output_request_is_rejected_before_any_queued_reply() {
         let mut bt = SwitchUsbProtocol::new(identity(1), true);
-        for (id, len) in [(1, 9), (0x10, 8), (0x80, 1), (0x11, 9)] {
+        for (id, len) in [(1, 9), (0x10, 8), (0x80, 1), (0x11, 9), (1, 49)] {
             let request = Report::new(ReportType::Output, Some(id), vec![0; len]).unwrap();
             assert!(matches!(
                 bt.request(&RequestKind::Set(request), 1).0,
