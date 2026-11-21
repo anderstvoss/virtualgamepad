@@ -1,6 +1,5 @@
 """Synthetic-only regression tests; no device or privileged operation is performed."""
 import importlib.util
-import io
 import json
 import tempfile
 from pathlib import Path
