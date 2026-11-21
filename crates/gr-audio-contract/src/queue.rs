@@ -336,6 +336,12 @@ impl PcmConsumer {
     pub fn accounting(&self) -> PcmQueueAccounting {
         self.shared.accounting()
     }
+    #[must_use]
+    pub fn observer(&self) -> PcmObserver {
+        PcmObserver {
+            shared: self.shared.clone(),
+        }
+    }
 }
 #[cfg(test)]
 mod tests {
