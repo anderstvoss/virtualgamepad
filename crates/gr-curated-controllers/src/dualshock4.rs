@@ -1813,7 +1813,7 @@ mod tests {
             RealizationTarget::LINUX_USBIP_USB_AUDIO,
         ] {
             let session = input_validation_session(DualShock4Definition, target, [true; 3]);
-            let mut controller = DualShock4Controller(session);
+            let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller
                 .0
@@ -1915,7 +1915,7 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
             let (session, io) = snapshot_session(DualShock4Definition, target, [true; 3]);
-            let mut controller = DualShock4Controller(session);
+            let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller.commit().unwrap();
             if target == RealizationTarget::LINUX_UINPUT {
@@ -1993,7 +1993,7 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
             let (session, io) = snapshot_session(DualShock4Definition, target, [true; 3]);
-            let mut controller = DualShock4Controller(session);
+            let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller
                 .edit_inputs(|state| {
@@ -2102,7 +2102,7 @@ mod tests {
         ] {
             let is_uinput = target == RealizationTarget::LINUX_UINPUT;
             let session = input_validation_session(DualShock4Definition, target, [true; 3]);
-            let mut controller = DualShock4Controller(session);
+            let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             check_opposing_dpad!(controller, true);
             controller.neutralize().unwrap();
@@ -2215,7 +2215,7 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
             let (session, io) = snapshot_session(DualShock4Definition, target, [true, true, true]);
-            let mut controller = DualShock4Controller(session);
+            let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller
                 .0
                 .update_state(|current| {
@@ -2301,7 +2301,7 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             [true; 3],
         );
-        let mut controller = DualShock4Controller(session);
+        let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
         let mut snapshot = DualShock4SessionState::default();
         snapshot.inputs.set_touch(
             DualShock4TouchSlot::First,
