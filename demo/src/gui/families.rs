@@ -436,7 +436,7 @@ impl Controller {
                 Ok(())
             }
             Self::SwitchPro(controller) => controller
-                .service(&mut |event| record_switch_pro_output(event, log, indicators))
+                .service(&mut |event| record_switch_pro_output(&event, log, indicators))
                 .map_err(|error| error.to_string()),
         };
         result
@@ -444,7 +444,7 @@ impl Controller {
 }
 
 fn record_switch_pro_output(
-    event: virtualgamepad::SwitchProOutputEvent,
+    event: &virtualgamepad::SwitchProOutputEvent,
     log: &mut Vec<String>,
     indicators: &mut ReverseIndicators,
 ) {
