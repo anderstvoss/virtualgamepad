@@ -10,7 +10,7 @@ id = "buttons"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/buttons", evidence = ["ds4-vg-exp0009-sdl-standard-touch"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/buttons", evidence = ["ds4-vg-exp0009-sdl-standard-touch"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/buttons", evidence = ["ds4-bt-consumer-input-envelope"], reason = "Linux/SDL source-only consumer framing; synthetic tests are not host evidence or retail device validation." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/buttons", evidence = ["ds4-l0-device-bt01-11-input-modes"], reason = "Pinned source-only DS4 consumer or protocol evidence; supplemental BT claims await research PR 159 merge and pin update. No host or device acceptance." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/buttons", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/buttons", evidence = ["ds4-vg-exp0009-sdl-standard-touch"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
@@ -19,7 +19,7 @@ id = "sticks"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/sticks", evidence = ["ds4-vg-exp0017-individual-uhid"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/sticks", evidence = ["ds4-vg-exp0017-individual-uhid"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/sticks", evidence = ["ds4-bt-consumer-input-envelope"], reason = "Linux/SDL source-only consumer framing; synthetic tests are not host evidence or retail device validation." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/sticks", evidence = ["ds4-l0-device-bt01-11-input-modes"], reason = "Pinned source-only DS4 consumer or protocol evidence; supplemental BT claims await research PR 159 merge and pin update. No host or device acceptance." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/sticks", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/sticks", evidence = ["ds4-vg-exp0017-individual-uhid"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
@@ -28,7 +28,7 @@ id = "triggers"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/triggers", evidence = ["ds4-vg-exp0017-individual-uhid"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/triggers", evidence = ["ds4-vg-exp0017-individual-uhid"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/triggers", evidence = ["ds4-bt-consumer-input-envelope"], reason = "Linux/SDL source-only consumer framing; synthetic tests are not host evidence or retail device validation." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/triggers", evidence = ["ds4-l0-device-bt01-11-input-modes"], reason = "Pinned source-only DS4 consumer or protocol evidence; supplemental BT claims await research PR 159 merge and pin update. No host or device acceptance." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/triggers", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/triggers", evidence = ["ds4-vg-exp0017-individual-uhid"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
@@ -37,7 +37,7 @@ id = "identity"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/identity", evidence = ["ds4-l0-device-revision-identity-unknown"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/identity", evidence = ["ds4-l0-device-revision-identity-unknown"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/identity", evidence = ["ds4-bt-consumer-identity-uniq"], reason = "Linux/SDL source-only consumer framing; synthetic tests are not host evidence or retail device validation." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/identity", evidence = ["ds4-l0-device-revision-identity-unknown"], reason = "Pinned source-only DS4 consumer or protocol evidence; supplemental BT claims await research PR 159 merge and pin update. No host or device acceptance." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/identity", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/identity", evidence = ["ds4-l0-device-revision-identity-unknown"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
@@ -46,7 +46,7 @@ id = "lifecycle"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/lifecycle", evidence = ["ds4-vg-exp0011-combined-node-discovery"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/lifecycle", evidence = ["ds4-vg-exp0011-combined-node-discovery"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/lifecycle", evidence = ["ds4-bt-consumer-identity-uniq"], reason = "Linux/SDL source-only consumer framing; synthetic tests are not host evidence or retail device validation." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/lifecycle", evidence = ["ds4-l0-device-revision-identity-unknown"], reason = "Pinned source-only DS4 consumer or protocol evidence; supplemental BT claims await research PR 159 merge and pin update. No host or device acceptance." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/lifecycle", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/lifecycle", evidence = ["ds4-vg-exp0011-combined-node-discovery"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
@@ -55,7 +55,7 @@ id = "touchpad"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/touchpad", evidence = ["ds4-l0-consumer-kernel-touch-report-buffer-count"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/touchpad", evidence = ["ds4-l0-consumer-kernel-touch-report-buffer-count"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/touchpad", evidence = ["ds4-bt-consumer-input-envelope"], reason = "Linux/SDL source-only consumer framing; synthetic tests are not host evidence or retail device validation." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/touchpad", evidence = ["ds4-l0-device-bt01-11-input-modes"], reason = "Pinned source-only DS4 consumer or protocol evidence; supplemental BT claims await research PR 159 merge and pin update. No host or device acceptance." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/touchpad", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/touchpad", evidence = ["ds4-l0-consumer-kernel-touch-report-buffer-count"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
@@ -64,7 +64,7 @@ id = "motion"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/motion", evidence = ["ds4-l0-device-imu-and-touch-units"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/motion", evidence = ["ds4-l0-device-imu-and-touch-units"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/motion", evidence = ["ds4-bt-consumer-input-envelope"], reason = "Linux/SDL source-only consumer framing; synthetic tests are not host evidence or retail device validation." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/motion", evidence = ["ds4-l0-device-bt01-11-input-modes"], reason = "Pinned source-only DS4 consumer or protocol evidence; supplemental BT claims await research PR 159 merge and pin update. No host or device acceptance." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/motion", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/motion", evidence = ["ds4-l0-device-imu-and-touch-units"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
@@ -73,7 +73,7 @@ id = "battery"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/battery", evidence = ["ds4-l0-device-usb01-input"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/battery", evidence = ["ds4-l0-device-usb01-input"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/battery", evidence = ["ds4-bt-consumer-input-envelope"], reason = "Linux/SDL source-only consumer framing; synthetic tests are not host evidence or retail device validation." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/battery", evidence = ["ds4-l0-device-bt01-11-input-modes"], reason = "Pinned source-only DS4 consumer or protocol evidence; supplemental BT claims await research PR 159 merge and pin update. No host or device acceptance." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/battery", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/battery", evidence = ["ds4-l0-device-usb01-input"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
@@ -82,7 +82,7 @@ id = "rumble"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/rumble", evidence = ["ds4-l0-consumer-rumble-lightbar-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell. Decode sub-check: ff_rumble_decode_preserves_native_effect_and_stop_semantics; source only." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/rumble", evidence = ["ds4-l0-consumer-rumble-lightbar-output", "ds4-l0-device-usb05-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell. Decode sub-check: ds4_native_rumble_decode; supplemental ds4-rumble-native-fields (research PR 155, pending pin); source only." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/rumble", evidence = ["ds4-bt-consumer-output-effects"], reason = "Linux/SDL source-only consumer framing; synthetic tests are not host evidence or retail device validation." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/rumble", evidence = ["ds4-l0-device-bt11-output"], reason = "Pinned source-only DS4 consumer or protocol evidence; supplemental BT claims await research PR 159 merge and pin update. No host or device acceptance." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/rumble", evidence = ["ds4-l0-consumer-rumble-lightbar-output", "ds4-l0-device-usb05-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell. Decode sub-check: ds4_native_rumble_decode; supplemental ds4-rumble-native-fields (research PR 155, pending pin); source only." }
 
@@ -91,7 +91,7 @@ id = "lightbar"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/lightbar", evidence = ["ds4-l0-consumer-rumble-lightbar-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/lightbar", evidence = ["ds4-l0-consumer-rumble-lightbar-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/lightbar", evidence = ["ds4-bt-consumer-output-effects"], reason = "Linux/SDL source-only consumer framing; synthetic tests are not host evidence or retail device validation." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/lightbar", evidence = ["ds4-l0-device-bt11-output"], reason = "Pinned source-only DS4 consumer or protocol evidence; supplemental BT claims await research PR 159 merge and pin update. No host or device acceptance." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/lightbar", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/lightbar", evidence = ["ds4-l0-consumer-rumble-lightbar-output"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
@@ -118,6 +118,6 @@ id = "calibration"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/calibration", evidence = ["ds4-l0-device-feature02-calibration-unknown"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/calibration", evidence = ["ds4-l0-device-feature02-calibration-unknown"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/calibration", evidence = ["ds4-bt-consumer-calibration-open"], reason = "Linux/SDL source-only consumer framing; synthetic tests are not host evidence or retail device validation." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualshock4/calibration", evidence = ["ds4-l0-device-feature02-calibration-unknown"], reason = "Pinned source-only DS4 consumer or protocol evidence; supplemental BT claims await research PR 159 merge and pin update. No host or device acceptance." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/calibration", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/calibration", evidence = ["ds4-l0-device-feature02-calibration-unknown"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
