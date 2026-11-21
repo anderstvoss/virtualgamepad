@@ -637,10 +637,10 @@ mod worker_outputs {
                     left_motor: Some(left),
                     right_trigger_effect: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
                     left_trigger_effect: [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
-                    mute_button_led: Some(if (index % 2 == 0) != live {
-                        crate::DualSenseMuteLed::On
-                    } else {
+                    mute_button_led: Some(if (index % 2 == 0) == live {
                         crate::DualSenseMuteLed::Off
+                    } else {
+                        crate::DualSenseMuteLed::On
                     }),
                     microphone_muted: Some(index % 2 == 1),
                     audio_path: Some(route),
