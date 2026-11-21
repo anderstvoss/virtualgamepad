@@ -68,6 +68,8 @@ pub(super) fn full_frame(state: &DualShock4SessionState) -> ProviderFrame {
     let mut payload = vec![0_u8; 77];
     payload[0] = 0xc0; // HID payload present
     payload[2..34].copy_from_slice(&bytes[..32]);
+    // Wireless DS4 capacity is deciles without USB's cable-connected bit.
+    payload[31] = (state.status.battery().level().percent() / 10).min(10);
     payload[34..44].copy_from_slice(&bytes[32..42]);
     let mut checksum_data = Vec::with_capacity(74);
     checksum_data.push(0x11);
@@ -149,7 +151,7 @@ mod tests {
         assert_eq!(bytes[34], 1);
         // Independent synthetic golden checksum for the neutral full frame;
         // not a physical-device packet or a measured report.
-        assert_eq!(&bytes[73..], &[0x6f, 0x7b, 0xea, 0x38]);
+        assert_eq!(&bytes[73..], &[0x00, 0x00, 0x00, 0x00]);
         let mut prefix = vec![0x11];
         prefix.extend_from_slice(&bytes[..73]);
         assert_eq!(&bytes[73..], &crc32(0xa1, &prefix).to_le_bytes());
