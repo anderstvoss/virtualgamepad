@@ -413,6 +413,16 @@ impl crate::audio::backend::Backend for Pcm {
         }
         Some(self.lock().microphone_accounting())
     }
+    fn microphone_callback_rejected_frames(&self) -> Option<u64> {
+        #[cfg(feature = "audio-pipewire")]
+        if self.access.microphone_access() == AudioAccess::NativeClient {
+            return self
+                .bridge
+                .as_ref()
+                .map(crate::usb_audio_bridge::Bridge::graph_input_dropped_frames);
+        }
+        None
+    }
     fn native_playback_underrun_frames(&self) -> Option<u64> {
         #[cfg(feature = "audio-pipewire")]
         if let Some(bridge) = &self.bridge {
