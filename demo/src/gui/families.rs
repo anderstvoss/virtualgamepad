@@ -859,7 +859,7 @@ mod compat_creation_tests {
                                 wii_imports: super::super::wii_import::Imports::default(),
                                 wii_compat: compat.clone(),
                                 steam_options: super::super::SteamController2026Options::default(),
-                switch_spi: super::super::switch_pro_spi::Settings::default(),
+                                switch_spi: super::super::switch_pro_spi::Settings::default(),
                             };
                             assert_eq!(
                                 create_wii_session(&options, |_, received| Ok::<_, String>(

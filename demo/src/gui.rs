@@ -711,7 +711,7 @@ fn valid_creation_target(kind: Kind, current: RealizationId) -> RealizationId {
     }
 }
 
-// Wii resources and Steam creation options belong to their saved sessions.
+// Wii, Switch Pro and Steam resources belong to their saved sessions.
 fn recreation_options(
     kind: Kind,
     saved: &ControllerOptions,
@@ -2653,6 +2653,8 @@ fn draw_controller_state(
                     ("Recreate with original creation choices", "Closes this Wii first, then recreates its saved target, revision, calibration imports and compatibility options. Siblings stay open.")
                 } else if controller.kind == Kind::Steam {
                     ("Recreate with original creation choices", "Closes this Steam controller first, then recreates its saved target and Steam options. Siblings stay open.")
+                } else if controller.kind == Kind::SwitchPro {
+                    ("Recreate with original creation choices", "Closes this Switch Pro controller first, then recreates its saved target and SPI image. Siblings stay open.")
                 } else {
                     ("Recreate with current creation choices", "Closes this creation first, then creates the same family with supported sidebar realization/audio choices. Siblings stay open.")
                 };
@@ -4557,6 +4559,7 @@ mod tests {
                                                 Kind::DualSense,
                                                 &mut audio_creation,
                                                 &mut SteamController2026Options::default(),
+                                                &mut switch_pro_spi::Settings::default(),
                                                 (
                                                     &mut WiiRemoteRevision::Original,
                                                     &mut wii_import::Imports::default(),

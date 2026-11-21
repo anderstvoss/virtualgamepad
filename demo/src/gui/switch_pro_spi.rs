@@ -68,6 +68,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn recreate_keeps_original_spi_image_instead_of_sidebar_state() {
+        let mut saved = super::super::App::default().creation_options();
+        saved.switch_spi.load_raw(0x8010, &[0x35, 0x64]).unwrap();
+        let choices = super::super::App::default().creation_options();
+        let recreated = super::super::recreation_options(
+            super::super::Kind::SwitchPro,
+            &saved,
+            choices,
+        );
+        assert_eq!(recreated.switch_spi.image(), saved.switch_spi.image());
+        assert_eq!(recreated.switch_spi.image().read(0x8010), 0x35);
+    }
+
+    #[test]
     fn reject_bad_import_without_changing_current_image() {
         let mut settings = Settings::default();
         settings.load_raw(0x8010, &[0x71, 0x72]).unwrap();
