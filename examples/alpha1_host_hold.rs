@@ -107,7 +107,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let _ = io::stdin().lock().read_line(&mut command);
         let _ = sender.send(command);
     });
-    let deadline = Instant::now() + Duration::from_secs(90);
+    let deadline = Instant::now() + Duration::from_secs(300);
     let result = loop {
         if receiver.try_recv().is_ok() {
             break Ok(());
