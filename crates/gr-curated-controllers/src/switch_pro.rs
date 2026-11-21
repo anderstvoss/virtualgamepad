@@ -337,7 +337,7 @@ static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "console pairing",
     reason: "Steam/Linux mode deliberately omits Switch-console pairing and SPI calibration persistence",
 }];
-static BT_RESTRICTIONS: [TargetRestriction; 4] = [
+static BT_RESTRICTIONS: [TargetRestriction; 5] = [
     RESTRICTIONS[0],
     TargetRestriction {
         feature: "Bluetooth radio and reconnection",
@@ -350,6 +350,10 @@ static BT_RESTRICTIONS: [TargetRestriction; 4] = [
     TargetRestriction {
         feature: "Bluetooth controller audio",
         reason: "the selected UHID HID report surface carries no PCM or headset transport; Bluetooth audio requires a separate endpoint",
+    },
+    TargetRestriction {
+        feature: "opposing D-pad directions in simple report mode",
+        reason: "Bluetooth input report 0x3F uses a single hat that cannot represent simultaneous opposing directions; full mode 0x30 preserves independent bits",
     },
 ];
 static EVDEV_RESTRICTIONS: [TargetRestriction; 5] = [
@@ -1996,6 +2000,7 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
         crate::registry::refusal(BT_RESTRICTIONS[1], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
         crate::registry::refusal(BT_RESTRICTIONS[2], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
         crate::registry::refusal(BT_RESTRICTIONS[3], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
+        crate::registry::refusal(BT_RESTRICTIONS[4], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
         crate::registry::refusal(
             RETAINED_DUMMY[1],
             &[RealizationTarget::LINUX_DUMMY_HCD_USB_HID],
@@ -2802,6 +2807,19 @@ mod tests {
                 bytes: vec![0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0],
             }
         );
+        let mut opposite = SwitchProInputs::default();
+        for direction in [
+            gr_controller_contract::DpadDirection::Up,
+            gr_controller_contract::DpadDirection::Down,
+        ] {
+            opposite.set_digital(DigitalControlUpdate::Dpad { direction, pressed: true });
+        }
+        let ProviderFrame::HidInput { bytes, .. } =
+            switch_simple_frame(&(opposite, SwitchProStatus::default()))
+        else {
+            unreachable!()
+        };
+        assert_eq!(bytes[2], 8); // Simple hat cannot carry opposing directions.
     }
 
     #[test]

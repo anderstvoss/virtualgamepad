@@ -268,7 +268,12 @@ mod bluetooth_tests {
             assert_eq!(reply[0].payload()[12], match id { 0x02 => 0x82, 0x10 => 0x90, _ => 0x80 });
             if id == 0x10 {
                 assert_eq!(&reply[0].payload()[14..19], &arg);
-                assert_eq!(&reply[0].payload()[19..23], &[0, 0, 0, 0]);
+                let (usb_reply, _) =
+                    super::switch_subcommand_reply(&Default::default(), 0x10, &arg, identity(1));
+                let crate::ProviderFrame::HidInput { bytes: usb_bytes, .. } = usb_reply else {
+                    unreachable!()
+                };
+                assert_eq!(&reply[0].payload()[19..23], &usb_bytes[19..23]);
             }
         }
         for protocol in [&mut a, &mut b] {
