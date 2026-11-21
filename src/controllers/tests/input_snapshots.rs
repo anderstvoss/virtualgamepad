@@ -398,7 +398,8 @@ fn root_sony_refresh_commits_a_new_motion_sample() {
                 inner.association(),
                 inner.surface().common(),
             );
-            let mut controller = $handle::from_parts(association, inner, None, <$data>::default(), None);
+            let mut controller =
+                $handle::from_parts(association, inner, None, <$data>::default(), None);
             controller.commit().unwrap();
             let previous = accepted_inputs!(controller, $module).clone();
             let clock = accepted_clock!(controller, $module);
