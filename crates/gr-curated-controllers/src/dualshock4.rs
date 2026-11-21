@@ -1087,7 +1087,10 @@ fn advance_ds4_timing(state: &mut DualShock4SessionState) {
 fn features(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     features_with_data(identity, None)
 }
-fn features_with_data(identity: [u8; 6], data: Option<DualShock4DeviceData>) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
+fn features_with_data(
+    identity: [u8; 6],
+    data: Option<DualShock4DeviceData>,
+) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     const F: u8 = 0;
     let data = data.unwrap_or_default();
     dualshock4_feature_responses(identity)
@@ -1158,7 +1161,10 @@ fn evdev_realization() -> NativeControllerRealization {
         force_feedback_codes: vec![0x50],
     })
 }
-pub struct DualShock4Controller(common::ControllerSession<DualShock4Definition>, DualShock4DeviceData);
+pub struct DualShock4Controller(
+    common::ControllerSession<DualShock4Definition>,
+    DualShock4DeviceData,
+);
 impl DualShock4Controller {
     /// Exact validated calibration and firmware for this instance, after close too.
     #[must_use]
@@ -1467,7 +1473,10 @@ impl Default for DualShock4DeviceData {
         let mut firmware = [0; 49];
         firmware[0] = 0xa3;
         firmware[1] = 1;
-        Self { calibration, firmware }
+        Self {
+            calibration,
+            firmware,
+        }
     }
 }
 impl DualShock4DeviceData {
@@ -1489,8 +1498,12 @@ impl DualShock4DeviceData {
                 self.calibration = data;
             }
             0xa3 => self.firmware = crate::sony_device_data::validate::<49>(id, bytes, 0xa3)?,
-            _ => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
-                "unsupported DualShock4 device-data feature report")),
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "unsupported DualShock4 device-data feature report",
+                ));
+            }
         }
         Ok(self)
     }
