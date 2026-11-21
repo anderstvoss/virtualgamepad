@@ -36,6 +36,7 @@ pub struct Session {
     input_losses: Vec<(String, Arc<InputLoss>)>,
     playback: Option<PcmConsumer>,
     playback_observer: Option<PcmObserver>,
+    microphone_observer: Option<PcmObserver>,
     microphone: Option<PcmProducer>,
     stop: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
@@ -102,6 +103,7 @@ impl Session {
             endpoints,
             playback,
             playback_observer,
+            microphone_observer,
             microphone,
         } = prepare(profile, options, creation, source_preroll)?;
         let clocks = specs
@@ -141,6 +143,7 @@ impl Session {
             input_losses,
             playback,
             playback_observer,
+            microphone_observer,
             microphone,
             stop,
             failed,
@@ -238,6 +241,16 @@ impl Session {
         self.playback_observer
             .as_ref()
             .map_or(0, PcmObserver::discarded_frames)
+    }
+    /// Backend-local queue accounting; not a host-receipt observation.
+    #[must_use]
+    pub fn playback_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        self.playback_observer.as_ref().map(PcmObserver::accounting)
+    }
+    /// Retained for Samples and NativeClient ownership alike.
+    #[must_use]
+    pub fn microphone_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        self.microphone_observer.as_ref().map(PcmObserver::accounting)
     }
     #[must_use]
     pub fn queued_playback_frames(&self) -> Option<usize> {
@@ -893,6 +906,7 @@ struct Prepared {
     endpoints: Vec<Endpoint>,
     playback: Option<PcmConsumer>,
     playback_observer: Option<PcmObserver>,
+    microphone_observer: Option<PcmObserver>,
     microphone: Option<PcmProducer>,
 }
 fn prepare(
@@ -905,6 +919,7 @@ fn prepare(
     let mut endpoints = Vec::new();
     let mut playback = None;
     let mut playback_observer = None;
+    let mut microphone_observer = None;
     let mut microphone = None;
     for description in profile.streams() {
         let format = description.format().clone();
@@ -948,6 +963,7 @@ fn prepare(
                 }
             }
             SampleDirection::ControllerToHost => {
+                microphone_observer = Some(tx.observer());
                 specs.push(Spec {
                     clock: Arc::default(),
                     input_loss: Arc::default(),
@@ -984,6 +1000,7 @@ fn prepare(
         endpoints,
         playback,
         playback_observer,
+        microphone_observer,
         microphone,
     })
 }
