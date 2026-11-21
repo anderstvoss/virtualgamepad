@@ -515,6 +515,7 @@ Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
 #[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }
+pub fn trigger_effects( &self, ) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>
 ```
 
 Trait implementations:
@@ -557,6 +558,32 @@ impl Sync for DualSenseOutputEvent
 impl Unpin for DualSenseOutputEvent
 impl UnsafeUnpin for DualSenseOutputEvent
 impl UnwindSafe for DualSenseOutputEvent
+```
+
+### `DualSenseTriggerEffect`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+#[non_exhaustive]pub enum DualSenseTriggerEffect { Off, Feedback { zones: DualSenseTriggerZoneForces, }, Weapon { start_zone: u8, end_zone: u8, strength: u8, }, Vibration { zones: DualSenseTriggerZoneForces, frequency_code: u8, }, Unknown { mode: u8, raw: [u8; 11], }, }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for DualSenseTriggerEffect
+impl Debug for DualSenseTriggerEffect
+impl PartialEq for DualSenseTriggerEffect
+impl Copy for DualSenseTriggerEffect
+impl Eq for DualSenseTriggerEffect
+impl StructuralPartialEq for DualSenseTriggerEffect
+impl Freeze for DualSenseTriggerEffect
+impl RefUnwindSafe for DualSenseTriggerEffect
+impl Send for DualSenseTriggerEffect
+impl Sync for DualSenseTriggerEffect
+impl Unpin for DualSenseTriggerEffect
+impl UnsafeUnpin for DualSenseTriggerEffect
+impl UnwindSafe for DualSenseTriggerEffect
 ```
 
 ### `DualShock4Control`
@@ -1571,6 +1598,14 @@ Owner/source: `../src/virtualgamepad/controllers.rs.html`
 pub fn create_xbox_series( options: CreationOptions, family: XboxSeriesOptions, ) -> Result<XboxSeriesController, ControllerError>
 ```
 
+### `decode_dualsense_trigger_effect`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+pub fn decode_dualsense_trigger_effect(raw: [u8; 11]) -> DualSenseTriggerEffect
+```
+
 ### `AbsoluteAxisSurface`
 
 Owner/source: `source unavailable`
@@ -2451,6 +2486,58 @@ impl Sync for DualSenseTrigger
 impl Unpin for DualSenseTrigger
 impl UnsafeUnpin for DualSenseTrigger
 impl UnwindSafe for DualSenseTrigger
+```
+
+### `DualSenseTriggerEffectUpdate`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+pub struct DualSenseTriggerEffectUpdate { pub valid: bool, pub raw: [u8; 11], pub effect: Option<DualSenseTriggerEffect>, }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for DualSenseTriggerEffectUpdate
+impl Debug for DualSenseTriggerEffectUpdate
+impl PartialEq for DualSenseTriggerEffectUpdate
+impl Copy for DualSenseTriggerEffectUpdate
+impl Eq for DualSenseTriggerEffectUpdate
+impl StructuralPartialEq for DualSenseTriggerEffectUpdate
+impl Freeze for DualSenseTriggerEffectUpdate
+impl RefUnwindSafe for DualSenseTriggerEffectUpdate
+impl Send for DualSenseTriggerEffectUpdate
+impl Sync for DualSenseTriggerEffectUpdate
+impl Unpin for DualSenseTriggerEffectUpdate
+impl UnsafeUnpin for DualSenseTriggerEffectUpdate
+impl UnwindSafe for DualSenseTriggerEffectUpdate
+```
+
+### `DualSenseTriggerZoneForces`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+pub struct DualSenseTriggerZoneForces { pub active_zones: u16, pub start_zone: u8, pub end_zone: u8, pub strengths: [Option<u8>; 10], }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for DualSenseTriggerZoneForces
+impl Debug for DualSenseTriggerZoneForces
+impl PartialEq for DualSenseTriggerZoneForces
+impl Copy for DualSenseTriggerZoneForces
+impl Eq for DualSenseTriggerZoneForces
+impl StructuralPartialEq for DualSenseTriggerZoneForces
+impl Freeze for DualSenseTriggerZoneForces
+impl RefUnwindSafe for DualSenseTriggerZoneForces
+impl Send for DualSenseTriggerZoneForces
+impl Sync for DualSenseTriggerZoneForces
+impl Unpin for DualSenseTriggerZoneForces
+impl UnsafeUnpin for DualSenseTriggerZoneForces
+impl UnwindSafe for DualSenseTriggerZoneForces
 ```
 
 ### `DualShock4Axis`

@@ -163,7 +163,9 @@ pub use dualsense::{
     DualSenseAudioPath, DualSenseAxis, DualSenseControl, DualSenseController, DualSenseFeature,
     DualSenseHidOutput, DualSenseIdentity, DualSenseInputs, DualSenseOptions, DualSenseOutputEvent,
     DualSenseSessionState, DualSenseStatus, DualSenseSurface, DualSenseTouchContact,
-    DualSenseTrigger, MotionSample, TouchSlot, create_dualsense,
+    DualSenseTrigger, DualSenseTriggerEffect, DualSenseTriggerEffectUpdate,
+    DualSenseTriggerZoneForces, MotionSample, TouchSlot, create_dualsense,
+    decode_dualsense_trigger_effect,
 };
 pub use dualshock4::{
     DualShock4Axis, DualShock4Control, DualShock4Controller, DualShock4HidOutput,
@@ -173,10 +175,10 @@ pub use dualshock4::{
 };
 pub use switch_pro::{
     SwitchProAxis, SwitchProBattery, SwitchProBatteryLevel, SwitchProControl, SwitchProController,
-    SwitchProHomeLight, SwitchProIdentity, SwitchProInputs, SwitchProMotionSample,
-    SwitchProOptions, SwitchProOutputEvent, SwitchProRumble, SwitchProRumbleBand,
-    SwitchProRumbleDecoded, SwitchProRumbleSample, SwitchProRumbleSamples, SwitchProRumbleWord,
-    SwitchProStatus, SwitchProSurface, create_switch_pro, decode_switch_pro_rumble_word,
+    SwitchProHomeLight, SwitchProIdentity, SwitchProInputs, SwitchProMotionSample, SwitchProOptions,
+    SwitchProOutputEvent, SwitchProRumble, SwitchProRumbleBand, SwitchProRumbleDecoded,
+    SwitchProRumbleSample, SwitchProRumbleSamples, SwitchProRumbleWord, SwitchProStatus,
+    SwitchProSurface, create_switch_pro, decode_switch_pro_rumble_word,
     decode_switch_pro_rumble_word_with_previous,
 };
 pub use xbox360::{
