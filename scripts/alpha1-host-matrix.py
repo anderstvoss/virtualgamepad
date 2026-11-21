@@ -349,6 +349,7 @@ def run_family(family, realization, environment, out, rebind=False):
             raise HostRunError("public example did not close cleanly") from exc
         if process.returncode != 0:
             raise HostRunError("public example exited with a service error")
+        thread.join(timeout=2)
         while not lines.empty():
             received.append(lines.get_nowait())
         requests = switch_requests(received)
