@@ -413,6 +413,7 @@ impl common::HidDriver for XboxSeriesDefinition {
             [true, true, false],
             None,
         )
+        .with_open_refresh()
     }
 }
 

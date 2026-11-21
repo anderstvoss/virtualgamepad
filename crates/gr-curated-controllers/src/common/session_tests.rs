@@ -1433,6 +1433,103 @@ fn sony_first_report_and_consumer_reopen_preserve_held_up() {
 }
 
 #[test]
+fn xbox_series_bluetooth_first_open_refreshes_neutral_without_an_edit() {
+    let driver = crate::xbox_series::XboxSeriesDefinition::default();
+    let (mut runtime, record) = rig(&driver, [true, true, false]);
+    let start = gr_hid::Lifecycle::Start {
+        numbered_input: true,
+        numbered_output: true,
+        numbered_feature: false,
+    };
+    record
+        .lock()
+        .unwrap()
+        .events
+        .push_back(RawReverseEvent::HidLifecycle(start));
+    runtime.service(0).unwrap();
+    {
+        let mut record = record.lock().unwrap();
+        assert_eq!(record.sent.len(), 1);
+        record.sent.clear();
+        record
+            .events
+            .push_back(RawReverseEvent::HidLifecycle(gr_hid::Lifecycle::Open));
+    }
+    runtime.service(1).unwrap();
+    let record = record.lock().unwrap();
+    assert_eq!(
+        record.sent.as_slice(),
+        &[ProviderFrame::HidInput {
+            report_id: Some(1),
+            bytes: vec![0, 128, 0, 128, 0, 128, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0],
+        }]
+    );
+    // A default-zero payload would pin unsigned sticks at their minimum.
+    assert!(!matches!(
+        record.sent.first(),
+        Some(ProviderFrame::HidInput { bytes, .. }) if bytes.iter().all(|byte| *byte == 0)
+    ));
+}
+
+#[test]
+fn xbox_series_bluetooth_first_open_uses_edited_state() {
+    use crate::xbox_series::XboxSeriesButton as Button;
+
+    let driver = crate::xbox_series::XboxSeriesDefinition::default();
+    let (mut runtime, record) = rig(&driver, [true, true, false]);
+    record
+        .lock()
+        .unwrap()
+        .events
+        .push_back(RawReverseEvent::HidLifecycle(gr_hid::Lifecycle::Start {
+            numbered_input: true,
+            numbered_output: true,
+            numbered_feature: false,
+        }));
+    runtime.service(0).unwrap();
+    runtime
+        .update(|state| {
+            state.sticks = [[1234, -1234], [0, i16::MIN]];
+            state.set_triggers(17, 1023).unwrap();
+            state.set_button(Button::A, true);
+            state.set_button(Button::DpadUp, true);
+            Ok(())
+        })
+        .unwrap();
+    {
+        let mut record = record.lock().unwrap();
+        record.sent.clear();
+        record
+            .events
+            .push_back(RawReverseEvent::HidLifecycle(gr_hid::Lifecycle::Open));
+    }
+    runtime.service(1).unwrap();
+    assert_eq!(
+        record.lock().unwrap().sent.as_slice(),
+        &[ProviderFrame::HidInput {
+            report_id: Some(1),
+            bytes: vec![210, 132, 46, 123, 0, 128, 0, 0, 17, 0, 255, 3, 1, 1, 0, 0],
+        }]
+    );
+}
+
+#[test]
+fn xbox_series_uinput_neutral_frame_remains_evdev() {
+    let (mut session, record) = evdev_rig(crate::xbox_series::XboxSeriesDefinition::default());
+    session.commit().unwrap();
+    let record = record.lock().unwrap();
+    let Some(ProviderFrame::Evdev(events)) = record.sent.first() else {
+        panic!("Xbox Series uinput must emit evdev");
+    };
+    assert_eq!(
+        events
+            .last()
+            .map(|event| (event.event_type, event.code, event.value)),
+        Some((0, 0, 0))
+    );
+}
+
+#[test]
 fn worker_output_loss_is_reported_and_retained_after_close() {
     let record = Arc::new(Mutex::new(WorkerRecord::default()));
     let mut controller = crate::create_dualsense_usb_worker(Box::new(FakeWorker(record.clone())));
