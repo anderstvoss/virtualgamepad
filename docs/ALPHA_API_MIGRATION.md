@@ -1,5 +1,24 @@
 # Pre-alpha API refinement migration
 
+## P10a · Xbox Series synthetic identity (Alpha 2)
+
+`XboxSeriesIdentity` is added to the ordinary root and supporting Xbox Series
+API. Applications can call `generate()`, `from_bytes([u8; 6])`, and `bytes()`
+to persist a locally administered synthetic identity; `XboxSeriesOptions`
+now carries an optional identity via `with_identity()` / `identity()`.
+`XboxSeriesController::identity()` returns the selected identity after close.
+
+**Migration:** Existing `XboxSeriesOptions::default()` callers require no
+source change. Default sessions now allocate an independent identity using OS
+entropy. Bluetooth UHID exposes that identity in `uniq` instead of a fixed
+prefix plus creation suffix; explicitly restored sessions keep it stable across
+reopen, while `phys` remains unique for each opening. Uinput still has no
+controller-reported identity; the handle retains the value only. No physical
+radio or host acceptance is claimed. Root snapshot declarations and the
+generated inventory's Xbox Series pages are updated for this delta.
+
+
+
 This is a deliberate breaking candidate update before the final alpha freeze.
 Start with the [final alpha.1 → alpha.2 consumer table](#alpha1--alpha2-final-consumer-table).
 The PR sections below are chronological history: intermediate combined state
@@ -42,6 +61,32 @@ Post-GUI audit: the empty root `audio-alsa` feature is removed. ALSA host-device
 routing belongs to the demo's `audio-alsa` feature, whose defaults are unchanged.
 Library users enable `audio-pipewire` for local UHID audio or `audio-usbip` for the
 WIP composite; ALSA routing does not add a library realization.
+
+## Alpha 2 G2 · DualSense adaptive trigger effects (c3b)
+
+Root default/all-feature API snapshots add `DualSenseTriggerEffect`,
+`DualSenseTriggerZoneForces`, `DualSenseTriggerEffectUpdate` and
+`decode_dualsense_trigger_effect([u8; 11]) -> DualSenseTriggerEffect`;
+`DualSenseHidOutput::trigger_effects()` returns
+`Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>` in
+right, left order. Matching types/function are re-exported from curated and
+experimental surfaces. The existing `UsbOutput` fields and raw 11-byte blocks
+are unchanged. For each side, `valid = false` means the host did **not**
+update that effect; `effect = None` is not equivalent to `Off`.
+
+Source-supported modes are Off 0x05, Feedback 0x21, Weapon 0x25 and
+Vibration 0x26. Zones are indices 0..9; 3-bit encoder strength codes expose
+levels 1..8; vibration frequency is the native code, not proven Hz.
+Noncanonical parameters, unknown mode bytes and SDL demonstration 0x01/0x06
+are `Unknown` with full original bytes. This is pure interpretation of
+accepted USB host-output bytes, not a new output path, journal or physical
+actuation. Bluetooth output framing remains unparsed in the current HID
+output decoder. The uinput adaptive-trigger refusal remains unchanged.
+Research: ds-l0-device-adaptive-trigger-mode-block,
+ds-l0-device-adaptive-trigger-mode-parameters,
+ds-l0-sdl-trigger-demo-modes,
+ds-l0-physical-adaptive-trigger-unknown,
+ds-vg-exp0016-steam-trigger-disagreement. Source evidence only.
 
 ## Historical capability and supporting-API ledger
 
@@ -860,3 +905,45 @@ VG-1b final merge ledger: a #353 `2890223`; b #363 `5bea7a0`; c1 #364
 `8cd1000`, #375 `26168b3`, #387 `685479b`, #389 `edeea68`, #390 `a0398b7`.
 Step e records this consumer/documentation completion; its merge SHA belongs in
 the closing #322 status after owner merge, not as a predicted SHA here.
+
+## Switch Pro HD rumble typed decode (Alpha 2 G2)
+
+- Existing `SwitchProRumble` fields and `SwitchProOutputEvent::rumble()` remain
+  unchanged. New `decode()` and `decode_with_previous(left, right)` return
+  `SwitchProRumbleDecoded` with independent `SwitchProRumbleWord` sides;
+  each carries the original four bytes and bounded `SwitchProRumbleSamples`.
+- The new root functions `decode_switch_pro_rumble_word(raw)` and
+  `decode_switch_pro_rumble_word_with_previous(raw, previous)` are pure. Each
+  `SwitchProRumbleSample` exposes high/low `SwitchProRumbleBand` values;
+  `frequency_hz()` and `amplitude_ratio()` return optional quantities.
+  Amplitude is the dimensionless compatibility-model ratio, not physical
+  output or the community table's amplitude scale.
+- Recognized relative encodings can leave individual values unknown unless
+  prior contiguous motor state is provided. Preserve previous state across
+  no-sample words, but discard it on unpinned encodings, gaps, or resets.
+  Raw words remain available in all cases; no uinput or journal change.
+- Source-only research: [pinned draft corpus commit](https://github.com/anderstvoss/controller-protocol-research/commit/79f919f22d9c587eb4b3b15383b41c296de1e797);
+  `swpro-l0-rumble-absolute-layout`, `swpro-l0-rumble-sample-layouts`,
+  `swpro-l0-rumble-logarithmic-units`, `swpro-l0-rumble-relative-commands`.
+  Formal acceptance evidence awaits corpus merge and adopted pin. No host or
+  physical run was performed.
+
+### Wii speaker S1 decode-only (Alpha 2)
+
+The Wii supporting API adds `WiiSpeakerDecoder::decode` and the six typed
+`WiiSpeaker*` control, configuration, format, data, disposition and output
+records. No ordinary-root API removal or addition, no changed retained outputs,
+and no journal, playback or transport API. Decode is a pure value transition;
+callers must advance it at the later journal acceptance boundary. Do not treat
+optional raw observations as an authoritative stream. Wii supporting snapshot:
+23 → 30 items; root and Steam unchanged.
+
+### #365 · Typed rumble observations (c4-rumble-records)
+
+- Xbox Series: add `XboxSeriesRumble`, `XboxSeriesOutputEvent::rumble()`, and pure `XboxSeriesRumble::decode()` / `XboxSeriesBluetoothRumble::decode()`; four-channel native report versus two-channel FF. No trigger emulation.
+- DualShock 4: add `DualShock4Rumble`, `DualShock4OutputEvent::rumble()`, and `DualShock4Rumble::decode()`; preserve both validity flags and distinguish no update from stop. Bluetooth parsing is source-only.
+- Xbox 360: add `Xbox360Rumble`, `Xbox360OutputEvent::rumble()`, and source-only `Xbox360Rumble::decode_xusb()`; existing standard HID does not admit XUSB outputs.
+- Wii Remote: add `WiiRemoteRumble`, `WiiRemoteOutputEvent::rumble()`, and `WiiRemoteRumble::decode()`; binary intent from shared bit or conventional FF.
+
+Existing events, raw payloads, FF effect types and retained snapshots are unchanged.
+These additive ordinary-root declarations do not change protocol admission or qualify physical output.

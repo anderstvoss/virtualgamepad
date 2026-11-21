@@ -326,7 +326,8 @@
         },
         "enum.DualSenseHidOutput.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }",
+            "pub fn trigger_effects( &self, ) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>"
           ],
           "traits": [
             "impl Clone for DualSenseHidOutput",
@@ -354,6 +355,23 @@
             "impl Sync for DualSenseOutputEvent",
             "impl Unpin for DualSenseOutputEvent",
             "impl UnwindSafe for DualSenseOutputEvent"
+          ]
+        },
+        "enum.DualSenseTriggerEffect.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DualSenseTriggerEffect { Off, Feedback { zones: DualSenseTriggerZoneForces, }, Weapon { start_zone: u8, end_zone: u8, strength: u8, }, Vibration { zones: DualSenseTriggerZoneForces, frequency_code: u8, }, Unknown { mode: u8, raw: [u8; 11], }, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTriggerEffect",
+            "impl Copy for DualSenseTriggerEffect",
+            "impl Debug for DualSenseTriggerEffect",
+            "impl Eq for DualSenseTriggerEffect",
+            "impl PartialEq for DualSenseTriggerEffect",
+            "impl RefUnwindSafe for DualSenseTriggerEffect",
+            "impl Send for DualSenseTriggerEffect",
+            "impl Sync for DualSenseTriggerEffect",
+            "impl Unpin for DualSenseTriggerEffect",
+            "impl UnwindSafe for DualSenseTriggerEffect"
           ]
         },
         "enum.DualShock4Control.html": {
@@ -391,7 +409,8 @@
         },
         "enum.DualShock4OutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum DualShock4OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput(DualShock4HidOutput), }"
+            "#[non_exhaustive]pub enum DualShock4OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput(DualShock4HidOutput), }",
+            "pub fn rumble(&self) -> Option<DualShock4Rumble>"
           ],
           "traits": [
             "impl Clone for DualShock4OutputEvent",
@@ -759,6 +778,24 @@
             "impl UnwindSafe for SwitchProOutputEvent"
           ]
         },
+        "enum.SwitchProRumbleSamples.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SwitchProRumbleSamples { NoSamples, One([SwitchProRumbleSample; 1]), Two([SwitchProRumbleSample; 2]), Three([SwitchProRumbleSample; 3]), Unknown, }",
+            "pub fn as_slice(&self) -> Option<&[SwitchProRumbleSample]>"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleSamples",
+            "impl Copy for SwitchProRumbleSamples",
+            "impl Debug for SwitchProRumbleSamples",
+            "impl Eq for SwitchProRumbleSamples",
+            "impl PartialEq for SwitchProRumbleSamples",
+            "impl RefUnwindSafe for SwitchProRumbleSamples",
+            "impl Send for SwitchProRumbleSamples",
+            "impl Sync for SwitchProRumbleSamples",
+            "impl Unpin for SwitchProRumbleSamples",
+            "impl UnwindSafe for SwitchProRumbleSamples"
+          ]
+        },
         "enum.TouchSlot.html": {
           "declarations": [
             "pub enum TouchSlot { First, Second, }"
@@ -846,7 +883,8 @@
         },
         "enum.WiiRemoteOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum WiiRemoteOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum WiiRemoteOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "pub fn rumble(&self) -> Option<WiiRemoteRumble>"
           ],
           "traits": [
             "impl Clone for WiiRemoteOutputEvent",
@@ -915,7 +953,8 @@
         },
         "enum.Xbox360OutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum Xbox360OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum Xbox360OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "pub fn rumble(&self) -> Option<Xbox360Rumble>"
           ],
           "traits": [
             "impl Clone for Xbox360OutputEvent",
@@ -948,7 +987,8 @@
         },
         "enum.XboxSeriesOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), HostLifecycle(HostLifecycle), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), HostLifecycle(HostLifecycle), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "pub fn rumble(&self) -> Option<XboxSeriesRumble>"
           ],
           "traits": [
             "impl Clone for XboxSeriesOutputEvent",
@@ -960,6 +1000,24 @@
             "impl Sync for XboxSeriesOutputEvent",
             "impl Unpin for XboxSeriesOutputEvent",
             "impl UnwindSafe for XboxSeriesOutputEvent"
+          ]
+        },
+        "enum.XboxSeriesRumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum XboxSeriesRumble { Bluetooth(XboxSeriesBluetoothRumble), Evdev { strong: u8, weak: u8, }, }",
+            "pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<XboxSeriesRumble>"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesRumble",
+            "impl Copy for XboxSeriesRumble",
+            "impl Debug for XboxSeriesRumble",
+            "impl Eq for XboxSeriesRumble",
+            "impl PartialEq for XboxSeriesRumble",
+            "impl RefUnwindSafe for XboxSeriesRumble",
+            "impl Send for XboxSeriesRumble",
+            "impl Sync for XboxSeriesRumble",
+            "impl Unpin for XboxSeriesRumble",
+            "impl UnwindSafe for XboxSeriesRumble"
           ]
         },
         "fn.create_dualsense.html": {
@@ -1001,6 +1059,24 @@
         "fn.create_xbox_series.html": {
           "declarations": [
             "pub fn create_xbox_series( options: CreationOptions, family: XboxSeriesOptions, ) -> Result<XboxSeriesController, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.decode_dualsense_trigger_effect.html": {
+          "declarations": [
+            "pub fn decode_dualsense_trigger_effect(raw: [u8; 11]) -> DualSenseTriggerEffect"
+          ],
+          "traits": []
+        },
+        "fn.decode_switch_pro_rumble_word.html": {
+          "declarations": [
+            "pub fn decode_switch_pro_rumble_word(raw: [u8; 4]) -> SwitchProRumbleWord"
+          ],
+          "traits": []
+        },
+        "fn.decode_switch_pro_rumble_word_with_previous.html": {
+          "declarations": [
+            "pub fn decode_switch_pro_rumble_word_with_previous( raw: [u8; 4], previous: Option<SwitchProRumbleSample>, ) -> SwitchProRumbleWord"
           ],
           "traits": []
         },
@@ -1628,6 +1704,40 @@
             "impl UnwindSafe for DualSenseTrigger"
           ]
         },
+        "struct.DualSenseTriggerEffectUpdate.html": {
+          "declarations": [
+            "pub struct DualSenseTriggerEffectUpdate { pub valid: bool, pub raw: [u8; 11], pub effect: Option<DualSenseTriggerEffect>, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTriggerEffectUpdate",
+            "impl Copy for DualSenseTriggerEffectUpdate",
+            "impl Debug for DualSenseTriggerEffectUpdate",
+            "impl Eq for DualSenseTriggerEffectUpdate",
+            "impl PartialEq for DualSenseTriggerEffectUpdate",
+            "impl RefUnwindSafe for DualSenseTriggerEffectUpdate",
+            "impl Send for DualSenseTriggerEffectUpdate",
+            "impl Sync for DualSenseTriggerEffectUpdate",
+            "impl Unpin for DualSenseTriggerEffectUpdate",
+            "impl UnwindSafe for DualSenseTriggerEffectUpdate"
+          ]
+        },
+        "struct.DualSenseTriggerZoneForces.html": {
+          "declarations": [
+            "pub struct DualSenseTriggerZoneForces { pub active_zones: u16, pub start_zone: u8, pub end_zone: u8, pub strengths: [Option<u8>; 10], }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTriggerZoneForces",
+            "impl Copy for DualSenseTriggerZoneForces",
+            "impl Debug for DualSenseTriggerZoneForces",
+            "impl Eq for DualSenseTriggerZoneForces",
+            "impl PartialEq for DualSenseTriggerZoneForces",
+            "impl RefUnwindSafe for DualSenseTriggerZoneForces",
+            "impl Send for DualSenseTriggerZoneForces",
+            "impl Sync for DualSenseTriggerZoneForces",
+            "impl Unpin for DualSenseTriggerZoneForces",
+            "impl UnwindSafe for DualSenseTriggerZoneForces"
+          ]
+        },
         "struct.DualShock4Axis.html": {
           "declarations": [
             "pub struct DualShock4Axis(/* private fields */);",
@@ -1788,6 +1898,24 @@
             "impl Sync for DualShock4OutputState",
             "impl Unpin for DualShock4OutputState",
             "impl UnwindSafe for DualShock4OutputState"
+          ]
+        },
+        "struct.DualShock4Rumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualShock4Rumble { pub valid_flags: Option<[u8; 2]>, pub strong: Option<u8>, pub weak: Option<u8>, }",
+            "pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<DualShock4Rumble>"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Rumble",
+            "impl Copy for DualShock4Rumble",
+            "impl Debug for DualShock4Rumble",
+            "impl Eq for DualShock4Rumble",
+            "impl PartialEq for DualShock4Rumble",
+            "impl RefUnwindSafe for DualShock4Rumble",
+            "impl Send for DualShock4Rumble",
+            "impl Sync for DualShock4Rumble",
+            "impl Unpin for DualShock4Rumble",
+            "impl UnwindSafe for DualShock4Rumble"
           ]
         },
         "struct.DualShock4Status.html": {
@@ -2539,7 +2667,9 @@
         },
         "struct.SwitchProRumble.html": {
           "declarations": [
-            "pub struct SwitchProRumble { pub packet_counter: u8, pub left: [u8; 4], pub right: [u8; 4], }"
+            "pub struct SwitchProRumble { pub packet_counter: u8, pub left: [u8; 4], pub right: [u8; 4], }",
+            "pub fn decode(&self) -> SwitchProRumbleDecoded",
+            "pub fn decode_with_previous( &self, left: Option<SwitchProRumbleSample>, right: Option<SwitchProRumbleSample>, ) -> SwitchProRumbleDecoded"
           ],
           "traits": [
             "impl Clone for SwitchProRumble",
@@ -2552,6 +2682,78 @@
             "impl Sync for SwitchProRumble",
             "impl Unpin for SwitchProRumble",
             "impl UnwindSafe for SwitchProRumble"
+          ]
+        },
+        "struct.SwitchProRumbleBand.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleBand { /* private fields */ }",
+            "pub fn frequency_hz(&self) -> Option<f32>",
+            "pub fn amplitude_ratio(&self) -> Option<f32>"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleBand",
+            "impl Copy for SwitchProRumbleBand",
+            "impl Debug for SwitchProRumbleBand",
+            "impl Eq for SwitchProRumbleBand",
+            "impl PartialEq for SwitchProRumbleBand",
+            "impl RefUnwindSafe for SwitchProRumbleBand",
+            "impl Send for SwitchProRumbleBand",
+            "impl Sync for SwitchProRumbleBand",
+            "impl Unpin for SwitchProRumbleBand",
+            "impl UnwindSafe for SwitchProRumbleBand"
+          ]
+        },
+        "struct.SwitchProRumbleDecoded.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleDecoded { pub left: SwitchProRumbleWord, pub right: SwitchProRumbleWord, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleDecoded",
+            "impl Copy for SwitchProRumbleDecoded",
+            "impl Debug for SwitchProRumbleDecoded",
+            "impl Eq for SwitchProRumbleDecoded",
+            "impl PartialEq for SwitchProRumbleDecoded",
+            "impl RefUnwindSafe for SwitchProRumbleDecoded",
+            "impl Send for SwitchProRumbleDecoded",
+            "impl Sync for SwitchProRumbleDecoded",
+            "impl Unpin for SwitchProRumbleDecoded",
+            "impl UnwindSafe for SwitchProRumbleDecoded"
+          ]
+        },
+        "struct.SwitchProRumbleSample.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleSample { /* private fields */ }",
+            "pub const fn high(&self) -> SwitchProRumbleBand",
+            "pub const fn low(&self) -> SwitchProRumbleBand"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleSample",
+            "impl Copy for SwitchProRumbleSample",
+            "impl Debug for SwitchProRumbleSample",
+            "impl Eq for SwitchProRumbleSample",
+            "impl PartialEq for SwitchProRumbleSample",
+            "impl RefUnwindSafe for SwitchProRumbleSample",
+            "impl Send for SwitchProRumbleSample",
+            "impl Sync for SwitchProRumbleSample",
+            "impl Unpin for SwitchProRumbleSample",
+            "impl UnwindSafe for SwitchProRumbleSample"
+          ]
+        },
+        "struct.SwitchProRumbleWord.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleWord { pub raw: [u8; 4], pub samples: SwitchProRumbleSamples, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleWord",
+            "impl Copy for SwitchProRumbleWord",
+            "impl Debug for SwitchProRumbleWord",
+            "impl Eq for SwitchProRumbleWord",
+            "impl PartialEq for SwitchProRumbleWord",
+            "impl RefUnwindSafe for SwitchProRumbleWord",
+            "impl Send for SwitchProRumbleWord",
+            "impl Sync for SwitchProRumbleWord",
+            "impl Unpin for SwitchProRumbleWord",
+            "impl UnwindSafe for SwitchProRumbleWord"
           ]
         },
         "struct.SwitchProStatus.html": {
@@ -2713,7 +2915,7 @@
             "pub fn import(bytes: Vec<u8>) -> Result<WiiEepromImage, ControlError>",
             "pub fn with_extension_calibration( self, calibration: WiiExtensionCalibration, ) -> WiiEepromImage",
             "pub fn extension_calibration(&self) -> &WiiExtensionCalibration",
-            "pub fn bytes(&self) -> &[u8] \u24d8"
+            "pub fn bytes(&self) -> &[u8] ⓘ"
           ],
           "traits": [
             "impl Clone for WiiEepromImage",
@@ -2966,6 +3168,24 @@
             "impl UnwindSafe for WiiRemoteOutputs"
           ]
         },
+        "struct.WiiRemoteRumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct WiiRemoteRumble { pub enabled: bool, }",
+            "pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<WiiRemoteRumble>"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteRumble",
+            "impl Copy for WiiRemoteRumble",
+            "impl Debug for WiiRemoteRumble",
+            "impl Eq for WiiRemoteRumble",
+            "impl PartialEq for WiiRemoteRumble",
+            "impl RefUnwindSafe for WiiRemoteRumble",
+            "impl Send for WiiRemoteRumble",
+            "impl Sync for WiiRemoteRumble",
+            "impl Unpin for WiiRemoteRumble",
+            "impl UnwindSafe for WiiRemoteRumble"
+          ]
+        },
         "struct.WiiRemoteStatus.html": {
           "declarations": [
             "pub struct WiiRemoteStatus { /* private fields */ }",
@@ -3104,6 +3324,24 @@
             "impl UnwindSafe for Xbox360OutputState"
           ]
         },
+        "struct.Xbox360Rumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct Xbox360Rumble { pub strong: u8, pub weak: u8, }",
+            "pub fn decode_xusb(command: &[u8]) -> Option<Xbox360Rumble>"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Rumble",
+            "impl Copy for Xbox360Rumble",
+            "impl Debug for Xbox360Rumble",
+            "impl Eq for Xbox360Rumble",
+            "impl PartialEq for Xbox360Rumble",
+            "impl RefUnwindSafe for Xbox360Rumble",
+            "impl Send for Xbox360Rumble",
+            "impl Sync for Xbox360Rumble",
+            "impl Unpin for Xbox360Rumble",
+            "impl UnwindSafe for Xbox360Rumble"
+          ]
+        },
         "struct.Xbox360Status.html": {
           "declarations": [
             "pub struct Xbox360Status { /* private fields */ }",
@@ -3163,7 +3401,8 @@
         },
         "struct.XboxSeriesBluetoothRumble.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }"
+            "#[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }",
+            "pub fn decode( report_id: Option<u8>, payload: &[u8], ) -> Option<XboxSeriesBluetoothRumble>"
           ],
           "traits": [
             "impl Clone for XboxSeriesBluetoothRumble",
@@ -3181,6 +3420,7 @@
         "struct.XboxSeriesController.html": {
           "declarations": [
             "pub struct XboxSeriesController { /* private fields */ }",
+            "pub fn identity(&self) -> XboxSeriesIdentity",
             "pub fn inputs(&self) -> &XboxSeriesInputs",
             "pub fn status(&self) -> XboxSeriesStatus",
             "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
@@ -3235,7 +3475,9 @@
         },
         "struct.XboxSeriesOptions.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesOptions {}"
+            "#[non_exhaustive]pub struct XboxSeriesOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: XboxSeriesIdentity, ) -> XboxSeriesOptions",
+            "pub const fn identity(self) -> Option<XboxSeriesIdentity>"
           ],
           "traits": [
             "impl Clone for XboxSeriesOptions",
@@ -3315,6 +3557,27 @@
             "impl ControllerSurfaceInfo for DualShock4Surface",
             "impl ControllerSurfaceInfo for SwitchProSurface",
             "impl ControllerSurfaceInfo for Xbox360Surface"
+          ]
+        },
+        "struct.XboxSeriesIdentity.html": {
+          "declarations": [
+            "pub struct XboxSeriesIdentity(/* private fields */);",
+            "pub fn generate() -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesIdentity",
+            "impl Copy for XboxSeriesIdentity",
+            "impl Debug for XboxSeriesIdentity",
+            "impl Eq for XboxSeriesIdentity",
+            "impl Hash for XboxSeriesIdentity",
+            "impl PartialEq for XboxSeriesIdentity",
+            "impl RefUnwindSafe for XboxSeriesIdentity",
+            "impl Send for XboxSeriesIdentity",
+            "impl Sync for XboxSeriesIdentity",
+            "impl Unpin for XboxSeriesIdentity",
+            "impl UnwindSafe for XboxSeriesIdentity"
           ]
         }
       },
@@ -3646,7 +3909,8 @@
         },
         "enum.DualSenseHidOutput.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }",
+            "pub fn trigger_effects( &self, ) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>"
           ],
           "traits": [
             "impl Clone for DualSenseHidOutput",
@@ -3674,6 +3938,23 @@
             "impl Sync for DualSenseOutputEvent",
             "impl Unpin for DualSenseOutputEvent",
             "impl UnwindSafe for DualSenseOutputEvent"
+          ]
+        },
+        "enum.DualSenseTriggerEffect.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DualSenseTriggerEffect { Off, Feedback { zones: DualSenseTriggerZoneForces, }, Weapon { start_zone: u8, end_zone: u8, strength: u8, }, Vibration { zones: DualSenseTriggerZoneForces, frequency_code: u8, }, Unknown { mode: u8, raw: [u8; 11], }, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTriggerEffect",
+            "impl Copy for DualSenseTriggerEffect",
+            "impl Debug for DualSenseTriggerEffect",
+            "impl Eq for DualSenseTriggerEffect",
+            "impl PartialEq for DualSenseTriggerEffect",
+            "impl RefUnwindSafe for DualSenseTriggerEffect",
+            "impl Send for DualSenseTriggerEffect",
+            "impl Sync for DualSenseTriggerEffect",
+            "impl Unpin for DualSenseTriggerEffect",
+            "impl UnwindSafe for DualSenseTriggerEffect"
           ]
         },
         "enum.DualShock4Control.html": {
@@ -3711,7 +3992,8 @@
         },
         "enum.DualShock4OutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum DualShock4OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput(DualShock4HidOutput), }"
+            "#[non_exhaustive]pub enum DualShock4OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput(DualShock4HidOutput), }",
+            "pub fn rumble(&self) -> Option<DualShock4Rumble>"
           ],
           "traits": [
             "impl Clone for DualShock4OutputEvent",
@@ -4079,6 +4361,24 @@
             "impl UnwindSafe for SwitchProOutputEvent"
           ]
         },
+        "enum.SwitchProRumbleSamples.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SwitchProRumbleSamples { NoSamples, One([SwitchProRumbleSample; 1]), Two([SwitchProRumbleSample; 2]), Three([SwitchProRumbleSample; 3]), Unknown, }",
+            "pub fn as_slice(&self) -> Option<&[SwitchProRumbleSample]>"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleSamples",
+            "impl Copy for SwitchProRumbleSamples",
+            "impl Debug for SwitchProRumbleSamples",
+            "impl Eq for SwitchProRumbleSamples",
+            "impl PartialEq for SwitchProRumbleSamples",
+            "impl RefUnwindSafe for SwitchProRumbleSamples",
+            "impl Send for SwitchProRumbleSamples",
+            "impl Sync for SwitchProRumbleSamples",
+            "impl Unpin for SwitchProRumbleSamples",
+            "impl UnwindSafe for SwitchProRumbleSamples"
+          ]
+        },
         "enum.TouchSlot.html": {
           "declarations": [
             "pub enum TouchSlot { First, Second, }"
@@ -4166,7 +4466,8 @@
         },
         "enum.WiiRemoteOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum WiiRemoteOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum WiiRemoteOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "pub fn rumble(&self) -> Option<WiiRemoteRumble>"
           ],
           "traits": [
             "impl Clone for WiiRemoteOutputEvent",
@@ -4235,7 +4536,8 @@
         },
         "enum.Xbox360OutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum Xbox360OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum Xbox360OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "pub fn rumble(&self) -> Option<Xbox360Rumble>"
           ],
           "traits": [
             "impl Clone for Xbox360OutputEvent",
@@ -4268,7 +4570,8 @@
         },
         "enum.XboxSeriesOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), HostLifecycle(HostLifecycle), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum XboxSeriesOutputEvent { ForceFeedback(ForceFeedbackEvent), HostLifecycle(HostLifecycle), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "pub fn rumble(&self) -> Option<XboxSeriesRumble>"
           ],
           "traits": [
             "impl Clone for XboxSeriesOutputEvent",
@@ -4280,6 +4583,24 @@
             "impl Sync for XboxSeriesOutputEvent",
             "impl Unpin for XboxSeriesOutputEvent",
             "impl UnwindSafe for XboxSeriesOutputEvent"
+          ]
+        },
+        "enum.XboxSeriesRumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum XboxSeriesRumble { Bluetooth(XboxSeriesBluetoothRumble), Evdev { strong: u8, weak: u8, }, }",
+            "pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<XboxSeriesRumble>"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesRumble",
+            "impl Copy for XboxSeriesRumble",
+            "impl Debug for XboxSeriesRumble",
+            "impl Eq for XboxSeriesRumble",
+            "impl PartialEq for XboxSeriesRumble",
+            "impl RefUnwindSafe for XboxSeriesRumble",
+            "impl Send for XboxSeriesRumble",
+            "impl Sync for XboxSeriesRumble",
+            "impl Unpin for XboxSeriesRumble",
+            "impl UnwindSafe for XboxSeriesRumble"
           ]
         },
         "fn.create_dualsense.html": {
@@ -4321,6 +4642,24 @@
         "fn.create_xbox_series.html": {
           "declarations": [
             "pub fn create_xbox_series( options: CreationOptions, family: XboxSeriesOptions, ) -> Result<XboxSeriesController, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.decode_dualsense_trigger_effect.html": {
+          "declarations": [
+            "pub fn decode_dualsense_trigger_effect(raw: [u8; 11]) -> DualSenseTriggerEffect"
+          ],
+          "traits": []
+        },
+        "fn.decode_switch_pro_rumble_word.html": {
+          "declarations": [
+            "pub fn decode_switch_pro_rumble_word(raw: [u8; 4]) -> SwitchProRumbleWord"
+          ],
+          "traits": []
+        },
+        "fn.decode_switch_pro_rumble_word_with_previous.html": {
+          "declarations": [
+            "pub fn decode_switch_pro_rumble_word_with_previous( raw: [u8; 4], previous: Option<SwitchProRumbleSample>, ) -> SwitchProRumbleWord"
           ],
           "traits": []
         },
@@ -4948,6 +5287,40 @@
             "impl UnwindSafe for DualSenseTrigger"
           ]
         },
+        "struct.DualSenseTriggerEffectUpdate.html": {
+          "declarations": [
+            "pub struct DualSenseTriggerEffectUpdate { pub valid: bool, pub raw: [u8; 11], pub effect: Option<DualSenseTriggerEffect>, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTriggerEffectUpdate",
+            "impl Copy for DualSenseTriggerEffectUpdate",
+            "impl Debug for DualSenseTriggerEffectUpdate",
+            "impl Eq for DualSenseTriggerEffectUpdate",
+            "impl PartialEq for DualSenseTriggerEffectUpdate",
+            "impl RefUnwindSafe for DualSenseTriggerEffectUpdate",
+            "impl Send for DualSenseTriggerEffectUpdate",
+            "impl Sync for DualSenseTriggerEffectUpdate",
+            "impl Unpin for DualSenseTriggerEffectUpdate",
+            "impl UnwindSafe for DualSenseTriggerEffectUpdate"
+          ]
+        },
+        "struct.DualSenseTriggerZoneForces.html": {
+          "declarations": [
+            "pub struct DualSenseTriggerZoneForces { pub active_zones: u16, pub start_zone: u8, pub end_zone: u8, pub strengths: [Option<u8>; 10], }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTriggerZoneForces",
+            "impl Copy for DualSenseTriggerZoneForces",
+            "impl Debug for DualSenseTriggerZoneForces",
+            "impl Eq for DualSenseTriggerZoneForces",
+            "impl PartialEq for DualSenseTriggerZoneForces",
+            "impl RefUnwindSafe for DualSenseTriggerZoneForces",
+            "impl Send for DualSenseTriggerZoneForces",
+            "impl Sync for DualSenseTriggerZoneForces",
+            "impl Unpin for DualSenseTriggerZoneForces",
+            "impl UnwindSafe for DualSenseTriggerZoneForces"
+          ]
+        },
         "struct.DualShock4Axis.html": {
           "declarations": [
             "pub struct DualShock4Axis(/* private fields */);",
@@ -5108,6 +5481,24 @@
             "impl Sync for DualShock4OutputState",
             "impl Unpin for DualShock4OutputState",
             "impl UnwindSafe for DualShock4OutputState"
+          ]
+        },
+        "struct.DualShock4Rumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualShock4Rumble { pub valid_flags: Option<[u8; 2]>, pub strong: Option<u8>, pub weak: Option<u8>, }",
+            "pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<DualShock4Rumble>"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Rumble",
+            "impl Copy for DualShock4Rumble",
+            "impl Debug for DualShock4Rumble",
+            "impl Eq for DualShock4Rumble",
+            "impl PartialEq for DualShock4Rumble",
+            "impl RefUnwindSafe for DualShock4Rumble",
+            "impl Send for DualShock4Rumble",
+            "impl Sync for DualShock4Rumble",
+            "impl Unpin for DualShock4Rumble",
+            "impl UnwindSafe for DualShock4Rumble"
           ]
         },
         "struct.DualShock4Status.html": {
@@ -5859,7 +6250,9 @@
         },
         "struct.SwitchProRumble.html": {
           "declarations": [
-            "pub struct SwitchProRumble { pub packet_counter: u8, pub left: [u8; 4], pub right: [u8; 4], }"
+            "pub struct SwitchProRumble { pub packet_counter: u8, pub left: [u8; 4], pub right: [u8; 4], }",
+            "pub fn decode(&self) -> SwitchProRumbleDecoded",
+            "pub fn decode_with_previous( &self, left: Option<SwitchProRumbleSample>, right: Option<SwitchProRumbleSample>, ) -> SwitchProRumbleDecoded"
           ],
           "traits": [
             "impl Clone for SwitchProRumble",
@@ -5872,6 +6265,78 @@
             "impl Sync for SwitchProRumble",
             "impl Unpin for SwitchProRumble",
             "impl UnwindSafe for SwitchProRumble"
+          ]
+        },
+        "struct.SwitchProRumbleBand.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleBand { /* private fields */ }",
+            "pub fn frequency_hz(&self) -> Option<f32>",
+            "pub fn amplitude_ratio(&self) -> Option<f32>"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleBand",
+            "impl Copy for SwitchProRumbleBand",
+            "impl Debug for SwitchProRumbleBand",
+            "impl Eq for SwitchProRumbleBand",
+            "impl PartialEq for SwitchProRumbleBand",
+            "impl RefUnwindSafe for SwitchProRumbleBand",
+            "impl Send for SwitchProRumbleBand",
+            "impl Sync for SwitchProRumbleBand",
+            "impl Unpin for SwitchProRumbleBand",
+            "impl UnwindSafe for SwitchProRumbleBand"
+          ]
+        },
+        "struct.SwitchProRumbleDecoded.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleDecoded { pub left: SwitchProRumbleWord, pub right: SwitchProRumbleWord, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleDecoded",
+            "impl Copy for SwitchProRumbleDecoded",
+            "impl Debug for SwitchProRumbleDecoded",
+            "impl Eq for SwitchProRumbleDecoded",
+            "impl PartialEq for SwitchProRumbleDecoded",
+            "impl RefUnwindSafe for SwitchProRumbleDecoded",
+            "impl Send for SwitchProRumbleDecoded",
+            "impl Sync for SwitchProRumbleDecoded",
+            "impl Unpin for SwitchProRumbleDecoded",
+            "impl UnwindSafe for SwitchProRumbleDecoded"
+          ]
+        },
+        "struct.SwitchProRumbleSample.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleSample { /* private fields */ }",
+            "pub const fn high(&self) -> SwitchProRumbleBand",
+            "pub const fn low(&self) -> SwitchProRumbleBand"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleSample",
+            "impl Copy for SwitchProRumbleSample",
+            "impl Debug for SwitchProRumbleSample",
+            "impl Eq for SwitchProRumbleSample",
+            "impl PartialEq for SwitchProRumbleSample",
+            "impl RefUnwindSafe for SwitchProRumbleSample",
+            "impl Send for SwitchProRumbleSample",
+            "impl Sync for SwitchProRumbleSample",
+            "impl Unpin for SwitchProRumbleSample",
+            "impl UnwindSafe for SwitchProRumbleSample"
+          ]
+        },
+        "struct.SwitchProRumbleWord.html": {
+          "declarations": [
+            "pub struct SwitchProRumbleWord { pub raw: [u8; 4], pub samples: SwitchProRumbleSamples, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumbleWord",
+            "impl Copy for SwitchProRumbleWord",
+            "impl Debug for SwitchProRumbleWord",
+            "impl Eq for SwitchProRumbleWord",
+            "impl PartialEq for SwitchProRumbleWord",
+            "impl RefUnwindSafe for SwitchProRumbleWord",
+            "impl Send for SwitchProRumbleWord",
+            "impl Sync for SwitchProRumbleWord",
+            "impl Unpin for SwitchProRumbleWord",
+            "impl UnwindSafe for SwitchProRumbleWord"
           ]
         },
         "struct.SwitchProStatus.html": {
@@ -6033,7 +6498,7 @@
             "pub fn import(bytes: Vec<u8>) -> Result<WiiEepromImage, ControlError>",
             "pub fn with_extension_calibration( self, calibration: WiiExtensionCalibration, ) -> WiiEepromImage",
             "pub fn extension_calibration(&self) -> &WiiExtensionCalibration",
-            "pub fn bytes(&self) -> &[u8] \u24d8"
+            "pub fn bytes(&self) -> &[u8] ⓘ"
           ],
           "traits": [
             "impl Clone for WiiEepromImage",
@@ -6286,6 +6751,24 @@
             "impl UnwindSafe for WiiRemoteOutputs"
           ]
         },
+        "struct.WiiRemoteRumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct WiiRemoteRumble { pub enabled: bool, }",
+            "pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<WiiRemoteRumble>"
+          ],
+          "traits": [
+            "impl Clone for WiiRemoteRumble",
+            "impl Copy for WiiRemoteRumble",
+            "impl Debug for WiiRemoteRumble",
+            "impl Eq for WiiRemoteRumble",
+            "impl PartialEq for WiiRemoteRumble",
+            "impl RefUnwindSafe for WiiRemoteRumble",
+            "impl Send for WiiRemoteRumble",
+            "impl Sync for WiiRemoteRumble",
+            "impl Unpin for WiiRemoteRumble",
+            "impl UnwindSafe for WiiRemoteRumble"
+          ]
+        },
         "struct.WiiRemoteStatus.html": {
           "declarations": [
             "pub struct WiiRemoteStatus { /* private fields */ }",
@@ -6424,6 +6907,24 @@
             "impl UnwindSafe for Xbox360OutputState"
           ]
         },
+        "struct.Xbox360Rumble.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct Xbox360Rumble { pub strong: u8, pub weak: u8, }",
+            "pub fn decode_xusb(command: &[u8]) -> Option<Xbox360Rumble>"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Rumble",
+            "impl Copy for Xbox360Rumble",
+            "impl Debug for Xbox360Rumble",
+            "impl Eq for Xbox360Rumble",
+            "impl PartialEq for Xbox360Rumble",
+            "impl RefUnwindSafe for Xbox360Rumble",
+            "impl Send for Xbox360Rumble",
+            "impl Sync for Xbox360Rumble",
+            "impl Unpin for Xbox360Rumble",
+            "impl UnwindSafe for Xbox360Rumble"
+          ]
+        },
         "struct.Xbox360Status.html": {
           "declarations": [
             "pub struct Xbox360Status { /* private fields */ }",
@@ -6483,7 +6984,8 @@
         },
         "struct.XboxSeriesBluetoothRumble.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }"
+            "#[non_exhaustive]pub struct XboxSeriesBluetoothRumble { pub motor_mask: u8, pub left_trigger: u8, pub right_trigger: u8, pub strong: u8, pub weak: u8, pub duration: u8, pub delay: u8, pub repeat: u8, }",
+            "pub fn decode( report_id: Option<u8>, payload: &[u8], ) -> Option<XboxSeriesBluetoothRumble>"
           ],
           "traits": [
             "impl Clone for XboxSeriesBluetoothRumble",
@@ -6501,6 +7003,7 @@
         "struct.XboxSeriesController.html": {
           "declarations": [
             "pub struct XboxSeriesController { /* private fields */ }",
+            "pub fn identity(&self) -> XboxSeriesIdentity",
             "pub fn inputs(&self) -> &XboxSeriesInputs",
             "pub fn status(&self) -> XboxSeriesStatus",
             "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
@@ -6555,7 +7058,9 @@
         },
         "struct.XboxSeriesOptions.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesOptions {}"
+            "#[non_exhaustive]pub struct XboxSeriesOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: XboxSeriesIdentity, ) -> XboxSeriesOptions",
+            "pub const fn identity(self) -> Option<XboxSeriesIdentity>"
           ],
           "traits": [
             "impl Clone for XboxSeriesOptions",
@@ -6635,6 +7140,27 @@
             "impl ControllerSurfaceInfo for DualShock4Surface",
             "impl ControllerSurfaceInfo for SwitchProSurface",
             "impl ControllerSurfaceInfo for Xbox360Surface"
+          ]
+        },
+        "struct.XboxSeriesIdentity.html": {
+          "declarations": [
+            "pub struct XboxSeriesIdentity(/* private fields */);",
+            "pub fn generate() -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesIdentity",
+            "impl Copy for XboxSeriesIdentity",
+            "impl Debug for XboxSeriesIdentity",
+            "impl Eq for XboxSeriesIdentity",
+            "impl Hash for XboxSeriesIdentity",
+            "impl PartialEq for XboxSeriesIdentity",
+            "impl RefUnwindSafe for XboxSeriesIdentity",
+            "impl Send for XboxSeriesIdentity",
+            "impl Sync for XboxSeriesIdentity",
+            "impl Unpin for XboxSeriesIdentity",
+            "impl UnwindSafe for XboxSeriesIdentity"
           ]
         }
       },

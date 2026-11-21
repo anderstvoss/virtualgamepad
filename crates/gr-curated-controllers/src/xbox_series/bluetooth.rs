@@ -1,4 +1,4 @@
-use super::{XboxSeriesButton as Button, XboxSeriesInputs};
+use super::{XboxSeriesButton as Button, XboxSeriesIdentity, XboxSeriesInputs};
 use gr_hid::{ReplyError, Report, ReportType};
 use gr_realization_api::{
     NativeControllerRealization, NativeDeviceIdentity, NativeHidRealization, ProviderFrame,
@@ -41,13 +41,13 @@ const BUTTONS: [(Button, u8); 11] = [
     (Button::RightStickPress, 14),
 ];
 
-pub(super) fn realization() -> NativeControllerRealization {
+pub(super) fn realization(identity: XboxSeriesIdentity) -> NativeControllerRealization {
     NativeControllerRealization::Uhid(NativeHidRealization {
         target: RealizationTarget::LINUX_UHID_BLUETOOTH,
         bus_type: 5,
         device_name: "Xbox Wireless Controller".into(),
         physical_path: "virtualgamepad/uhid/xbox-series".into(),
-        unique_id: "virtualgamepad-xbox-series".into(),
+        unique_id: crate::common::address_label(identity.bytes()),
         identity: NativeDeviceIdentity {
             vendor_id: 0x045e,
             product_id: 0x0b13,
@@ -114,40 +114,52 @@ pub struct XboxSeriesBluetoothRumble {
     pub repeat: u8,
 }
 
+impl XboxSeriesBluetoothRumble {
+    /// Decode the eight ID-excluded bytes of native Bluetooth output 0x03.
+    /// Values outside the declared selection mask and magnitude range are invalid.
+    #[must_use]
+    pub fn decode(report_id: Option<u8>, payload: &[u8]) -> Option<XboxSeriesBluetoothRumble> {
+        if report_id != Some(3) {
+            return None;
+        }
+        let &[
+            motor_mask,
+            left_trigger,
+            right_trigger,
+            strong,
+            weak,
+            duration,
+            delay,
+            repeat,
+        ] = payload
+        else {
+            return None;
+        };
+        if motor_mask & 0xf0 != 0
+            || [left_trigger, right_trigger, strong, weak]
+                .iter()
+                .any(|&x| x > 100)
+        {
+            return None;
+        }
+        Some(Self {
+            motor_mask,
+            left_trigger,
+            right_trigger,
+            strong,
+            weak,
+            duration,
+            delay,
+            repeat,
+        })
+    }
+}
+
 pub(super) fn rumble(report: &Report) -> Result<XboxSeriesBluetoothRumble, ReplyError> {
     if report.kind != ReportType::Output || report.id() != Some(3) {
         return Err(ReplyError::Unsupported);
     }
-    let &[
-        motor_mask,
-        left_trigger,
-        right_trigger,
-        strong,
-        weak,
-        duration,
-        delay,
-        repeat,
-    ] = report.payload()
-    else {
-        return Err(ReplyError::Invalid);
-    };
-    if motor_mask & 0xf0 != 0
-        || [left_trigger, right_trigger, strong, weak]
-            .iter()
-            .any(|&x| x > 100)
-    {
-        return Err(ReplyError::Invalid);
-    }
-    Ok(XboxSeriesBluetoothRumble {
-        motor_mask,
-        left_trigger,
-        right_trigger,
-        strong,
-        weak,
-        duration,
-        delay,
-        repeat,
-    })
+    XboxSeriesBluetoothRumble::decode(report.id(), report.payload()).ok_or(ReplyError::Invalid)
 }
 
 pub(super) fn validate_output(report: &Report) -> Result<(), ReplyError> {
@@ -161,6 +173,36 @@ mod tests {
     use crate::retained::RetainedProtocol;
     use gr_hid::{Lifecycle, Protocol, Reply, RequestKind};
     use gr_realization_api::RealizationSessionId;
+
+    #[test]
+    fn bluetooth_uniq_uses_generated_identity_and_restoration_is_stable() {
+        let first = XboxSeriesIdentity::from_bytes(crate::common::test_address(101)).unwrap();
+        let second = XboxSeriesIdentity::from_bytes(crate::common::test_address(102)).unwrap();
+        let NativeControllerRealization::Uhid(first_spec) = realization(first) else {
+            panic!("expected Bluetooth UHID");
+        };
+        let NativeControllerRealization::Uhid(second_spec) = realization(second) else {
+            panic!("expected Bluetooth UHID");
+        };
+        assert_eq!(
+            first_spec.unique_id,
+            crate::common::address_label(first.bytes())
+        );
+        assert_eq!(
+            second_spec.unique_id,
+            crate::common::address_label(second.bytes())
+        );
+        assert_ne!(first_spec.unique_id, second_spec.unique_id);
+        let restored = XboxSeriesIdentity::from_bytes(first.bytes()).unwrap();
+        let NativeControllerRealization::Uhid(reopened) = realization(restored) else {
+            panic!("expected Bluetooth UHID");
+        };
+        assert_eq!(reopened.unique_id, first_spec.unique_id);
+        assert_eq!(reopened.bus_type, 5);
+        let mut invalid = first.bytes();
+        invalid[0] |= 1;
+        assert!(XboxSeriesIdentity::from_bytes(invalid).is_err());
+    }
 
     #[test]
     fn physical_input_shape_keeps_controls_independent_and_endpoints_exact() {
