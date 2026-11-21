@@ -1191,13 +1191,19 @@ pub(super) fn draw_diagnostics(
         ui,
         &[
             ("Status", status.to_owned()),
-            ("Playback underrun frames", view.health.underrun_frames().to_string()),
+            (
+                "Playback underrun frames",
+                view.health.underrun_frames().to_string(),
+            ),
             (
                 "Dropped playback frames",
                 view.health.dropped_playback_frames().to_string(),
             ),
             ("Playback frames", view.activity.playback_frames.to_string()),
-            ("Playback read discontinuities", view.activity.discontinuities.to_string()),
+            (
+                "Playback read discontinuities",
+                view.activity.discontinuities.to_string(),
+            ),
             (
                 "Latest segment",
                 view.activity
