@@ -1,6 +1,6 @@
 use super::{
-    XboxSeriesBluetoothRumble, XboxSeriesButton, XboxSeriesInputs, XboxSeriesOptions, bluetooth,
-    definition::XboxSeriesDefinition, evdev,
+    XboxSeriesBluetoothRumble, XboxSeriesButton, XboxSeriesIdentity, XboxSeriesInputs,
+    XboxSeriesOptions, bluetooth, definition::XboxSeriesDefinition, evdev,
 };
 use crate::{
     ControllerAssociation, CreationOptions, common,
@@ -38,16 +38,20 @@ impl OutputState for XboxSeriesOutputState {
 pub struct XboxSeriesController(
     Box<common::ControllerSession<XboxSeriesDefinition>>,
     &'static ControllerSurface,
+    XboxSeriesIdentity,
 );
 
 /// Create an Xbox Series controller using the exact selected realization.
 pub fn create_xbox_series(
     options: CreationOptions,
-    _: XboxSeriesOptions,
+    family: XboxSeriesOptions,
 ) -> Result<XboxSeriesController, ProviderError> {
     require_target(options.target)?;
     common::require_linux_platform(options.target)?;
-    create(options, XboxSeriesDefinition::default())
+    let identity = family
+        .identity()
+        .map_or_else(XboxSeriesIdentity::generate, Ok)?;
+    create(options, XboxSeriesDefinition::default(), identity)
 }
 
 fn require_target(target: RealizationTarget) -> Result<(), ProviderError> {
@@ -66,25 +70,37 @@ fn require_target(target: RealizationTarget) -> Result<(), ProviderError> {
 pub(super) fn create(
     options: CreationOptions,
     definition: XboxSeriesDefinition,
+    identity: XboxSeriesIdentity,
 ) -> Result<XboxSeriesController, ProviderError> {
     use super::definition::{BLUETOOTH, SURFACE};
     let (realization, surface) = match options.target {
         RealizationTarget::LINUX_UINPUT => (evdev::realization(), &SURFACE),
-        RealizationTarget::LINUX_UHID_BLUETOOTH => (bluetooth::realization(), &BLUETOOTH),
+        RealizationTarget::LINUX_UHID_BLUETOOTH => (bluetooth::realization(identity), &BLUETOOTH),
         target => {
             return Err(ProviderError::Unsupported {
                 reason: common::unavailable(target).to_string(),
             });
         }
     };
-    let mut session = common::create(definition, realization, options)?;
+    let mut session = if options.target == RealizationTarget::LINUX_UHID_BLUETOOTH {
+        // The transport uniq is the synthetic identity, not a per-open suffix.
+        common::create_with_hid_uniq(definition, realization, options)?
+    } else {
+        common::create(definition, realization, options)?
+    };
     session.commit().map_err(|error| ProviderError::Open {
         reason: error.to_string(),
     })?;
-    Ok(XboxSeriesController(Box::new(session), surface))
+    Ok(XboxSeriesController(Box::new(session), surface, identity))
 }
 
 impl XboxSeriesController {
+    /// Caller-restorable identity, retained on uinput without host exposure.
+    #[must_use]
+    pub const fn identity(&self) -> XboxSeriesIdentity {
+        self.2
+    }
+
     #[must_use]
     pub fn surface(&self) -> &'static ControllerSurface {
         self.1
@@ -260,7 +276,11 @@ mod input_ownership_tests {
             } else {
                 &super::super::definition::BLUETOOTH
             };
-            let mut controller = XboxSeriesController(Box::new(session), surface);
+            let mut controller = XboxSeriesController(
+                Box::new(session),
+                surface,
+                XboxSeriesIdentity::from_bytes(common::test_address(77)).unwrap(),
+            );
             controller.service(&mut |_| {}).unwrap();
             let status = controller.status();
             assert_eq!(status.target(), target);

@@ -1,5 +1,24 @@
 # Pre-alpha API refinement migration
 
+## P10a · Xbox Series synthetic identity (Alpha 2)
+
+`XboxSeriesIdentity` is added to the ordinary root and supporting Xbox Series
+API. Applications can call `generate()`, `from_bytes([u8; 6])`, and `bytes()`
+to persist a locally administered synthetic identity; `XboxSeriesOptions`
+now carries an optional identity via `with_identity()` / `identity()`.
+`XboxSeriesController::identity()` returns the selected identity after close.
+
+**Migration:** Existing `XboxSeriesOptions::default()` callers require no
+source change. Default sessions now allocate an independent identity using OS
+entropy. Bluetooth UHID exposes that identity in `uniq` instead of a fixed
+prefix plus creation suffix; explicitly restored sessions keep it stable across
+reopen, while `phys` remains unique for each opening. Uinput still has no
+controller-reported identity; the handle retains the value only. No physical
+radio or host acceptance is claimed. Root snapshot declarations and the
+generated inventory's Xbox Series pages are updated for this delta.
+
+
+
 This is a deliberate breaking candidate update before the final alpha freeze.
 Start with the [final alpha.1 → alpha.2 consumer table](#alpha1--alpha2-final-consumer-table).
 The PR sections below are chronological history: intermediate combined state
@@ -42,6 +61,32 @@ Post-GUI audit: the empty root `audio-alsa` feature is removed. ALSA host-device
 routing belongs to the demo's `audio-alsa` feature, whose defaults are unchanged.
 Library users enable `audio-pipewire` for local UHID audio or `audio-usbip` for the
 WIP composite; ALSA routing does not add a library realization.
+
+## Alpha 2 G2 · DualSense adaptive trigger effects (c3b)
+
+Root default/all-feature API snapshots add `DualSenseTriggerEffect`,
+`DualSenseTriggerZoneForces`, `DualSenseTriggerEffectUpdate` and
+`decode_dualsense_trigger_effect([u8; 11]) -> DualSenseTriggerEffect`;
+`DualSenseHidOutput::trigger_effects()` returns
+`Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>` in
+right, left order. Matching types/function are re-exported from curated and
+experimental surfaces. The existing `UsbOutput` fields and raw 11-byte blocks
+are unchanged. For each side, `valid = false` means the host did **not**
+update that effect; `effect = None` is not equivalent to `Off`.
+
+Source-supported modes are Off 0x05, Feedback 0x21, Weapon 0x25 and
+Vibration 0x26. Zones are indices 0..9; 3-bit encoder strength codes expose
+levels 1..8; vibration frequency is the native code, not proven Hz.
+Noncanonical parameters, unknown mode bytes and SDL demonstration 0x01/0x06
+are `Unknown` with full original bytes. This is pure interpretation of
+accepted USB host-output bytes, not a new output path, journal or physical
+actuation. Bluetooth output framing remains unparsed in the current HID
+output decoder. The uinput adaptive-trigger refusal remains unchanged.
+Research: ds-l0-device-adaptive-trigger-mode-block,
+ds-l0-device-adaptive-trigger-mode-parameters,
+ds-l0-sdl-trigger-demo-modes,
+ds-l0-physical-adaptive-trigger-unknown,
+ds-vg-exp0016-steam-trigger-disagreement. Source evidence only.
 
 ## Historical capability and supporting-API ledger
 
@@ -902,6 +947,14 @@ optional raw observations as an authoritative stream. Wii supporting snapshot:
 
 Existing events, raw payloads, FF effect types and retained snapshots are unchanged.
 These additive ordinary-root declarations do not change protocol admission or qualify physical output.
+
+## P2 DualSense LED output decoding (#154, #365; 2026-11-20)
+
+- `DualSenseFeature` adds `PlayerIndicators` and `MicrophoneLed`. `Lightbar` now denotes only the RGB lightbar. The feature query still does not offer an application-side native LED command; output is reverse/host-observed. Linux uinput cannot receive native DualSense LED reports.
+- New `DualSenseMuteLed` has `Off`, `On`, `Pulse`, and `Unknown(u8)`. Change exhaustive consumers of `DualSenseHidOutput::UsbOutput.mute_button_led` from `Option<bool>` to `Option<DualSenseMuteLed>`; pulse and unknown bytes no longer collapse to `true`.
+- `DualSenseHidOutput::UsbOutput` adds `led_brightness: u8` (raw; conflicting encoding in research claim `ds-cgap-led-brightness-encoding-disagreement`), `lightbar_setup: Option<u8>` (valid_flag2 bit 1), `release_leds: Option<bool>` (Some(true) for valid_flag1 bit 3, otherwise None), and `player_led_instant: Option<bool>` (valid_flag1 bit 4). `player_leds` now contains only five indicator bits (0–4), with bit 5 exposed separately.
+- Consumers needing the complete original packet should continue to use `raw`. The legacy retained `DualSenseOutputState.player_leds` remains the original player-LED byte; it does not adopt the new event field's mask. No other retained-state ABI or wire serialization changes.
+- Updated GUI presents five indicators, instant/fade, mute pulse/unknown, and uninterpreted brightness. The changes and tests are source-only; L1–L8 physical checks are not run.
 
 ### #365 · Sony caller-supplied device data (P10b)
 

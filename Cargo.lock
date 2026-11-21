@@ -1282,6 +1282,7 @@ dependencies = [
 name = "gr-curated-controllers"
 version = "0.1.0"
 dependencies = [
+ "getrandom 0.3.4",
  "gr-audio-contract",
  "gr-controller-contract",
  "gr-controller-runtime",

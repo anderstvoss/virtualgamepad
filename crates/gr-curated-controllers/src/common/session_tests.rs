@@ -320,6 +320,69 @@ fn probes<D: HidDriver>(driver: &D, numbered: [bool; 3], features: &[(u8, usize)
     drop(rt);
     assert_eq!(io.lock().unwrap().destroys, 1);
 }
+/// The mock transport sees synthetic reports, not a host or physical device.
+fn synthetic_feature<D: HidDriver>(
+    driver: &D,
+    identity: [u8; 6],
+    report_id: u8,
+    expected_length: usize,
+) -> Vec<u8> {
+    let (mut runtime, io) = rig_with_address(driver, [true; 3], identity);
+    runtime.service(0).unwrap();
+    io.lock()
+        .unwrap()
+        .events
+        .push_back(RawReverseEvent::HidGetReportRequest {
+            request_id: 31,
+            report_id,
+            report_type: 0,
+        });
+    runtime.service(1).unwrap();
+    let report = {
+        let record = io.lock().unwrap();
+        let Some(ProviderFrame::HidGetReportReply {
+            request_id: 31,
+            status: 0,
+            bytes,
+        }) = record.sent.last()
+        else {
+            panic!("expected successful synthetic feature response");
+        };
+        assert_eq!(bytes.len(), expected_length);
+        bytes.clone()
+    };
+    runtime.close().unwrap();
+    assert_eq!(io.lock().unwrap().destroys, 1);
+    report
+}
+
+#[test]
+fn sony_synthetic_identity_changes_but_constant_factory_features_do_not() {
+    // Synthetic, generated locally: no captured pairing or calibration data.
+    let first = test_address(201);
+    let second = test_address(202);
+    assert_ne!(
+        synthetic_feature(&DualSenseDefinition, first, 0x09, 20),
+        synthetic_feature(&DualSenseDefinition, second, 0x09, 20)
+    );
+    for (id, size) in [(0x05, 41), (0x20, 64)] {
+        assert_eq!(
+            synthetic_feature(&DualSenseDefinition, first, id, size),
+            synthetic_feature(&DualSenseDefinition, second, id, size)
+        );
+    }
+    assert_ne!(
+        synthetic_feature(&DualShock4Definition, first, 0x12, 16),
+        synthetic_feature(&DualShock4Definition, second, 0x12, 16)
+    );
+    for (id, size) in [(0x02, 37), (0xa3, 49)] {
+        assert_eq!(
+            synthetic_feature(&DualShock4Definition, first, id, size),
+            synthetic_feature(&DualShock4Definition, second, id, size)
+        );
+    }
+}
+
 #[test]
 fn every_family_owns_exact_feature_and_set_completion_with_reused_kernel_ids() {
     probes(
@@ -1430,6 +1493,103 @@ fn sony_held_input_survives_consumer_reopen<D: HidDriver>(driver: &D, hat_offset
 fn sony_first_report_and_consumer_reopen_preserve_held_up() {
     sony_held_input_survives_consumer_reopen(&DualSenseDefinition::default(), 7);
     sony_held_input_survives_consumer_reopen(&DualShock4Definition::default(), 4);
+}
+
+#[test]
+fn xbox_series_bluetooth_first_open_refreshes_neutral_without_an_edit() {
+    let driver = crate::xbox_series::XboxSeriesDefinition::default();
+    let (mut runtime, record) = rig(&driver, [true, true, false]);
+    let start = gr_hid::Lifecycle::Start {
+        numbered_input: true,
+        numbered_output: true,
+        numbered_feature: false,
+    };
+    record
+        .lock()
+        .unwrap()
+        .events
+        .push_back(RawReverseEvent::HidLifecycle(start));
+    runtime.service(0).unwrap();
+    {
+        let mut record = record.lock().unwrap();
+        assert_eq!(record.sent.len(), 1);
+        record.sent.clear();
+        record
+            .events
+            .push_back(RawReverseEvent::HidLifecycle(gr_hid::Lifecycle::Open));
+    }
+    runtime.service(1).unwrap();
+    let record = record.lock().unwrap();
+    assert_eq!(
+        record.sent.as_slice(),
+        &[ProviderFrame::HidInput {
+            report_id: Some(1),
+            bytes: vec![0, 128, 0, 128, 0, 128, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0],
+        }]
+    );
+    // A default-zero payload would pin unsigned sticks at their minimum.
+    assert!(!matches!(
+        record.sent.first(),
+        Some(ProviderFrame::HidInput { bytes, .. }) if bytes.iter().all(|byte| *byte == 0)
+    ));
+}
+
+#[test]
+fn xbox_series_bluetooth_first_open_uses_edited_state() {
+    use crate::xbox_series::XboxSeriesButton as Button;
+
+    let driver = crate::xbox_series::XboxSeriesDefinition::default();
+    let (mut runtime, record) = rig(&driver, [true, true, false]);
+    record
+        .lock()
+        .unwrap()
+        .events
+        .push_back(RawReverseEvent::HidLifecycle(gr_hid::Lifecycle::Start {
+            numbered_input: true,
+            numbered_output: true,
+            numbered_feature: false,
+        }));
+    runtime.service(0).unwrap();
+    runtime
+        .update(|state| {
+            state.sticks = [[1234, -1234], [0, i16::MIN]];
+            state.set_triggers(17, 1023).unwrap();
+            state.set_button(Button::A, true);
+            state.set_button(Button::DpadUp, true);
+            Ok(())
+        })
+        .unwrap();
+    {
+        let mut record = record.lock().unwrap();
+        record.sent.clear();
+        record
+            .events
+            .push_back(RawReverseEvent::HidLifecycle(gr_hid::Lifecycle::Open));
+    }
+    runtime.service(1).unwrap();
+    assert_eq!(
+        record.lock().unwrap().sent.as_slice(),
+        &[ProviderFrame::HidInput {
+            report_id: Some(1),
+            bytes: vec![210, 132, 46, 123, 0, 128, 0, 0, 17, 0, 255, 3, 1, 1, 0, 0],
+        }]
+    );
+}
+
+#[test]
+fn xbox_series_uinput_neutral_frame_remains_evdev() {
+    let (mut session, record) = evdev_rig(crate::xbox_series::XboxSeriesDefinition::default());
+    session.commit().unwrap();
+    let record = record.lock().unwrap();
+    let Some(ProviderFrame::Evdev(events)) = record.sent.first() else {
+        panic!("Xbox Series uinput must emit evdev");
+    };
+    assert_eq!(
+        events
+            .last()
+            .map(|event| (event.event_type, event.code, event.value)),
+        Some((0, 0, 0))
+    );
 }
 
 #[test]

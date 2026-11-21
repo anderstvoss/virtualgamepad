@@ -173,7 +173,7 @@
         "pub fn import(bytes: Vec<u8>) -> Result<Self, ControlError>",
         "pub fn with_extension_calibration( self, calibration: WiiExtensionCalibration, ) -> Self",
         "pub fn extension_calibration(&self) -> &WiiExtensionCalibration",
-        "pub fn bytes(&self) -> &[u8] ⓘ"
+        "pub fn bytes(&self) -> &[u8] \u24d8"
       ],
       "traits": [
         "impl Clone for WiiEepromImage",
