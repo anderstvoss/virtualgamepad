@@ -8,9 +8,10 @@ use std::{
     time::{Duration, Instant},
 };
 use virtualgamepad::{
-    CreationOptions, DualSenseController, DualSenseOptions, DualShock4Controller, DualShock4Options,
-    RealizationId, SwitchProController, SwitchProOptions, SwitchProOutputEvent, Xbox360Controller,
-    Xbox360Options, create_dualsense, create_dualshock4, create_switch_pro, create_xbox360,
+    CreationOptions, DualSenseController, DualSenseOptions, DualShock4Controller,
+    DualShock4Options, RealizationId, SwitchProController, SwitchProOptions, SwitchProOutputEvent,
+    Xbox360Controller, Xbox360Options, create_dualsense, create_dualshock4, create_switch_pro,
+    create_xbox360,
 };
 
 enum Session {
@@ -28,7 +29,9 @@ impl Session {
             "dualshock4" => {
                 Self::DualShock4(create_dualshock4(options, DualShock4Options::default())?)
             }
-            "switch-pro" => Self::SwitchPro(create_switch_pro(options, SwitchProOptions::default())?),
+            "switch-pro" => {
+                Self::SwitchPro(create_switch_pro(options, SwitchProOptions::default())?)
+            }
             "xbox360" => Self::Xbox360(create_xbox360(options, Xbox360Options::default())?),
             _ => return Err("unknown Alpha 1 family".into()),
         })
