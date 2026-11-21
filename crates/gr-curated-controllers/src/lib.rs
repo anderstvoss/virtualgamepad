@@ -30,6 +30,7 @@
 
 pub mod audio;
 mod common;
+mod sony_device_data;
 mod sony_evdev;
 pub mod steam_controller_2026;
 pub use common::WorkerBridge;

@@ -362,23 +362,23 @@ fn sony_synthetic_identity_changes_but_constant_factory_features_do_not() {
     let first = test_address(201);
     let second = test_address(202);
     assert_ne!(
-        synthetic_feature(&DualSenseDefinition, first, 0x09, 20),
-        synthetic_feature(&DualSenseDefinition, second, 0x09, 20)
+        synthetic_feature(&DualSenseDefinition::default(), first, 0x09, 20),
+        synthetic_feature(&DualSenseDefinition::default(), second, 0x09, 20)
     );
     for (id, size) in [(0x05, 41), (0x20, 64)] {
         assert_eq!(
-            synthetic_feature(&DualSenseDefinition, first, id, size),
-            synthetic_feature(&DualSenseDefinition, second, id, size)
+            synthetic_feature(&DualSenseDefinition::default(), first, id, size),
+            synthetic_feature(&DualSenseDefinition::default(), second, id, size)
         );
     }
     assert_ne!(
-        synthetic_feature(&DualShock4Definition, first, 0x12, 16),
-        synthetic_feature(&DualShock4Definition, second, 0x12, 16)
+        synthetic_feature(&DualShock4Definition::default(), first, 0x12, 16),
+        synthetic_feature(&DualShock4Definition::default(), second, 0x12, 16)
     );
     for (id, size) in [(0x02, 37), (0xa3, 49)] {
         assert_eq!(
-            synthetic_feature(&DualShock4Definition, first, id, size),
-            synthetic_feature(&DualShock4Definition, second, id, size)
+            synthetic_feature(&DualShock4Definition::default(), first, id, size),
+            synthetic_feature(&DualShock4Definition::default(), second, id, size)
         );
     }
 }
