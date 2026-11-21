@@ -358,9 +358,14 @@ pub(crate) fn create_restored<D: HidDriver>(
     options: CreationOptions,
     restored: Option<[u8; 6]>,
 ) -> Result<ControllerSession<D>, ProviderError> {
-    if restored.is_some() && options.target != RealizationTarget::LINUX_UHID_USB {
+    if restored.is_some()
+        && !matches!(
+            options.target,
+            RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+        )
+    {
         return Err(ProviderError::Unsupported {
-            reason: "identity restoration is supported only for USB/UHID".into(),
+            reason: "identity restoration requires an explicitly selected UHID realization".into(),
         });
     }
     create_labeled(driver, realization, options, restored, restored.is_some())

@@ -31,6 +31,9 @@ generated inventory's Xbox Series pages are updated for this delta.
 
 
 This is a deliberate breaking candidate update before the final alpha freeze.
+
+**P9c Switch Pro (Bluetooth-bus UHID):** the family now declares an additional explicitly selectable `linux.uhid.bluetooth` realization with source-only restrictions for MCU, radio and audio. Existing `SwitchProOptions`, handle input/status/output types, and root public signatures are unchanged. No API snapshot delta is expected; the checked-in snapshot remains authoritative. Consumer code must request this target explicitly; never fall back to USB.
+
 Start with the [final alpha.1 → alpha.2 consumer table](#alpha1--alpha2-final-consumer-table).
 The PR sections below are chronological history: intermediate combined state
 closures and standalone identity/image/options constructors are superseded by
