@@ -1771,6 +1771,9 @@ impl From<RawReverseEvent> for SwitchProOutputEvent {
     }
 }
 /// Family options for a new `SwitchPro` session.
+///
+/// IMU enable behavior is source-backed by research claim
+/// `swpro-l0-consumer-imu-rumble-ack-gates`; retail timing remains unmeasured.
 #[derive(Debug, Clone, Copy, Default)]
 #[non_exhaustive]
 pub struct SwitchProOptions {
