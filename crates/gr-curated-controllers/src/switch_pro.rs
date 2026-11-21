@@ -43,14 +43,13 @@ pub struct SwitchProMotionSample {
 /// Source-supported Switch Pro battery level; no voltage thresholds are inferred.
 /// Research: `swpro-l0-device-battery-connection-bits`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[repr(u8)]
 pub enum SwitchProBatteryLevel {
-    Empty = 0,
-    Critical = 2,
-    Low = 4,
-    Medium = 6,
+    Empty,
+    Critical,
+    Low,
+    Medium,
     #[default]
-    Full = 8,
+    Full,
 }
 
 /// Native battery report status. Pro connection nibble 0 means unpowered;
@@ -63,7 +62,14 @@ pub struct SwitchProBattery {
 }
 impl SwitchProBattery {
     const fn wire_byte(self) -> u8 {
-        ((self.level as u8) | (self.charging as u8)) << 4 | (self.usb_powered as u8)
+        let level = match self.level {
+            SwitchProBatteryLevel::Empty => 0,
+            SwitchProBatteryLevel::Critical => 2,
+            SwitchProBatteryLevel::Low => 4,
+            SwitchProBatteryLevel::Medium => 6,
+            SwitchProBatteryLevel::Full => 8,
+        };
+        ((level | (self.charging as u8)) << 4) | (self.usb_powered as u8)
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
