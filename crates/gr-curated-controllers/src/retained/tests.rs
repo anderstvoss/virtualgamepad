@@ -12,7 +12,7 @@ fn set<P: Protocol>(p: &mut P, id: Option<u8>, bytes: Vec<u8>) -> Reply {
 }
 #[test]
 fn dualsense_partial_outputs_preserve_prior_fields_and_count_changes_once() {
-    let mut p = crate::dualsense::DualSenseDefinition.hid_protocol(RealizationSessionId(7), [2; 6]);
+    let mut p = crate::dualsense::DualSenseDefinition::default().hid_protocol(RealizationSessionId(7), [2; 6]);
     let mut rgb = vec![0; 47];
     rgb[1] = 4;
     rgb[44..47].copy_from_slice(&[3, 4, 5]);
@@ -42,7 +42,7 @@ fn dualsense_partial_outputs_preserve_prior_fields_and_count_changes_once() {
 #[test]
 fn dualshock4_motor_rgb_and_blink_validity_are_independent() {
     let mut p =
-        crate::dualshock4::DualShock4Definition.hid_protocol(RealizationSessionId(7), [2; 6]);
+        crate::dualshock4::DualShock4Definition::default().hid_protocol(RealizationSessionId(7), [2; 6]);
     for (flag, offset, values) in [
         (1, 3, vec![8, 9]),
         (2, 5, vec![10, 11, 12]),
@@ -124,12 +124,12 @@ where
 #[test]
 fn malformed_and_wrong_report_types_preserve_every_retained_field() {
     rejected(
-        crate::dualsense::DualSenseDefinition.hid_protocol(RealizationSessionId(7), [2; 6]),
+        crate::dualsense::DualSenseDefinition::default().hid_protocol(RealizationSessionId(7), [2; 6]),
         Some(2),
         47,
     );
     rejected(
-        crate::dualshock4::DualShock4Definition.hid_protocol(RealizationSessionId(7), [2; 6]),
+        crate::dualshock4::DualShock4Definition::default().hid_protocol(RealizationSessionId(7), [2; 6]),
         Some(5),
         31,
     );
