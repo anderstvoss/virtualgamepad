@@ -1,21 +1,19 @@
-//! Source-derived Bluetooth-bus UHID framing for DualShock 4.
+//! Source-derived Bluetooth-bus UHID framing for `DualShock` 4.
 //! Not a radio emulator, a physical descriptor capture or device fidelity proof.
 use super::{DualShock4SessionState, ds4_frame};
-use gr_realization_api::{NativeControllerRealization, NativeDeviceIdentity, NativeHidRealization, ProviderFrame, RealizationTarget};
 use gr_hid::{ReplyError, Report, ReportType};
+use gr_realization_api::{
+    NativeControllerRealization, NativeDeviceIdentity, NativeHidRealization, ProviderFrame,
+    RealizationTarget,
+};
 
 /// Synthetic report shape compatible with the pinned Linux/SDL consumer fields,
 /// not a captured retail HID descriptor.
 pub(super) const DESCRIPTOR: &[u8] = &[
-    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01,
-    0x85, 0x01, 0x09, 0x30, 0x75, 0x08, 0x95, 0x09, 0x81, 0x02,
-    0x06, 0x00, 0xff, 0x09, 0x01,
-    0x85, 0x11, 0x75, 0x08, 0x95, 0x4d, 0x81, 0x02,
-    0x85, 0x11, 0x75, 0x08, 0x95, 0x4d, 0x91, 0x02,
-    0x85, 0x02, 0x75, 0x08, 0x95, 0x24, 0xb1, 0x02,
-    0x85, 0x05, 0x75, 0x08, 0x95, 0x28, 0xb1, 0x02,
-    0x85, 0xa3, 0x75, 0x08, 0x95, 0x30, 0xb1, 0x02,
-    0xc0,
+    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x85, 0x01, 0x09, 0x30, 0x75, 0x08, 0x95, 0x09, 0x81, 0x02,
+    0x06, 0x00, 0xff, 0x09, 0x01, 0x85, 0x11, 0x75, 0x08, 0x95, 0x4d, 0x81, 0x02, 0x85, 0x11, 0x75,
+    0x08, 0x95, 0x4d, 0x91, 0x02, 0x85, 0x02, 0x75, 0x08, 0x95, 0x24, 0xb1, 0x02, 0x85, 0x05, 0x75,
+    0x08, 0x95, 0x28, 0xb1, 0x02, 0x85, 0xa3, 0x75, 0x08, 0x95, 0x30, 0xb1, 0x02, 0xc0,
 ];
 
 pub(super) fn realization() -> NativeControllerRealization {
@@ -82,12 +80,7 @@ pub(super) fn full_frame(state: &DualShock4SessionState) -> ProviderFrame {
 }
 
 #[allow(clippy::cast_possible_truncation)] // DS4 timing/sequence counters wrap at wire width.
-fn encode_at(
-    state: &DualShock4SessionState,
-    now: u64,
-    sequence: u8,
-    full: bool,
-) -> Report {
+fn encode_at(state: &DualShock4SessionState, now: u64, sequence: u8, full: bool) -> Report {
     let mut wire = state.clone();
     wire.status.sequence = sequence;
     wire.status.sensor_timestamp = ((now / 16).wrapping_mul(3)) as u16;
@@ -132,19 +125,27 @@ pub(super) fn valid_output(payload: &[u8]) -> bool {
 
 pub(super) fn features(identity: [u8; 6]) -> Vec<(u8, Vec<u8>)> {
     let source = gr_controller_wire::dualshock4_feature_responses(identity);
-    let usb_calibration = source.iter().find(|(id, _)| *id == 2).expect("compiled calibration").1.clone();
+    let usb_calibration = source
+        .iter()
+        .find(|(id, _)| *id == 2)
+        .expect("compiled calibration")
+        .1
+        .clone();
     let mut bt_calibration = usb_calibration.clone();
     bt_calibration[0] = 0x05;
     // BT puts all positive gyro limits before all negative limits.
-    for (destination, original) in [(7,7), (9,11), (11,15), (13,9), (15,13), (17,17)] {
-        bt_calibration[destination..destination+2]
-            .copy_from_slice(&usb_calibration[original..original+2]);
+    for (destination, original) in [(7, 7), (9, 11), (11, 15), (13, 9), (15, 13), (17, 17)] {
+        bt_calibration[destination..destination + 2]
+            .copy_from_slice(&usb_calibration[original..original + 2]);
     }
     let mut data = vec![0x05];
     data.extend_from_slice(&bt_calibration[1..]);
     let checksum = crc32(0xa3, &data);
     data.extend_from_slice(&checksum.to_le_bytes());
-    let firmware = source.into_iter().find(|(id, _)| *id == 0xa3).expect("compiled firmware");
+    let firmware = source
+        .into_iter()
+        .find(|(id, _)| *id == 0xa3)
+        .expect("compiled firmware");
     vec![(2, usb_calibration), (0x05, data), firmware]
 }
 
@@ -154,16 +155,28 @@ mod tests {
     use gr_realization_api::ProviderFrame;
     #[test]
     fn synthetic_descriptor_and_neutral_reports_match_consumer_lengths() {
-        let NativeControllerRealization::Uhid(spec) = realization() else { panic!("BT UHID"); };
+        let NativeControllerRealization::Uhid(spec) = realization() else {
+            panic!("BT UHID");
+        };
         assert_eq!(spec.bus_type, 5);
-        assert_eq!((spec.identity.vendor_id, spec.identity.product_id), (0x054c, 0x05c4));
+        assert_eq!(
+            (spec.identity.vendor_id, spec.identity.product_id),
+            (0x054c, 0x05c4)
+        );
         assert_eq!(spec.descriptor, DESCRIPTOR);
-        assert_ne!(spec.descriptor, gr_controller_wire::DUALSHOCK4_USB_DESCRIPTOR);
+        assert_ne!(
+            spec.descriptor,
+            gr_controller_wire::DUALSHOCK4_USB_DESCRIPTOR
+        );
         let state = DualShock4SessionState::default();
-        let ProviderFrame::HidInput { report_id, bytes } = minimal_frame(&state) else { panic!("HID"); };
+        let ProviderFrame::HidInput { report_id, bytes } = minimal_frame(&state) else {
+            panic!("HID");
+        };
         assert_eq!((report_id, bytes.len()), (Some(1), 9));
         assert_eq!(&bytes[..4], &[128; 4]);
-        let ProviderFrame::HidInput { report_id, bytes } = full_frame(&state) else { panic!("HID"); };
+        let ProviderFrame::HidInput { report_id, bytes } = full_frame(&state) else {
+            panic!("HID");
+        };
         assert_eq!((report_id, bytes.len()), (Some(0x11), 77));
         assert_eq!(bytes[0], 0xc0);
         assert_eq!(bytes[34], 1);
@@ -178,8 +191,13 @@ mod tests {
     fn bluetooth_battery_level_uses_wireless_deciles() {
         let mut state = DualShock4SessionState::default();
         state.status.battery.set_exposed(true);
-        state.status.battery.set_level(crate::BatteryLevel::new(37).unwrap());
-        let ProviderFrame::HidInput { bytes, .. } = full_frame(&state) else { panic!("BT HID"); };
+        state
+            .status
+            .battery
+            .set_level(crate::BatteryLevel::new(37).unwrap());
+        let ProviderFrame::HidInput { bytes, .. } = full_frame(&state) else {
+            panic!("BT HID");
+        };
         assert_eq!(bytes[31], 3);
         assert_eq!(bytes[31] & 0x10, 0);
     }
@@ -187,9 +205,17 @@ mod tests {
     #[test]
     fn feature_calibration_and_host_output_crc() {
         let f = features(super::super::common::test_address(42));
-        assert_eq!(f.iter().map(|(id, data)| (*id, data.len())).collect::<Vec<_>>(), vec![(2,37), (5,41), (0xa3,49)]);
+        assert_eq!(
+            f.iter()
+                .map(|(id, data)| (*id, data.len()))
+                .collect::<Vec<_>>(),
+            vec![(2, 37), (5, 41), (0xa3, 49)]
+        );
         let calibration = &f[1].1;
-        assert_eq!(&calibration[37..], &crc32(0xa3, &calibration[..37]).to_le_bytes());
+        assert_eq!(
+            &calibration[37..],
+            &crc32(0xa3, &calibration[..37]).to_le_bytes()
+        );
         let mut payload = vec![0; 77];
         payload[0] = 0xc0;
         payload[2] = 7; // motor, lightbar and blink updates

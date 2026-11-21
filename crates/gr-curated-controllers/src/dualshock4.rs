@@ -1,7 +1,7 @@
 //! `DualShock 4` USB HID-Gyro controller, modelled from `OpenPuck`'s PC mode.
+mod bluetooth;
 #[cfg(test)]
 mod evdev;
-mod bluetooth;
 mod worker_state;
 
 use crate::{BatteryState, CreationOptions, common};
@@ -1573,9 +1573,7 @@ pub fn create_dualshock4(
         common::require_linux_platform(options.target)?;
     }
     let identity = match (options.target, family.identity()) {
-        (RealizationTarget::LINUX_UHID_BLUETOOTH, None) => {
-            Some(DualShock4Identity::generate()?)
-        }
+        (RealizationTarget::LINUX_UHID_BLUETOOTH, None) => Some(DualShock4Identity::generate()?),
         (_, supplied) => supplied,
     };
     let mut realization = match options.target {
@@ -1667,11 +1665,21 @@ impl common::HidDriver for DualShock4Definition {
             }
             Ok(())
         }
-        let encoder: fn(&DualShock4SessionState, u64, u8) -> gr_hid::Report =
-            if self.bluetooth { bluetooth::minimal_report } else { encode };
-        let validator: fn(&gr_hid::Report) -> Result<(), gr_hid::ReplyError> =
-            if self.bluetooth { bluetooth::validate_output } else { validate };
-        let responses = if self.bluetooth { bluetooth_features(identity) } else { features(identity) };
+        let encoder: fn(&DualShock4SessionState, u64, u8) -> gr_hid::Report = if self.bluetooth {
+            bluetooth::minimal_report
+        } else {
+            encode
+        };
+        let validator: fn(&gr_hid::Report) -> Result<(), gr_hid::ReplyError> = if self.bluetooth {
+            bluetooth::validate_output
+        } else {
+            validate
+        };
+        let responses = if self.bluetooth {
+            bluetooth_features(identity)
+        } else {
+            features(identity)
+        };
         let protocol = common::SnapshotProtocol::new(
             DualShock4SessionState::default(),
             encoder,
@@ -1710,8 +1718,14 @@ impl crate::registry::ControllerFamily for DualShock4Definition {
         crate::registry::refusal(EVDEV_RESTRICTIONS[2], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(EVDEV_RESTRICTIONS[3], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(EVDEV_RESTRICTIONS[4], &[RealizationTarget::LINUX_UINPUT]),
-        crate::registry::refusal(BT_RESTRICTIONS[0], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
-        crate::registry::refusal(BT_RESTRICTIONS[1], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[0],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[1],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
         crate::registry::refusal(
             RESTRICTIONS[0],
             &[
@@ -2970,16 +2984,37 @@ mod tests {
     #[test]
     fn bluetooth_has_restrictions_and_no_implicit_usb_selection() {
         let realization = bluetooth::realization();
-        let NativeControllerRealization::Uhid(spec) = realization else { panic!("Bluetooth UHID"); };
+        let NativeControllerRealization::Uhid(spec) = realization else {
+            panic!("Bluetooth UHID");
+        };
         assert_eq!(spec.target, RealizationTarget::LINUX_UHID_BLUETOOTH);
         assert_eq!(spec.bus_type, 5);
         assert_eq!(spec.identity.product_id, 0x05c4);
-        assert!(BT_SURFACE.common.restrictions().iter().any(|r| r.feature == "Bluetooth audio"));
-        assert!(BT_SURFACE.common.restrictions().iter().any(|r| r.feature == "Bluetooth device fidelity"));
+        assert!(
+            BT_SURFACE
+                .common
+                .restrictions()
+                .iter()
+                .any(|r| r.feature == "Bluetooth audio")
+        );
+        assert!(
+            BT_SURFACE
+                .common
+                .restrictions()
+                .iter()
+                .any(|r| r.feature == "Bluetooth device fidelity")
+        );
         let manifest = DualShock4Definition.realization_manifest();
-        assert!(manifest.entries().iter().any(|r| r.target == RealizationTarget::LINUX_UHID_BLUETOOTH));
+        assert!(
+            manifest
+                .entries()
+                .iter()
+                .any(|r| r.target == RealizationTarget::LINUX_UHID_BLUETOOTH)
+        );
         let usb = hid(RealizationSessionId(1));
-        let NativeControllerRealization::Uhid(usb_spec) = usb else { panic!("USB UHID"); };
+        let NativeControllerRealization::Uhid(usb_spec) = usb else {
+            panic!("USB UHID");
+        };
         assert_eq!(usb_spec.target, RealizationTarget::LINUX_UHID_USB);
         assert_ne!(usb_spec.descriptor, spec.descriptor);
         let one = common::test_address(1);
@@ -3004,8 +3039,8 @@ mod tests {
             .hid_protocol(RealizationSessionId(1), common::test_address(1));
         let mut second = DualShock4Definition::bluetooth()
             .hid_protocol(RealizationSessionId(2), common::test_address(2));
-        let mut usb = DualShock4Definition
-            .hid_protocol(RealizationSessionId(3), common::test_address(3));
+        let mut usb =
+            DualShock4Definition.hid_protocol(RealizationSessionId(3), common::test_address(3));
         let neutral = DualShock4SessionState::default();
         let minimal = first.input(&neutral, 0).unwrap();
         assert_eq!(minimal.len(), 1);
@@ -3039,7 +3074,10 @@ mod tests {
             kind: ReportType::Feature,
             id: Some(0x12),
         };
-        assert_eq!(first.request(&get_pairing, 3).0, Reply::Get(Err(gr_hid::ReplyError::Unsupported)));
+        assert_eq!(
+            first.request(&get_pairing, 3).0,
+            Reply::Get(Err(gr_hid::ReplyError::Unsupported))
+        );
         assert!(matches!(usb.request(&get_pairing, 3).0, Reply::Get(Ok(_))));
 
         // Known synthetic Bluetooth effect; CRC computed independently from
@@ -3059,9 +3097,8 @@ mod tests {
                 blink: Some([6, 7]),
             }
         );
-        let set = RequestKind::Set(
-            Report::new(ReportType::Output, Some(0x11), payload.clone()).unwrap()
-        );
+        let set =
+            RequestKind::Set(Report::new(ReportType::Output, Some(0x11), payload.clone()).unwrap());
         assert_eq!(first.request(&set, 4).0, Reply::Set(Ok(())));
         assert_eq!(first.retained().motors, Some([2, 1]));
         assert_eq!(first.retained().lightbar_rgb, Some([3, 4, 5]));
@@ -3069,10 +3106,12 @@ mod tests {
         assert_eq!(second.retained().revision, 0);
         let old = first.retained().clone();
         payload[5] ^= 1;
-        let invalid = RequestKind::Set(
-            Report::new(ReportType::Output, Some(0x11), payload).unwrap()
+        let invalid =
+            RequestKind::Set(Report::new(ReportType::Output, Some(0x11), payload).unwrap());
+        assert_eq!(
+            first.request(&invalid, 5).0,
+            Reply::Set(Err(gr_hid::ReplyError::Invalid))
         );
-        assert_eq!(first.request(&invalid, 5).0, Reply::Set(Err(gr_hid::ReplyError::Invalid)));
         assert_eq!(*first.retained(), old);
         let mut bad = vec![0_u8; 77];
         bad[2] = 1;
@@ -3080,5 +3119,4 @@ mod tests {
         assert!(matches!(first.output(invalid_raw, 6), Ok(None)));
         assert_eq!(*first.retained(), old);
     }
-
 }
