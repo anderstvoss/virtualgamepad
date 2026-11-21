@@ -11,6 +11,13 @@ pub(crate) trait Backend: Send + Sync {
     fn is_closed(&self) -> bool;
     fn underrun_frames(&self) -> u64;
     fn dropped_playback_frames(&self) -> u64;
+    /// Stage-local queue accounting. None means that boundary is not instrumented.
+    fn playback_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        None
+    }
+    fn microphone_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        None
+    }
     fn native_playback_underrun_frames(&self) -> Option<u64> {
         None
     }
@@ -88,6 +95,12 @@ impl Backend for gr_audio_linux::Session {
     }
     fn dropped_playback_frames(&self) -> u64 {
         Self::dropped_playback_frames(self)
+    }
+    fn playback_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        Self::playback_accounting(self)
+    }
+    fn microphone_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        Self::microphone_accounting(self)
     }
     fn error(&self) -> Option<&AudioError> {
         Self::error(self)
