@@ -33,6 +33,7 @@ const BUTTONS: [(u16, Button); 22] = [
 
 pub(super) fn realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
+        bus_type: 0x03,
         physical_path: None,
         device_name: "Steam Controller".into(),
         identity: NativeDeviceIdentity {
