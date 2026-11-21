@@ -50,19 +50,23 @@ def condition():
 class MatrixParsing(unittest.TestCase):
     def test_sdl_summary_is_allowlisted_and_reports_actual_backend(self):
         raw = {
-            "consumer": "SDL", "passed": True, "selected_count": 1,
+            "consumer": "SDL", "passed": False, "selected_count": 1,
             "serial": "must-never-persist", "physical_path": "must-never-persist",
             "observations": {
                 "identity": {"value": {"guid": "guid-synth"}},
                 "backend": {"value": "SDL_HIDAPI"},
+                "opened": {"value": True},
                 "build": {"value": {"revision": "rev-synth", "version": 30200}},
             },
         }
         summary = matrix.summarize_probe(json.dumps(raw), "hidapi", 0)
         self.assertEqual(summary["backend"], "SDL_HIDAPI")
         self.assertEqual(summary["guid"], "guid-synth")
-        self.assertTrue(summary["passed"])
+        self.assertFalse(summary["passed"])
+        self.assertTrue(summary["opened"])
         self.assertNotIn("must-never-persist", json.dumps(summary))
+        raw["passed"] = True
+        self.assertTrue(matrix.summarize_probe(json.dumps(raw), "hidapi", 0)["passed"])
         self.assertFalse(matrix.summarize_probe(json.dumps(raw), "hidapi", 1)["passed"])
 
     def test_invalid_sdl_contract_cannot_pass(self):
@@ -87,6 +91,22 @@ class MatrixParsing(unittest.TestCase):
                                          "HID_PHYS=virtualgamepad/synthetic\n")
             self.assertEqual(matrix.node_phys(root), "virtualgamepad/synthetic")
             self.assertIsNone(matrix.node_phys(root.parent / "unrelated-nonexistent"))
+
+    @patch.object(matrix.time, "sleep")
+    @patch.object(matrix, "joystick_node")
+    @patch.object(matrix, "owned_nodes")
+    def test_waits_for_owned_gamepad_and_ignores_companions(self, owned, is_joystick, sleep):
+        raw = {"kind": "hidraw", "name": "hidraw3"}
+        touch = {"kind": "evdev", "name": "event101"}
+        motion = {"kind": "evdev", "name": "event110"}
+        gamepad = {"kind": "evdev", "name": "event8"}
+        extra_nodes = [touch, motion] * 15
+        nodes = [raw, *extra_nodes, gamepad, motion]
+        owned.side_effect = [[raw], [raw, touch], nodes]
+        is_joystick.side_effect = lambda node: node == gamepad
+        self.assertEqual(matrix.select_probe_nodes({"virtualgamepad/test"}, True),
+                         (nodes, raw, gamepad))
+        self.assertEqual(sleep.call_count, 2)
 
     @patch.object(matrix, "invoke", return_value="")
     @patch.object(matrix.os, "geteuid", return_value=1000)
@@ -190,6 +210,8 @@ class ResearchConversion(unittest.TestCase):
         self.assertNotIn("sensitive-", output)
         self.assertTrue(clean["samples"][0]["had_errors"])
         self.assertEqual(clean["samples"][0]["stages"]["first_neutral"]["reason"], "not measured")
+        sample["realization"] = "linux.usbip.usb-audio"
+        self.assertEqual(converter.sanitize_acceptance(sample)["realization"], "linux.usbip.usb-audio")
 
 
 if __name__ == "__main__":

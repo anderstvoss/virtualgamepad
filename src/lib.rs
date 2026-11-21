@@ -62,7 +62,8 @@ mod creation;
 #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
 mod usb_audio;
 pub use audio::{
-    AudioDiagnostics, AudioEndpoint, AudioEndpointSelector, AudioRead, ControllerAudio,
+    AudioDiagnostics, AudioDirectionAccounting, AudioEndpoint, AudioEndpointSelector, AudioRead,
+    AudioSidecarAssociation, ControllerAudio,
 };
 mod controllers;
 mod output;
@@ -103,12 +104,12 @@ pub use gr_curated_controllers::{
     DualSenseTriggerEffectUpdate, DualSenseTriggerZoneForces, DualShock4Axis, DualShock4Control,
     DualShock4HidOutput, DualShock4Inputs, DualShock4MotionSample, DualShock4Status,
     DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger,
-    MotionSample, SwitchProAxis, SwitchProControl, SwitchProInputs, SwitchProMotionSample,
-    SwitchProRumble, SwitchProRumbleBand, SwitchProRumbleDecoded, SwitchProRumbleSample,
-    SwitchProRumbleSamples, SwitchProRumbleWord, SwitchProStatus, SwitchProSurface, TouchSlot,
-    Xbox360Axis, Xbox360Control, Xbox360Inputs, Xbox360Status, Xbox360Surface, Xbox360Trigger,
-    decode_dualsense_trigger_effect, decode_switch_pro_rumble_word,
-    decode_switch_pro_rumble_word_with_previous,
+    MotionSample, SwitchProAxis, SwitchProBattery, SwitchProBatteryLevel, SwitchProControl,
+    SwitchProHomeLight, SwitchProInputs, SwitchProMotionSample, SwitchProRumble,
+    SwitchProRumbleBand, SwitchProRumbleDecoded, SwitchProRumbleSample, SwitchProRumbleSamples,
+    SwitchProRumbleWord, SwitchProStatus, SwitchProSurface, TouchSlot, Xbox360Axis, Xbox360Control,
+    Xbox360Inputs, Xbox360Status, Xbox360Surface, Xbox360Trigger, decode_dualsense_trigger_effect,
+    decode_switch_pro_rumble_word, decode_switch_pro_rumble_word_with_previous,
 };
 pub use gr_realization_api::{
     ControllerId, ForceFeedbackEffect, ForceFeedbackEvent, RealizationId, RealizationTargetSet,

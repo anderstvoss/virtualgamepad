@@ -12,6 +12,7 @@ import sys
 SHA = re.compile(r"^[0-9a-f]{40}$")
 FAMILIES = ("dualsense", "dualshock4", "switch-pro", "xbox360")
 REALIZATIONS = ("linux.uinput", "linux.uhid.usb", "linux.uhid.bluetooth")
+TIMING_REALIZATIONS = (*REALIZATIONS, "linux.usbip.usb-audio")
 CONDITIONS = ("bound", "hid-generic")
 SCHEMA_FIELDS = {"schema_version", "id", "kind", "status", "sources",
                  "fixtures", "procedure", "semantic_outcome"}
@@ -133,7 +134,7 @@ def sanitize_acceptance(record):
     if (not isinstance(record, dict) or record.get("schema_version") != 1 or
             record.get("kind") != "virtual_host_run" or
             record.get("controller") not in ["virtualgamepad." + f for f in FAMILIES] or
-            record.get("realization") not in REALIZATIONS):
+            record.get("realization") not in TIMING_REALIZATIONS):
         raise InvalidRecord("not a supported Alpha 1 xtask timing run")
     env = record.get("environment", {})
     if not isinstance(env, dict) or not isinstance(env.get("git_sha"), str) or not SHA.fullmatch(env["git_sha"]):

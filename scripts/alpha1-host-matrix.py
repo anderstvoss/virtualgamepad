@@ -54,7 +54,7 @@ def preflight(realizations, rebind=False):
         raise HostRunError("Linux host is required")
     if os.geteuid() == 0:
         raise HostRunError("run as an ordinary user; SDL probes must not run as root")
-    for tool in ("git", "cargo", "rustc", "cc", "pkg-config"):
+    for tool in ("git", "cargo", "rustc", "cc", "pkg-config", "udevadm"):
         invoke("sh", "-c", 'command -v "$1" >/dev/null', "sh", tool)
     invoke("pkg-config", "--modversion", "sdl3")
     # The existing script exits nonzero for its intentionally unvalidated
@@ -163,7 +163,7 @@ def summarize_probe(output, requested_backend, returncode):
         observations = probe["observations"]
 
         def value(field):
-            measured = observations[field]
+            measured = observations.get(field)
             return measured.get("value") if isinstance(measured, dict) else None
 
         identity = value("identity")
@@ -171,6 +171,7 @@ def summarize_probe(output, requested_backend, returncode):
         result = {
             "requested_backend": requested_backend,
             "passed": returncode == 0 and probe.get("passed") is True,
+            "opened": value("opened") is True,
             "selected_count": probe.get("selected_count") if type(probe.get("selected_count")) is int else None,
             "backend": value("backend") if isinstance(value("backend"), str) else None,
             "guid": identity.get("guid") if isinstance(identity, dict) else None,
@@ -181,6 +182,7 @@ def summarize_probe(output, requested_backend, returncode):
         return result
     except (ValueError, KeyError, TypeError, StopIteration, AttributeError):
         return {"requested_backend": requested_backend, "passed": False,
+                "opened": False,
                 "selected_count": None, "backend": None, "guid": None,
                 "sdl_revision": None, "sdl_version": None}
 
@@ -207,17 +209,39 @@ def observation(labels):
     raise HostRunError("no association-owned consumer node appeared")
 
 
+def joystick_node(node):
+    result = subprocess.run(
+        ["udevadm", "info", "--query=property", "--name", str(node["_node"])],
+        capture_output=True, text=True, check=False, timeout=2)
+    return result.returncode == 0 and "ID_INPUT_JOYSTICK=1" in result.stdout.splitlines()
+
+
+def select_probe_nodes(labels, require_hidraw):
+    """Wait for the owned joystick, rather than probing a motion or touch companion."""
+    for _ in range(50):
+        nodes = owned_nodes(labels)
+        raw = [node for node in nodes if node["kind"] == "hidraw"]
+        events = [node for node in nodes if node["kind"] == "evdev" and joystick_node(node)]
+        hidraw = raw[0] if len(raw) == 1 else None
+        event = events[0] if len(events) == 1 else None
+        if event is not None and (hidraw is not None or not require_hidraw):
+            return nodes, hidraw, event
+        time.sleep(0.1)
+    if not nodes:
+        raise HostRunError("no association-owned consumer node appeared")
+    return nodes, hidraw, event
+
+
 def condition(family, realization, name, labels, environment):
-    nodes = observation(labels)
-    hidraw = next((n for n in nodes if n["kind"] == "hidraw"), None)
-    event = next((n for n in nodes if n["kind"] == "evdev"), None)
+    native_hid = realization.startswith("linux.uhid")
+    nodes, hidraw, event = select_probe_nodes(labels, native_hid)
     captures = []
     for backend, node in (("hidapi", hidraw or event), ("evdev", event)):
         if node is None:
             captures.append({"requested_backend": backend, "passed": False,
-                             "skipped": "associated node unavailable"})
+                             "opened": False, "skipped": "unique associated node unavailable"})
         else:
-            captures.append(probe(node, backend))
+            captures.append({**probe(node, backend), "node_kind": node["kind"]})
     return {
         "schema_version": 1, "kind": "alpha1_host_matrix",
         "evidence": "virtual_host_run", "status": "completed",

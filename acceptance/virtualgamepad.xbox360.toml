@@ -16,8 +16,8 @@ id = "buttons"
 [[functions]]
 id = "sticks"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/sticks", evidence = ["x360-vg-exp0011-evdev-mapping"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/xbox360/sticks", evidence = ["x360-vg-exp0009-standard-hid-controls", "x360-vg-exp0017-individual-uhid"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
+"linux.uinput" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/xbox360/sticks", evidence = ["x360-vg-exp0011-evdev-mapping"], reason = "P5a observed both signed endpoints on all four stick axes through SDL evdev." }
+"linux.uhid.usb" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/xbox360/sticks", evidence = ["x360-vg-exp0009-standard-hid-controls", "x360-vg-exp0017-individual-uhid"], reason = "P5a observed both signed endpoints on all four stick axes through SDL evdev. The HIDAPI-requested probe did not open its selected hidraw node." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/sticks", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/xbox360/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 

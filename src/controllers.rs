@@ -9,12 +9,12 @@ use crate::{
     DualShock4Inputs, DualShock4MotionSample, DualShock4OutputEvent, DualShock4Surface,
     DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
     ServiceReadiness, SteamController2026Button, SteamController2026Inputs,
-    SteamController2026OutputEvent, SteamController2026Outputs, SwitchProAxis, SwitchProControl,
-    SwitchProInputs, SwitchProMotionSample, SwitchProOutputEvent, SwitchProSurface, TouchSlot,
-    WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton, WiiRemoteInputs,
-    WiiRemoteOutputEvent, WiiRemoteOutputs, WiiResourceDisposition, Xbox360Axis, Xbox360Control,
-    Xbox360Inputs, Xbox360OutputEvent, Xbox360Surface, Xbox360Trigger, XboxSeriesButton,
-    XboxSeriesInputs, XboxSeriesOutputEvent, XboxSeriesOutputState,
+    SteamController2026OutputEvent, SteamController2026Outputs, SwitchProAxis, SwitchProBattery,
+    SwitchProControl, SwitchProInputs, SwitchProMotionSample, SwitchProOutputEvent,
+    SwitchProSurface, TouchSlot, WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton,
+    WiiRemoteInputs, WiiRemoteOutputEvent, WiiRemoteOutputs, WiiResourceDisposition, Xbox360Axis,
+    Xbox360Control, Xbox360Inputs, Xbox360OutputEvent, Xbox360Surface, Xbox360Trigger,
+    XboxSeriesButton, XboxSeriesInputs, XboxSeriesOutputEvent, XboxSeriesOutputState,
 };
 // The family adapter owns only static dispatch; protocol semantics stay curated.
 trait Family {
@@ -61,6 +61,39 @@ impl<F: Family> Controller<F> {
             association,
             audio,
         })
+    }
+    fn open_with_audio(
+        id: ControllerId,
+        options: gr_curated_controllers::CreationOptions,
+        family: F::Options,
+        audio_options: crate::AudioOptions,
+        audio_family: crate::audio::Family,
+    ) -> Result<Self, ControllerError> {
+        // The final UHID uniq is assigned by curated creation. Create HID first,
+        // then pass that exact value to the PipeWire sidecar, with rollback if
+        // the required audio session cannot be opened.
+        let mut controller = Self::open(id, options, family, None)?;
+        let result = crate::audio::open(
+            audio_options,
+            audio_family,
+            options.session.0,
+            controller
+                .inner
+                .association()
+                .requested_unique_id
+                .as_deref(),
+        );
+        match result {
+            Ok(audio) => {
+                controller.association = controller.association.with_audio(audio.as_ref());
+                controller.audio = audio;
+                Ok(controller)
+            }
+            Err(error) => {
+                controller.close();
+                Err(error)
+            }
+        }
     }
     fn close(&mut self) {
         if let Some(audio) = &mut self.audio {
@@ -494,16 +527,12 @@ pub fn create_dualsense(
     }
     let audio_options = options.audio();
     let options = options.internal()?;
-    let audio = crate::audio::open(
-        audio_options,
-        crate::audio::Family::DualSense,
-        options.session.0,
-    )?;
-    let controller = Controller::open(
+    let controller = Controller::open_with_audio(
         ControllerId::new("virtualgamepad.dualsense"),
         options,
         family,
-        audio,
+        audio_options,
+        crate::audio::Family::DualSense,
     )?;
     Ok(DualSenseController {
         controller,
@@ -590,16 +619,12 @@ pub fn create_dualshock4(
     }
     let audio_options = options.audio();
     let options = options.internal()?;
-    let audio = crate::audio::open(
-        audio_options,
-        crate::audio::Family::DualShock4,
-        options.session.0,
-    )?;
-    let controller = Controller::open(
+    let controller = Controller::open_with_audio(
         ControllerId::new("virtualgamepad.dualshock4"),
         options,
         family,
-        audio,
+        audio_options,
+        crate::audio::Family::DualShock4,
     )?;
     Ok(DualShock4Controller {
         controller,
@@ -648,11 +673,17 @@ impl SwitchProController {
     pub fn inputs(&self) -> &SwitchProInputs {
         self.controller.inner.inputs()
     }
-    /// Read accepted motion timing and host-selected stream state.
+    /// Read accepted motion timing, battery and host-selected stream state.
     #[must_use]
     pub fn status(&self) -> crate::SwitchProStatus {
         self.controller.inner.status()
     }
+    /// Current native battery state (source-backed level, charge and USB power).
+    #[must_use]
+    pub fn battery(&self) -> SwitchProBattery {
+        self.controller.inner.battery()
+    }
+    edits! { fn set_battery(battery: SwitchProBattery); }
     shared!(edit_inputs, SwitchProInputs);
     shared!(set_inputs, SwitchProInputs);
     shared!(host_outputs, crate::SwitchProOutputState);
@@ -757,16 +788,12 @@ pub fn create_xbox360(
     }
     let audio_options = options.audio();
     let options = options.internal()?;
-    let audio = crate::audio::open(
-        audio_options,
-        crate::audio::Family::Xbox360,
-        options.session.0,
-    )?;
-    let controller = Controller::open(
+    let controller = Controller::open_with_audio(
         ControllerId::new("virtualgamepad.xbox360"),
         options,
         family,
-        audio,
+        audio_options,
+        crate::audio::Family::Xbox360,
     )?;
     Ok(Xbox360Controller { controller })
 }
