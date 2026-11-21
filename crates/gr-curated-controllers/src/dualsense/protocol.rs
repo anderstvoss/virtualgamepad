@@ -22,6 +22,7 @@ pub(crate) struct DualSenseUsbProtocol<
     last_input: Option<Report>,
 }
 impl DualSenseUsbProtocol {
+    #[cfg(test)]
     pub(crate) fn new(identity: [u8; 6]) -> Self {
         Self::with_device_data(identity, None)
     }

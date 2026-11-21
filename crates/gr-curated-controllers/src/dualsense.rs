@@ -2012,6 +2012,7 @@ pub(crate) fn realization() -> NativeControllerRealization {
         force_feedback_codes: vec![0x50],
     })
 }
+#[cfg(test)]
 fn dualsense_feature_responses(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     dualsense_feature_responses_with_data(identity, None)
 }

@@ -1085,6 +1085,7 @@ fn advance_ds4_timing(state: &mut DualShock4SessionState) {
     }
 }
 
+#[cfg(test)]
 fn features(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     features_with_data(identity, None)
 }
@@ -1820,7 +1821,7 @@ mod tests {
 
     #[test]
     fn input_values_are_independent_of_battery_and_controller_clocks() {
-        use common::session_tests::input_validation_session;
+        use common::session_tests::input_validation_session as validation_session;
         let neutral = neutral_inputs();
         for target in [
             RealizationTarget::LINUX_UINPUT,
@@ -1828,8 +1829,7 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             RealizationTarget::LINUX_USBIP_USB_AUDIO,
         ] {
-            let session =
-                input_validation_session(DualShock4Definition::default(), target, [true; 3]);
+            let session = validation_session(DualShock4Definition::default(), target, [true; 3]);
             let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller
