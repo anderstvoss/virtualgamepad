@@ -840,12 +840,10 @@ const fn supports_motion(target: RealizationTarget) -> bool {
     motion_targets().contains(target)
 }
 
+#[derive(Clone, Default)]
 pub struct DualSenseDefinition {
     device_data: Option<DualSenseDeviceData>,
 }
-// Retain the existing zero-configuration family value used by protocol fixtures.
-#[allow(non_upper_case_globals)]
-pub const DualSenseDefinition: DualSenseDefinition = DualSenseDefinition { device_data: None };
 impl RealizationControllerDefinition for DualSenseDefinition {
     fn controller_id(&self) -> ControllerId {
         ControllerId::new("virtualgamepad.dualsense")
@@ -1792,7 +1790,7 @@ impl DualSenseIdentity {
 pub fn create_dualsense_usb_worker(
     bridge: Box<dyn common::WorkerBridge<DualSenseSessionState>>,
 ) -> DualSenseController {
-    let definition = DualSenseDefinition;
+    let definition = DualSenseDefinition::default();
     let selection = RealizationSelection {
         controller: ControllerId::new("virtualgamepad.dualsense"),
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
@@ -1867,7 +1865,9 @@ pub fn create_dualsense(
         spec.unique_id = identity.unique_id();
     }
     let mut controller = common::create_restored(
-        DualSenseDefinition { device_data: family.device_data() },
+        DualSenseDefinition {
+            device_data: family.device_data(),
+        },
         realization,
         options,
         identity.map(DualSenseIdentity::bytes),
@@ -1888,7 +1888,7 @@ pub fn create_dualsense(
 pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<DualSenseController, ProviderError> {
-    common::injected(DualSenseDefinition, session)
+    common::injected(DualSenseDefinition::default(), session)
         .map(|session| DualSenseController(session, DualSenseDeviceData::default()))
 }
 
@@ -1937,7 +1937,7 @@ impl crate::registry::ControllerFamily for DualSenseDefinition {
         &INPUT_TOPOLOGY_WITH_MOTION
     }
     fn manifest() -> RealizationManifest {
-        Self.realization_manifest()
+        Self::default().realization_manifest()
     }
     fn realizations() -> &'static [crate::registry::FamilyRealization] {
         static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
@@ -2014,7 +2014,7 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             RealizationTarget::LINUX_USBIP_USB_AUDIO,
         ] {
-            let session = input_validation_session(DualSenseDefinition, target, [true; 3]);
+            let session = input_validation_session(DualSenseDefinition::default(), target, [true; 3]);
             let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller.set_battery_exposed(true).unwrap();
@@ -2097,7 +2097,7 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let (session, io) = snapshot_session(DualSenseDefinition, target, [true; 3]);
+            let (session, io) = snapshot_session(DualSenseDefinition::default(), target, [true; 3]);
             let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller.commit().unwrap();
@@ -2151,7 +2151,7 @@ mod tests {
                         state.status.sensor_timestamp.wrapping_add(12_000);
                     state.status.input_sequence = state.status.input_sequence.wrapping_add(1);
                 },
-                DualSenseDefinition
+                DualSenseDefinition::default()
                     .encode(controller.0.selection(), &expected)
                     .unwrap(),
                 if target == RealizationTarget::LINUX_UHID_USB {
@@ -2171,7 +2171,7 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let (session, io) = snapshot_session(DualSenseDefinition, target, [true; 3]);
+            let (session, io) = snapshot_session(DualSenseDefinition::default(), target, [true; 3]);
             let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller
@@ -2277,7 +2277,7 @@ mod tests {
             RealizationTarget::LINUX_USBIP_USB_AUDIO,
         ] {
             let is_uinput = target == RealizationTarget::LINUX_UINPUT;
-            let session = input_validation_session(DualSenseDefinition, target, [true; 3]);
+            let session = input_validation_session(DualSenseDefinition::default(), target, [true; 3]);
             let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             check_opposing_dpad!(controller, true);
@@ -2376,7 +2376,7 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
             let is_uinput = target == RealizationTarget::LINUX_UINPUT;
-            let (session, io) = snapshot_session(DualSenseDefinition, target, [true, true, true]);
+            let (session, io) = snapshot_session(DualSenseDefinition::default(), target, [true, true, true]);
             let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller
                 .0
@@ -2444,7 +2444,7 @@ mod tests {
                 snapshot,
                 expected,
                 invalid,
-                DualSenseDefinition
+                DualSenseDefinition::default()
                     .encode(controller.0.selection(), controller.test_state())
                     .unwrap(),
                 &[(6, 255), (27, 255), (28, 255), (29, 255), (30, 255)]
@@ -2478,7 +2478,7 @@ mod tests {
                 target: RealizationTarget::LINUX_UINPUT,
             };
             let ProviderFrame::Evdev(original) =
-                DualSenseDefinition.encode(selection, &state).unwrap()
+                DualSenseDefinition::default().encode(selection, &state).unwrap()
             else {
                 panic!()
             };
@@ -2638,7 +2638,7 @@ mod tests {
     #[test]
     fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
         let selection = RealizationSelection {
-            controller: DualSenseDefinition.controller_id(),
+            controller: DualSenseDefinition::default().controller_id(),
             target: RealizationTarget::LINUX_UINPUT,
         };
         for (control, code) in [
@@ -2651,7 +2651,7 @@ mod tests {
             for pressed in [true, false] {
                 state.inputs.set_native(control, pressed);
                 let ProviderFrame::Evdev(events) =
-                    DualSenseDefinition.encode(selection, &state).unwrap()
+                    DualSenseDefinition::default().encode(selection, &state).unwrap()
                 else {
                     panic!("evdev")
                 };
@@ -2673,7 +2673,7 @@ mod tests {
         assert_eq!(spec.identity.version, 0x8111);
         assert!(spec.key_codes.contains(&312) && spec.key_codes.contains(&313));
         let selection = RealizationSelection {
-            controller: DualSenseDefinition.controller_id(),
+            controller: DualSenseDefinition::default().controller_id(),
             target: RealizationTarget::LINUX_UINPUT,
         };
         for (left, right, expected) in [
@@ -2690,7 +2690,7 @@ mod tests {
                 status: DualSenseStatus::default(),
             };
             let ProviderFrame::Evdev(events) =
-                DualSenseDefinition.encode(selection, &state).unwrap()
+                DualSenseDefinition::default().encode(selection, &state).unwrap()
             else {
                 panic!("evdev")
             };
@@ -2751,7 +2751,7 @@ mod tests {
     #[test]
     fn spatial_and_native_faces_are_equivalent() {
         let mut state = DualSenseSessionState::default();
-        DualSenseDefinition
+        DualSenseDefinition::default()
             .apply_digital(
                 &mut state,
                 DigitalControlUpdate::FaceButton {
@@ -2827,10 +2827,10 @@ mod tests {
     #[test]
     fn dummy_hcd_uses_the_fixed_usb_transport_frame() {
         let state = DualSenseSessionState::default();
-        let dummy = DualSenseDefinition
+        let dummy = DualSenseDefinition::default()
             .encode(
                 RealizationSelection {
-                    controller: DualSenseDefinition.controller_id(),
+                    controller: DualSenseDefinition::default().controller_id(),
                     target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 },
                 &state,
