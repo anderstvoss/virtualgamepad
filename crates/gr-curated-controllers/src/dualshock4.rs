@@ -1733,7 +1733,7 @@ impl crate::registry::ControllerFamily for DualShock4Definition {
         &INPUT_TOPOLOGY_WITH_MOTION
     }
     fn manifest() -> RealizationManifest {
-        Self.realization_manifest()
+        DualShock4Definition.realization_manifest()
     }
     fn realizations() -> &'static [crate::registry::FamilyRealization] {
         static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
