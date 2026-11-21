@@ -777,7 +777,11 @@ static USBIP_SURFACE: DualShock4Surface = DualShock4Surface {
     .build(),
 };
 
-pub struct DualShock4Definition;
+pub struct DualShock4Definition {
+    device_data: Option<DualShock4DeviceData>,
+}
+#[allow(non_upper_case_globals)]
+pub const DualShock4Definition: DualShock4Definition = DualShock4Definition { device_data: None };
 impl RealizationControllerDefinition for DualShock4Definition {
     fn controller_id(&self) -> ControllerId {
         ControllerId::new("virtualgamepad.dualshock4")
@@ -1075,9 +1079,18 @@ fn advance_ds4_timing(state: &mut DualShock4SessionState) {
 }
 
 fn features(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
+    features_with_data(identity, None)
+}
+fn features_with_data(identity: [u8; 6], data: Option<DualShock4DeviceData>) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     const F: u8 = 0;
+    let data = data.unwrap_or_default();
     dualshock4_feature_responses(identity)
         .into_iter()
+        .map(|(report_id, bytes)| match report_id {
+            0x02 => (report_id, data.calibration.to_vec()),
+            0xa3 => (report_id, data.firmware.to_vec()),
+            _ => (report_id, bytes),
+        })
         .map(|(report_id, bytes)| {
             (
                 NativeHidReportKey {
@@ -1139,8 +1152,13 @@ fn evdev_realization() -> NativeControllerRealization {
         force_feedback_codes: vec![0x50],
     })
 }
-pub struct DualShock4Controller(common::ControllerSession<DualShock4Definition>);
+pub struct DualShock4Controller(common::ControllerSession<DualShock4Definition>, DualShock4DeviceData);
 impl DualShock4Controller {
+    /// Exact validated calibration and firmware for this instance, after close too.
+    #[must_use]
+    pub const fn device_data(&self) -> &DualShock4DeviceData {
+        &self.1
+    }
     /// Pairing identity of a local USB/UHID session, if available.
     #[must_use]
     pub fn identity(&self) -> Option<DualShock4Identity> {
@@ -1413,6 +1431,83 @@ impl From<RawReverseEvent> for DualShock4OutputEvent {
         }
     }
 }
+/// Validated numbered USB calibration and firmware, without pairing identity.
+///
+/// Defaults are byte-stable synthetic reports, not captured physical-device data.
+/// Bluetooth-framed reports are rejected rather than bypassing CRC verification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DualShock4DeviceData {
+    calibration: [u8; 37],
+    firmware: [u8; 49],
+}
+impl Default for DualShock4DeviceData {
+    fn default() -> Self {
+        let mut calibration = [0; 37];
+        calibration[0] = 0x02;
+        for offset in [7, 11, 15] {
+            calibration[offset..offset + 2].copy_from_slice(&32_000_i16.to_le_bytes());
+        }
+        for offset in [9, 13, 17] {
+            calibration[offset..offset + 2].copy_from_slice(&(-32_000_i16).to_le_bytes());
+        }
+        calibration[19..21].copy_from_slice(&2_000_i16.to_le_bytes());
+        calibration[21..23].copy_from_slice(&2_000_i16.to_le_bytes());
+        for offset in [23, 27, 31] {
+            calibration[offset..offset + 2].copy_from_slice(&8_192_i16.to_le_bytes());
+        }
+        for offset in [25, 29, 33] {
+            calibration[offset..offset + 2].copy_from_slice(&(-8_192_i16).to_le_bytes());
+        }
+        let mut firmware = [0; 49];
+        firmware[0] = 0xa3;
+        firmware[1] = 1;
+        Self { calibration, firmware }
+    }
+}
+impl DualShock4DeviceData {
+    /// Atomically validate two numbered USB feature reports.
+    pub fn from_feature_reports(calibration: &[u8], firmware: &[u8]) -> std::io::Result<Self> {
+        Self::default()
+            .with_feature_report(0x02, calibration)?
+            .with_feature_report(0xa3, firmware)
+    }
+    /// Validate one report without changing the original value on error.
+    ///
+    /// Address-bearing feature reports are not accepted. Identity is held
+    /// separately by `DualShock4Identity`.
+    pub fn with_feature_report(mut self, id: u8, bytes: &[u8]) -> std::io::Result<Self> {
+        match id {
+            0x02 => {
+                let data = crate::sony_device_data::validate::<37>(id, bytes, 0x02)?;
+                crate::sony_device_data::validate_motion(&data)?;
+                self.calibration = data;
+            }
+            0xa3 => self.firmware = crate::sony_device_data::validate::<49>(id, bytes, 0xa3)?,
+            _ => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
+                "unsupported DualShock4 device-data feature report")),
+        }
+        Ok(self)
+    }
+    /// Read one exact validated feature report, never pairing data.
+    #[must_use]
+    pub fn feature_report(&self, id: u8) -> Option<&[u8]> {
+        match id {
+            0x02 => Some(&self.calibration),
+            0xa3 => Some(&self.firmware),
+            _ => None,
+        }
+    }
+    /// Import a strict UTF-8 file selected by the caller at runtime.
+    pub fn load_file(path: impl AsRef<std::path::Path>) -> std::io::Result<Self> {
+        let (cal, fw) = crate::sony_device_data::load(path, 0x02, 0xa3, 37, 49)?;
+        Self::from_feature_reports(&cal, &fw)
+    }
+    /// Write only calibration and firmware to a caller-selected file.
+    pub fn save_file(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        crate::sony_device_data::save(path, &self.calibration, &self.firmware)
+    }
+}
+
 /// Controller-owned identity material for explicit USB/UHID recreation.
 ///
 /// Store `bytes()` in application-owned storage and restore with `from_bytes`.
@@ -1456,7 +1551,7 @@ pub fn create_dualshock4_usb_worker(
         DualShock4Definition,
         selection,
         bridge,
-    ))
+    ), DualShock4DeviceData::default())
 }
 
 /// Family options for a new `DualShock4` session.
@@ -1464,9 +1559,22 @@ pub fn create_dualshock4_usb_worker(
 #[non_exhaustive]
 pub struct DualShock4Options {
     identity: Option<DualShock4Identity>,
+    device_data: Option<DualShock4DeviceData>,
 }
 
 impl DualShock4Options {
+    /// Supply validated per-instance calibration and firmware.
+    #[must_use]
+    pub const fn with_device_data(mut self, device_data: DualShock4DeviceData) -> Self {
+        self.device_data = Some(device_data);
+        self
+    }
+    /// Explicit caller data, or None for the synthetic baseline.
+    #[must_use]
+    pub const fn device_data(self) -> Option<DualShock4DeviceData> {
+        self.device_data
+    }
+
     /// Restore a caller-owned controller identity. Restoration is supported on USB/UHID. Pairing bytes and the UHID
     /// unique ID remain stable, and the physical path and session state are fresh.
     #[must_use]
@@ -1488,6 +1596,7 @@ pub fn create_dualshock4(
     family: DualShock4Options,
 ) -> Result<DualShock4Controller, ProviderError> {
     let identity = family.identity();
+    let device_data = family.device_data().unwrap_or_default();
     let mut realization = match options.target {
         RealizationTarget::LINUX_UINPUT => evdev_realization(),
         RealizationTarget::LINUX_UHID_USB => hid(options.session),
@@ -1510,7 +1619,7 @@ pub fn create_dualshock4(
         spec.unique_id = identity.unique_id();
     }
     let mut c = common::create_restored(
-        DualShock4Definition,
+        DualShock4Definition { device_data: family.device_data() },
         realization,
         options,
         identity.map(DualShock4Identity::bytes),
@@ -1523,7 +1632,7 @@ pub fn create_dualshock4(
             reason: e.to_string(),
         })?;
     }
-    Ok(DualShock4Controller(c))
+    Ok(DualShock4Controller(c, device_data))
 }
 impl common::HidDriver for DualShock4Definition {
     fn transition_inputs(previous: &Self::State, next: &mut Self::State) {
@@ -1568,7 +1677,7 @@ impl common::HidDriver for DualShock4Definition {
             DualShock4SessionState::default(),
             encode,
             validate,
-            features(identity),
+            features_with_data(identity, self.device_data),
             [true; 3],
             Some(4000),
         )
@@ -1581,7 +1690,8 @@ impl common::HidDriver for DualShock4Definition {
 pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<DualShock4Controller, ProviderError> {
-    common::injected(DualShock4Definition, session).map(DualShock4Controller)
+    common::injected(DualShock4Definition, session)
+        .map(|session| DualShock4Controller(session, DualShock4DeviceData::default()))
 }
 
 impl crate::registry::ControllerFamily for DualShock4Definition {
