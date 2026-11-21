@@ -251,6 +251,18 @@ mod tests {
         );
     }
     #[test]
+    fn switch_home_request_remains_typed_at_application_boundary() {
+        let home = gr_curated_controllers::SwitchProHomeLight {
+            brightness: 7,
+            mini_cycle: [1, 0x70, 0x77, 0x11, 0x11],
+        };
+        assert_eq!(
+            switch_pro(gr_curated_controllers::SwitchProOutputEvent::HomeLight(home)).unwrap(),
+            Some(SwitchProOutputEvent::HomeLight(home))
+        );
+    }
+
+    #[test]
     fn switch_rumble_and_unknown_native_payloads_survive_conversion() {
         for id in [None, Some(1), Some(0x10), Some(0xff)] {
             for length in [0, 8, 9, 10, 63, 64] {
