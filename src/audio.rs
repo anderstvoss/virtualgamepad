@@ -3,7 +3,8 @@
 pub(crate) use gr_root_audio::integration::instrumentation;
 pub(crate) use gr_root_audio::integration::{Family, combined_deadline};
 pub use gr_root_audio::{
-    AudioDiagnostics, AudioEndpoint, AudioEndpointSelector, AudioRead, ControllerAudio,
+    AudioDiagnostics, AudioDirectionAccounting, AudioEndpoint, AudioEndpointSelector, AudioRead,
+    ControllerAudio,
 };
 #[cfg(feature = "experimental")]
 pub use gr_root_audio::{
