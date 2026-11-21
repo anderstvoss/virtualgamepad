@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
-    os::unix::fs::OpenOptionsExt,
+    os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::atomic::{AtomicU64, Ordering},
@@ -42,6 +42,12 @@ macro_rules! controllers {
                 match id { $($id=>virtualgamepad::$create(acceptance_creation_options(target), Default::default()).map(Self::$variant).map_err(|e|e.to_string()),)+ _=>Err("unmapped compiled family".into()) }
             }
             fn physical_paths(&self)->Vec<String> { match self { $(Self::$variant(c)=>c.association().components().iter().filter_map(|c|c.requested_physical_path().map(str::to_owned)).collect(),)+ } }
+            fn usb_host_path(&self) -> Option<&str> {
+                let association = match self { $(Self::$variant(c) => c.association(),)+ };
+                association.components().iter()
+                    .find(|part| part.kind() == virtualgamepad::ComponentKind::Input)
+                    .and_then(virtualgamepad::ComponentAssociation::observed_host_path)
+            }
             fn topology(&self)->&InputTopology { match self { $(Self::$variant(c)=>c.surface()$(.$common())?.input_topology(),)+ } }
             fn digital(&mut self,update:DigitalControlUpdate)->Result<(),String>{match self {$(Self::$variant(c)=>c.set_digital(update).map_err(|e|e.to_string()),)+}}
             fn commit(&mut self)->Result<(),String>{match self {$(Self::$variant(c)=>c.commit().map_err(|e|e.to_string()),)+}}
@@ -68,6 +74,7 @@ pub struct Linux {
 pub struct Session {
     controller: Controller,
     physical_paths: Vec<String>,
+    usb_attachment: Option<UsbAttachment>,
     nodes: BTreeSet<PathBuf>,
     consumers: Vec<File>,
     service: crate::PeerService,
@@ -75,9 +82,50 @@ pub struct Session {
     phases: BTreeMap<&'static str, u64>,
 }
 
-fn matching_nodes(physical_paths: &[String]) -> Result<BTreeSet<PathBuf>, String> {
-    if physical_paths.is_empty() {
+struct UsbAttachment {
+    path: PathBuf,
+    // Keep the original object open so its identity cannot be reused during this session.
+    directory: File,
+}
+
+impl UsbAttachment {
+    fn open(path: PathBuf) -> std::io::Result<Self> {
+        let directory = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+            .open(&path)?;
+        Ok(Self { path, directory })
+    }
+
+    fn is_attached(&self) -> std::io::Result<bool> {
+        let original = self.directory.metadata()?;
+        match fs::symlink_metadata(&self.path) {
+            Ok(current) => Ok((current.dev(), current.ino()) == (original.dev(), original.ino())),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn owns(&self, entry: &Path) -> bool {
+        entry
+            .canonicalize()
+            .is_ok_and(|path| path.starts_with(&self.path))
+    }
+}
+
+fn matching_nodes(
+    physical_paths: &[String],
+    usb_attachment: Option<&UsbAttachment>,
+) -> Result<BTreeSet<PathBuf>, String> {
+    if physical_paths.is_empty() && usb_attachment.is_none() {
         return Err("no creation-owned node selector for this realization".into());
+    }
+    if let Some(attachment) = usb_attachment
+        && !attachment
+            .is_attached()
+            .map_err(|error| error.kind().to_string())?
+    {
+        return Ok(BTreeSet::new());
     }
     let mut result = BTreeSet::new();
     for (class, prefix) in [("input", "event"), ("hidraw", "hidraw")] {
@@ -91,6 +139,7 @@ fn matching_nodes(physical_paths: &[String]) -> Result<BTreeSet<PathBuf>, String
                 continue;
             }
             let device = entry.path().join("device");
+            let owned_by_usb = usb_attachment.is_some_and(|attachment| attachment.owns(&device));
             let phys = fs::read_to_string(device.join("phys"))
                 .ok()
                 .map(|s| s.trim().to_owned())
@@ -100,7 +149,7 @@ fn matching_nodes(physical_paths: &[String]) -> Result<BTreeSet<PathBuf>, String
                         .lines()
                         .find_map(|s| s.strip_prefix("HID_PHYS=").map(str::to_owned))
                 });
-            if phys.is_some_and(|phys| physical_paths.contains(&phys)) {
+            if owned_by_usb || phys.is_some_and(|phys| physical_paths.contains(&phys)) {
                 result.insert(PathBuf::from(if class == "input" {
                     format!("/dev/input/{name}")
                 } else {
@@ -465,6 +514,12 @@ fn wait_child(
         thread::sleep(Duration::from_millis(1));
     }
 }
+fn usb_timing_consumer(nodes: &BTreeSet<PathBuf>) -> Option<&PathBuf> {
+    // USB/IP SDL timing uses evdev. Hidraw and auxiliary input nodes are
+    // recorded for attachment ownership but are not SDL open prerequisites.
+    probe_node(nodes, false)
+}
+
 fn open_session_consumers(s: &mut Session) -> Result<Value, String> {
     if s.nodes.is_empty() {
         return Err("no owned node observed".into());
@@ -475,13 +530,20 @@ fn open_session_consumers(s: &mut Session) -> Result<Value, String> {
     let mut access = Vec::new();
     s.phases
         .insert("consumer_open_attempt_ns", elapsed_ns(s.created));
-    for node in s
-        .nodes
-        .iter()
-        .filter(|node| !series_bt || node.starts_with("/dev/input"))
-    {
+    let usb_event = s
+        .usb_attachment
+        .as_ref()
+        .and_then(|_| usb_timing_consumer(&s.nodes));
+    for node in s.nodes.iter().filter(|node| {
+        if s.usb_attachment.is_some() {
+            Some(*node) == usb_event
+        } else {
+            !series_bt || node.starts_with("/dev/input")
+        }
+    }) {
         let (file, diagnostic) =
-            open_consumer_diagnostics(node, series).map_err(|e| e.to_string())?;
+            open_consumer_diagnostics(node, series || s.usb_attachment.is_some())
+                .map_err(|e| e.to_string())?;
         access.push(diagnostic);
         s.phases
             .entry("consumer_first_open_ns")
@@ -491,7 +553,7 @@ fn open_session_consumers(s: &mut Session) -> Result<Value, String> {
     if s.consumers.is_empty() {
         return Err("no owned consumer node opened".into());
     }
-    let consumer = if series_bt {
+    let consumer = if s.usb_attachment.is_some() || series_bt {
         "harness evdev"
     } else {
         "harness evdev/hidraw"
@@ -524,9 +586,20 @@ impl Backend for Linux {
         let controller = Controller::create(family, target)?;
         let phases = BTreeMap::from([("provider_create_returned_ns", elapsed_ns(created))]);
         let physical_paths = controller.physical_paths();
+        let usb_attachment = if target == RealizationId::LINUX_USBIP_USB_AUDIO {
+            let path = controller
+                .usb_host_path()
+                .ok_or("broker attachment is missing its verified host path")?;
+            Some(UsbAttachment::open(path.into()).map_err(|error| {
+                format!("could not hold the broker USB attachment: {}", error.kind())
+            })?)
+        } else {
+            None
+        };
         Ok(Session {
             controller,
             physical_paths,
+            usb_attachment,
             nodes: BTreeSet::new(),
             consumers: Vec::new(),
             service: crate::PeerService::default(),
@@ -545,7 +618,10 @@ impl Backend for Linux {
                 let deadline=Instant::now()+Duration::from_secs(2);
                 loop {
                     for peer in peers.iter_mut() { peer.service.service(|| peer.controller.service()); }
-                    let nodes=matching_nodes(&s.physical_paths)?;
+                    let nodes=matching_nodes(&s.physical_paths, s.usb_attachment.as_ref())?;
+                    let usb_attached = s.usb_attachment.as_ref().map(UsbAttachment::is_attached)
+                        .transpose().map_err(|error| error.kind().to_string())?;
+                    let usb_ready = usb_attached.is_none() || probe_node(&nodes, false).is_some();
                     if stage == "node_present" {
                         if probe_node(&nodes, true).is_some() { s.phases.entry("hidraw_appearance_ns").or_insert_with(|| elapsed_ns(s.created)); }
                         if probe_node(&nodes, false).is_some() { s.phases.entry("input_appearance_ns").or_insert_with(|| elapsed_ns(s.created)); }
@@ -557,7 +633,7 @@ impl Backend for Linux {
                         Controller::XboxSeries(c) => series_nodes_ready(&nodes, c.surface().target() == RealizationId::LINUX_UHID_BLUETOOTH),
                         _ => true,
                     };
-                    if stage=="node_present" && !nodes.is_empty() && series_ready
+                    if stage=="node_present" && !nodes.is_empty() && series_ready && usb_ready
                         && (!steam_hid || nodes.iter().any(|p| !p.starts_with("/dev/input"))) {
                         s.nodes=nodes;
                         return Ok(json!({"poll_interval_ns":1_000_000,"phases_since_create_ns":s.phases,"devices":s.nodes.iter().map(|p| {
@@ -570,7 +646,7 @@ impl Backend for Linux {
                             device
                         }).collect::<Vec<_>>() }));
                     }
-                    if stage=="node_gone" && nodes.is_empty(){return Ok(json!({"poll_interval_ns":1_000_000}));}
+                    if stage=="node_gone" && nodes.is_empty() && usb_attached != Some(true) {return Ok(json!({"poll_interval_ns":1_000_000}));}
                     if Instant::now()>=deadline{return Err(format!("{stage} not observed within two seconds"));}
                     if stage=="node_present"{s.controller.service()?;}
                     thread::sleep(Duration::from_millis(1));
@@ -673,7 +749,7 @@ mod tests {
     #[test]
     fn missing_node_selector_cannot_report_empty_owned_set() {
         assert_eq!(
-            super::matching_nodes(&[]),
+            super::matching_nodes(&[], None),
             Err("no creation-owned node selector for this realization".into())
         );
     }
@@ -694,6 +770,52 @@ mod tests {
             acceptance_creation_options(RealizationId::LINUX_UINPUT).audio(),
             AudioOptions::default()
         );
+    }
+
+    #[test]
+    fn usb_timing_selects_an_evdev_node_even_when_hidraw_sorts_first() {
+        let raw = std::path::PathBuf::from("/dev/hidraw9");
+        let event = std::path::PathBuf::from("/dev/input/event9");
+        let nodes = std::collections::BTreeSet::from([raw, event.clone()]);
+        assert_eq!(super::usb_timing_consumer(&nodes), Some(&event));
+    }
+
+    #[test]
+    fn usb_attachment_excludes_other_ports_and_detects_reuse() -> std::io::Result<()> {
+        use std::fs;
+        use std::sync::atomic::Ordering;
+
+        let root = std::env::temp_dir().join(format!(
+            "vg-usb-ownership-{}-{}",
+            std::process::id(),
+            super::NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&root)?;
+        let result = (|| {
+            let port = root.join("8-1");
+            let sibling = root.join("8-10");
+            fs::create_dir(&port)?;
+            fs::create_dir(&sibling)?;
+            let owned = super::UsbAttachment::open(port.clone())?;
+            assert!(owned.is_attached()?);
+            assert!(!owned.owns(&sibling));
+            let late_event = port.join("input0");
+            fs::create_dir(&late_event)?;
+            assert!(owned.owns(&late_event));
+            fs::rename(&port, root.join("old-port"))?;
+            assert!(!owned.is_attached()?);
+            fs::create_dir(&port)?;
+            assert!(!owned.is_attached()?);
+            assert!(sibling.is_dir());
+            assert!(
+                super::matching_nodes(&[], Some(&owned))
+                    .expect("validated selector")
+                    .is_empty()
+            );
+            Ok(())
+        })();
+        fs::remove_dir_all(root)?;
+        result
     }
 
     #[test]

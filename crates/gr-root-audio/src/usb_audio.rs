@@ -12,7 +12,7 @@ use gr_usbip::profile::ControllerId;
 use std::{
     fs, io,
     marker::PhantomData,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         Arc, Mutex, OnceLock,
         atomic::{AtomicU64, Ordering},
@@ -23,6 +23,7 @@ use std::{
 pub(crate) struct Session<S> {
     control: Arc<Mutex<Control>>,
     broker: Client,
+    host_path: PathBuf,
     state: fn(&S) -> NativeState,
     retained: ProviderDiagnostics,
     microphone_silence: Arc<AtomicU64>,
@@ -60,6 +61,10 @@ pub(crate) fn worker_output(
 }
 
 impl<S: Send> WorkerBridge<S> for Session<S> {
+    fn observed_host_path(&self) -> Option<&Path> {
+        Some(&self.host_path)
+    }
+
     fn update(&mut self, state: &S) -> Result<(), ProviderError> {
         let mut control = self
             .control
@@ -192,7 +197,7 @@ fn product_name(profile: Profile) -> &'static str {
     }
 }
 
-fn sound_card_id(bus_id: &str, profile: Profile) -> io::Result<String> {
+fn sound_card_id(bus_id: &str, profile: Profile) -> io::Result<(String, PathBuf)> {
     let device = fs::canonicalize(Path::new("/sys/bus/usb/devices").join(bus_id))?;
     if !device
         .components()
@@ -229,6 +234,7 @@ fn sound_card_id(bus_id: &str, profile: Profile) -> io::Result<String> {
         }
     }
     found
+        .map(|id| (id, device))
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "USB audio card has not enumerated"))
 }
 
@@ -606,7 +612,7 @@ pub(crate) fn open<S: Send + 'static>(
         Client::open(profile, identity).map_err(|error| io_open(&error))?;
     let prepared = (|| {
         let deadline = Instant::now() + Duration::from_secs(2);
-        let card_id = loop {
+        let (card_id, host_path) = loop {
             match sound_card_id(broker.bus_id(), profile) {
                 Ok(id) => break id,
                 Err(error)
@@ -661,19 +667,21 @@ pub(crate) fn open<S: Send + 'static>(
         })?;
         let audio =
             crate::audio::usb_audio(options, id, &card_id, broker.bus_id(), &caller_nodes, pcm)?;
-        Ok((control, microphone_silence, audio))
+        Ok((control, microphone_silence, audio, host_path))
     })();
-    let (control, microphone_silence, audio) = crate::creation::finish(prepared, || {
-        broker
-            .close()
-            .err()
-            .map(|error| error.to_string())
-            .into_iter()
-            .collect()
-    })?;
+    let (control, microphone_silence, audio, host_path) =
+        crate::creation::finish(prepared, || {
+            broker
+                .close()
+                .err()
+                .map(|error| error.to_string())
+                .into_iter()
+                .collect()
+        })?;
     let bridge = Session {
         control,
         broker,
+        host_path,
         state: to_native,
         retained: ProviderDiagnostics {
             state: ProviderState::Open,

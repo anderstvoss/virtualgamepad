@@ -43,7 +43,7 @@ id = "lifecycle"
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualshock4/lifecycle", evidence = ["ds4-vg-exp0011-combined-node-discovery"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualshock4/lifecycle", evidence = ["ds4-vg-exp0011-combined-node-discovery"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualshock4/lifecycle", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualshock4/lifecycle", evidence = ["ds4-vg-exp0011-combined-node-discovery"], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.usbip.usb-audio" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_FOLLOWUP.md#usbip-consumer-timing", test_id = "acceptance/dualshock4/lifecycle", evidence = ["ds4-vg-exp0011-combined-node-discovery"], reason = "P5a follow-up observed creation, evdev open, SDL open and measured removal of the broker-owned attachment in all N1 and N3 slots." }
 
 [[functions]]
 id = "touchpad"
