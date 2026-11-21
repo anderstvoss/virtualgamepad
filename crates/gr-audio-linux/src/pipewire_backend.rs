@@ -983,7 +983,6 @@ fn prepare(
                 if let Some(name) = &caller_node {
                     specs.push(Spec {
                         association: association.cloned(),
-                    association: association.cloned(),
                         clock: Arc::default(),
                         input_loss: Arc::default(),
                         name: name.clone(),
@@ -1008,7 +1007,6 @@ fn prepare(
                 if let Some(name) = &caller_node {
                     specs.push(Spec {
                         association: association.cloned(),
-                    association: association.cloned(),
                         clock: Arc::default(),
                         input_loss: Arc::default(),
                         name: name.clone(),
@@ -1137,6 +1135,7 @@ mod tests {
                 AudioOptions::new(gr_audio_contract::AudioExposure::Emulated),
                 7,
                 0,
+                None,
             )
             .unwrap();
             assert_eq!(prepared.endpoints.len(), 1);
@@ -1236,6 +1235,30 @@ mod tests {
             endpoint_properties("synthetic", true, 3000, None).get("node.latency"),
             Some("8/3000")
         );
+    }
+    #[test]
+    fn associated_sink_and_source_publish_matching_hid_lookup_metadata() {
+        let identity = SidecarIdentity {
+            vendor_id: 0x1234,
+            product_id: 0x5678,
+            product_name: "Synthetic Gamepad".into(),
+            hid_unique_id: "test-unique-a".into(),
+            realization_id: "linux.uhid.usb".into(),
+            key: "virtualgamepad.test.creation-a".into(),
+        };
+        for input in [true, false] {
+            let props = endpoint_properties("test.audio.node", input, 48_000, Some(&identity));
+            assert_eq!(props.get("device.vendor.id"), Some("0x1234"));
+            assert_eq!(props.get("device.product.id"), Some("0x5678"));
+            assert_eq!(props.get("device.product.name"), Some("Synthetic Gamepad"));
+            assert_eq!(props.get("device.serial"), Some("test-unique-a"));
+            assert_eq!(props.get("virtualgamepad.realization.id"), Some("linux.uhid.usb"));
+            assert_eq!(props.get("virtualgamepad.association.key"), Some("virtualgamepad.test.creation-a"));
+            assert_eq!(props.get("media.class"), Some(if input { "Audio/Sink" } else { "Audio/Source" }));
+        }
+        let unrelated = endpoint_properties("test.usb.bridge", false, 48_000, None);
+        assert_eq!(unrelated.get("virtualgamepad.association.key"), None);
+        assert_eq!(unrelated.get("device.serial"), None);
     }
     #[test]
     fn negotiated_format_keeps_audible_and_haptic_positions_explicit() {
