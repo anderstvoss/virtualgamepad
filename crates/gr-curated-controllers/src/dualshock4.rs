@@ -781,6 +781,7 @@ static USBIP_SURFACE: DualShock4Surface = DualShock4Surface {
 pub struct DualShock4Definition {
     device_data: Option<DualShock4DeviceData>,
 }
+#[cfg(test)]
 impl DualShock4Definition {
     pub(crate) const fn configured(device_data: DualShock4DeviceData) -> Self {
         Self {
