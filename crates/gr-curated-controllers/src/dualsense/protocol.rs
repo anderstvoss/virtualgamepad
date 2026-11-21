@@ -252,6 +252,114 @@ mod tests {
     use crate::BatteryLevel;
     use crate::common::HidDriver;
     #[test]
+    fn bluetooth_initial_neutral_then_required_feature_replies_enable_full_mode() {
+        use crate::dualsense::{DualSenseIdentity, bluetooth};
+        let identity = DualSenseIdentity::generate().expect("OS entropy for test instance");
+        let mut protocol = DualSenseUsbProtocol::new_bluetooth(identity.bytes());
+        let initial = protocol.input(&protocol.neutral(), 0).unwrap().remove(0);
+        assert_eq!(initial.id(), Some(1));
+        assert_eq!(initial.wire().len(), 10);
+        assert_eq!(protocol.deadline(), Some(1000));
+        for (id, len) in [(5, 41), (9, 20), (0x20, 64)] {
+            let (reply, event) = protocol.request(
+                &RequestKind::Get { kind: ReportType::Feature, id: Some(id) }, 0,
+            );
+            assert!(event.is_none());
+            let Reply::Get(Ok(report)) = reply else {
+                panic!("required Bluetooth feature was refused");
+            };
+            assert_eq!(report.wire().len(), len);
+            assert!(bluetooth::valid(bluetooth::FEATURE_SEED, &report.wire()));
+            assert_eq!(report.id(), Some(id));
+        }
+        let full = protocol.input(&protocol.neutral(), 1000).unwrap().remove(0);
+        assert_eq!(full.id(), Some(0x31));
+        assert_eq!(full.wire().len(), 78);
+        assert!(bluetooth::valid(bluetooth::INPUT_SEED, &full.wire()));
+        assert_eq!(
+            protocol.request(
+                &RequestKind::Get { kind: ReportType::Input, id: Some(0x31) }, 1000,
+            ).0,
+            Reply::Get(Ok(full))
+        );
+        assert_eq!(
+            protocol.request(
+                &RequestKind::Get { kind: ReportType::Feature, id: Some(0x03) }, 0,
+            ).0,
+            Reply::Get(Err(ReplyError::Unsupported))
+        );
+    }
+
+    #[test]
+    fn bluetooth_output_crc_rejects_bad_host_writes_and_retains_leds_and_trigger_data() {
+        use crate::dualsense::{DualSenseIdentity, bluetooth};
+        let identity = DualSenseIdentity::generate().unwrap();
+        let mut protocol = DualSenseUsbProtocol::new_bluetooth(identity.bytes());
+        let mut wire = vec![0u8; 78];
+        wire[0] = 0x31;
+        wire[2] = 0x10; // kernel's fixed tag
+        let common = 3;
+        wire[common] = 0x0d; // compatible rumble + two trigger slots
+        wire[common + 1] = 0x14; // player/RGB valid
+        wire[common + 2] = 33;
+        wire[common + 3] = 44;
+        wire[common + 10..common + 21].copy_from_slice(&[7; 11]);
+        wire[common + 21..common + 32].copy_from_slice(&[9; 11]);
+        wire[common + 43] = 0x12;
+        wire[common + 44..common + 47].copy_from_slice(&[10, 20, 30]);
+        bluetooth::sign(bluetooth::OUTPUT_SEED, &mut wire);
+        let report = Report::from_wire(ReportType::Output, true, &wire).unwrap();
+        let (ok, emitted) = protocol.request(&RequestKind::Set(report), 0);
+        assert_eq!(ok, Reply::Set(Ok(())));
+        let RawReverseEvent::HidOutput { report_id: Some(2), bytes } = emitted.unwrap() else {
+            panic!("Bluetooth host output must decode through common typed output");
+        };
+        assert_eq!(&bytes[44..47], &[10, 20, 30]);
+        assert_eq!(protocol.retained.motors, Some([44, 33]));
+        assert_eq!(protocol.retained.left_trigger, Some([9; 11]));
+        assert_eq!(protocol.retained.right_trigger, Some([7; 11]));
+        assert_eq!(protocol.retained.player_leds, Some(0x12));
+        assert_eq!(protocol.retained.lightbar_rgb, Some([10, 20, 30]));
+        let accepted = protocol.retained.clone();
+        let mut bad = wire;
+        bad[common + 43] ^= 1;
+        let bad = Report::from_wire(ReportType::Output, true, &bad).unwrap();
+        assert_eq!(
+            protocol.request(&RequestKind::Set(bad.clone()), 1).0,
+            Reply::Set(Err(ReplyError::Invalid))
+        );
+        assert_eq!(protocol.retained, accepted);
+        assert!(protocol.output(bad, 2).unwrap().is_none());
+        assert_eq!(protocol.retained, accepted);
+    }
+
+    #[test]
+    fn bluetooth_two_instances_have_independent_creation_owned_feature_identity() {
+        use crate::dualsense::{DualSenseIdentity, bluetooth};
+        let first = DualSenseIdentity::generate().unwrap();
+        let second = DualSenseIdentity::generate().unwrap();
+        assert_ne!(first, second);
+        assert_ne!(first.unique_id(), second.unique_id());
+        let mut a = DualSenseUsbProtocol::new_bluetooth(first.bytes());
+        let mut b = DualSenseUsbProtocol::new_bluetooth(second.bytes());
+        let get = RequestKind::Get {
+            kind: ReportType::Feature, id: Some(9),
+        };
+        let first_reply = a.request(&get, 0).0;
+        assert_ne!(first_reply, b.request(&get, 0).0);
+        assert_eq!(first_reply, a.request(&get, 1).0);
+        let Reply::Get(Ok(ref report)) = first_reply else { unreachable!() };
+        assert!(bluetooth::valid(bluetooth::FEATURE_SEED, &report.wire()));
+
+        // The original USB personality remains independent of BT CRC/framing.
+        let mut usb = DualSenseUsbProtocol::new(first.bytes());
+        let Reply::Get(Ok(usb_feature)) = usb.request(&get, 0).0 else { unreachable!() };
+        assert_eq!(usb_feature.wire().len(), 20);
+        assert_ne!(usb_feature.wire(), report.wire());
+        assert_eq!(usb.input(&usb.neutral(), 0).unwrap()[0].id(), Some(1));
+    }
+
+    #[test]
     fn pairing_identity_is_creation_owned_and_stable_across_requests() {
         let get = RequestKind::Get {
             kind: ReportType::Feature,
