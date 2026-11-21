@@ -262,8 +262,12 @@ def rebind_generic(hid):
         if current_driver(hid) != "hid-generic":
             raise HostRunError("generic binding did not take effect")
     except BaseException:
-        if current_driver(hid) is None:
-            write_sysfs(path / original / "bind", hid.name)
+        try:
+            # The driver core may have bound generic even when the manual
+            # bind command failed. Attempt rollback for either state.
+            restore(hid, original, current_driver(hid) != original)
+        except BaseException as rollback:
+            raise HostRunError("generic bind failed and original driver restoration failed") from rollback
         raise
     return original, True
 
