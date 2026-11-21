@@ -39,6 +39,7 @@ notes/
 scratch/
 todo-private.md
 private/
+*.private.*
 .local/
 
 # OS/editor files

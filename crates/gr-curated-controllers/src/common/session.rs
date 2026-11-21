@@ -734,10 +734,13 @@ fn provider_error(error: gr_hid::Error) -> ProviderError {
 }
 
 pub(crate) fn creation_identity() -> Result<[u8; 6], ProviderError> {
-    let mut source = std::fs::File::open("/dev/urandom").map_err(|error| ProviderError::Open {
-        reason: format!("open OS identity entropy: {error}"),
+    // OS-backed entropy on every supported development platform, without
+    // weakening the per-instance synthetic identity requirement.
+    let mut entropy = [0; 6];
+    getrandom::fill(&mut entropy).map_err(|error| ProviderError::Open {
+        reason: format!("read OS identity entropy: {error}"),
     })?;
-    read_identity(&mut source)
+    read_identity(&mut &entropy[..])
 }
 
 fn read_identity(source: &mut impl std::io::Read) -> Result<[u8; 6], ProviderError> {
