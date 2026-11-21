@@ -902,3 +902,25 @@ optional raw observations as an authoritative stream. Wii supporting snapshot:
 
 Existing events, raw payloads, FF effect types and retained snapshots are unchanged.
 These additive ordinary-root declarations do not change protocol admission or qualify physical output.
+
+### #365 · Sony caller-supplied device data (P10b)
+
+- Add ordinary-root `DualSenseDeviceData` and `DualShock4DeviceData`.
+  Both default to the existing byte-stable synthetic calibration and firmware
+  USB feature replies; neither includes a device identity.
+- Import with `from_feature_reports(calibration, firmware)`,
+  `with_feature_report(report_id, bytes)`, or `load_file(path)`.
+  Read with `feature_report(report_id)` and export with
+  `save_file(path)`. Imports reject unknown reports, wrong sizes,
+  zero calibration denominators and Bluetooth framing.
+- New `DualSenseOptions::with_device_data(data)` /
+  `DualShock4Options::with_device_data(data)` builders and
+  `device_data()` accessors supply and inspect per-instance settings.
+  Controller handles also expose `device_data()` after close.
+- No existing caller migration is required for defaults; the previous
+  synthetic values remain unchanged. To restore a custom profile, capture
+  `controller.device_data()` before disposal and pass a copy in the next
+  creation's family options. Restore pairing identity separately.
+- USB/IP installs validated feature data through a pre-thread control
+  handshake; no physical capture, host observation or Bluetooth
+  qualification is claimed. See [Device data](DEVICE_DATA.md).
