@@ -1289,7 +1289,10 @@ pub(crate) fn decode_dualsense_hid_output(
     }
     DualSenseHidOutput::Unknown { report_id, raw }
 }
-pub struct DualSenseController(common::ControllerSession<DualSenseDefinition>, DualSenseDeviceData);
+pub struct DualSenseController(
+    common::ControllerSession<DualSenseDefinition>,
+    DualSenseDeviceData,
+);
 impl DualSenseController {
     /// The validated device data used for this instance, including after close.
     #[must_use]
@@ -1614,7 +1617,10 @@ pub(crate) fn realization() -> NativeControllerRealization {
 fn dualsense_feature_responses(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     dualsense_feature_responses_with_data(identity, None)
 }
-fn dualsense_feature_responses_with_data(identity: [u8; 6], data: Option<DualSenseDeviceData>) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
+fn dualsense_feature_responses_with_data(
+    identity: [u8; 6],
+    data: Option<DualSenseDeviceData>,
+) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     // `uhid_report_type`: feature=0, output=1, input=2. This is distinct
     // from the HID class-request values and is the value Linux sends in a
     // `UHID_GET_REPORT` event.
@@ -1708,7 +1714,10 @@ impl Default for DualSenseDeviceData {
         firmware[24] = 1;
         firmware[28] = 1;
         firmware[44..46].copy_from_slice(&0x0224_u16.to_le_bytes());
-        Self { calibration, firmware }
+        Self {
+            calibration,
+            firmware,
+        }
     }
 }
 impl DualSenseDeviceData {
@@ -1730,8 +1739,12 @@ impl DualSenseDeviceData {
                 self.calibration = data;
             }
             0x20 => self.firmware = crate::sony_device_data::validate::<64>(id, bytes, 0x20)?,
-            _ => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
-                "unsupported DualSense device-data feature report")),
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "unsupported DualSense device-data feature report",
+                ));
+            }
         }
         Ok(self)
     }
@@ -1795,9 +1808,10 @@ pub fn create_dualsense_usb_worker(
         controller: ControllerId::new("virtualgamepad.dualsense"),
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
     };
-    DualSenseController(common::ControllerSession::worker(
-        definition, selection, bridge,
-    ), DualSenseDeviceData::default())
+    DualSenseController(
+        common::ControllerSession::worker(definition, selection, bridge),
+        DualSenseDeviceData::default(),
+    )
 }
 
 /// Family options for a new `DualSense` session.
