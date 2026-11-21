@@ -172,7 +172,7 @@ pub use dualshock4::{
     DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, create_dualshock4,
 };
 pub use switch_pro::{
-    SwitchProAxis, SwitchProControl, SwitchProController, SwitchProIdentity, SwitchProInputs,
+    SwitchProAxis, SwitchProBattery, SwitchProBatteryLevel, SwitchProControl, SwitchProController, SwitchProHomeLight, SwitchProIdentity, SwitchProInputs,
     SwitchProMotionSample, SwitchProOptions, SwitchProOutputEvent, SwitchProRumble,
     SwitchProRumbleBand, SwitchProRumbleDecoded, SwitchProRumbleSample, SwitchProRumbleSamples,
     SwitchProRumbleWord, SwitchProStatus, SwitchProSurface, create_switch_pro,
