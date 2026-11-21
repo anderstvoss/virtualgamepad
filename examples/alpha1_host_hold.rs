@@ -92,7 +92,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     let mut session = Session::open(&args[0], realization)?;
     let labels = session.association_labels();
-    if labels.is_empty() || labels.iter().any(|label| label.contains(['\n', '\t', '|'])) {
+    if labels.is_empty() || labels.iter().any(|label| label.chars().any(|ch| matches!(ch, '\n' | '\t' | '|'))) {
         session.close();
         return Err("controller association is unavailable".into());
     }
