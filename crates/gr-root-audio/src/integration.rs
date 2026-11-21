@@ -57,7 +57,6 @@ pub mod usb {
                 identity: [u8; 6],
                 options: AudioOptions,
                 creation: u64,
-                device_data: Option<(Vec<u8>, Vec<u8>)>,
             ) -> Result<(Box<dyn WorkerBridge<$state>>, ControllerAudio), OpenError> {
                 let (profile, tag) = profile(ids::$id)?;
                 crate::usb_audio::open(
@@ -67,7 +66,6 @@ pub mod usb {
                     identity,
                     options,
                     creation,
-                    device_data,
                     crate::usb_audio::$convert,
                 )
             }
