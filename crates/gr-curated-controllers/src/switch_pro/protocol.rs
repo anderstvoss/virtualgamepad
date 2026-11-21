@@ -223,7 +223,7 @@ mod bluetooth_tests {
         let neutral = protocol.input(&Default::default(), 0).unwrap();
         assert_eq!(neutral.len(), 1);
         assert_eq!(neutral[0].id(), Some(0x3f));
-        assert_eq!(neutral[0].payload(), &[0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(neutral[0].payload(), &[0, 0, 8, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80]);
         assert!(!protocol.stream_enabled);
         let (ack, event) = protocol.request(&RequestKind::Set(subcommand(0x03, &[0x30])), 4);
         assert_eq!(ack, Reply::Set(Ok(())));

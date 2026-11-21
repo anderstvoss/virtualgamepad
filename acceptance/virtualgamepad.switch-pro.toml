@@ -19,7 +19,7 @@ id = "sticks"
 "linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/sticks", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/sticks", evidence = ["swpro-bt-full-mode-input-layout"], reason = "Local source-derived Bluetooth-bus UHID only; no P5b host or physical acceptance. Research claim is in draft PR #161, pin adoption follows merge." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/sticks", evidence = ["swpro-bt-full-mode-input-layout", "swpro-bt-simple-axis-neutral"], reason = "Local source-derived Bluetooth-bus UHID only; no P5b host or physical acceptance. Research claim is in draft PR #161, pin adoption follows merge." }
 
 [[functions]]
 id = "triggers"

@@ -823,7 +823,8 @@ fn switch_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
 }
 
 // SDL 535d80b lines 137-152 and 2183-2257: 0x3f uses separate
-// face/shoulder, menu and hat bytes followed by raw signed stick axes.
+// face/shoulder, menu and hat bytes followed by 16-bit stick codes.
+// SDL 535d80b lines 1107-1122: simple-mode neutral raw stick is 0x8000.
 // This is a synthetic golden encoding, not a captured retail report.
 fn switch_simple_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
     let mut bytes = vec![0; 11];
@@ -857,7 +858,9 @@ fn switch_simple_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame 
         s.0.left.0.raw(), s.0.left.1.raw(),
         s.0.right.0.raw(), s.0.right.1.raw(),
     ].into_iter().enumerate() {
-        bytes[3 + idx * 2..5 + idx * 2].copy_from_slice(&value.to_le_bytes());
+        let centered = u16::try_from(i32::from(value) - i32::from(i16::MIN))
+            .expect("signed stick offset is a u16 raw code");
+        bytes[3 + idx * 2..5 + idx * 2].copy_from_slice(&centered.to_le_bytes());
     }
     ProviderFrame::HidInput { report_id: Some(0x3f), bytes }
 }
@@ -2797,14 +2800,14 @@ mod tests {
             switch_simple_frame(&(inputs, SwitchProStatus::default())),
             ProviderFrame::HidInput {
                 report_id: Some(0x3f),
-                bytes: vec![0x91, 0x11, 0, 0x2e, 0xfb, 0x29, 0x09, 0, 0, 0, 0],
+                bytes: vec![0x91, 0x11, 0, 0x2e, 0x7b, 0x29, 0x89, 0, 0x80, 0, 0x80],
             }
         );
         assert_eq!(
             switch_simple_frame(&(SwitchProInputs::default(), SwitchProStatus::default())),
             ProviderFrame::HidInput {
                 report_id: Some(0x3f),
-                bytes: vec![0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0],
+                bytes: vec![0, 0, 8, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80],
             }
         );
         let mut opposite = SwitchProInputs::default();
