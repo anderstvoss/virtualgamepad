@@ -255,7 +255,7 @@ pub struct AudioUsbMicrophoneProgress {
 }
 
 /// Cooperative, creation-scoped link between an owning UHID controller and its
-/// PipeWire sidecar nodes. Names are valid only within the owning audio session;
+/// `PipeWire` sidecar nodes. Names are valid only within the owning audio session;
 /// they do not represent a USB composite or an automatically linked sound card.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioSidecarAssociation {
@@ -263,12 +263,12 @@ pub struct AudioSidecarAssociation {
     node_names: Vec<String>,
 }
 impl AudioSidecarAssociation {
-    /// Shared by every PipeWire node owned by this controller creation.
+    /// Shared by every `PipeWire` node owned by this controller creation.
     #[must_use]
     pub fn key(&self) -> &str {
         &self.key
     }
-    /// Exact PipeWire node names (including NativeClient caller nodes if present).
+    /// Exact `PipeWire` node names (including `NativeClient` caller nodes if present).
     #[must_use]
     pub fn node_names(&self) -> &[String] {
         &self.node_names
