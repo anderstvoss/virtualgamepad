@@ -5420,19 +5420,19 @@ mod tests {
         indicators.apply_hid_output(None, Some(0), None, None);
         assert!(!indicators.rumble_active);
         assert_eq!(indicators.led, Some([1, 2, 3]));
-        assert_eq!(indicators.mute_led, Some(true));
+        assert_eq!(indicators.mute_led, Some(DualSenseMuteLed::On));
     }
 
     #[test]
     fn rumble_only_dualsense_output_preserves_prior_led_indicators() {
         let mut indicators = ReverseIndicators {
             led: Some([0x11, 0x22, 0x33]),
-            mute_led: Some(true),
+            mute_led: Some(DualSenseMuteLed::On),
             ..ReverseIndicators::default()
         };
         indicators.apply_hid_output(Some(0x40), Some(0x20), None, None);
         assert_eq!(indicators.led, Some([0x11, 0x22, 0x33]));
-        assert_eq!(indicators.mute_led, Some(true));
+        assert_eq!(indicators.mute_led, Some(DualSenseMuteLed::On));
         assert!(indicators.rumble_active);
     }
 }
