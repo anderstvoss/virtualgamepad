@@ -58,6 +58,8 @@ impl SilenceLedger {
 struct Metrics {
     timings: Mutex<Vec<crate::audio::AudioStreamTiming>>,
     loss_trace: Mutex<Vec<crate::audio::AudioInputLossTrace>>,
+    playback_accounting: Mutex<Option<gr_audio_contract::queue::PcmQueueAccounting>>,
+    microphone_accounting: Mutex<Option<gr_audio_contract::queue::PcmQueueAccounting>>,
     bridge_snapshot: Mutex<BridgeSnapshot>,
     silence_ledger: Mutex<SilenceLedger>,
     source_underruns: AtomicU64,
@@ -163,6 +165,14 @@ impl Metrics {
             .fetch_max(host.saturating_sub(previous), Ordering::Relaxed);
     }
     fn capture(&self, session: &gr_audio_linux::Session) {
+        *self
+            .playback_accounting
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = session.playback_accounting();
+        *self
+            .microphone_accounting
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = session.microphone_accounting();
         self.source_underruns
             .store(session.underrun_frames(), Ordering::Release);
         self.graph_input_dropped
@@ -511,6 +521,24 @@ impl Bridge {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
+    }
+    pub(crate) fn playback_accounting(
+        &self,
+    ) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        *self
+            .metrics
+            .playback_accounting
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+    pub(crate) fn microphone_accounting(
+        &self,
+    ) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        *self
+            .metrics
+            .microphone_accounting
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
     pub(crate) fn source_underrun_frames(&self) -> u64 {
         self.metrics.source_underruns.load(Ordering::Acquire)
