@@ -7,8 +7,9 @@ use gr_hid::{
 };
 use std::collections::BTreeMap;
 
-#[derive(Clone)]
 type FeatureEnhancement<S> = ([u8; 2], fn(&S, u64, u8) -> Report);
+
+#[derive(Clone)]
 pub(crate) struct SnapshotProtocol<S: Clone, R: OutputState = ()> {
     pub neutral: S,
     pub encode: fn(&S, u64, u8) -> Report,
