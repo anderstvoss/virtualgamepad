@@ -761,6 +761,24 @@
             "impl UnwindSafe for SteamController2026StreamPacket"
           ]
         },
+        "enum.SwitchProBatteryLevel.html": {
+          "declarations": [
+            "pub enum SwitchProBatteryLevel { Empty, Critical, Low, Medium, Full, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProBatteryLevel",
+            "impl Copy for SwitchProBatteryLevel",
+            "impl Debug for SwitchProBatteryLevel",
+            "impl Default for SwitchProBatteryLevel",
+            "impl Eq for SwitchProBatteryLevel",
+            "impl PartialEq for SwitchProBatteryLevel",
+            "impl RefUnwindSafe for SwitchProBatteryLevel",
+            "impl Send for SwitchProBatteryLevel",
+            "impl Sync for SwitchProBatteryLevel",
+            "impl Unpin for SwitchProBatteryLevel",
+            "impl UnwindSafe for SwitchProBatteryLevel"
+          ]
+        },
         "enum.SwitchProControl.html": {
           "declarations": [
             "pub enum SwitchProControl { Show 14 variants B, A, Y, X, L, R, Zl, Zr, Minus, Plus, Home, Capture, LeftStickPress, RightStickPress, }"
@@ -780,7 +798,7 @@
         },
         "enum.SwitchProOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HomeLight(SwitchProHomeLight), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }",
             "pub fn rumble(&self) -> Option<SwitchProRumble>"
           ],
           "traits": [
@@ -1121,7 +1139,9 @@
             "pub const fn failed(&self) -> bool",
             "pub const fn underrun_frames(&self) -> u64",
             "pub const fn dropped_playback_frames(&self) -> u64",
-            "pub const fn last_error(&self) -> Option<&AudioError>"
+            "pub const fn last_error(&self) -> Option<&AudioError>",
+            "pub const fn playback_accounting(&self) -> Option<&AudioDirectionAccounting>",
+            "pub const fn microphone_accounting(&self) -> Option<&AudioDirectionAccounting>"
           ],
           "traits": [
             "impl Clone for AudioDiagnostics",
@@ -1133,6 +1153,23 @@
             "impl Sync for AudioDiagnostics",
             "impl Unpin for AudioDiagnostics",
             "impl UnwindSafe for AudioDiagnostics"
+          ]
+        },
+        "struct.AudioDirectionAccounting.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct AudioDirectionAccounting {Show 13 fields pub direction: SampleDirection, pub generation: u64, pub produced_frames: u64, pub accepted_frames: u64, pub consumed_frames: u64, pub dropped_at_ingress_frames: u64, pub dropped_on_flush_frames: u64, pub dropped_on_close_frames: u64, pub queued_frames: u64, pub dropped_in_callback_frames: Option<u64>, pub dropped_in_worker_frames: Option<u64>, pub silence_inserted_frames: Option<u64>, pub discontinuities: u64, }"
+          ],
+          "traits": [
+            "impl Clone for AudioDirectionAccounting",
+            "impl Copy for AudioDirectionAccounting",
+            "impl Debug for AudioDirectionAccounting",
+            "impl Eq for AudioDirectionAccounting",
+            "impl PartialEq for AudioDirectionAccounting",
+            "impl RefUnwindSafe for AudioDirectionAccounting",
+            "impl Send for AudioDirectionAccounting",
+            "impl Sync for AudioDirectionAccounting",
+            "impl Unpin for AudioDirectionAccounting",
+            "impl UnwindSafe for AudioDirectionAccounting"
           ]
         },
         "struct.AudioEndpoint.html": {
@@ -1197,6 +1234,24 @@
             "impl Sync for AudioRead",
             "impl Unpin for AudioRead",
             "impl UnwindSafe for AudioRead"
+          ]
+        },
+        "struct.AudioSidecarAssociation.html": {
+          "declarations": [
+            "pub struct AudioSidecarAssociation { /* private fields */ }",
+            "pub fn key(&self) -> &str",
+            "pub fn node_names(&self) -> &[String]"
+          ],
+          "traits": [
+            "impl Clone for AudioSidecarAssociation",
+            "impl Debug for AudioSidecarAssociation",
+            "impl Eq for AudioSidecarAssociation",
+            "impl PartialEq for AudioSidecarAssociation",
+            "impl RefUnwindSafe for AudioSidecarAssociation",
+            "impl Send for AudioSidecarAssociation",
+            "impl Sync for AudioSidecarAssociation",
+            "impl Unpin for AudioSidecarAssociation",
+            "impl UnwindSafe for AudioSidecarAssociation"
           ]
         },
         "struct.AuxiliaryButtonInput.html": {
@@ -1325,6 +1380,7 @@
             "pub struct ControllerAudio { /* private fields */ }",
             "pub fn diagnostics(&self) -> AudioDiagnostics",
             "pub fn endpoints(&self) -> &[AudioEndpoint]",
+            "pub fn sidecar_association(&self) -> Option<&AudioSidecarAssociation>",
             "pub const fn onboard_speaker_source(&self) -> Option<AudioChannel>",
             "pub const fn limitation(&self) -> &'static str",
             "pub fn read_playback( &mut self, dest: &mut [i16], ) -> Result<AudioRead, AudioError>",
@@ -2546,6 +2602,24 @@
             "impl UnwindSafe for SwitchProAxis"
           ]
         },
+        "struct.SwitchProBattery.html": {
+          "declarations": [
+            "pub struct SwitchProBattery { pub level: SwitchProBatteryLevel, pub charging: bool, pub usb_powered: bool, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProBattery",
+            "impl Copy for SwitchProBattery",
+            "impl Debug for SwitchProBattery",
+            "impl Default for SwitchProBattery",
+            "impl Eq for SwitchProBattery",
+            "impl PartialEq for SwitchProBattery",
+            "impl RefUnwindSafe for SwitchProBattery",
+            "impl Send for SwitchProBattery",
+            "impl Sync for SwitchProBattery",
+            "impl Unpin for SwitchProBattery",
+            "impl UnwindSafe for SwitchProBattery"
+          ]
+        },
         "struct.SwitchProController.html": {
           "declarations": [
             "pub struct SwitchProController { /* private fields */ }",
@@ -2557,6 +2631,8 @@
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn inputs(&self) -> &SwitchProInputs",
             "pub fn status(&self) -> SwitchProStatus",
+            "pub fn battery(&self) -> SwitchProBattery",
+            "pub fn set_battery( &mut self, battery: SwitchProBattery, ) -> Result<(), ControlError>",
             "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
             "pub fn set_inputs(&mut self, state: SwitchProInputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>",
@@ -2581,6 +2657,23 @@
             "impl !UnwindSafe for SwitchProController",
             "impl Send for SwitchProController",
             "impl Unpin for SwitchProController"
+          ]
+        },
+        "struct.SwitchProHomeLight.html": {
+          "declarations": [
+            "pub struct SwitchProHomeLight { pub brightness: u8, pub mini_cycle: [u8; 5], }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProHomeLight",
+            "impl Copy for SwitchProHomeLight",
+            "impl Debug for SwitchProHomeLight",
+            "impl Eq for SwitchProHomeLight",
+            "impl PartialEq for SwitchProHomeLight",
+            "impl RefUnwindSafe for SwitchProHomeLight",
+            "impl Send for SwitchProHomeLight",
+            "impl Sync for SwitchProHomeLight",
+            "impl Unpin for SwitchProHomeLight",
+            "impl UnwindSafe for SwitchProHomeLight"
           ]
         },
         "struct.SwitchProIdentity.html": {
@@ -2651,6 +2744,10 @@
           "declarations": [
             "#[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }",
             "pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions",
+            "pub const fn with_battery(self, battery: SwitchProBattery) -> SwitchProOptions",
+            "pub const fn battery(self) -> SwitchProBattery",
+            "pub const fn with_imu_gating(self, enabled: bool) -> SwitchProOptions",
+            "pub const fn imu_gating(self) -> bool",
             "pub const fn identity(self) -> Option<SwitchProIdentity>"
           ],
           "traits": [
@@ -2777,7 +2874,10 @@
           "declarations": [
             "pub struct SwitchProStatus { /* private fields */ }",
             "pub const fn timer(self) -> u8",
-            "pub const fn stream_enabled(self) -> bool"
+            "pub const fn stream_enabled(self) -> bool",
+            "pub const fn battery(self) -> SwitchProBattery",
+            "pub const fn imu_gating(self) -> bool",
+            "pub const fn imu_enabled(self) -> bool"
           ],
           "traits": [
             "impl Clone for SwitchProStatus",
@@ -4361,6 +4461,24 @@
             "impl UnwindSafe for SteamController2026StreamPacket"
           ]
         },
+        "enum.SwitchProBatteryLevel.html": {
+          "declarations": [
+            "pub enum SwitchProBatteryLevel { Empty, Critical, Low, Medium, Full, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProBatteryLevel",
+            "impl Copy for SwitchProBatteryLevel",
+            "impl Debug for SwitchProBatteryLevel",
+            "impl Default for SwitchProBatteryLevel",
+            "impl Eq for SwitchProBatteryLevel",
+            "impl PartialEq for SwitchProBatteryLevel",
+            "impl RefUnwindSafe for SwitchProBatteryLevel",
+            "impl Send for SwitchProBatteryLevel",
+            "impl Sync for SwitchProBatteryLevel",
+            "impl Unpin for SwitchProBatteryLevel",
+            "impl UnwindSafe for SwitchProBatteryLevel"
+          ]
+        },
         "enum.SwitchProControl.html": {
           "declarations": [
             "pub enum SwitchProControl { Show 14 variants B, A, Y, X, L, R, Zl, Zr, Minus, Plus, Home, Capture, LeftStickPress, RightStickPress, }"
@@ -4380,7 +4498,7 @@
         },
         "enum.SwitchProOutputEvent.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HomeLight(SwitchProHomeLight), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }",
             "pub fn rumble(&self) -> Option<SwitchProRumble>"
           ],
           "traits": [
@@ -4721,7 +4839,9 @@
             "pub const fn failed(&self) -> bool",
             "pub const fn underrun_frames(&self) -> u64",
             "pub const fn dropped_playback_frames(&self) -> u64",
-            "pub const fn last_error(&self) -> Option<&AudioError>"
+            "pub const fn last_error(&self) -> Option<&AudioError>",
+            "pub const fn playback_accounting(&self) -> Option<&AudioDirectionAccounting>",
+            "pub const fn microphone_accounting(&self) -> Option<&AudioDirectionAccounting>"
           ],
           "traits": [
             "impl Clone for AudioDiagnostics",
@@ -4733,6 +4853,23 @@
             "impl Sync for AudioDiagnostics",
             "impl Unpin for AudioDiagnostics",
             "impl UnwindSafe for AudioDiagnostics"
+          ]
+        },
+        "struct.AudioDirectionAccounting.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct AudioDirectionAccounting {Show 13 fields pub direction: SampleDirection, pub generation: u64, pub produced_frames: u64, pub accepted_frames: u64, pub consumed_frames: u64, pub dropped_at_ingress_frames: u64, pub dropped_on_flush_frames: u64, pub dropped_on_close_frames: u64, pub queued_frames: u64, pub dropped_in_callback_frames: Option<u64>, pub dropped_in_worker_frames: Option<u64>, pub silence_inserted_frames: Option<u64>, pub discontinuities: u64, }"
+          ],
+          "traits": [
+            "impl Clone for AudioDirectionAccounting",
+            "impl Copy for AudioDirectionAccounting",
+            "impl Debug for AudioDirectionAccounting",
+            "impl Eq for AudioDirectionAccounting",
+            "impl PartialEq for AudioDirectionAccounting",
+            "impl RefUnwindSafe for AudioDirectionAccounting",
+            "impl Send for AudioDirectionAccounting",
+            "impl Sync for AudioDirectionAccounting",
+            "impl Unpin for AudioDirectionAccounting",
+            "impl UnwindSafe for AudioDirectionAccounting"
           ]
         },
         "struct.AudioEndpoint.html": {
@@ -4797,6 +4934,24 @@
             "impl Sync for AudioRead",
             "impl Unpin for AudioRead",
             "impl UnwindSafe for AudioRead"
+          ]
+        },
+        "struct.AudioSidecarAssociation.html": {
+          "declarations": [
+            "pub struct AudioSidecarAssociation { /* private fields */ }",
+            "pub fn key(&self) -> &str",
+            "pub fn node_names(&self) -> &[String]"
+          ],
+          "traits": [
+            "impl Clone for AudioSidecarAssociation",
+            "impl Debug for AudioSidecarAssociation",
+            "impl Eq for AudioSidecarAssociation",
+            "impl PartialEq for AudioSidecarAssociation",
+            "impl RefUnwindSafe for AudioSidecarAssociation",
+            "impl Send for AudioSidecarAssociation",
+            "impl Sync for AudioSidecarAssociation",
+            "impl Unpin for AudioSidecarAssociation",
+            "impl UnwindSafe for AudioSidecarAssociation"
           ]
         },
         "struct.AuxiliaryButtonInput.html": {
@@ -4925,6 +5080,7 @@
             "pub struct ControllerAudio { /* private fields */ }",
             "pub fn diagnostics(&self) -> AudioDiagnostics",
             "pub fn endpoints(&self) -> &[AudioEndpoint]",
+            "pub fn sidecar_association(&self) -> Option<&AudioSidecarAssociation>",
             "pub const fn onboard_speaker_source(&self) -> Option<AudioChannel>",
             "pub const fn limitation(&self) -> &'static str",
             "pub fn read_playback( &mut self, dest: &mut [i16], ) -> Result<AudioRead, AudioError>",
@@ -6146,6 +6302,24 @@
             "impl UnwindSafe for SwitchProAxis"
           ]
         },
+        "struct.SwitchProBattery.html": {
+          "declarations": [
+            "pub struct SwitchProBattery { pub level: SwitchProBatteryLevel, pub charging: bool, pub usb_powered: bool, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProBattery",
+            "impl Copy for SwitchProBattery",
+            "impl Debug for SwitchProBattery",
+            "impl Default for SwitchProBattery",
+            "impl Eq for SwitchProBattery",
+            "impl PartialEq for SwitchProBattery",
+            "impl RefUnwindSafe for SwitchProBattery",
+            "impl Send for SwitchProBattery",
+            "impl Sync for SwitchProBattery",
+            "impl Unpin for SwitchProBattery",
+            "impl UnwindSafe for SwitchProBattery"
+          ]
+        },
         "struct.SwitchProController.html": {
           "declarations": [
             "pub struct SwitchProController { /* private fields */ }",
@@ -6157,6 +6331,8 @@
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn inputs(&self) -> &SwitchProInputs",
             "pub fn status(&self) -> SwitchProStatus",
+            "pub fn battery(&self) -> SwitchProBattery",
+            "pub fn set_battery( &mut self, battery: SwitchProBattery, ) -> Result<(), ControlError>",
             "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
             "pub fn set_inputs(&mut self, state: SwitchProInputs) -> Result<(), ControlError>",
             "pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>",
@@ -6181,6 +6357,23 @@
             "impl !UnwindSafe for SwitchProController",
             "impl Send for SwitchProController",
             "impl Unpin for SwitchProController"
+          ]
+        },
+        "struct.SwitchProHomeLight.html": {
+          "declarations": [
+            "pub struct SwitchProHomeLight { pub brightness: u8, pub mini_cycle: [u8; 5], }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProHomeLight",
+            "impl Copy for SwitchProHomeLight",
+            "impl Debug for SwitchProHomeLight",
+            "impl Eq for SwitchProHomeLight",
+            "impl PartialEq for SwitchProHomeLight",
+            "impl RefUnwindSafe for SwitchProHomeLight",
+            "impl Send for SwitchProHomeLight",
+            "impl Sync for SwitchProHomeLight",
+            "impl Unpin for SwitchProHomeLight",
+            "impl UnwindSafe for SwitchProHomeLight"
           ]
         },
         "struct.SwitchProIdentity.html": {
@@ -6251,6 +6444,10 @@
           "declarations": [
             "#[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }",
             "pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions",
+            "pub const fn with_battery(self, battery: SwitchProBattery) -> SwitchProOptions",
+            "pub const fn battery(self) -> SwitchProBattery",
+            "pub const fn with_imu_gating(self, enabled: bool) -> SwitchProOptions",
+            "pub const fn imu_gating(self) -> bool",
             "pub const fn identity(self) -> Option<SwitchProIdentity>"
           ],
           "traits": [
@@ -6377,7 +6574,10 @@
           "declarations": [
             "pub struct SwitchProStatus { /* private fields */ }",
             "pub const fn timer(self) -> u8",
-            "pub const fn stream_enabled(self) -> bool"
+            "pub const fn stream_enabled(self) -> bool",
+            "pub const fn battery(self) -> SwitchProBattery",
+            "pub const fn imu_gating(self) -> bool",
+            "pub const fn imu_enabled(self) -> bool"
           ],
           "traits": [
             "impl Clone for SwitchProStatus",

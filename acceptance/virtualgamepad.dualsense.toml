@@ -72,10 +72,10 @@ id = "battery"
 [[functions]]
 id = "rumble"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = ["ds-vg-exp0010-evdev-ff", "ds-vg-exp0011-evdev-mapping"], reason = "Evidence linked; per-function acceptance pending." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = ["ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending." }
-"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = ["ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = ["ds-vg-exp0010-evdev-ff", "ds-vg-exp0011-evdev-mapping"], reason = "Evidence linked; per-function acceptance pending. Level: Generic." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = ["ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending. Level: Native HID." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources. Level: Real USB (experimental)." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = ["ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending. Level: Real USB." }
 
 [[functions]]
 id = "lightbar"
@@ -96,34 +96,34 @@ id = "player-indicators"
 [[functions]]
 id = "microphone-led"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "acceptance/dualsense/microphone-led", test_ids = ["dualsense::tests::mute_led_modes_are_lossless_including_unknown_bytes", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = [], reason = "The uinput output surface exposes only conventional rumble; it cannot receive native microphone LED output reports." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/microphone-led", test_ids = ["dualsense::tests::mute_led_modes_are_lossless_including_unknown_bytes", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = ["ds-l0-led-inventory", "ds-l0-led-mute-led-off-on", "ds-l0-led-valid-flags", "ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending." }
-"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/microphone-led", test_ids = ["dualsense::tests::mute_led_modes_are_lossless_including_unknown_bytes", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/microphone-led", test_ids = ["dualsense::tests::mute_led_modes_are_lossless_including_unknown_bytes", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = ["ds-l0-led-inventory", "ds-l0-led-mute-led-off-on", "ds-l0-led-valid-flags", "ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending." }
+"linux.uinput" = { status = "not-supported", test_id = "acceptance/dualsense/microphone-led", test_ids = ["dualsense::tests::mute_led_modes_are_lossless_including_unknown_bytes", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = [], reason = "The uinput output surface exposes only conventional rumble; it cannot receive native microphone LED output reports. Level: Generic." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/microphone-led", test_ids = ["dualsense::tests::mute_led_modes_are_lossless_including_unknown_bytes", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = ["ds-l0-led-inventory", "ds-l0-led-mute-led-off-on", "ds-l0-led-valid-flags", "ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending. Level: Native HID." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/microphone-led", test_ids = ["dualsense::tests::mute_led_modes_are_lossless_including_unknown_bytes", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources. Level: Real USB (experimental)." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/microphone-led", test_ids = ["dualsense::tests::mute_led_modes_are_lossless_including_unknown_bytes", "dualsense::tests::uinput_has_explicit_separate_led_output_restrictions"], evidence = ["ds-l0-led-inventory", "ds-l0-led-mute-led-off-on", "ds-l0-led-valid-flags", "ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending. Level: Real USB." }
 
 [[functions]]
 id = "adaptive-triggers"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "acceptance/dualsense/adaptive-triggers", evidence = [], reason = "Conventional FF_RUMBLE cannot represent native adaptive-trigger reports." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/adaptive-triggers", evidence = ["ds-l0-device-adaptive-trigger-mode-block"], reason = "Decode sub-check: raw right/left 11-byte blocks, independent update flags, bounded Off/Feedback/Weapon/Vibration and explicit unknown modes; source-only ds-l0-device-adaptive-trigger-mode-block, ds-l0-device-adaptive-trigger-mode-parameters, ds-l0-sdl-trigger-demo-modes at unmerged research commit cb6d8a09498ddc64c4252a90301b86a34672f615; pin adoption pending. ds-l0-physical-adaptive-trigger-unknown remains unresolved; ds-vg-exp0016-steam-trigger-disagreement concerns input mapping and does not establish effect actuation. No host/physical run; acceptance remains WIP." }
-"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/adaptive-triggers", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/adaptive-triggers", evidence = ["ds-l0-device-adaptive-trigger-mode-block"], reason = "Evidence linked; per-function acceptance pending." }
+"linux.uinput" = { status = "not-supported", test_id = "acceptance/dualsense/adaptive-triggers", evidence = [], reason = "Conventional FF_RUMBLE cannot represent native adaptive-trigger reports. Level: Generic." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/adaptive-triggers", evidence = ["ds-l0-device-adaptive-trigger-mode-block"], reason = "Decode sub-check: raw right/left 11-byte blocks, independent update flags, bounded Off/Feedback/Weapon/Vibration and explicit unknown modes; source-only ds-l0-device-adaptive-trigger-mode-block, ds-l0-device-adaptive-trigger-mode-parameters, ds-l0-sdl-trigger-demo-modes at unmerged research commit cb6d8a09498ddc64c4252a90301b86a34672f615; pin adoption pending. ds-l0-physical-adaptive-trigger-unknown remains unresolved; ds-vg-exp0016-steam-trigger-disagreement concerns input mapping and does not establish effect actuation. No host/physical run; acceptance remains WIP. Level: Native HID." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/adaptive-triggers", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources. Level: Real USB (experimental)." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/adaptive-triggers", evidence = ["ds-l0-device-adaptive-trigger-mode-block"], reason = "Evidence linked; per-function acceptance pending. Level: Real USB." }
 
 [[functions]]
 id = "headset-audio"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "acceptance/dualsense/headset-audio", evidence = [], reason = "uinput has no audio endpoint or audio sidecar creation path." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/headset-audio", evidence = ["audio-dualsense-hid-routing"], reason = "Opt-in functional audible playback/capture; no physical headset routing or sustained acceptance established." }
-"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/headset-audio", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/headset-audio", evidence = ["audio-dualsense-hid-routing"], reason = "Opt-in functional audible playback/capture; no physical headset routing or sustained acceptance established." }
+"linux.uinput" = { status = "not-supported", test_id = "acceptance/dualsense/headset-audio", evidence = [], reason = "uinput has no audio endpoint or audio sidecar creation path. Level: Generic." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/headset-audio", evidence = ["audio-dualsense-hid-routing"], reason = "Opt-in functional audible playback/capture; no physical headset routing or sustained acceptance established. Level: Native HID." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/headset-audio", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources. Level: Real USB (experimental)." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/headset-audio", evidence = ["audio-dualsense-hid-routing"], reason = "Opt-in functional audible playback/capture; no physical headset routing or sustained acceptance established. Level: Real USB." }
 
 [[functions]]
 id = "speaker-audio"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "acceptance/dualsense/speaker-audio", evidence = [], reason = "uinput has no audio endpoint or audio sidecar creation path." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/speaker-audio", evidence = ["audio-dualsense-hid-routing"], reason = "Opt-in functional playback exposes the documented AudibleRight source; native speaker fidelity and sustained acceptance remain unqualified." }
-"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/speaker-audio", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/speaker-audio", evidence = ["audio-dualsense-hid-routing"], reason = "Opt-in functional playback exposes the documented AudibleRight source; native speaker fidelity and sustained acceptance remain unqualified." }
+"linux.uinput" = { status = "not-supported", test_id = "acceptance/dualsense/speaker-audio", evidence = [], reason = "uinput has no audio endpoint or audio sidecar creation path. Level: Generic." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/speaker-audio", evidence = ["audio-dualsense-hid-routing"], reason = "Opt-in functional playback exposes the documented AudibleRight source; native speaker fidelity and sustained acceptance remain unqualified. Level: Native HID." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/speaker-audio", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources. Level: Real USB (experimental)." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/speaker-audio", evidence = ["audio-dualsense-hid-routing"], reason = "Opt-in functional playback exposes the documented AudibleRight source; native speaker fidelity and sustained acceptance remain unqualified. Level: Real USB." }
 
 [[functions]]
 id = "calibration"

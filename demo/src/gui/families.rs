@@ -446,17 +446,27 @@ impl Controller {
                 Ok(())
             }
             Self::SwitchPro(controller) => controller
-                .service(&mut |event| {
-                    if let virtualgamepad::SwitchProOutputEvent::ForceFeedback(event) = event {
-                        indicators.apply_force_feedback(event);
-                    }
-                    log.push(format!("Switch Pro: {event:?}"));
-                })
+                .service(&mut |event| record_switch_pro_output(&event, log, indicators))
                 .map_err(|error| error.to_string()),
         };
         result
     }
 }
+
+fn record_switch_pro_output(
+    event: &virtualgamepad::SwitchProOutputEvent,
+    log: &mut Vec<String>,
+    indicators: &mut ReverseIndicators,
+) {
+    if let virtualgamepad::SwitchProOutputEvent::ForceFeedback(feedback) = &event {
+        indicators.apply_force_feedback(*feedback);
+    }
+    if let virtualgamepad::SwitchProOutputEvent::HomeLight(light) = &event {
+        indicators.switch_home_light = Some(*light);
+    }
+    log.push(format!("Switch Pro: {event:?}"));
+}
+
 impl ControllerView {
     pub(super) fn surface(&self) -> &dyn ControllerSurfaceInfo {
         match self {

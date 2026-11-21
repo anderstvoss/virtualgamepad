@@ -878,6 +878,22 @@ impl DualShock4Editor {
     }
 }
 impl SwitchProEditor {
+    pub(super) fn battery(&self) -> virtualgamepad::SwitchProBattery {
+        self.metadata.battery()
+    }
+    pub(super) fn set_battery(
+        &mut self,
+        battery: virtualgamepad::SwitchProBattery,
+    ) -> Result<(), String> {
+        self.queue(Box::new(move |controller| {
+            let Controller::SwitchPro(controller) = controller else {
+                return Err("edit family mismatch".into());
+            };
+            controller
+                .set_battery(battery)
+                .map_err(|error| error.to_string())
+        }))
+    }
     pub(super) fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), String> {
         self.queue(Box::new(move |controller| {
             let Controller::SwitchPro(controller) = controller else {
