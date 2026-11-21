@@ -47,6 +47,14 @@ pub(crate) trait HidDriver:
         session: gr_realization_api::RealizationSessionId,
         identity: [u8; 6],
     ) -> Self::Hid;
+    fn hid_protocol_for_target(
+        &self,
+        session: gr_realization_api::RealizationSessionId,
+        identity: [u8; 6],
+        _target: gr_realization_api::RealizationTarget,
+    ) -> Self::Hid {
+        self.hid_protocol(session, identity)
+    }
 }
 /// Implementation interface for a controller-native worker. The application
 /// crate owns transport setup; curated controllers keep edit validation and
@@ -161,7 +169,7 @@ impl<D: HidDriver> ControllerSession<D> {
             Some(identity) => identity,
             None => driver.hid_identity()?,
         };
-        let protocol = driver.hid_protocol(request.session, identity);
+        let protocol = driver.hid_protocol_for_target(request.session, identity, selection.target);
         let id = request.session.0;
         let transport = driver.open_hid(request)?;
         let runtime =
@@ -666,6 +674,7 @@ impl<D: HidDriver, P, W> ControllerSession<D, P, W> {
             available_in: gr_realization_api::RealizationTargetSet::new(&[
                 gr_realization_api::RealizationTarget::LINUX_UINPUT,
                 gr_realization_api::RealizationTarget::LINUX_UHID_USB,
+                gr_realization_api::RealizationTarget::LINUX_UHID_BLUETOOTH,
             ]),
         })
     }

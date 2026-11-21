@@ -24,7 +24,7 @@ support promotion is inferred.
 
 ¹ `linux.uhid.bluetooth` is a local UHID node with Bluetooth bus5 metadata,
 available only where a compiled family manifest declares it. It provides no
-radio, pairing or BlueZ. Actual Bluetooth remains deferred to #164. USB
+radio, pairing or BlueZ. Switch Pro has a [source-backed Bluetooth-bus UHID realization](SWITCH_PRO_BLUETOOTH.md) (P9c, #156), with no P5b host acceptance. Actual Bluetooth remains deferred to #164. USB
 personality over UHID is a virtual HID presentation; dummy_hcd is separate.
 The Xbox 360 HID profiles are standard HID, not USB XInput. This table does not
 claim hardware fidelity, full function parity, audio or composite USB support.
