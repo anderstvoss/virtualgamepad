@@ -280,7 +280,9 @@ impl AudioSidecarAssociation {
             .flat_map(|endpoint| {
                 [
                     endpoint.host().pipewire_node(),
-                    endpoint.caller().and_then(AudioEndpointSelector::pipewire_node),
+                    endpoint
+                        .caller()
+                        .and_then(AudioEndpointSelector::pipewire_node),
                 ]
                 .into_iter()
                 .flatten()

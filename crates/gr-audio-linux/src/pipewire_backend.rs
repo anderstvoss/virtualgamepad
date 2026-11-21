@@ -127,7 +127,13 @@ impl Session {
             playback,
             playback_observer,
             microphone,
-        } = prepare(profile, options, creation, source_preroll, association.as_ref())?;
+        } = prepare(
+            profile,
+            options,
+            creation,
+            source_preroll,
+            association.as_ref(),
+        )?;
         let clocks = specs
             .iter()
             .map(|s| (s.name.clone(), s.clock.clone()))
@@ -745,10 +751,16 @@ fn endpoint_properties(
     };
     if let Some(identity) = association {
         result.insert("device.vendor.id", format!("0x{:04x}", identity.vendor_id));
-        result.insert("device.product.id", format!("0x{:04x}", identity.product_id));
+        result.insert(
+            "device.product.id",
+            format!("0x{:04x}", identity.product_id),
+        );
         result.insert("device.product.name", identity.product_name.as_str());
         result.insert("device.serial", identity.hid_unique_id.as_str());
-        result.insert("virtualgamepad.realization.id", identity.realization_id.as_str());
+        result.insert(
+            "virtualgamepad.realization.id",
+            identity.realization_id.as_str(),
+        );
         result.insert("virtualgamepad.association.key", identity.key.as_str());
     }
     result
@@ -1252,7 +1264,10 @@ mod tests {
             assert_eq!(props.get("device.product.id"), Some("0x5678"));
             assert_eq!(props.get("device.product.name"), Some("Synthetic Gamepad"));
             assert_eq!(props.get("device.serial"), Some("test-unique-a"));
-            assert_eq!(props.get("virtualgamepad.realization.id"), Some("linux.uhid.usb"));
+            assert_eq!(
+                props.get("virtualgamepad.realization.id"),
+                Some("linux.uhid.usb")
+            );
             assert_eq!(
                 props.get("virtualgamepad.association.key"),
                 Some("virtualgamepad.test.creation-a")
@@ -1276,10 +1291,9 @@ mod tests {
             realization_id: "linux.uhid.usb".into(),
             key: "virtualgamepad.test.creation-b".into(),
         };
-        let profile = gr_curated_controllers::audio::dualsense(
-            gr_audio_contract::AudioExposure::Emulated,
-        )
-        .unwrap();
+        let profile =
+            gr_curated_controllers::audio::dualsense(gr_audio_contract::AudioExposure::Emulated)
+                .unwrap();
         let options = AudioOptions::new(gr_audio_contract::AudioExposure::Emulated)
             .with_playback_access(AudioAccess::NativeClient)
             .with_microphone_access(AudioAccess::NativeClient);
@@ -1298,7 +1312,10 @@ mod tests {
                 props.get("virtualgamepad.association.key"),
                 Some(identity.key.as_str())
             );
-            assert_eq!(props.get("device.serial"), Some(identity.hid_unique_id.as_str()));
+            assert_eq!(
+                props.get("device.serial"),
+                Some(identity.hid_unique_id.as_str())
+            );
         }
     }
     #[test]

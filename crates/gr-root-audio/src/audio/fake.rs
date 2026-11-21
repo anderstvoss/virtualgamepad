@@ -177,7 +177,12 @@ fn sidecar_lookup_is_typed_and_creation_scoped_without_a_live_graph() {
     let association = AudioSidecarAssociation::from_endpoints(key.clone(), audio.endpoints());
     assert_eq!(association.key(), key);
     assert_eq!(association.node_names().len(), 2);
-    assert!(association.node_names().iter().all(|name| name.contains("11")));
+    assert!(
+        association
+            .node_names()
+            .iter()
+            .all(|name| name.contains("11"))
+    );
     audio.sidecar_association = Some(association);
     assert_eq!(audio.sidecar_association().unwrap().key(), key);
     audio.close();

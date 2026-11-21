@@ -77,7 +77,11 @@ impl<F: Family> Controller<F> {
             audio_options,
             audio_family,
             options.session.0,
-            controller.inner.association().requested_unique_id.as_deref(),
+            controller
+                .inner
+                .association()
+                .requested_unique_id
+                .as_deref(),
         );
         match result {
             Ok(audio) => {
