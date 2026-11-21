@@ -497,7 +497,7 @@ pub fn create_dualsense(
     if let Some(identity) = identity {
         #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
         if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
-            return create_dualsense_usb(options, identity);
+            return create_dualsense_usb(options, identity, device_data);
         }
         family = family.with_identity(identity);
     }
@@ -603,7 +603,7 @@ pub fn create_dualshock4(
     if let Some(identity) = identity {
         #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
         if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
-            return create_dualshock4_usb(options, identity);
+            return create_dualshock4_usb(options, identity, device_data);
         }
         family = family.with_identity(identity);
     }
@@ -1053,11 +1053,12 @@ fn sony_identity<T>(
 fn create_dualsense_usb(
     options: CreationOptions,
     identity: DualSenseIdentity,
+    device_data: DualSenseDeviceData,
 ) -> Result<DualSenseController, ControllerError> {
     let audio_options = options.audio();
     let options = options.internal()?;
     let (bridge, mut audio) =
-        crate::usb_audio::dualsense(identity.bytes(), audio_options, options.session.0)?;
+        crate::usb_audio::dualsense(identity.bytes(), audio_options, options.session.0, Some((device_data.feature_report(0x05).unwrap().to_vec(), device_data.feature_report(0x20).unwrap().to_vec())))?;
     let mut inner = gr_curated_controllers::create_dualsense_usb_worker(bridge);
     if let Err(error) = inner.commit() {
         audio.close();
@@ -1086,6 +1087,7 @@ fn create_dualsense_usb(
         association,
         inner,
         Some(identity),
+        device_data,
         Some(audio),
     ))
 }
@@ -1094,11 +1096,12 @@ fn create_dualsense_usb(
 fn create_dualshock4_usb(
     options: CreationOptions,
     identity: DualShock4Identity,
+    device_data: DualShock4DeviceData,
 ) -> Result<DualShock4Controller, ControllerError> {
     let audio_options = options.audio();
     let options = options.internal()?;
     let (bridge, mut audio) =
-        crate::usb_audio::dualshock4(identity.bytes(), audio_options, options.session.0)?;
+        crate::usb_audio::dualshock4(identity.bytes(), audio_options, options.session.0, Some((device_data.feature_report(0x02).unwrap().to_vec(), device_data.feature_report(0xa3).unwrap().to_vec())))?;
     let mut inner = gr_curated_controllers::create_dualshock4_usb_worker(bridge);
     if let Err(error) = inner.commit() {
         audio.close();
@@ -1127,6 +1130,7 @@ fn create_dualshock4_usb(
         association,
         inner,
         Some(identity),
+        device_data,
         Some(audio),
     ))
 }
