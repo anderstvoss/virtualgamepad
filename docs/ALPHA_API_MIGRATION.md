@@ -989,6 +989,30 @@ These additive ordinary-root declarations do not change protocol admission or qu
 - Consumers needing the complete original packet should continue to use `raw`. The legacy retained `DualSenseOutputState.player_leds` remains the original player-LED byte; it does not adopt the new event field's mask. No other retained-state ABI or wire serialization changes.
 - Updated GUI presents five indicators, instant/fade, mute pulse/unknown, and uninterpreted brightness. The changes and tests are source-only; L1–L8 physical checks are not run.
 
+### #365 · Sony caller-supplied device data (P10b)
+
+- Add ordinary-root `DualSenseDeviceData` and `DualShock4DeviceData`.
+  Both default to the existing byte-stable synthetic calibration and firmware
+  USB feature replies; neither includes a device identity.
+- Import with `from_feature_reports(calibration, firmware)`,
+  `with_feature_report(report_id, bytes)`, or `load_file(path)`.
+  Read with `feature_report(report_id)` and export with
+  `save_file(path)`. Imports reject unknown reports, wrong sizes,
+  zero calibration denominators and Bluetooth framing.
+- New `DualSenseOptions::with_device_data(data)` /
+  `DualShock4Options::with_device_data(data)` builders and
+  `device_data()` accessors supply and inspect per-instance settings.
+  Controller handles also expose `device_data()` after close.
+- No existing caller migration is required for defaults; the previous
+  synthetic values remain unchanged. To restore a custom profile, capture
+  `controller.device_data()` before disposal and pass a copy in the next
+  creation's family options. Restore pairing identity separately.
+- Explicit Sony device data on `linux.usbip.usb-audio` returns typed
+  `ControllerError::Unsupported` before opening a worker. USB/IP continues
+  using its existing synthetic feature replies and unchanged worker protocol.
+  No physical capture, host observation or Bluetooth qualification is claimed.
+  See [Device data](DEVICE_DATA.md).
+
 ## Alpha 2 p2b — Switch Pro native battery, HOME light and optional IMU gating (#156 / #365)
 
 Source-only implementation (no physical Switch Pro, voltage/timing qualification, or support-matrix promotion). Research claims: `swpro-l0-device-battery-connection-bits`, `swpro-cgap-home-led-consumer`, `swpro-l0-consumer-imu-rumble-ack-gates`.

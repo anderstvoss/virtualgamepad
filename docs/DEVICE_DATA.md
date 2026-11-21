@@ -10,11 +10,11 @@ A transport-only `physical_path` suffix is not a controller-reported identity. O
 | --- | --- | --- | --- | --- | --- |
 | DualSense | Pairing identity, USB UHID | Feature `0x09`, `uniq` | Generated locally; **yes** | `DualSenseIdentity::from_bytes`, `DualSenseOptions::with_identity` | No direct loader; caller can restore bytes at runtime |
 | DualSense | Capability constants, USB UHID | Feature `0x03` | Synthetic constant; **not required** | None | No |
-| DualSense | IMU calibration, USB UHID | Feature `0x05` | Synthetic constant; **not required** | None; P10b | Planned P10b |
-| DualSense | Firmware/hardware version fields, USB UHID | Feature `0x20` | Synthetic constant; **not required** | None; P10b | Planned P10b |
+| DualSense | IMU calibration, USB UHID | Feature `0x05` | Synthetic constant; **not required** | `DualSenseOptions::with_device_data` (P10b) | Yes, caller-runtime only |
+| DualSense | Firmware/hardware version fields, USB UHID | Feature `0x20` | Synthetic constant; **not required** | `DualSenseOptions::with_device_data` (P10b) | Yes, caller-runtime only |
 | DualShock 4 | Pairing identity, USB UHID | Features `0x12`/`0x81`, `uniq` | Generated locally; **yes** | `DualShock4Identity::from_bytes`, `DualShock4Options::with_identity` | No direct loader; caller can restore bytes at runtime |
-| DualShock 4 | Calibration, USB UHID | Feature `0x02` | Synthetic constant; **not required** | None; P10b | Planned P10b |
-| DualShock 4 | Firmware and hardware constants, USB UHID | Feature `0xA3` | Synthetic constant; **not required** | None; P10b | Planned P10b |
+| DualShock 4 | Calibration, USB UHID | Feature `0x02` | Synthetic constant; **not required** | `DualShock4Options::with_device_data` (P10b) | Yes, caller-runtime only |
+| DualShock 4 | Firmware and hardware constants, USB UHID | Feature `0xA3` | Synthetic constant; **not required** | `DualShock4Options::with_device_data` (P10b) | Yes, caller-runtime only |
 | Switch Pro | Controller identity, USB UHID | USB status `0x80/0x01`, subcommand `0x02`, `uniq` | Generated locally; **yes** | `SwitchProIdentity::from_bytes`, `SwitchProOptions::with_identity` | No direct loader; caller can restore bytes at runtime |
 | Switch Pro | Factory IMU and stick calibration, USB UHID | SPI read subcommand `0x10` | Synthetic constant; **not required** | None; P10c | Planned P10c |
 | Switch Pro | User calibration, colours and serial region, USB UHID | SPI read subcommand `0x10` | Unpopulated synthetic response; **not required** | None; P10c | Planned P10c |
@@ -33,7 +33,7 @@ The Xbox 360 USB UHID presentation uses the project-standard gamepad descriptor 
 
 ## Conformance and outstanding work
 
-`crates/gr-curated-controllers/tests/device_data.rs` covers synthetically generated and deterministic restored identities without hardware. Existing in-crate fake-provider/protocol tests exercise Sony feature response shape and transport labels. The audited default constant fields are intentional, not a failure of uniqueness. Missing **caller-provided** non-identity blob tests are explicitly ignored pending P10b (Sony) and P10c (Switch Pro); do not mistake ignored tests for validation. Full two-instance host-level report and restore coverage remains to be completed in those lanes.
+`crates/gr-curated-controllers/tests/device_data.rs` covers synthetically generated and deterministic restored identities without hardware. Existing in-crate fake-provider/protocol tests exercise Sony feature response shape and transport labels. The audited default constant fields are intentional, not a failure of uniqueness. P10b adds unignored pure synthetic tests for caller-selected Sony feature reports, round-trip restoration and typed USB/IP refusal. Mainline audit tests for non-identity blobs may remain ignored until lanes are integrated. P10c (Switch Pro) and full two-instance host-level report and restore coverage remain outstanding; do not mistake ignored tests for validation.
 
 The guard `scripts/check-private-device-data.py` inspects tracked/indexed Git blobs, never the working tree, and rejects private paths and likely dump shapes. The legacy Wii entry point delegates to it. Name/size/shape heuristics are defense in depth, **not** a proof that a renamed or transformed dump will be detected. Keep physical data outside the public repository regardless of scanner result.
 
@@ -41,3 +41,86 @@ The guard `scripts/check-private-device-data.py` inspects tracked/indexed Git bl
 
 - [Xbox Series xpad identity and evdev evidence](https://github.com/anderstvoss/controller-protocol-research/blob/77b56f69631f1a0da39bb0e3e5ecbbf8e83329d8/records/claim/xbox-series-xpad-identity-share.json) and [Bluetooth unknowns](https://github.com/anderstvoss/controller-protocol-research/blob/77b56f69631f1a0da39bb0e3e5ecbbf8e83329d8/records/claim/xbox-series-bluetooth-device-gaps.json). Neither establishes an active vendor serial feature; [SDL's serial request is disabled](https://github.com/anderstvoss/controller-protocol-research/blob/77b56f69631f1a0da39bb0e3e5ecbbf8e83329d8/records/claim/xbox-series-sdl-disabled-serial-request.json).
 - [Existing synthetic Wii EEPROM contract](https://github.com/anderstvoss/virtualgamepad/blob/6c795401b4d4cc014a59087896e629af78044f62/crates/gr-curated-controllers/src/wii_remote/memory.rs) and [original private-data guard](https://github.com/anderstvoss/virtualgamepad/blob/6c795401b4d4cc014a59087896e629af78044f62/scripts/check-private-wii-eeprom.py).
+
+## Sony feature device data (P10b)
+
+P10b augments the `DualSense` and `DualShock4` families with typed
+**per-instance** USB feature data. No physical dump is shipped or needed.
+Defaults are synthetic, deterministic and byte-identical to the prior
+compiled calibration and firmware responses.
+
+| Family | Calibration report | Firmware report | Pairing source |
+| --- | --- | --- | --- |
+| DualSense | USB 0x05, 41 bytes | USB 0x20, 64 bytes | `DualSenseIdentity` |
+| DualShock 4 | USB 0x02, 37 bytes | USB 0xA3, 49 bytes | `DualShock4Identity` |
+
+### Application API
+
+`DualSenseDeviceData::default()` and `DualShock4DeviceData::default()`
+produce synthetic report pairs. To override, call
+`DeviceData::from_feature_reports(calibration, firmware)`, or build a
+copy with `with_feature_report(report_id, bytes)`; both reject invalid
+report IDs and exact lengths and reject zero denominators used by motion
+calibration. Construction is atomic and opens no provider resources.
+`feature_report(report_id)` permits byte-for-byte read-back of the
+validated USB report. Supply the result through
+`DualSenseOptions::with_device_data(data)` or
+`DualShock4Options::with_device_data(data)`, then call the ordinary
+`create_dualsense` or `create_dualshock4` constructor.
+`controller.device_data()` returns the value retained by that
+instance even after closure.
+
+The separate creation identity is always the source of address-bearing
+feature reports. **Address-bearing feature reports are never accepted
+in a device-data value**; callers must select `with_identity(...)`
+on the family options to restore their independent identity.
+
+USB/UHID accepts the selected immutable feature reports directly.
+**Known gap — `linux.usbip.usb-audio`:** the audio/USB/IP worker still
+serves only the existing synthetic feature data. Supplying even a
+validated `DualSenseDeviceData` or `DualShock4DeviceData` value
+explicitly through `with_device_data(...)` returns
+`ControllerError::Unsupported` **before opening the worker**. To retain
+synthetic USB/IP behavior, omit `with_device_data` entirely. This
+avoids changing the installed worker's wire protocol; a compatible
+broker/audio-workstream design must close the gap separately.
+No caller-selected report bytes are sent in worker frames or executable
+arguments in this PR. Supplying a pair cannot partially update a live
+controller. The current Sony Bluetooth-bus realization is not on
+the checked `main`; this API accepts **numbered USB reports only**.
+Bluetooth forms (including CRC-bearing variants) are rejected; no
+claim of Bluetooth feature-report support is made here.
+
+### Caller-selected file format
+
+`load_file(path)` and `save_file(path)` use a bounded UTF-8 format:
+
+1. Exact header `vg-sony-device-data-v1`.
+2. One line with two hex digits identifying the calibration report,
+   one ASCII space, and the contiguous lowercase hex encoding of the
+   complete numbered USB report.
+3. One line with the firmware report ID and complete numbered report
+   in the same format.
+4. Exactly one terminating line feed, no comments, no additional lines,
+   no address report or identity entry.
+
+The importer checks version, family, exact report order/length and
+report IDs, then revalidates motion denominators before returning
+a value. Wrong-family files and partial files are rejected without
+mutating existing creation choices. Export preserves the supplied
+calibration and firmware exactly. File extensions are conventionally
+`.sonydata` and **are private runtime artifacts, never repository
+fixtures**. Choose a path outside any public working tree. The demo's
+advanced creation options expose Load, Save and Use synthetic defaults
+for each Sony family and persist the validated choice across same-family
+recreation. Saving defaults writes only the synthetic pair.
+
+### Validation limits
+
+Pure synthetic test vectors exercise USB GET defaults versus pinned
+compiled fixture construction, supplied GET responses, invalid report
+rejection, round-trip serialization, re-creation from a retained
+value, and typed USB/IP refusal without opening a worker. No host, hardware capture, Bluetooth, or USB/IP timing run is
+asserted; actual host protocol acceptance remains unqualified.
+
+Related tracking: vg #154, #155, #162, #365.

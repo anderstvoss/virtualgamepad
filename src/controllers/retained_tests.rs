@@ -48,6 +48,7 @@ retained_case!(
     DualSenseOutputState,
     "virtualgamepad.dualsense",
     None,
+    DualSenseDeviceData::default(),
     None
 );
 retained_case!(
@@ -57,6 +58,7 @@ retained_case!(
     DualShock4OutputState,
     "virtualgamepad.dualshock4",
     None,
+    DualShock4DeviceData::default(),
     None
 );
 retained_case!(

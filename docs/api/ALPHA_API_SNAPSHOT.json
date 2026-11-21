@@ -1600,7 +1600,8 @@
             "pub fn association(&self) -> &ControllerAssociation",
             "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
             "pub fn service( &mut self, callback: &mut dyn FnMut(DualSenseOutputEvent), ) -> Result<(), ControllerError>",
-            "pub const fn identity(&self) -> Option<DualSenseIdentity>"
+            "pub const fn identity(&self) -> Option<DualSenseIdentity>",
+            "pub const fn device_data(&self) -> &DualSenseDeviceData"
           ],
           "traits": [
             "impl !RefUnwindSafe for DualSenseController",
@@ -1608,6 +1609,29 @@
             "impl !UnwindSafe for DualSenseController",
             "impl Send for DualSenseController",
             "impl Unpin for DualSenseController"
+          ]
+        },
+        "struct.DualSenseDeviceData.html": {
+          "declarations": [
+            "pub struct DualSenseDeviceData { /* private fields */ }",
+            "pub fn from_feature_reports( calibration: &[u8], firmware: &[u8], ) -> Result<DualSenseDeviceData, Error>",
+            "pub fn with_feature_report( self, id: u8, bytes: &[u8], ) -> Result<DualSenseDeviceData, Error>",
+            "pub fn feature_report(&self, id: u8) -> Option<&[u8]>",
+            "pub fn load_file(path: impl AsRef<Path>) -> Result<DualSenseDeviceData, Error>",
+            "pub fn save_file(&self, path: impl AsRef<Path>) -> Result<(), Error>"
+          ],
+          "traits": [
+            "impl Clone for DualSenseDeviceData",
+            "impl Copy for DualSenseDeviceData",
+            "impl Debug for DualSenseDeviceData",
+            "impl Default for DualSenseDeviceData",
+            "impl Eq for DualSenseDeviceData",
+            "impl PartialEq for DualSenseDeviceData",
+            "impl RefUnwindSafe for DualSenseDeviceData",
+            "impl Send for DualSenseDeviceData",
+            "impl Sync for DualSenseDeviceData",
+            "impl Unpin for DualSenseDeviceData",
+            "impl UnwindSafe for DualSenseDeviceData"
           ]
         },
         "struct.DualSenseIdentity.html": {
@@ -1665,6 +1689,8 @@
         "struct.DualSenseOptions.html": {
           "declarations": [
             "#[non_exhaustive]pub struct DualSenseOptions { /* private fields */ }",
+            "pub const fn with_device_data( self, device_data: DualSenseDeviceData, ) -> DualSenseOptions",
+            "pub const fn device_data(self) -> Option<DualSenseDeviceData>",
             "pub const fn with_identity( self, identity: DualSenseIdentity, ) -> DualSenseOptions",
             "pub const fn identity(self) -> Option<DualSenseIdentity>"
           ],
@@ -1859,7 +1885,8 @@
             "pub fn association(&self) -> &ControllerAssociation",
             "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
             "pub fn service( &mut self, callback: &mut dyn FnMut(DualShock4OutputEvent), ) -> Result<(), ControllerError>",
-            "pub const fn identity(&self) -> Option<DualShock4Identity>"
+            "pub const fn identity(&self) -> Option<DualShock4Identity>",
+            "pub const fn device_data(&self) -> &DualShock4DeviceData"
           ],
           "traits": [
             "impl !RefUnwindSafe for DualShock4Controller",
@@ -1867,6 +1894,29 @@
             "impl !UnwindSafe for DualShock4Controller",
             "impl Send for DualShock4Controller",
             "impl Unpin for DualShock4Controller"
+          ]
+        },
+        "struct.DualShock4DeviceData.html": {
+          "declarations": [
+            "pub struct DualShock4DeviceData { /* private fields */ }",
+            "pub fn from_feature_reports( calibration: &[u8], firmware: &[u8], ) -> Result<DualShock4DeviceData, Error>",
+            "pub fn with_feature_report( self, id: u8, bytes: &[u8], ) -> Result<DualShock4DeviceData, Error>",
+            "pub fn feature_report(&self, id: u8) -> Option<&[u8]>",
+            "pub fn load_file(path: impl AsRef<Path>) -> Result<DualShock4DeviceData, Error>",
+            "pub fn save_file(&self, path: impl AsRef<Path>) -> Result<(), Error>"
+          ],
+          "traits": [
+            "impl Clone for DualShock4DeviceData",
+            "impl Copy for DualShock4DeviceData",
+            "impl Debug for DualShock4DeviceData",
+            "impl Default for DualShock4DeviceData",
+            "impl Eq for DualShock4DeviceData",
+            "impl PartialEq for DualShock4DeviceData",
+            "impl RefUnwindSafe for DualShock4DeviceData",
+            "impl Send for DualShock4DeviceData",
+            "impl Sync for DualShock4DeviceData",
+            "impl Unpin for DualShock4DeviceData",
+            "impl UnwindSafe for DualShock4DeviceData"
           ]
         },
         "struct.DualShock4Identity.html": {
@@ -1941,6 +1991,8 @@
         "struct.DualShock4Options.html": {
           "declarations": [
             "#[non_exhaustive]pub struct DualShock4Options { /* private fields */ }",
+            "pub const fn with_device_data( self, device_data: DualShock4DeviceData, ) -> DualShock4Options",
+            "pub const fn device_data(self) -> Option<DualShock4DeviceData>",
             "pub const fn with_identity( self, identity: DualShock4Identity, ) -> DualShock4Options",
             "pub const fn identity(self) -> Option<DualShock4Identity>"
           ],
@@ -3032,7 +3084,7 @@
             "pub fn import(bytes: Vec<u8>) -> Result<WiiEepromImage, ControlError>",
             "pub fn with_extension_calibration( self, calibration: WiiExtensionCalibration, ) -> WiiEepromImage",
             "pub fn extension_calibration(&self) -> &WiiExtensionCalibration",
-            "pub fn bytes(&self) -> &[u8] ⓘ"
+            "pub fn bytes(&self) -> &[u8] \u24d8"
           ],
           "traits": [
             "impl Clone for WiiEepromImage",
@@ -5300,7 +5352,8 @@
             "pub fn association(&self) -> &ControllerAssociation",
             "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
             "pub fn service( &mut self, callback: &mut dyn FnMut(DualSenseOutputEvent), ) -> Result<(), ControllerError>",
-            "pub const fn identity(&self) -> Option<DualSenseIdentity>"
+            "pub const fn identity(&self) -> Option<DualSenseIdentity>",
+            "pub const fn device_data(&self) -> &DualSenseDeviceData"
           ],
           "traits": [
             "impl !RefUnwindSafe for DualSenseController",
@@ -5308,6 +5361,29 @@
             "impl !UnwindSafe for DualSenseController",
             "impl Send for DualSenseController",
             "impl Unpin for DualSenseController"
+          ]
+        },
+        "struct.DualSenseDeviceData.html": {
+          "declarations": [
+            "pub struct DualSenseDeviceData { /* private fields */ }",
+            "pub fn from_feature_reports( calibration: &[u8], firmware: &[u8], ) -> Result<DualSenseDeviceData, Error>",
+            "pub fn with_feature_report( self, id: u8, bytes: &[u8], ) -> Result<DualSenseDeviceData, Error>",
+            "pub fn feature_report(&self, id: u8) -> Option<&[u8]>",
+            "pub fn load_file(path: impl AsRef<Path>) -> Result<DualSenseDeviceData, Error>",
+            "pub fn save_file(&self, path: impl AsRef<Path>) -> Result<(), Error>"
+          ],
+          "traits": [
+            "impl Clone for DualSenseDeviceData",
+            "impl Copy for DualSenseDeviceData",
+            "impl Debug for DualSenseDeviceData",
+            "impl Default for DualSenseDeviceData",
+            "impl Eq for DualSenseDeviceData",
+            "impl PartialEq for DualSenseDeviceData",
+            "impl RefUnwindSafe for DualSenseDeviceData",
+            "impl Send for DualSenseDeviceData",
+            "impl Sync for DualSenseDeviceData",
+            "impl Unpin for DualSenseDeviceData",
+            "impl UnwindSafe for DualSenseDeviceData"
           ]
         },
         "struct.DualSenseIdentity.html": {
@@ -5365,6 +5441,8 @@
         "struct.DualSenseOptions.html": {
           "declarations": [
             "#[non_exhaustive]pub struct DualSenseOptions { /* private fields */ }",
+            "pub const fn with_device_data( self, device_data: DualSenseDeviceData, ) -> DualSenseOptions",
+            "pub const fn device_data(self) -> Option<DualSenseDeviceData>",
             "pub const fn with_identity( self, identity: DualSenseIdentity, ) -> DualSenseOptions",
             "pub const fn identity(self) -> Option<DualSenseIdentity>"
           ],
@@ -5559,7 +5637,8 @@
             "pub fn association(&self) -> &ControllerAssociation",
             "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
             "pub fn service( &mut self, callback: &mut dyn FnMut(DualShock4OutputEvent), ) -> Result<(), ControllerError>",
-            "pub const fn identity(&self) -> Option<DualShock4Identity>"
+            "pub const fn identity(&self) -> Option<DualShock4Identity>",
+            "pub const fn device_data(&self) -> &DualShock4DeviceData"
           ],
           "traits": [
             "impl !RefUnwindSafe for DualShock4Controller",
@@ -5567,6 +5646,29 @@
             "impl !UnwindSafe for DualShock4Controller",
             "impl Send for DualShock4Controller",
             "impl Unpin for DualShock4Controller"
+          ]
+        },
+        "struct.DualShock4DeviceData.html": {
+          "declarations": [
+            "pub struct DualShock4DeviceData { /* private fields */ }",
+            "pub fn from_feature_reports( calibration: &[u8], firmware: &[u8], ) -> Result<DualShock4DeviceData, Error>",
+            "pub fn with_feature_report( self, id: u8, bytes: &[u8], ) -> Result<DualShock4DeviceData, Error>",
+            "pub fn feature_report(&self, id: u8) -> Option<&[u8]>",
+            "pub fn load_file(path: impl AsRef<Path>) -> Result<DualShock4DeviceData, Error>",
+            "pub fn save_file(&self, path: impl AsRef<Path>) -> Result<(), Error>"
+          ],
+          "traits": [
+            "impl Clone for DualShock4DeviceData",
+            "impl Copy for DualShock4DeviceData",
+            "impl Debug for DualShock4DeviceData",
+            "impl Default for DualShock4DeviceData",
+            "impl Eq for DualShock4DeviceData",
+            "impl PartialEq for DualShock4DeviceData",
+            "impl RefUnwindSafe for DualShock4DeviceData",
+            "impl Send for DualShock4DeviceData",
+            "impl Sync for DualShock4DeviceData",
+            "impl Unpin for DualShock4DeviceData",
+            "impl UnwindSafe for DualShock4DeviceData"
           ]
         },
         "struct.DualShock4Identity.html": {
@@ -5641,6 +5743,8 @@
         "struct.DualShock4Options.html": {
           "declarations": [
             "#[non_exhaustive]pub struct DualShock4Options { /* private fields */ }",
+            "pub const fn with_device_data( self, device_data: DualShock4DeviceData, ) -> DualShock4Options",
+            "pub const fn device_data(self) -> Option<DualShock4DeviceData>",
             "pub const fn with_identity( self, identity: DualShock4Identity, ) -> DualShock4Options",
             "pub const fn identity(self) -> Option<DualShock4Identity>"
           ],
@@ -6732,7 +6836,7 @@
             "pub fn import(bytes: Vec<u8>) -> Result<WiiEepromImage, ControlError>",
             "pub fn with_extension_calibration( self, calibration: WiiExtensionCalibration, ) -> WiiEepromImage",
             "pub fn extension_calibration(&self) -> &WiiExtensionCalibration",
-            "pub fn bytes(&self) -> &[u8] ⓘ"
+            "pub fn bytes(&self) -> &[u8] \u24d8"
           ],
           "traits": [
             "impl Clone for WiiEepromImage",

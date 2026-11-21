@@ -181,6 +181,12 @@ mod tests {
             (XboxSeriesDefinition, $module:ident) => {
                 crate::$module::XboxSeriesDefinition::default()
             };
+            (DualSenseDefinition, $module:ident) => {
+                crate::$module::DualSenseDefinition::default()
+            };
+            (DualShock4Definition, $module:ident) => {
+                crate::$module::DualShock4Definition::default()
+            };
             ($name:ident, $module:ident) => {
                 crate::$module::$name
             };
