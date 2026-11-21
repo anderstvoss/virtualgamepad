@@ -373,13 +373,24 @@ impl Controller {
                             left_motor,
                             lightbar_rgb,
                             mute_button_led,
+                            player_leds,
+                            player_led_instant,
+                            led_brightness,
                             ..
-                        }) => indicators.apply_hid_output(
-                            *right_motor,
-                            *left_motor,
-                            *lightbar_rgb,
-                            *mute_button_led,
-                        ),
+                        }) => {
+                            indicators.apply_hid_output(
+                                *right_motor,
+                                *left_motor,
+                                *lightbar_rgb,
+                                None,
+                            );
+                            indicators.apply_dualsense_led_output(
+                                *mute_button_led,
+                                *player_leds,
+                                *player_led_instant,
+                                *led_brightness,
+                            );
+                        },
                         _ => {}
                     }
                     log.push(format!("DualSense: {event:?}"));
