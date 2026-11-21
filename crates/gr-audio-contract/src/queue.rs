@@ -16,6 +16,11 @@ struct Shared {
     tail: AtomicUsize,
     closed: AtomicBool,
     discarded: AtomicU64,
+    accepted: AtomicU64,
+    consumed: AtomicU64,
+    flushed: AtomicU64,
+    discontinuities: AtomicU64,
+    generation: AtomicU64,
     flush_before: AtomicU64,
 }
 /// Producer endpoint. Dropping either endpoint closes the whole stream.
@@ -28,7 +33,27 @@ pub struct PcmProducer {
 pub struct PcmObserver {
     shared: Arc<Shared>,
 }
+/// Counts of local queue-frame positions, not a cross-clock end-to-end receipt.
+/// Reads across the individual atomics are not transactional.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct PcmQueueAccounting {
+    pub generation: u64,
+    pub produced_frames: u64,
+    pub accepted_frames: u64,
+    pub consumed_frames: u64,
+    pub discarded_frames: u64,
+    pub flushed_frames: u64,
+    pub discontinuities: u64,
+    pub queued_frames: u64,
+    pub terminal_frames: u64,
+}
 impl PcmObserver {
+    #[must_use]
+    pub fn accounting(&self) -> PcmQueueAccounting {
+        self.shared.accounting()
+    }
+
     #[must_use]
     pub fn discarded_frames(&self) -> u64 {
         self.shared.discarded.load(Ordering::Relaxed)
@@ -70,6 +95,11 @@ pub fn pcm_queue(
         tail: AtomicUsize::new(0),
         closed: AtomicBool::new(false),
         discarded: AtomicU64::new(0),
+        accepted: AtomicU64::new(0),
+        consumed: AtomicU64::new(0),
+        flushed: AtomicU64::new(0),
+        discontinuities: AtomicU64::new(0),
+        generation: AtomicU64::new(1),
         flush_before: AtomicU64::new(0),
     });
     Ok((
@@ -84,6 +114,31 @@ pub fn pcm_queue(
     ))
 }
 impl Shared {
+    fn accounting(&self) -> PcmQueueAccounting {
+        let accepted = self.accepted.load(Ordering::Acquire);
+        let discarded = self.discarded.load(Ordering::Acquire);
+        let consumed = self.consumed.load(Ordering::Acquire);
+        let flushed = self.flushed.load(Ordering::Acquire);
+        let outstanding = accepted.saturating_sub(consumed.saturating_add(flushed));
+        let closed = self.closed.load(Ordering::Acquire);
+        PcmQueueAccounting {
+            generation: self.generation.load(Ordering::Acquire),
+            produced_frames: accepted.saturating_add(discarded),
+            accepted_frames: accepted,
+            consumed_frames: consumed,
+            discarded_frames: discarded,
+            flushed_frames: flushed,
+            discontinuities: self.discontinuities.load(Ordering::Acquire),
+            queued_frames: if closed { 0 } else { outstanding },
+            terminal_frames: if closed { outstanding } else { 0 },
+        }
+    }
+    fn advance_generation(&self) -> Result<(), AudioError> {
+        self.generation
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| value.checked_add(1))
+            .map(|_| ())
+            .map_err(|_| AudioError::InvalidRequirement)
+    }
     fn validate(&self, len: usize) -> Result<(), AudioError> {
         if self.closed.load(Ordering::Acquire) {
             return Err(AudioError::Closed);
@@ -111,6 +166,7 @@ impl PcmProducer {
     /// Returns Closed for a terminal stream.
     pub fn flush(&mut self) -> Result<(), AudioError> {
         self.shared.validate(0)?;
+        self.shared.advance_generation()?;
         self.shared
             .flush_before
             .store(self.next_frame, Ordering::Release);
@@ -154,6 +210,7 @@ impl PcmProducer {
             head = (head + 1) % q.slots;
         }
         self.next_frame = next;
+        q.accepted.fetch_add(frames as u64, Ordering::Relaxed);
         q.head.store(head, Ordering::Release);
         Ok(frames)
     }
@@ -197,9 +254,12 @@ impl PcmConsumer {
         let mut tail = q.tail.load(Ordering::Relaxed);
         let head = q.head.load(Ordering::Acquire);
         let flush_before = q.flush_before.load(Ordering::Acquire);
+        let mut flushed = 0_u64;
         while tail != head && q.positions[tail].load(Ordering::Relaxed) < flush_before {
             tail = (tail + 1) % q.slots;
+            flushed += 1;
         }
+        q.flushed.fetch_add(flushed, Ordering::Relaxed);
         let mut result = PcmRead {
             frames: 0,
             first_frame: self.expected_frame,
@@ -226,6 +286,10 @@ impl PcmConsumer {
             result.frames += 1;
             tail = (tail + 1) % q.slots;
         }
+        q.consumed.fetch_add(result.frames as u64, Ordering::Relaxed);
+        if result.discontinuity {
+            q.discontinuities.fetch_add(1, Ordering::Relaxed);
+        }
         q.tail.store(tail, Ordering::Release);
         Ok(result)
     }
@@ -234,9 +298,12 @@ impl PcmConsumer {
     /// Returns Closed for a terminal stream.
     pub fn flush(&mut self) -> Result<(), AudioError> {
         self.shared.validate(0)?;
-        self.shared
-            .tail
-            .store(self.shared.head.load(Ordering::Acquire), Ordering::Release);
+        self.shared.advance_generation()?;
+        let head = self.shared.head.load(Ordering::Acquire);
+        let tail = self.shared.tail.load(Ordering::Relaxed);
+        let count = (head + self.shared.slots - tail) % self.shared.slots;
+        self.shared.flushed.fetch_add(count as u64, Ordering::Relaxed);
+        self.shared.tail.store(head, Ordering::Release);
         Ok(())
     }
     #[must_use]
@@ -258,6 +325,18 @@ impl Drop for PcmConsumer {
     }
 }
 
+impl PcmProducer {
+    #[must_use]
+    pub fn accounting(&self) -> PcmQueueAccounting {
+        self.shared.accounting()
+    }
+}
+impl PcmConsumer {
+    #[must_use]
+    pub fn accounting(&self) -> PcmQueueAccounting {
+        self.shared.accounting()
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
