@@ -20,6 +20,8 @@ pub(crate) struct DualSenseUsbProtocol<
     active: bool,
     numbering_valid: bool,
     last_input: Option<Report>,
+    bluetooth: bool,
+    enhanced: bool,
 }
 impl DualSenseUsbProtocol {
     pub(crate) fn new(identity: [u8; 6]) -> Self {
@@ -31,7 +33,20 @@ impl DualSenseUsbProtocol {
             active: true,
             numbering_valid: true,
             last_input: None,
+            bluetooth: false,
+            enhanced: false,
         }
+    }
+    pub(crate) fn new_bluetooth(identity: [u8; 6]) -> Self {
+        let mut protocol = Self::new(identity);
+        protocol.bluetooth = true;
+        // The feature values are still the same single source as USB. Only
+        // the Bluetooth checksum trailer differs.
+        protocol.features.retain(|key, _| matches!(key.report_id, 5 | 9 | 0x20));
+        for wire in protocol.features.values_mut() {
+            super::bluetooth::sign(super::bluetooth::FEATURE_SEED, wire);
+        }
+        protocol
     }
 }
 impl<R: crate::retained::OutputState> DualSenseUsbProtocol<R> {
@@ -72,14 +87,25 @@ impl<R: crate::retained::OutputState> Protocol for DualSenseUsbProtocol<R> {
         let mut sample = state.clone();
         sample.status.input_sequence = self.sequence;
         sample.status.sensor_timestamp = (now as u32).wrapping_mul(3);
-        let ProviderFrame::HidInput { report_id, bytes } = dualsense_hid_input_report(&sample)
-        else {
-            unreachable!()
+        let report = if self.bluetooth {
+            if self.enhanced {
+                super::bluetooth::enhanced_input(&sample)
+            } else {
+                super::bluetooth::simple_input(&sample)
+            }
+        } else {
+            let ProviderFrame::HidInput { report_id, bytes } =
+                dualsense_hid_input_report(&sample)
+            else {
+                unreachable!()
+            };
+            Report::new(ReportType::Input, report_id, bytes)?
         };
-        let report = Report::new(ReportType::Input, report_id, bytes)?;
         self.last_input = Some(report.clone());
         self.sequence = self.sequence.wrapping_add(1);
-        self.next_input = now.saturating_add(4000);
+        // SDL describes an approximate 1 kHz Bluetooth sensor rate;
+        // a virtual report schedule is not a measurement of physical timing.
+        self.next_input = now.saturating_add(if self.bluetooth { 1000 } else { 4000 });
         Ok(vec![report])
     }
     fn deadline(&self) -> Option<u64> {
@@ -99,26 +125,55 @@ impl<R: crate::retained::OutputState> Protocol for DualSenseUsbProtocol<R> {
                     })
                     .and_then(|bytes| Report::from_wire(ReportType::Feature, true, bytes).ok())
                     .ok_or(ReplyError::Unsupported);
+                if self.bluetooth && report.is_ok() {
+                    // An enhanced Sony feature request is evidence that the
+                    // host needs the full Bluetooth state layout.
+                    self.enhanced = true;
+                }
                 (Reply::Get(report), None)
             }
             RequestKind::Get {
                 kind: ReportType::Input,
-                id: Some(1),
-            } => (
-                Reply::Get(self.last_input.clone().ok_or(ReplyError::Unsupported)),
+                id: Some(id),
+            } if *id == if self.bluetooth && self.enhanced { 0x31 } else { 1 } => (
+                Reply::Get(self.last_input.clone().filter(|report| report.id() == Some(*id)).ok_or(ReplyError::Unsupported)),
                 None,
             ),
             RequestKind::Get { .. } => (Reply::Get(Err(ReplyError::Unsupported)), None),
-            RequestKind::Set(report) => match Self::accept_output(report)
-                .and_then(|()| crate::retained::OutputState::apply(&mut self.retained, report))
-            {
-                Ok(()) => (Reply::Set(Ok(())), Some(Self::decode(report))),
-                Err(error) => (Reply::Set(Err(error)), None),
+            RequestKind::Set(report) => {
+                let normalized = if self.bluetooth {
+                    super::bluetooth::normalized_output(report)
+                } else {
+                    Self::accept_output(report).map(|()| report.clone())
+                };
+                match normalized.and_then(|normalized| {
+                    crate::retained::OutputState::apply(&mut self.retained, &normalized)?;
+                    Ok(normalized)
+                }) {
+                    Ok(normalized) => {
+                        if self.bluetooth {
+                            self.enhanced = true;
+                        }
+                        (Reply::Set(Ok(())), Some(Self::decode(&normalized)))
+                    }
+                    Err(error) => (Reply::Set(Err(error)), None),
+                }
             },
         }
     }
     fn output(&mut self, report: Report, _: u64) -> Result<Option<Self::Output>, Error> {
-        // Interrupt output has no acknowledgement; preserve unknown bytes for diagnostics.
+        // Interrupt output has no acknowledgement. Drop malformed Bluetooth
+        // CRCs without closing the runtime or changing retained output.
+        if self.bluetooth {
+            let Ok(normalized) = super::bluetooth::normalized_output(&report) else {
+                return Ok(None);
+            };
+            crate::retained::OutputState::apply(&mut self.retained, &normalized)
+                .map_err(|_| Error::InvalidState)?;
+            self.enhanced = true;
+            return Ok(Some(Self::decode(&normalized)));
+        }
+        // Keep the USB path's existing unknown-output observation policy.
         if Self::accept_output(&report).is_ok() {
             crate::retained::OutputState::apply(&mut self.retained, &report)
                 .map_err(|_| Error::InvalidState)?;
@@ -167,6 +222,18 @@ impl common::HidDriver for DualSenseDefinition {
     }
     fn hid_protocol(&self, _: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
         DualSenseUsbProtocol::new(identity)
+    }
+    fn hid_protocol_for_target(
+        &self,
+        target: gr_realization_api::RealizationTarget,
+        _: RealizationSessionId,
+        identity: [u8; 6],
+    ) -> Self::Hid {
+        if target == gr_realization_api::RealizationTarget::LINUX_UHID_BLUETOOTH {
+            DualSenseUsbProtocol::new_bluetooth(identity)
+        } else {
+            DualSenseUsbProtocol::new(identity)
+        }
     }
 }
 
