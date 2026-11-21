@@ -1908,7 +1908,7 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
         &INPUT_TOPOLOGY_WITH_MOTION
     }
     fn manifest() -> RealizationManifest {
-        Self.realization_manifest()
+        Self::default().realization_manifest()
     }
     fn realizations() -> &'static [crate::registry::FamilyRealization] {
         static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
