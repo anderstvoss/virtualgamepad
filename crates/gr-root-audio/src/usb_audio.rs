@@ -385,6 +385,34 @@ impl crate::audio::backend::Backend for Pcm {
     fn dropped_playback_frames(&self) -> u64 {
         self.lock().dropped_playback_frames()
     }
+    fn playback_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        if self.access.playback_access() == AudioAccess::NativeClient {
+            #[cfg(feature = "audio-pipewire")]
+            {
+                return self
+                    .bridge
+                    .as_ref()
+                    .and_then(crate::usb_audio_bridge::Bridge::playback_accounting);
+            }
+            #[cfg(not(feature = "audio-pipewire"))]
+            return None;
+        }
+        Some(self.lock().playback_accounting())
+    }
+    fn microphone_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        if self.access.microphone_access() == AudioAccess::NativeClient {
+            #[cfg(feature = "audio-pipewire")]
+            {
+                return self
+                    .bridge
+                    .as_ref()
+                    .and_then(crate::usb_audio_bridge::Bridge::microphone_accounting);
+            }
+            #[cfg(not(feature = "audio-pipewire"))]
+            return None;
+        }
+        Some(self.lock().microphone_accounting())
+    }
     fn native_playback_underrun_frames(&self) -> Option<u64> {
         #[cfg(feature = "audio-pipewire")]
         if let Some(bridge) = &self.bridge {
