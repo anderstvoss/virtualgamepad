@@ -24,6 +24,12 @@ pub(crate) trait Backend: Send + Sync {
     fn microphone_callback_rejected_frames(&self) -> Option<u64> {
         None
     }
+    fn playback_silence_frames(&self) -> Option<u64> {
+        None
+    }
+    fn microphone_silence_frames(&self) -> Option<u64> {
+        None
+    }
     fn native_playback_underrun_frames(&self) -> Option<u64> {
         None
     }
@@ -113,6 +119,12 @@ impl Backend for gr_audio_linux::Session {
     }
     fn microphone_callback_rejected_frames(&self) -> Option<u64> {
         Self::microphone_callback_rejected_frames(self)
+    }
+    fn playback_silence_frames(&self) -> Option<u64> {
+        Self::playback_silence_frames(self)
+    }
+    fn microphone_silence_frames(&self) -> Option<u64> {
+        Self::microphone_silence_frames(self)
     }
     fn error(&self) -> Option<&AudioError> {
         Self::error(self)

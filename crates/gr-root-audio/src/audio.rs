@@ -340,7 +340,7 @@ impl ControllerAudio {
                     SampleDirection::HostToController,
                     queue,
                     self.session.playback_callback_rejected_frames(),
-                    None,
+                    self.session.playback_silence_frames(),
                 )
             }),
             microphone_accounting: self.session.microphone_accounting().map(|queue| {
@@ -348,7 +348,7 @@ impl ControllerAudio {
                     SampleDirection::ControllerToHost,
                     queue,
                     self.session.microphone_callback_rejected_frames(),
-                    Some(self.session.underrun_frames()),
+                    self.session.microphone_silence_frames(),
                 )
             }),
             last_error: self.session.error().cloned(),

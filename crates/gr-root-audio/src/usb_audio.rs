@@ -423,6 +423,26 @@ impl crate::audio::backend::Backend for Pcm {
         }
         None
     }
+    fn playback_silence_frames(&self) -> Option<u64> {
+        #[cfg(feature = "audio-pipewire")]
+        if self.access.playback_access() == AudioAccess::NativeClient {
+            return self
+                .bridge
+                .as_ref()
+                .map(crate::usb_audio_bridge::Bridge::source_underrun_frames);
+        }
+        None
+    }
+    fn microphone_silence_frames(&self) -> Option<u64> {
+        #[cfg(feature = "audio-pipewire")]
+        if self.access.microphone_access() == AudioAccess::NativeClient
+            && self.bridge.is_some()
+        {
+            return Some(self.microphone_silence.load(Ordering::Acquire));
+        }
+        // Sample-mode USB host progress requires a separate queried worker sample.
+        None
+    }
     fn native_playback_underrun_frames(&self) -> Option<u64> {
         #[cfg(feature = "audio-pipewire")]
         if let Some(bridge) = &self.bridge {
