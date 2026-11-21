@@ -14,13 +14,13 @@ pub(crate) fn validate<const N: usize>(
     if id != expected_id || bytes.len() != N || bytes.first() != Some(&expected_id) {
         return Err(invalid("invalid Sony feature report ID or exact length"));
     }
-    bytes.try_into().map_err(|_| invalid("invalid Sony report length"))
+    bytes
+        .try_into()
+        .map_err(|_| invalid("invalid Sony report length"))
 }
 
 pub(crate) fn validate_motion(bytes: &[u8]) -> io::Result<()> {
-    let sample = |index: usize| {
-        i16::from_le_bytes([bytes[index], bytes[index + 1]])
-    };
+    let sample = |index: usize| i16::from_le_bytes([bytes[index], bytes[index + 1]]);
     let speed = i32::from(sample(19)) + i32::from(sample(21));
     if speed == 0 {
         return Err(invalid("motion calibration gyro speed denominator is zero"));
@@ -56,11 +56,7 @@ fn decode_hex(value: &str, max_bytes: usize) -> io::Result<Vec<u8>> {
 }
 
 /// Serialize only the two allowed reports; never serialize pairing/identity.
-pub(crate) fn save(
-    path: impl AsRef<Path>,
-    calibration: &[u8],
-    firmware: &[u8],
-) -> io::Result<()> {
+pub(crate) fn save(path: impl AsRef<Path>, calibration: &[u8], firmware: &[u8]) -> io::Result<()> {
     let encoded = format!(
         "vg-sony-device-data-v1\n{:02x} {}\n{:02x} {}\n",
         calibration[0],
@@ -90,8 +86,12 @@ pub(crate) fn load(
         return Err(invalid("unsupported Sony device-data file version"));
     }
     let mut report = |id: u8, size: usize| -> io::Result<Vec<u8>> {
-        let line = lines.next().ok_or_else(|| invalid("missing Sony feature report"))?;
-        let (tag, hex) = line.split_once(' ').ok_or_else(|| invalid("invalid Sony report row"))?;
+        let line = lines
+            .next()
+            .ok_or_else(|| invalid("missing Sony feature report"))?;
+        let (tag, hex) = line
+            .split_once(' ')
+            .ok_or_else(|| invalid("invalid Sony report row"))?;
         if tag != format!("{id:02x}") {
             return Err(invalid("Sony feature reports out of order or wrong family"));
         }
@@ -118,7 +118,9 @@ mod tests {
         assert!(decode_hex("gh", 1).is_err());
         assert_eq!(decode_hex("04ff", 2).unwrap(), vec![4, 255]);
         let path = std::env::temp_dir().join(format!(
-            "vg-sony-device-data-test-{}-{}.txt", std::process::id(), "strict"
+            "vg-sony-device-data-test-{}-{}.txt",
+            std::process::id(),
+            "strict"
         ));
         fs::write(&path, "vg-sony-device-data-v1\n05 05\n20 20\n09 09\n").unwrap();
         assert!(load(&path, 5, 0x20, 1, 1).is_err());
