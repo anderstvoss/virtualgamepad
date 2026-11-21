@@ -300,7 +300,13 @@ For Bluetooth driver tests, `load-xpadneo` loads the installed
 work with the USB controller disconnected. Removal permits one connected
 Bluetooth Series `045e:0b13` HID device and refuses additional or other
 HID devices bound to xpadneo. Module loading may select xpadneo on the
-next Bluetooth reconnect. A controller already bound to Microsoft's HID
+next Bluetooth reconnect. `load-microsoft` and `unload-microsoft` similarly
+manage the stock `hid_microsoft` module without requiring a wired controller.
+Microsoft unload refuses additional bound devices and any device other than one
+Bluetooth Series `045e:0b13`, including Microsoft keyboards and mice. Repeated
+unload is harmless. Loading a module does not rebind an existing device or
+suppress xpadneo's vendor bind rule; record the settled binding after reconnect.
+A controller already bound to Microsoft's HID
 driver may need reconnecting to change its binding. USB xone/xpad switching
 and Bluetooth xpadneo selection exercise their respective transports.
 
