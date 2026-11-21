@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.switch-pro"
-research_revision = "a67781e2412eceea9440d20dbb350ad5d3352c25"
+research_revision = "47bd06220804f8f58ec4bc07eea322bf76c8a673"
 realizations = ["linux.uinput", "linux.uhid.usb", "linux.dummy_hcd.usb-hid"]
 refused_operations = []
 persistent_resources = []
@@ -15,8 +15,8 @@ id = "buttons"
 [[functions]]
 id = "sticks"
 [functions.cells]
-"linux.uinput" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/switch-pro/sticks", evidence = ["swpro-vg-exp0014-individual-evdev", "swpro-vg-exp0011-evdev-mapping"], reason = "P5a observed both signed endpoints on all four stick axes through SDL evdev with HIDAPI disabled." }
-"linux.uhid.usb" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/switch-pro/sticks", evidence = ["swpro-vg-exp0009-sdl-motion"], reason = "P5a observed both signed endpoints on all four stick axes through SDL HIDAPI and evdev. Steam did not list this realization." }
+"linux.uinput" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/switch-pro/sticks", evidence = ["swpro-vg-exp0014-individual-evdev", "swpro-vg-exp0011-evdev-mapping", "vg-p5a-stock-switch-pro-linux-uinput-bound-ed8065b4be2c"], reason = "P5a observed both signed endpoints on all four stick axes through SDL evdev with HIDAPI disabled." }
+"linux.uhid.usb" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/switch-pro/sticks", evidence = ["swpro-vg-exp0009-sdl-motion", "vg-p5a-stock-switch-pro-linux-uhid-usb-bound-ed8065b4be2c"], reason = "P5a observed both signed endpoints on all four stick axes through SDL HIDAPI and evdev. Steam did not list this realization." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/sticks", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 
 [[functions]]

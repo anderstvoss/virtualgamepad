@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.dualsense"
-research_revision = "a67781e2412eceea9440d20dbb350ad5d3352c25"
+research_revision = "47bd06220804f8f58ec4bc07eea322bf76c8a673"
 realizations = ["linux.uinput", "linux.uhid.usb", "linux.dummy_hcd.usb-hid", "linux.usbip.usb-audio"]
 refused_operations = []
 persistent_resources = []
@@ -16,8 +16,8 @@ id = "buttons"
 [[functions]]
 id = "sticks"
 [functions.cells]
-"linux.uinput" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/dualsense/sticks", evidence = ["ds-vg-exp0011-evdev-mapping"], reason = "P5a observed both signed endpoints on all four stick axes through SDL evdev." }
-"linux.uhid.usb" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/dualsense/sticks", evidence = ["ds-vg-exp0008-sdl-standard-motion"], reason = "P5a observed both signed endpoints on all four stick axes through SDL HIDAPI. The evdev-only probe did not open its selected node." }
+"linux.uinput" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/dualsense/sticks", evidence = ["ds-vg-exp0011-evdev-mapping", "vg-p5a-stock-dualsense-linux-uinput-bound-ed8065b4be2c"], reason = "P5a observed both signed endpoints on all four stick axes through SDL evdev." }
+"linux.uhid.usb" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/dualsense/sticks", evidence = ["ds-vg-exp0008-sdl-standard-motion", "vg-p5a-stock-dualsense-linux-uhid-usb-bound-ed8065b4be2c"], reason = "P5a observed both signed endpoints on all four stick axes through SDL HIDAPI. The evdev-only probe did not open its selected node." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/sticks", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 
