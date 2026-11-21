@@ -2266,6 +2266,7 @@ mod tests {
                         selected_target: target,
                         available_in: RealizationTargetSet::new(&[
                             RealizationTarget::LINUX_UHID_USB,
+                            RealizationTarget::LINUX_UHID_BLUETOOTH,
                             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                             RealizationTarget::LINUX_USBIP_USB_AUDIO,
                         ]),
