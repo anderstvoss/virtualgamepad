@@ -188,6 +188,29 @@ fn player_ack_rejects_wrong_status_truncation_and_nonzero_reserved_bytes() {
     }
 }
 
+fn assert_dualsense_trigger_blocks_and_idle(
+    controller: &mut gr_curated_controllers::DualSenseController,
+    observed: &[DualSenseHidOutput],
+) {
+    // ds-l0-sdl-trigger-demo-modes: fields stay raw if the right/left
+    // update bits were not set. No physical or host interpretation.
+    let (right, left) = observed[0].trigger_effects().expect("USB trigger blocks");
+    assert!(!right.valid && !left.valid);
+    assert!(right.effect.is_none() && left.effect.is_none());
+    assert_eq!(right.raw, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    assert_eq!(left.raw, [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+    for _ in 0..5 {
+        controller
+            .service(&mut |event| {
+                assert!(
+                    !matches!(event, DualSenseOutputEvent::HidOutput(_)),
+                    "idle poll replayed output"
+                );
+            })
+            .unwrap();
+    }
+}
+
 #[test]
 #[ignore = "requires prepared ordinary-user UHID/hidraw access; synthetic outputs only"]
 fn dualsense_exact_host_outputs_and_idle_service() {
@@ -278,23 +301,7 @@ fn dualsense_exact_host_outputs_and_idle_service() {
                 vec![expected],
                 "exact observation and callback order"
             );
-            // ds-l0-sdl-trigger-demo-modes: fields stay raw if the right/left
-            // update bits were not set. No physical or host interpretation.
-            let (right, left) = observed[0].trigger_effects().expect("USB trigger blocks");
-            assert!(!right.valid && !left.valid);
-            assert!(right.effect.is_none() && left.effect.is_none());
-            assert_eq!(right.raw, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-            assert_eq!(left.raw, [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
-            for _ in 0..5 {
-                controller
-                    .service(&mut |event| {
-                        assert!(
-                            !matches!(event, DualSenseOutputEvent::HidOutput(_)),
-                            "idle poll replayed output"
-                        );
-                    })
-                    .unwrap();
-            }
+            assert_dualsense_trigger_blocks_and_idle(&mut controller, &observed);
         }
     }));
     controller.close();
