@@ -947,3 +947,11 @@ optional raw observations as an authoritative stream. Wii supporting snapshot:
 
 Existing events, raw payloads, FF effect types and retained snapshots are unchanged.
 These additive ordinary-root declarations do not change protocol admission or qualify physical output.
+
+## P2 DualSense LED output decoding (#154, #365; 2026-11-20)
+
+- `DualSenseFeature` adds `PlayerIndicators` and `MicrophoneLed`. `Lightbar` now denotes only the RGB lightbar. The feature query still does not offer an application-side native LED command; output is reverse/host-observed. Linux uinput cannot receive native DualSense LED reports.
+- New `DualSenseMuteLed` has `Off`, `On`, `Pulse`, and `Unknown(u8)`. Change exhaustive consumers of `DualSenseHidOutput::UsbOutput.mute_button_led` from `Option<bool>` to `Option<DualSenseMuteLed>`; pulse and unknown bytes no longer collapse to `true`.
+- `DualSenseHidOutput::UsbOutput` adds `led_brightness: u8` (raw; conflicting encoding in research claim `ds-cgap-led-brightness-encoding-disagreement`), `lightbar_setup: Option<u8>` (valid_flag2 bit 1), `release_leds: Option<bool>` (Some(true) for valid_flag1 bit 3, otherwise None), and `player_led_instant: Option<bool>` (valid_flag1 bit 4). `player_leds` now contains only five indicator bits (0–4), with bit 5 exposed separately.
+- Consumers needing the complete original packet should continue to use `raw`. The legacy retained `DualSenseOutputState.player_leds` remains the original player-LED byte; it does not adopt the new event field's mask. No other retained-state ABI or wire serialization changes.
+- Updated GUI presents five indicators, instant/fade, mute pulse/unknown, and uninterpreted brightness. The changes and tests are source-only; L1–L8 physical checks are not run.
