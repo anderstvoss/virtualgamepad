@@ -20,6 +20,18 @@ const SCRATCH_SAMPLES: usize = 32 * 4_096;
 // libspa 0.10 exposes CORRUPTED but omits SPA_CHUNK_FLAG_EMPTY (1 << 1).
 const SPA_CHUNK_FLAG_EMPTY: i32 = 1 << 1;
 
+/// Creation-scoped correlation supplied by the owning, already-open UHID controller.
+/// The unique ID is copied from the exact UHID `uniq` (not synthesized from a family).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SidecarIdentity {
+    pub vendor_id: u16,
+    pub product_id: u16,
+    pub product_name: String,
+    pub hid_unique_id: String,
+    pub realization_id: String,
+    pub key: String,
+}
+
 /// Names are exact per-creation `PipeWire` selectors, not persistent identity.
 #[derive(Debug, Clone)]
 pub struct Endpoint {
@@ -52,7 +64,7 @@ impl Session {
         options: AudioOptions,
         creation: u64,
     ) -> Result<Self, AudioError> {
-        Self::open_inner(profile, options, creation, 0, true)
+        Self::open_inner(profile, options, creation, 0, true, None)
     }
     /// Use a bounded operating lead for a USB-to-PipeWire bridge. The source
     /// waits for one requested graph block plus this many frames before first
@@ -65,7 +77,7 @@ impl Session {
         creation: u64,
         source_preroll: usize,
     ) -> Result<Self, AudioError> {
-        Self::open_inner(profile, options, creation, source_preroll, true)
+        Self::open_inner(profile, options, creation, source_preroll, true, None)
     }
     /// A USB bridge registers its native microphone input before the host
     /// begins capture, but activates graph processing only after host media
@@ -78,7 +90,18 @@ impl Session {
         creation: u64,
         source_preroll: usize,
     ) -> Result<Self, AudioError> {
-        Self::open_inner(profile, options, creation, source_preroll, false)
+        Self::open_inner(profile, options, creation, source_preroll, false, None)
+    }
+    /// Register Native HID sidecar nodes with the exact owning controller identity.
+    /// # Errors
+    /// Returns an error if endpoint registration fails.
+    pub fn open_associated(
+        profile: &AudioProfile,
+        options: AudioOptions,
+        creation: u64,
+        identity: SidecarIdentity,
+    ) -> Result<Self, AudioError> {
+        Self::open_inner(profile, options, creation, 0, true, Some(identity))
     }
     fn open_inner(
         profile: &AudioProfile,
@@ -86,6 +109,7 @@ impl Session {
         creation: u64,
         source_preroll: usize,
         input_initially_active: bool,
+        association: Option<SidecarIdentity>,
     ) -> Result<Self, AudioError> {
         if source_preroll > 512 {
             return Err(AudioError::InvalidRequirement);
@@ -103,7 +127,7 @@ impl Session {
             playback,
             playback_observer,
             microphone,
-        } = prepare(profile, options, creation, source_preroll)?;
+        } = prepare(profile, options, creation, source_preroll, association.as_ref())?;
         let clocks = specs
             .iter()
             .map(|s| (s.name.clone(), s.clock.clone()))
@@ -447,6 +471,7 @@ impl InputLoss {
 }
 
 struct Spec {
+    association: Option<SidecarIdentity>,
     input_loss: Arc<InputLoss>,
     clock: Arc<timing::Shared>,
     name: String,
@@ -507,7 +532,12 @@ impl ManagedStream {
         let stream = pw::stream::StreamRc::new(
             core.clone(),
             &spec.name,
-            endpoint_properties(&spec.name, input, spec.format.sample_rate_hz()),
+            endpoint_properties(
+                &spec.name,
+                input,
+                spec.format.sample_rate_hz(),
+                spec.association.as_ref(),
+            ),
         )
         .map_err(backend)?;
         let generation = Arc::new(AtomicU64::new(0));
@@ -695,8 +725,13 @@ fn finish_cleanup(
 
 // Request a ~2.67 ms quantum, without forcing global graph settings. Host
 // policy can clamp this request; acceptance must measure the resulting path.
-fn endpoint_properties(name: &str, input: bool, rate: u32) -> pw::properties::PropertiesBox {
-    properties! {
+fn endpoint_properties(
+    name: &str,
+    input: bool,
+    rate: u32,
+    association: Option<&SidecarIdentity>,
+) -> pw::properties::PropertiesBox {
+    let mut result = properties! {
         "node.name" => name,
         "node.description" => name,
         "media.type" => "Audio",
@@ -707,7 +742,16 @@ fn endpoint_properties(name: &str, input: bool, rate: u32) -> pw::properties::Pr
         "stream.dont-remix" => "true",
         "priority.session" => "0",
         "node.latency" => format!("{}/{}", rate.div_ceil(375), rate),
+    };
+    if let Some(identity) = association {
+        result.insert("device.vendor.id", &format!("0x{:04x}", identity.vendor_id));
+        result.insert("device.product.id", &format!("0x{:04x}", identity.product_id));
+        result.insert("device.product.name", &identity.product_name);
+        result.insert("device.serial", &identity.hid_unique_id);
+        result.insert("virtualgamepad.realization.id", &identity.realization_id);
+        result.insert("virtualgamepad.association.key", &identity.key);
     }
+    result
 }
 
 fn process(stream: &pw::stream::Stream, data: &mut Callback) {
@@ -900,6 +944,7 @@ fn prepare(
     options: AudioOptions,
     creation: u64,
     source_preroll: usize,
+    association: Option<&SidecarIdentity>,
 ) -> Result<Prepared, AudioError> {
     let mut specs = Vec::new();
     let mut endpoints = Vec::new();
@@ -927,6 +972,7 @@ fn prepare(
             SampleDirection::HostToController => {
                 playback_observer = Some(tx.observer());
                 specs.push(Spec {
+                    association: association.cloned(),
                     clock: Arc::default(),
                     input_loss: Arc::default(),
                     name: host_node.clone(),
@@ -936,6 +982,8 @@ fn prepare(
                 });
                 if let Some(name) = &caller_node {
                     specs.push(Spec {
+                        association: association.cloned(),
+                    association: association.cloned(),
                         clock: Arc::default(),
                         input_loss: Arc::default(),
                         name: name.clone(),
@@ -949,6 +997,7 @@ fn prepare(
             }
             SampleDirection::ControllerToHost => {
                 specs.push(Spec {
+                    association: association.cloned(),
                     clock: Arc::default(),
                     input_loss: Arc::default(),
                     name: host_node.clone(),
@@ -958,6 +1007,8 @@ fn prepare(
                 });
                 if let Some(name) = &caller_node {
                     specs.push(Spec {
+                        association: association.cloned(),
+                    association: association.cloned(),
                         clock: Arc::default(),
                         input_loss: Arc::default(),
                         name: name.clone(),
@@ -1174,7 +1225,7 @@ mod tests {
     #[test]
     fn endpoints_request_small_quanta_without_forcing_graph_or_routing() {
         for input in [true, false] {
-            let props = endpoint_properties("synthetic.endpoint", input, 48_000);
+            let props = endpoint_properties("synthetic.endpoint", input, 48_000, None);
             assert_eq!(props.get("node.latency"), Some("128/48000"));
             assert_eq!(props.get("node.force-quantum"), None);
             assert_eq!(props.get("node.force-rate"), None);
@@ -1182,7 +1233,7 @@ mod tests {
             assert_eq!(props.get("stream.dont-remix"), Some("true"));
         }
         assert_eq!(
-            endpoint_properties("synthetic", true, 3000).get("node.latency"),
+            endpoint_properties("synthetic", true, 3000, None).get("node.latency"),
             Some("8/3000")
         );
     }
