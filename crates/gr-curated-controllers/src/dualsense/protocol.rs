@@ -25,7 +25,10 @@ impl DualSenseUsbProtocol {
     pub(crate) fn new(identity: [u8; 6]) -> Self {
         Self::with_device_data(identity, None)
     }
-    pub(crate) fn with_device_data(identity: [u8; 6], data: Option<super::DualSenseDeviceData>) -> Self {
+    pub(crate) fn with_device_data(
+        identity: [u8; 6],
+        data: Option<super::DualSenseDeviceData>,
+    ) -> Self {
         Self {
             features: dualsense_feature_responses_with_data(identity, data),
             retained: crate::retained::DualSenseOutputState::default(),
