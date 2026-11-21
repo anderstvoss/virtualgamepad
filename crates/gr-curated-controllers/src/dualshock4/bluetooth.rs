@@ -110,8 +110,8 @@ pub(super) fn valid_output(payload: &[u8]) -> bool {
         .is_ok_and(|report| validate_output(&report).is_ok())
 }
 
-pub(super) fn features() -> Vec<(u8, Vec<u8>)> {
-    let source = gr_controller_wire::dualshock4_feature_responses([0; 6]);
+pub(super) fn features(identity: [u8; 6]) -> Vec<(u8, Vec<u8>)> {
+    let source = gr_controller_wire::dualshock4_feature_responses(identity);
     let usb_calibration = source.iter().find(|(id, _)| *id == 2).expect("compiled calibration").1.clone();
     let mut bt_calibration = usb_calibration.clone();
     bt_calibration[0] = 0x05;
@@ -122,7 +122,8 @@ pub(super) fn features() -> Vec<(u8, Vec<u8>)> {
     }
     let mut data = vec![0x05];
     data.extend_from_slice(&bt_calibration[1..]);
-    data.extend_from_slice(&crc32(0xa3, &data).to_le_bytes());
+    let checksum = crc32(0xa3, &data);
+    data.extend_from_slice(&checksum.to_le_bytes());
     let firmware = source.into_iter().find(|(id, _)| *id == 0xa3).expect("compiled firmware");
     vec![(2, usb_calibration), (0x05, data), firmware]
 }
@@ -152,7 +153,7 @@ mod tests {
     }
     #[test]
     fn feature_calibration_and_host_output_crc() {
-        let f = features();
+        let f = features(super::super::common::test_address(42));
         assert_eq!(f.iter().map(|(id, data)| (*id, data.len())).collect::<Vec<_>>(), vec![(2,37), (5,41), (0xa3,49)]);
         let calibration = &f[1].1;
         assert_eq!(&calibration[37..], &crc32(0xa3, &calibration[..37]).to_le_bytes());
