@@ -41,6 +41,10 @@ implementations, and a VirtualGamepad maintainer narrative; these are not
 independent physical experiments. No sustained audio, native matching, or host
 test was run for this documentation audit.
 
+## Reproducing the real USB topology
+
+`linux.usbip.usb-audio` presents HID and functional UAC2 interfaces as one USB/IP/VHCI composite; `linux.uhid.usb` and an opt-in PipeWire sidecar expose separate HID and audio nodes rather than the same USB device. Neither path establishes physical-device audio fidelity or automatic application routing.
+
 ## Choose the presentation at creation
 
 - `LINUX_UHID_USB` with `audio-pipewire`: HID plus associated PipeWire sink/source
