@@ -36,7 +36,7 @@ impl Receipt {
             self.expected_slots,
             "every synthetic media slot must have an explicit disposition"
         );
-        assert_eq!(self.delivered as usize, self.markers.len());
+        assert_eq!(usize::try_from(self.delivered).unwrap(), self.markers.len());
         assert!(self.at_ns.windows(2).all(|w| w[0] < w[1]));
         assert!(
             self.markers.iter().all(|m| *m > 0),
