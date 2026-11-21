@@ -190,6 +190,8 @@ struct Session {
     sent: u64,
     reverse: u64,
     failures: u64,
+    dropped_writes: u64,
+    last_dropped_write: Option<gr_realization_api::DroppedWrite>,
     lifecycle_events: u64,
     last_error: Option<String>,
     numbered_input_reports: bool,
@@ -209,6 +211,8 @@ impl Session {
             sent: 0,
             reverse: 0,
             failures: 0,
+            dropped_writes: 0,
+            last_dropped_write: None,
             lifecycle_events: 0,
             last_error: None,
             numbered_input_reports: specification.numbered_input_reports,
@@ -292,13 +296,18 @@ impl NativeProviderSession for Session {
         let raw = match event {
             linux_io::Event::Output { bytes } => {
                 let (report_id, bytes) = if self.numbered_output_reports {
-                    let Some((&report_id, bytes)) = bytes.split_first() else {
-                        self.failures += 1;
-                        self.last_error =
-                            Some("numbered UHID output report omitted its report ID".into());
-                        return Err(ProviderError::Read {
-                            reason: "numbered UHID output report omitted its report ID".into(),
+                    let Some((&report_id, bytes)) = bytes
+                        .split_first()
+                        .filter(|(report_id, _)| **report_id != 0)
+                    else {
+                        // UHID_OUTPUT has no reply. Retain metadata and keep polling.
+                        self.dropped_writes += 1;
+                        self.last_dropped_write = Some(gr_realization_api::DroppedWrite {
+                            event_type: 6,
+                            report_id: bytes.first().copied(),
+                            length: bytes.len(),
                         });
+                        return Ok(());
                     };
                     (Some(report_id), bytes.to_vec())
                 } else {
@@ -367,6 +376,8 @@ impl NativeProviderSession for Session {
             reverse_events_drained: self.reverse,
             write_failures: self.failures,
             lifecycle_events: self.lifecycle_events,
+            dropped_writes: self.dropped_writes,
+            last_dropped_write: self.last_dropped_write.clone(),
             last_error: self.last_error.clone(),
         }
     }
@@ -1137,16 +1148,97 @@ mod seam_tests {
         assert_eq!(record.lock().expect("record").destroys, 1);
     }
     #[test]
+    fn malformed_numbered_output_does_not_interrupt_input_or_request_replies() {
+        use gr_hid::{
+            Command, Delivery, HostEvent, Lifecycle, Reply, Report, ReportType, Transport,
+        };
+
+        let record = Arc::new(Mutex::new(Record::default()));
+        let start = Lifecycle::Start {
+            numbered_input: true,
+            numbered_output: true,
+            numbered_feature: false,
+        };
+        let rumble = Report::new(ReportType::Output, Some(3), vec![1; 8]).unwrap();
+        let io = FakeIo {
+            record: Arc::clone(&record),
+            input_results: VecDeque::new(),
+            events: VecDeque::from([
+                Ok(linux_io::Event::Lifecycle(start)),
+                Ok(linux_io::Event::Output { bytes: vec![0; 8] }),
+                Ok(linux_io::Event::Output { bytes: Vec::new() }),
+                Ok(linux_io::Event::Set {
+                    id: 42,
+                    report_id: 3,
+                    report_type: 1,
+                    bytes: rumble.wire(),
+                }),
+                Ok(linux_io::Event::Output {
+                    bytes: rumble.wire(),
+                }),
+            ]),
+        };
+        let id = RealizationSessionId(8);
+        let session = Session::new(Box::new(io), id, &specification());
+        let mut transport = HidTransport::from_session(Box::new(session), id, [true; 3]);
+        assert_eq!(transport.event(), Ok(Some(HostEvent::Lifecycle(start))));
+
+        let input = Command::Input(Report::new(ReportType::Input, Some(1), vec![5]).unwrap());
+        for (index, (report_id, length)) in [(Some(0), 8), (None, 0)].into_iter().enumerate() {
+            assert_eq!(transport.event(), Ok(None));
+            let diagnostics = transport.diagnostics();
+            assert_eq!(diagnostics.dropped_writes, index as u64 + 1);
+            assert_eq!(
+                diagnostics.last_dropped_write,
+                Some(gr_realization_api::DroppedWrite {
+                    event_type: 6,
+                    report_id,
+                    length
+                })
+            );
+            assert_eq!(diagnostics.state, ProviderState::Open);
+            assert_eq!(diagnostics.write_failures, 0);
+            assert_eq!(diagnostics.last_error, None);
+            assert_eq!(transport.submit(&input), Delivery::Submitted);
+        }
+        assert!(record.lock().unwrap().set_replies.is_empty());
+        let Some(HostEvent::Request(request)) = transport.event().unwrap() else {
+            panic!("expected the next numbered SET_REPORT");
+        };
+        assert_eq!(request.kind, gr_hid::RequestKind::Set(rumble.clone()));
+        assert_eq!(
+            transport.submit(&Command::Reply {
+                token: request.token,
+                reply: Reply::Set(Ok(())),
+            }),
+            Delivery::Submitted
+        );
+        assert_eq!(transport.event(), Ok(Some(HostEvent::Output(rumble))));
+        assert_eq!(transport.event(), Ok(None));
+        transport.close().unwrap();
+        transport.close().unwrap();
+        drop(transport);
+
+        let observed = record.lock().unwrap();
+        assert_eq!(observed.inputs, vec![(Some(1), vec![5]); 2]);
+        assert_eq!(observed.set_replies, [(42, 0)]);
+        assert!(observed.get_replies.is_empty());
+        assert_eq!(observed.destroys, 1);
+    }
+    #[test]
     fn start_flags_override_descriptor_hints_and_drop_closes_once() {
         let record = Arc::new(Mutex::new(Record::default()));
         let io = FakeIo {
             record: record.clone(),
             input_results: VecDeque::new(),
-            events: VecDeque::from([Ok(linux_io::Event::Lifecycle(gr_hid::Lifecycle::Start {
-                numbered_input: false,
-                numbered_output: false,
-                numbered_feature: false,
-            }))]),
+            events: VecDeque::from([
+                Ok(linux_io::Event::Lifecycle(gr_hid::Lifecycle::Start {
+                    numbered_input: false,
+                    numbered_output: false,
+                    numbered_feature: false,
+                })),
+                Ok(linux_io::Event::Output { bytes: vec![0, 1] }),
+            ]),
         };
         let mut session = Session::new(Box::new(io), RealizationSessionId(8), &specification());
         let mut events = Vec::new();
@@ -1172,6 +1264,11 @@ mod seam_tests {
                 })
                 .is_err()
         );
+        session.drain_reverse_events(&mut events).unwrap();
+        assert!(matches!(
+            events[1].event,
+            RawReverseEvent::HidOutput { report_id: None, ref bytes } if bytes == &[0, 1]
+        ));
         session.close().unwrap();
         assert_eq!(
             session.drain_reverse_events(&mut events),

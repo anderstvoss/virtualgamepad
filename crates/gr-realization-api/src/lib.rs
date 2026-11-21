@@ -528,7 +528,20 @@ pub struct ProviderDiagnostics {
     ///
     /// They never alter the session's polling contract or close a controller.
     pub lifecycle_events: u64,
+    /// Malformed unacknowledged writes discarded without failing the session.
+    pub dropped_writes: u64,
+    /// Metadata only, without report payload or device identity.
+    pub last_dropped_write: Option<DroppedWrite>,
     pub last_error: Option<String>,
+}
+/// Metadata for the most recently discarded provider write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DroppedWrite {
+    /// Native provider event type (`UHID_OUTPUT` is 6).
+    pub event_type: u32,
+    pub report_id: Option<u8>,
+    /// Complete wire length, including a numbered report ID.
+    pub length: usize,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventReadiness {

@@ -96,6 +96,8 @@ impl<S: Clone + Send> super::WorkerBridge<S> for FakeWorker<S> {
             reverse_events_drained: 0,
             write_failures: 0,
             lifecycle_events: 0,
+            dropped_writes: 0,
+            last_dropped_write: None,
             last_error: None,
         }
     }
@@ -218,6 +220,8 @@ impl NativeProviderSession for Fake {
             reverse_events_drained: 0,
             write_failures: 0,
             lifecycle_events: 0,
+            dropped_writes: 0,
+            last_dropped_write: None,
             last_error: None,
         }
     }
