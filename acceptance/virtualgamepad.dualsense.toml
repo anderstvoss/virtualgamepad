@@ -8,7 +8,7 @@ persistent_resources = []
 [[functions]]
 id = "buttons"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/buttons", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/buttons", evidence = ["ds-vg-exp0011-evdev-mapping"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/buttons", evidence = ["ds-vg-exp0017-individual-uhid"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/buttons", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/buttons", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
@@ -16,7 +16,7 @@ id = "buttons"
 [[functions]]
 id = "sticks"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/sticks", evidence = ["ds-vg-exp0011-evdev-mapping"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/sticks", evidence = ["ds-vg-exp0008-sdl-standard-motion"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/sticks", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
@@ -24,7 +24,7 @@ id = "sticks"
 [[functions]]
 id = "triggers"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/triggers", evidence = ["ds-l0-consumer-l2r2-digital-analog-policy"], reason = "Evidence linked; per-function acceptance pending." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/triggers", evidence = ["ds-vg-exp0011-evdev-mapping"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/triggers", evidence = ["ds-l0-consumer-l2r2-digital-analog-policy"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/triggers", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/triggers", evidence = ["ds-l0-consumer-l2r2-digital-analog-policy"], reason = "Evidence linked; per-function acceptance pending." }
@@ -32,7 +32,7 @@ id = "triggers"
 [[functions]]
 id = "identity"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/identity", evidence = ["ds-l0-device-feature09-identity-shape"], reason = "Evidence linked; per-function acceptance pending." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/identity", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/identity", evidence = ["ds-l0-device-feature09-identity-shape"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/identity", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/identity", evidence = ["ds-l0-device-feature09-identity-shape"], reason = "Evidence linked; per-function acceptance pending." }
@@ -48,7 +48,7 @@ id = "lifecycle"
 [[functions]]
 id = "touchpad"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/touchpad", evidence = ["ds-l0-device-touchpad-format-dimensions"], reason = "Evidence linked; per-function acceptance pending." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/touchpad", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/touchpad", evidence = ["ds-l0-device-touchpad-format-dimensions"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/touchpad", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/touchpad", evidence = ["ds-l0-device-touchpad-format-dimensions"], reason = "Evidence linked; per-function acceptance pending." }
@@ -64,7 +64,7 @@ id = "motion"
 [[functions]]
 id = "battery"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/battery", evidence = ["ds-l0-device-usb01-full-fields"], reason = "Evidence linked; per-function acceptance pending." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/battery", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/battery", evidence = ["ds-l0-device-usb01-full-fields"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/battery", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/battery", evidence = ["ds-l0-device-usb01-full-fields"], reason = "Evidence linked; per-function acceptance pending." }
@@ -72,7 +72,7 @@ id = "battery"
 [[functions]]
 id = "rumble"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = ["ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = ["ds-vg-exp0010-evdev-ff", "ds-vg-exp0011-evdev-mapping"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = ["ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = ["ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending." }
@@ -128,7 +128,7 @@ id = "speaker-audio"
 [[functions]]
 id = "calibration"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/calibration", evidence = ["ds-l0-device-feature05-shape"], reason = "Evidence linked; per-function acceptance pending." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/calibration", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/calibration", evidence = ["ds-l0-device-feature05-shape"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/calibration", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/calibration", evidence = ["ds-l0-device-feature05-shape"], reason = "Evidence linked; per-function acceptance pending." }
