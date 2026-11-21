@@ -1,12 +1,31 @@
 use super::{
     RawReverseEvent, RealizationSessionId, SwitchProDefinition, SwitchProIdentity, SwitchProInputs,
-    SwitchProSpiImage, SwitchProStatus, common, switch_frame, switch_subcommand_reply, switch_usb_reply,
+    SwitchProSpiImage, SwitchProStatus, common, switch_frame, switch_simple_frame,
+    switch_subcommand_reply, switch_usb_reply,
 };
 use gr_hid::{
     Command, Delivery, Error, Lifecycle, Protocol, Reply, ReplyError, Report, ReportType,
     RequestKind,
 };
 use std::collections::VecDeque;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SwitchHidTransport {
+    Usb,
+    Bluetooth,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum ImuActivation {
+    #[default]
+    Disabled,
+    Enabled,
+}
+impl ImuActivation {
+    const fn is_enabled(self) -> bool {
+        matches!(self, Self::Enabled)
+    }
+}
 
 #[derive(Clone)]
 pub(crate) struct SwitchUsbProtocol {
@@ -16,13 +35,15 @@ pub(crate) struct SwitchUsbProtocol {
     state: (SwitchProInputs, SwitchProStatus),
     pub(crate) timer: u8,
     pub(crate) stream_enabled: bool,
+    imu_activation: ImuActivation,
     pending: VecDeque<Report>,
     next: Option<u64>,
     active: bool,
     valid: bool,
+    transport: SwitchHidTransport,
 }
 impl SwitchUsbProtocol {
-    fn new(identity: SwitchProIdentity, spi_image: SwitchProSpiImage) -> Self {
+    fn new(identity: SwitchProIdentity, spi_image: SwitchProSpiImage, bluetooth: bool) -> Self {
         Self {
             identity,
             spi_image,
@@ -30,11 +51,23 @@ impl SwitchUsbProtocol {
             retained: crate::retained::SwitchProOutputState::default(),
             timer: 0,
             stream_enabled: false,
+            imu_activation: ImuActivation::Disabled,
             pending: VecDeque::new(),
             next: Some(0),
             active: true,
             valid: true,
+            transport: if bluetooth {
+                SwitchHidTransport::Bluetooth
+            } else {
+                SwitchHidTransport::Usb
+            },
         }
+    }
+    fn is_bluetooth(&self) -> bool {
+        self.transport == SwitchHidTransport::Bluetooth
+    }
+    pub(super) const fn imu_enabled(&self) -> bool {
+        self.imu_activation.is_enabled()
     }
     fn process(&mut self, report: &Report, now: u64) -> Result<(), ReplyError> {
         let mut next = self.clone();
@@ -48,14 +81,14 @@ impl SwitchUsbProtocol {
             return Err(ReplyError::Unsupported);
         }
         let bytes = report.payload();
-        if bytes.len() > 63 {
+        if bytes.len() > if self.is_bluetooth() { 48 } else { 63 } {
             return Err(ReplyError::Invalid);
         }
         if self.pending.len() == 31 {
             return Err(ReplyError::Busy);
         }
         match report.id() {
-            Some(0x80) if !bytes.is_empty() => {
+            Some(0x80) if !self.is_bluetooth() && !bytes.is_empty() => {
                 self.pending
                     .push_back(common::logical_input(switch_usb_reply(
                         bytes[0],
@@ -63,9 +96,35 @@ impl SwitchUsbProtocol {
                     )));
             }
             Some(1) if bytes.len() >= 10 => {
-                let (reply, enable) =
-                    switch_subcommand_reply(&self.state, bytes[9], &bytes[10..], self.identity, &self.spi_image);
-                self.stream_enabled |= enable;
+                if self.is_bluetooth()
+                    && (matches!(bytes[9], 0x20..=0x22)
+                        || (bytes[9] == 0x03 && !matches!(bytes.get(10), Some(&0x30 | &0x3f))))
+                {
+                    // Only source-defined simple/full input mode is available.
+                    // Pro-specific MCU behavior is unverified; no successful
+                    // NFC/IR MCU or unsupported report-mode response is invented.
+                    return Err(ReplyError::Unsupported);
+                }
+                let (reply, enable) = switch_subcommand_reply(
+                    &self.state,
+                    bytes[9],
+                    &bytes[10..],
+                    self.identity,
+                    &self.spi_image,
+                );
+                if self.is_bluetooth() && bytes[9] == 0x03 && bytes.get(10) == Some(&0x3f) {
+                    self.stream_enabled = false;
+                } else {
+                    self.stream_enabled |= enable;
+                }
+                if bytes[9] == 0x40 {
+                    if let Some(value) = bytes.get(10) {
+                        self.imu_activation = match *value {
+                            0 => ImuActivation::Disabled,
+                            _ => ImuActivation::Enabled,
+                        };
+                    }
+                }
                 self.pending.push_back(common::logical_input(reply));
             }
             Some(0x10) if bytes.len() >= 9 => {} // Rumble-only report; typed raw output preserved.
@@ -101,8 +160,15 @@ impl Protocol for SwitchUsbProtocol {
         self.state = state.clone();
         self.state.1.timer = self.timer;
         self.state.1.stream_enabled = self.stream_enabled;
+        self.state.1.imu_enabled = self.imu_activation.is_enabled();
         let mut reports: Vec<_> = self.pending.drain(..).collect();
-        reports.push(common::logical_input(switch_frame(&self.state)));
+        reports.push(common::logical_input(
+            if self.is_bluetooth() && !self.stream_enabled {
+                switch_simple_frame(&self.state)
+            } else {
+                switch_frame(&self.state)
+            },
+        ));
         self.timer = self.timer.wrapping_add(1);
         self.next = self.stream_enabled.then_some(now.saturating_add(4000));
         Ok(reports)
@@ -135,6 +201,7 @@ impl Protocol for SwitchUsbProtocol {
             } => {
                 self.valid = numbered_input && numbered_output && !numbered_feature;
                 self.active = true;
+                self.imu_activation = ImuActivation::Disabled;
                 self.next = Some(now);
             }
             Lifecycle::Stop => {
@@ -162,7 +229,19 @@ impl common::HidDriver for SwitchProDefinition {
 
     type Hid = SwitchUsbProtocol;
     fn hid_protocol(&self, _: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
-        SwitchUsbProtocol::new(SwitchProIdentity(identity), self.spi_image.clone())
+        SwitchUsbProtocol::new(SwitchProIdentity(identity), self.spi_image.clone(), false)
+    }
+    fn hid_protocol_for_target(
+        &self,
+        _: RealizationSessionId,
+        identity: [u8; 6],
+        target: gr_realization_api::RealizationTarget,
+    ) -> Self::Hid {
+        SwitchUsbProtocol::new(
+            SwitchProIdentity(identity),
+            self.spi_image.clone(),
+            target == gr_realization_api::RealizationTarget::LINUX_UHID_BLUETOOTH,
+        )
     }
 }
 
@@ -170,5 +249,210 @@ impl crate::retained::RetainedProtocol for SwitchUsbProtocol {
     type Outputs = crate::retained::SwitchProOutputState;
     fn retained(&self) -> &Self::Outputs {
         &self.retained
+    }
+}
+
+#[cfg(test)]
+mod bluetooth_tests {
+    use super::*;
+    use gr_hid::{Reply, Report, ReportType, RequestKind};
+
+    fn identity(index: u32) -> SwitchProIdentity {
+        SwitchProIdentity(common::test_address(index))
+    }
+    fn subcommand(id: u8, args: &[u8]) -> Report {
+        let mut payload = vec![0; 10];
+        payload[9] = id;
+        payload.extend_from_slice(args);
+        Report::new(ReportType::Output, Some(1), payload).unwrap()
+    }
+    #[test]
+    fn neutral_simple_report_first_then_host_selected_full_and_back() {
+        let mut protocol = SwitchUsbProtocol::new(identity(1), SwitchProSpiImage::default(), true);
+        let neutral = protocol.input(&Default::default(), 0).unwrap();
+        assert_eq!(neutral.len(), 1);
+        assert_eq!(neutral[0].id(), Some(0x3f));
+        assert_eq!(
+            neutral[0].payload(),
+            &[0, 0, 8, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80]
+        );
+        assert!(!protocol.stream_enabled);
+        let (ack, event) = protocol.request(&RequestKind::Set(subcommand(0x03, &[0x30])), 4);
+        assert_eq!(ack, Reply::Set(Ok(())));
+        assert!(event.is_some());
+        let full = protocol.input(&Default::default(), 5).unwrap();
+        assert_eq!(full.len(), 2);
+        assert_eq!(full[0].id(), Some(0x21));
+        assert_eq!((full[0].payload()[12], full[0].payload()[13]), (0x80, 0x03));
+        assert_eq!(full[1].id(), Some(0x30));
+        assert_eq!(full[1].payload().len(), 63);
+        assert_eq!(full[1].payload()[1], 0x80); // full battery; Pro Bluetooth connection bits
+        assert!(protocol.stream_enabled);
+        assert_eq!(
+            protocol
+                .request(&RequestKind::Set(subcommand(0x03, &[0x3f])), 6)
+                .0,
+            Reply::Set(Ok(()))
+        );
+        let simple_again = protocol.input(&Default::default(), 7).unwrap();
+        assert_eq!(simple_again[1].id(), Some(0x3f));
+    }
+
+    #[test]
+    fn bluetooth_rejects_usb_handshake_and_unverified_mcu_without_pending_replies() {
+        let mut bt = SwitchUsbProtocol::new(identity(1), SwitchProSpiImage::default(), true);
+        let usb_command = Report::new(ReportType::Output, Some(0x80), vec![0x02]).unwrap();
+        assert_eq!(bt.process_inner(&usb_command, 0), Err(ReplyError::Invalid));
+        let mcu = subcommand(0x21, &[0x01]);
+        assert_eq!(bt.process_inner(&mcu, 0), Err(ReplyError::Unsupported));
+        assert_eq!(
+            bt.process_inner(&subcommand(0x03, &[0x31]), 0),
+            Err(ReplyError::Unsupported)
+        );
+        let mcu_output = Report::new(ReportType::Output, Some(0x11), vec![0; 9]).unwrap();
+        assert_eq!(
+            bt.process_inner(&mcu_output, 0),
+            Err(ReplyError::Unsupported)
+        );
+        assert!(bt.pending.is_empty());
+        let mut usb = SwitchUsbProtocol::new(identity(1), SwitchProSpiImage::default(), false);
+        assert_eq!(usb.process_inner(&usb_command, 0), Ok(()));
+        assert_eq!(usb.pending.front().unwrap().id(), Some(0x81));
+    }
+
+    #[test]
+    fn bluetooth_acks_each_source_requested_subcommand_and_preserves_identity() {
+        let mut a = SwitchUsbProtocol::new(identity(1), SwitchProSpiImage::default(), true);
+        let mut b = SwitchUsbProtocol::new(identity(2), SwitchProSpiImage::default(), true);
+        let inputs = Default::default();
+        for id in [0x02, 0x10, 0x30, 0x38, 0x40, 0x48] {
+            let arg = if id == 0x10 {
+                vec![0x20, 0x60, 0, 0, 4]
+            } else {
+                vec![1]
+            };
+            assert_eq!(
+                a.request(&RequestKind::Set(subcommand(id, &arg)), 1).0,
+                Reply::Set(Ok(()))
+            );
+            let reply = a.input(&inputs, 2).unwrap();
+            assert_eq!(reply[0].id(), Some(0x21));
+            assert_eq!(reply[0].payload()[13], id);
+            assert_eq!(
+                reply[0].payload()[12],
+                match id {
+                    0x02 => 0x82,
+                    0x10 => 0x90,
+                    _ => 0x80,
+                }
+            );
+            if id == 0x10 {
+                assert_eq!(&reply[0].payload()[14..19], &arg);
+                let (usb_reply, _) = super::switch_subcommand_reply(
+                    &Default::default(),
+                    0x10,
+                    &arg,
+                    identity(1),
+                    &SwitchProSpiImage::default(),
+                );
+                let gr_realization_api::ProviderFrame::HidInput {
+                    bytes: usb_bytes, ..
+                } = usb_reply
+                else {
+                    unreachable!()
+                };
+                assert_eq!(&reply[0].payload()[19..23], &usb_bytes[19..23]);
+            }
+        }
+        for protocol in [&mut a, &mut b] {
+            protocol.request(&RequestKind::Set(subcommand(0x02, &[])), 3);
+        }
+        let reply_a = a.input(&inputs, 4).unwrap();
+        let reply_b = b.input(&inputs, 4).unwrap();
+        assert_ne!(&reply_a[0].payload()[18..24], &reply_b[0].payload()[18..24]);
+        // Rumble-only 0x10 carries no subcommand ACK, but retains raw motor words.
+        let rumble = Report::new(ReportType::Output, Some(0x10), vec![0; 9]).unwrap();
+        assert_eq!(
+            a.request(&RequestKind::Set(rumble), 5).0,
+            Reply::Set(Ok(()))
+        );
+        assert_eq!(a.input(&inputs, 6).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn malformed_output_request_is_rejected_before_any_queued_reply() {
+        let mut bt = SwitchUsbProtocol::new(identity(1), SwitchProSpiImage::default(), true);
+        for (id, len) in [(1, 9), (0x10, 8), (0x80, 1), (0x11, 9), (1, 49)] {
+            let request = Report::new(ReportType::Output, Some(id), vec![0; len]).unwrap();
+            assert!(matches!(
+                bt.request(&RequestKind::Set(request), 1).0,
+                Reply::Set(Err(ReplyError::Invalid | ReplyError::Unsupported))
+            ));
+            assert!(bt.pending.is_empty());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn imu_samples_are_gated_only_with_opt_in_and_host_enable() {
+        let mut gated = SwitchUsbProtocol::new(
+            super::super::tests::fixture_identity(),
+            SwitchProSpiImage::default(),
+            false,
+        );
+        let mut ungated = gated.clone();
+        let mut inputs = SwitchProInputs::default();
+        inputs.set_motion(super::super::SwitchProMotionSample {
+            accelerometer: [400, -800, 1200],
+            gyroscope: [1, -2, 3],
+        });
+        let mut state = (inputs, SwitchProStatus::default());
+        state.1.imu_gating = true;
+
+        let before = gated.input(&state, 0).unwrap();
+        let before = before.last().unwrap().payload();
+        assert!(before[12..48].iter().all(|value| *value == 0));
+
+        state.1.imu_gating = false;
+        let unmodified = ungated.input(&state, 0).unwrap();
+        assert!(
+            unmodified.last().unwrap().payload()[12..48]
+                .iter()
+                .any(|value| *value != 0)
+        );
+        state.1.imu_gating = true;
+
+        let mut subcmd = vec![0; 11];
+        subcmd[9] = 0x40;
+        subcmd[10] = 1;
+        let enable = Report::new(ReportType::Output, Some(1), subcmd.clone()).unwrap();
+        let (reply, observation) = gated.request(&RequestKind::Set(enable), 1);
+        assert_eq!(reply, Reply::Set(Ok(())));
+        assert!(observation.is_some());
+        assert!(gated.imu_enabled());
+        let after = gated.input(&state, 2).unwrap();
+        assert!(
+            after.last().unwrap().payload()[12..48]
+                .iter()
+                .any(|value| *value != 0)
+        );
+
+        subcmd[10] = 0;
+        let disable = Report::new(ReportType::Output, Some(1), subcmd).unwrap();
+        assert_eq!(
+            gated.request(&RequestKind::Set(disable), 3).0,
+            Reply::Set(Ok(()))
+        );
+        assert!(!gated.imu_enabled());
+        let disabled = gated.input(&state, 4).unwrap();
+        assert!(
+            disabled.last().unwrap().payload()[12..48]
+                .iter()
+                .all(|value| *value == 0)
+        );
     }
 }

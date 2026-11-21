@@ -1,12 +1,14 @@
 mod audio_lab;
+mod audio_panel;
 mod audio_topology;
 mod editor;
 mod families;
 mod native_editor;
+mod sony_device_data;
+mod switch_pro_spi;
 mod wii_eeprom;
 mod wii_host;
 mod wii_import;
-mod switch_pro_spi;
 #[cfg(test)]
 mod wii_tests;
 use families::{Controller, Kind};
@@ -34,13 +36,13 @@ use std::{
 use virtualgamepad::ControllerSurfaceInfo;
 use virtualgamepad::{
     BatteryLevel, BatteryState, ControllerStatus, DigitalControlUpdate, DualSenseAxis,
-    DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseOutputEvent,
-    DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
-    DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample, DualShock4TouchContact,
-    DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId, SwitchProAxis,
-    SwitchProControl, SwitchProController, SwitchProMotionSample, TouchSlot, Xbox360Axis,
-    Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360Trigger, create_dualsense,
-    create_dualshock4, create_switch_pro, create_xbox360,
+    DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseMuteLed,
+    DualSenseOutputEvent, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis,
+    DualShock4Control, DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample,
+    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
+    SwitchProAxis, SwitchProControl, SwitchProController, SwitchProMotionSample, TouchSlot,
+    Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360Trigger,
+    create_dualsense, create_dualshock4, create_switch_pro, create_xbox360,
 };
 
 // Controller IDs are demo-local labels. The Wii supporting constructor also
@@ -55,6 +57,7 @@ struct ControllerOptions {
     wii_compat: WiiRemoteOptions,
     steam_options: SteamController2026Options,
     switch_spi: switch_pro_spi::Settings,
+    sony_data: sony_device_data::Selections,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
@@ -273,8 +276,11 @@ fn draw_advanced_options(
     target: RealizationId,
     kind: Kind,
     audio_creation: &mut audio_lab::CreationAudio,
-    steam_options: &mut SteamController2026Options,
-    switch_spi: &mut switch_pro_spi::Settings,
+    (steam_options, sony_data, switch_spi): (
+        &mut SteamController2026Options,
+        &mut sony_device_data::Selections,
+        &mut switch_pro_spi::Settings,
+    ),
     (wii_revision, wii_imports, wii_compat): (
         &mut WiiRemoteRevision,
         &mut wii_import::Imports,
@@ -324,6 +330,7 @@ fn draw_advanced_options(
                     if kind == Kind::Steam {
                         families::draw_steam_toggles(ui, target, steam_options);
                     }
+                    sony_data.draw(ui, kind);
                     ui.strong("Audio configuration");
                     audio_lab::draw_creation(ui, audio_creation, target, kind.supports_audio());
                 })
@@ -717,7 +724,10 @@ fn recreation_options(
     saved: &ControllerOptions,
     choices: ControllerOptions,
 ) -> ControllerOptions {
-    if matches!(kind, Kind::WiiRemote | Kind::Steam | Kind::SwitchPro) {
+    if matches!(
+        kind,
+        Kind::WiiRemote | Kind::Steam | Kind::DualSense | Kind::DualShock4 | Kind::SwitchPro
+    ) {
         ControllerOptions {
             id: choices.id,
             ..saved.clone()
@@ -1383,8 +1393,12 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
 #[derive(Clone, Default)]
 struct ReverseIndicators {
     wii_player_leds: Option<[bool; 4]>,
+    switch_home_light: Option<virtualgamepad::SwitchProHomeLight>,
     led: Option<[u8; 3]>,
-    mute_led: Option<bool>,
+    mute_led: Option<DualSenseMuteLed>,
+    player_leds: Option<u8>,
+    player_led_instant: Option<bool>,
+    led_brightness: Option<u8>,
     rumble_until: Option<Instant>,
     rumble_active: bool,
     rumble_seen: bool,
@@ -1445,8 +1459,30 @@ impl ReverseIndicators {
             self.led = Some(lightbar_rgb);
         }
         if let Some(mute_button_led) = mute_button_led {
-            self.mute_led = Some(mute_button_led);
+            self.mute_led = Some(if mute_button_led {
+                DualSenseMuteLed::On
+            } else {
+                DualSenseMuteLed::Off
+            });
         }
+    }
+    fn apply_dualsense_led_output(
+        &mut self,
+        mute: Option<DualSenseMuteLed>,
+        player_leds: Option<u8>,
+        player_led_instant: Option<bool>,
+        led_brightness: u8,
+    ) {
+        if let Some(mode) = mute {
+            self.mute_led = Some(mode);
+        }
+        if let Some(indicators) = player_leds {
+            self.player_leds = Some(indicators);
+        }
+        if let Some(instant) = player_led_instant {
+            self.player_led_instant = Some(instant);
+        }
+        self.led_brightness = Some(led_brightness);
     }
 }
 
@@ -1459,6 +1495,7 @@ pub struct App {
     wii_compat: WiiRemoteOptions,
     steam_options: SteamController2026Options,
     switch_spi: switch_pro_spi::Settings,
+    sony_data: sony_device_data::Selections,
     name_draft: String,
     create_count: u32,
     advanced_options_open: bool,
@@ -1485,6 +1522,7 @@ impl Default for App {
             wii_compat: WiiRemoteOptions::default(),
             steam_options: SteamController2026Options::default(),
             switch_spi: switch_pro_spi::Settings::default(),
+            sony_data: sony_device_data::Selections::default(),
             name_draft: String::new(),
             create_count: 1,
             advanced_options_open: false,
@@ -1668,6 +1706,7 @@ impl App {
             wii_compat: self.wii_compat.clone(),
             steam_options: self.steam_options.clone(),
             switch_spi: self.switch_spi.clone(),
+            sony_data: self.sony_data.clone(),
         }
     }
 
@@ -2040,8 +2079,7 @@ impl eframe::App for App {
                                     self.target,
                                     self.kind,
                                     &mut self.audio_creation,
-                                    &mut self.steam_options,
-                                    &mut self.switch_spi,
+                                    (&mut self.steam_options, &mut self.sony_data, &mut self.switch_spi),
                                     (&mut self.wii_revision, &mut self.wii_imports, &mut self.wii_compat),
                                 )
                                 .panel_rect;
@@ -2646,7 +2684,7 @@ fn draw_controller_state(
                 );
             },
             |ui| {
-                audio_action = audio_lab::draw_diagnostics(ui, audio_view);
+                audio_action = audio_lab::draw_diagnostics(ui, controller.options.target, audio_view);
             },
             |ui| {
                 let (label, help) = if controller.kind == Kind::WiiRemote {
@@ -2772,6 +2810,17 @@ fn draw_controller_output_cards(
             draw_feedback_rows(ui, indicators);
         }
     });
+    if kind == Kind::SwitchPro {
+        wide_card(ui, "HOME light (host request)", |ui| {
+            if let Some(light) = indicators.switch_home_light {
+                ui.label(format!("Brightness: {}/15", light.brightness));
+                ui.monospace(format!("Raw mini-cycle: {:?}", light.mini_cycle));
+            } else {
+                ui.weak("No HOME light command observed");
+            }
+            ui.small("Separate from the four player indicators; physical brightness unverified.");
+        });
+    }
     if kind == Kind::WiiRemote {
         wide_card(ui, "Speaker (planned)", |ui| {
             ui.add_enabled_ui(false, |ui| {
@@ -2840,19 +2889,62 @@ fn draw_feedback_rows(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
                 draw_feedback_indicator(
                     ui,
                     "Mute",
-                    if indicators.mute_led == Some(true) {
+                    if matches!(
+                        indicators.mute_led,
+                        Some(DualSenseMuteLed::On | DualSenseMuteLed::Pulse)
+                    ) {
                         Color32::from_rgb(255, 130, 40)
                     } else {
                         Color32::DARK_GRAY
                     },
                     match indicators.mute_led {
-                        Some(true) => "Mute LED on",
-                        Some(false) => "Mute LED off",
+                        Some(DualSenseMuteLed::On) => "Mute LED on",
+                        Some(DualSenseMuteLed::Off) => "Mute LED off",
+                        Some(DualSenseMuteLed::Pulse) => "Mute LED pulse (source decoding)",
+                        Some(DualSenseMuteLed::Unknown(_)) => "Mute LED unrecognized mode",
                         None => "Mute LED unknown",
                     },
                 );
             });
             ui.end_row();
+            if indicators.led_brightness.is_some() {
+                ui.label("Player LEDs");
+                ui.horizontal_wrapped(|ui| {
+                    for index in 0..5 {
+                        let on = indicators
+                            .player_leds
+                            .is_some_and(|bits| bits & (1 << index) != 0);
+                        draw_feedback_indicator(
+                            ui,
+                            &format!("{}", index + 1),
+                            if on {
+                                Color32::WHITE
+                            } else {
+                                Color32::DARK_GRAY
+                            },
+                            if indicators.player_leds.is_none() {
+                                "Player LED state not yet observed"
+                            } else if on {
+                                "Player LED enabled (source decoding)"
+                            } else {
+                                "Player LED disabled (source decoding)"
+                            },
+                        );
+                    }
+                    ui.label(match indicators.player_led_instant {
+                        Some(true) => "Instant",
+                        Some(false) => "Fade",
+                        None => "Transition unknown",
+                    });
+                });
+                ui.end_row();
+                ui.label("LED brightness");
+                ui.monospace(format!(
+                    "Raw 0x{:02X} (encoding disputed)",
+                    indicators.led_brightness.unwrap_or_default()
+                ));
+                ui.end_row();
+            }
             ui.label("Rumble");
             draw_rumble_contents(ui, indicators);
             ui.end_row();
@@ -2943,6 +3035,40 @@ fn draw_feedback_indicator(ui: &mut egui::Ui, label: &str, color: Color32, toolt
 }
 
 fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable: bool) {
+    if let ControllerView::SwitchPro(editor) = view {
+        let mut battery = editor.battery();
+        card(ui, "Switch Pro battery", |ui| {
+            ui.set_min_width(BATTERY_CARD_CONTENT_WIDTH);
+            ui.add_enabled_ui(editable, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Level");
+                    egui::ComboBox::from_id_salt("switch-pro-battery-level")
+                        .selected_text(format!("{:?}", battery.level))
+                        .show_ui(ui, |ui| {
+                            for level in [
+                                virtualgamepad::SwitchProBatteryLevel::Empty,
+                                virtualgamepad::SwitchProBatteryLevel::Critical,
+                                virtualgamepad::SwitchProBatteryLevel::Low,
+                                virtualgamepad::SwitchProBatteryLevel::Medium,
+                                virtualgamepad::SwitchProBatteryLevel::Full,
+                            ] {
+                                ui.selectable_value(
+                                    &mut battery.level,
+                                    level,
+                                    format!("{level:?}"),
+                                );
+                            }
+                        });
+                });
+                ui.checkbox(&mut battery.charging, "Charging");
+                ui.checkbox(&mut battery.usb_powered, "USB powered");
+            });
+        });
+        if battery != editor.battery() {
+            let _ = editor.set_battery(battery);
+        }
+        return;
+    }
     let supported = view.supports_battery_emulation();
     let battery = view.battery();
     let mut exposed = battery.is_exposed();
@@ -4512,6 +4638,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)] // One egui frame mirrors the full sidebar layout being measured.
     fn advanced_options_use_their_own_scroll_area_and_expand_with_space() {
         for (screen_height, should_scroll_inside_advanced) in [(600.0, true), (900.0, false)] {
             let context = egui::Context::default();
@@ -4519,6 +4646,16 @@ mod tests {
             let mut sidebar_content_height = 0.0;
             let mut advanced_layout = None;
             let mut audio_creation = audio_lab::CreationAudio::default();
+            let mut family = (
+                SteamController2026Options::default(),
+                sony_device_data::Selections::default(),
+                switch_pro_spi::Settings::default(),
+            );
+            let mut wii = (
+                WiiRemoteRevision::Original,
+                wii_import::Imports::default(),
+                WiiRemoteOptions::default(),
+            );
             let _ = context.run(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
@@ -4558,13 +4695,8 @@ mod tests {
                                                 audio_lab::default_creation_target(),
                                                 Kind::DualSense,
                                                 &mut audio_creation,
-                                                &mut SteamController2026Options::default(),
-                                                &mut switch_pro_spi::Settings::default(),
-                                                (
-                                                    &mut WiiRemoteRevision::Original,
-                                                    &mut wii_import::Imports::default(),
-                                                    &mut WiiRemoteOptions::default(),
-                                                ),
+                                                (&mut family.0, &mut family.1, &mut family.2),
+                                                (&mut wii.0, &mut wii.1, &mut wii.2),
                                             ));
                                             ui.add_sized(
                                                 [SIDEBAR_WIDTH, 1.0],
@@ -5315,12 +5447,32 @@ mod tests {
         assert!(!indicators.rumble_seen);
 
         indicators.apply_hid_output(None, None, None, Some(false));
-        assert_eq!(indicators.mute_led, Some(false));
+        assert_eq!(indicators.mute_led, Some(DualSenseMuteLed::Off));
         assert!(!indicators.rumble_seen);
 
         indicators.apply_hid_output(Some(0), Some(0), None, None);
         assert!(indicators.rumble_seen);
         assert!(!indicators.rumble_active);
+    }
+
+    #[test]
+    fn dualsense_led_state_preserves_partial_updates_and_pulse() {
+        let mut indicators = ReverseIndicators::default();
+        indicators.apply_dualsense_led_output(
+            Some(DualSenseMuteLed::Pulse),
+            Some(0x15),
+            Some(true),
+            0xa5,
+        );
+        assert_eq!(indicators.mute_led, Some(DualSenseMuteLed::Pulse));
+        assert_eq!(indicators.player_leds, Some(0x15));
+        assert_eq!(indicators.player_led_instant, Some(true));
+        assert_eq!(indicators.led_brightness, Some(0xa5));
+        indicators.apply_dualsense_led_output(None, None, None, 0x03);
+        assert_eq!(indicators.mute_led, Some(DualSenseMuteLed::Pulse));
+        assert_eq!(indicators.player_leds, Some(0x15));
+        assert_eq!(indicators.player_led_instant, Some(true));
+        assert_eq!(indicators.led_brightness, Some(3));
     }
 
     #[test]
@@ -5349,19 +5501,19 @@ mod tests {
         indicators.apply_hid_output(None, Some(0), None, None);
         assert!(!indicators.rumble_active);
         assert_eq!(indicators.led, Some([1, 2, 3]));
-        assert_eq!(indicators.mute_led, Some(true));
+        assert_eq!(indicators.mute_led, Some(DualSenseMuteLed::On));
     }
 
     #[test]
     fn rumble_only_dualsense_output_preserves_prior_led_indicators() {
         let mut indicators = ReverseIndicators {
             led: Some([0x11, 0x22, 0x33]),
-            mute_led: Some(true),
+            mute_led: Some(DualSenseMuteLed::On),
             ..ReverseIndicators::default()
         };
         indicators.apply_hid_output(Some(0x40), Some(0x20), None, None);
         assert_eq!(indicators.led, Some([0x11, 0x22, 0x33]));
-        assert_eq!(indicators.mute_led, Some(true));
+        assert_eq!(indicators.mute_led, Some(DualSenseMuteLed::On));
         assert!(indicators.rumble_active);
     }
 }

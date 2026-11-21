@@ -3,7 +3,8 @@
 pub(crate) use gr_root_audio::integration::instrumentation;
 pub(crate) use gr_root_audio::integration::{Family, combined_deadline};
 pub use gr_root_audio::{
-    AudioDiagnostics, AudioEndpoint, AudioEndpointSelector, AudioRead, ControllerAudio,
+    AudioDiagnostics, AudioDirectionAccounting, AudioEndpoint, AudioEndpointSelector, AudioRead,
+    AudioSidecarAssociation, ControllerAudio,
 };
 #[cfg(feature = "experimental")]
 pub use gr_root_audio::{
@@ -43,8 +44,9 @@ pub(crate) fn open(
     options: crate::AudioOptions,
     family: Family,
     creation: u64,
+    hid_uniq: Option<&str>,
 ) -> Result<Option<ControllerAudio>, crate::ControllerError> {
-    gr_root_audio::integration::open(options, family, creation).map_err(open_error)
+    gr_root_audio::integration::open(options, family, creation, hid_uniq).map_err(open_error)
 }
 #[cfg(test)]
 pub(crate) mod fake;

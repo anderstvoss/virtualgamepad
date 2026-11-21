@@ -16,13 +16,20 @@ impl Settings {
     }
 
     fn load_raw(&mut self, base: u32, bytes: &[u8]) -> Result<(), String> {
-        let next = self.image.clone().with_region(base, bytes).map_err(|e| e.to_string())?;
+        let next = self
+            .image
+            .clone()
+            .with_region(base, bytes)
+            .map_err(|e| e.to_string())?;
         self.image = next;
         Ok(())
     }
 
     fn save_raw(&self, base: u32, path: &std::path::Path) -> Result<(), String> {
-        let bytes = self.image.export_raw(base, WINDOW_SIZE).map_err(|e| e.to_string())?;
+        let bytes = self
+            .image
+            .export_raw(base, WINDOW_SIZE)
+            .map_err(|e| e.to_string())?;
         wii_eeprom::validate_destination(path)?;
         wii_eeprom::write(path, &bytes)
     }
@@ -33,7 +40,10 @@ impl Settings {
         for (label, base) in [("Factory", 0x6000_u32), ("User", 0x8000)] {
             ui.horizontal(|ui| {
                 if ui.button(format!("Load {label}…")).clicked() {
-                    if let Some(path) = rfd::FileDialog::new().set_title(format!("Load {label} SPI bytes")).pick_file() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .set_title(format!("Load {label} SPI bytes"))
+                        .pick_file()
+                    {
                         self.message = Some(match std::fs::read(path) {
                             Ok(bytes) => match self.load_raw(base, &bytes) {
                                 Ok(()) => format!("{label} SPI bytes loaded"),
@@ -72,11 +82,8 @@ mod tests {
         let mut saved = super::super::App::default().creation_options();
         saved.switch_spi.load_raw(0x8010, &[0x35, 0x64]).unwrap();
         let choices = super::super::App::default().creation_options();
-        let recreated = super::super::recreation_options(
-            super::super::Kind::SwitchPro,
-            &saved,
-            choices,
-        );
+        let recreated =
+            super::super::recreation_options(super::super::Kind::SwitchPro, &saved, choices);
         assert_eq!(recreated.switch_spi.image(), saved.switch_spi.image());
         assert_eq!(recreated.switch_spi.image().read(0x8010), 0x35);
     }

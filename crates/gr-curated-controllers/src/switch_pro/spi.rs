@@ -52,8 +52,8 @@ impl SwitchProSpiImage {
                 control: "Switch Pro SPI extent outside factory/user windows",
             });
         }
-        for (index, byte) in bytes.iter().copied().enumerate() {
-            self.supplied.insert(base + index as u32, byte);
+        for (address, byte) in (base..).zip(bytes.iter().copied()) {
+            self.supplied.insert(address, byte);
         }
         Ok(self)
     }
@@ -69,7 +69,10 @@ impl SwitchProSpiImage {
                 control: "Switch Pro SPI extent outside factory/user windows",
             });
         }
-        Ok((0..len).map(|offset| self.read(base + offset as u32)).collect())
+        Ok((base..)
+            .take(len)
+            .map(|address| self.read(address))
+            .collect())
     }
 
     /// Return the supplied byte or the original synthetic read answer.
@@ -100,7 +103,11 @@ mod tests {
     fn untouched_regions_match_existing_synthetic_responses_exhaustively() {
         let image = SwitchProSpiImage::default();
         for address in (FACTORY_START..FACTORY_END).chain(USER_START..USER_END) {
-            assert_eq!(image.read(address), super::super::switch_spi_byte(address), "SPI {address:#x}");
+            assert_eq!(
+                image.read(address),
+                super::super::switch_spi_byte(address),
+                "SPI {address:#x}"
+            );
         }
         for address in [0x5fff, 0x7000, 0x7fff, 0x9000, u32::MAX] {
             assert_eq!(image.read(address), super::super::switch_spi_byte(address));
@@ -115,7 +122,9 @@ mod tests {
 
     #[test]
     fn imports_are_atomic_and_reject_unmapped_extents() {
-        let original = SwitchProSpiImage::default().with_region(0x6000, &[0x31]).unwrap();
+        let original = SwitchProSpiImage::default()
+            .with_region(0x6000, &[0x31])
+            .unwrap();
         for (base, bytes) in [
             (0x5fff, vec![0x32; 2]),
             (0x6fff, vec![0x33; 2]),

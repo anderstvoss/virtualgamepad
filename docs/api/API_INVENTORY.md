@@ -488,7 +488,7 @@ impl UnwindSafe for DualSenseControl
 Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
-pub enum DualSenseFeature { Touch, Motion, Lightbar, AdaptiveTriggers, Audio, }
+pub enum DualSenseFeature { Touch, Motion, Lightbar, PlayerIndicators, MicrophoneLed, AdaptiveTriggers, Audio, }
 ```
 
 Trait implementations:
@@ -514,7 +514,8 @@ impl UnwindSafe for DualSenseFeature
 Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
-#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }
+#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 20 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<DualSenseMuteLed>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, led_brightness: u8, lightbar_setup: Option<u8>, release_leds: Option<bool>, player_leds: Option<u8>, player_led_instant: Option<bool>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }
+pub fn trigger_effects( &self, ) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>
 ```
 
 Trait implementations:
@@ -532,6 +533,32 @@ impl Sync for DualSenseHidOutput
 impl Unpin for DualSenseHidOutput
 impl UnsafeUnpin for DualSenseHidOutput
 impl UnwindSafe for DualSenseHidOutput
+```
+
+### `DualSenseMuteLed`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+pub enum DualSenseMuteLed { Off, On, Pulse, Unknown(u8), }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for DualSenseMuteLed
+impl Debug for DualSenseMuteLed
+impl PartialEq for DualSenseMuteLed
+impl Copy for DualSenseMuteLed
+impl Eq for DualSenseMuteLed
+impl StructuralPartialEq for DualSenseMuteLed
+impl Freeze for DualSenseMuteLed
+impl RefUnwindSafe for DualSenseMuteLed
+impl Send for DualSenseMuteLed
+impl Sync for DualSenseMuteLed
+impl Unpin for DualSenseMuteLed
+impl UnsafeUnpin for DualSenseMuteLed
+impl UnwindSafe for DualSenseMuteLed
 ```
 
 ### `DualSenseOutputEvent`
@@ -590,7 +617,7 @@ impl UnwindSafe for DualShock4Control
 Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
 
 ```rust
-#[non_exhaustive]pub enum DualShock4HidOutput { UsbOutput { raw: Vec<u8>, right_motor: u8, left_motor: u8, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }
+#[non_exhaustive]pub enum DualShock4HidOutput { UsbOutput { raw: Vec<u8>, right_motor: u8, left_motor: u8, lightbar_rgb: Option<[u8; 3]>, }, BluetoothOutput { raw: Vec<u8>, right_motor: u8, left_motor: u8, lightbar_rgb: Option<[u8; 3]>, blink: Option<[u8; 2]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }
 ```
 
 Trait implementations:
@@ -1125,6 +1152,33 @@ impl UnsafeUnpin for SteamController2026StreamPacket
 impl UnwindSafe for SteamController2026StreamPacket
 ```
 
+### `SwitchProBatteryLevel`
+
+Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
+
+```rust
+pub enum SwitchProBatteryLevel { Empty, Critical, Low, Medium, Full, }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for SwitchProBatteryLevel
+impl Debug for SwitchProBatteryLevel
+impl PartialEq for SwitchProBatteryLevel
+impl Default for SwitchProBatteryLevel
+impl Copy for SwitchProBatteryLevel
+impl Eq for SwitchProBatteryLevel
+impl StructuralPartialEq for SwitchProBatteryLevel
+impl Freeze for SwitchProBatteryLevel
+impl RefUnwindSafe for SwitchProBatteryLevel
+impl Send for SwitchProBatteryLevel
+impl Sync for SwitchProBatteryLevel
+impl Unpin for SwitchProBatteryLevel
+impl UnsafeUnpin for SwitchProBatteryLevel
+impl UnwindSafe for SwitchProBatteryLevel
+```
+
 ### `SwitchProControl`
 
 Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
@@ -1156,7 +1210,7 @@ impl UnwindSafe for SwitchProControl
 Owner/source: `../src/virtualgamepad/output.rs.html`
 
 ```rust
-#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }
+#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HomeLight(SwitchProHomeLight), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }
 pub fn rumble(&self) -> Option<SwitchProRumble>
 ```
 
@@ -2426,6 +2480,86 @@ impl UnsafeUnpin for DualSenseTrigger
 impl UnwindSafe for DualSenseTrigger
 ```
 
+### `DualSenseTriggerEffect`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+#[non_exhaustive]pub enum DualSenseTriggerEffect { Off, Feedback { zones: DualSenseTriggerZoneForces, }, Weapon { start_zone: u8, end_zone: u8, strength: u8, }, Vibration { zones: DualSenseTriggerZoneForces, frequency_code: u8, }, Unknown { mode: u8, raw: [u8; 11], }, }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for DualSenseTriggerEffect
+impl Copy for DualSenseTriggerEffect
+impl Debug for DualSenseTriggerEffect
+impl Eq for DualSenseTriggerEffect
+impl PartialEq for DualSenseTriggerEffect
+impl RefUnwindSafe for DualSenseTriggerEffect
+impl Send for DualSenseTriggerEffect
+impl Sync for DualSenseTriggerEffect
+impl Unpin for DualSenseTriggerEffect
+impl UnwindSafe for DualSenseTriggerEffect
+```
+
+
+### `DualSenseTriggerEffectUpdate`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+pub struct DualSenseTriggerEffectUpdate { pub valid: bool, pub raw: [u8; 11], pub effect: Option<DualSenseTriggerEffect>, }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for DualSenseTriggerEffectUpdate
+impl Copy for DualSenseTriggerEffectUpdate
+impl Debug for DualSenseTriggerEffectUpdate
+impl Eq for DualSenseTriggerEffectUpdate
+impl PartialEq for DualSenseTriggerEffectUpdate
+impl RefUnwindSafe for DualSenseTriggerEffectUpdate
+impl Send for DualSenseTriggerEffectUpdate
+impl Sync for DualSenseTriggerEffectUpdate
+impl Unpin for DualSenseTriggerEffectUpdate
+impl UnwindSafe for DualSenseTriggerEffectUpdate
+```
+
+
+### `DualSenseTriggerZoneForces`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+pub struct DualSenseTriggerZoneForces { pub active_zones: u16, pub start_zone: u8, pub end_zone: u8, pub strengths: [Option<u8>; 10], }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for DualSenseTriggerZoneForces
+impl Copy for DualSenseTriggerZoneForces
+impl Debug for DualSenseTriggerZoneForces
+impl Eq for DualSenseTriggerZoneForces
+impl PartialEq for DualSenseTriggerZoneForces
+impl RefUnwindSafe for DualSenseTriggerZoneForces
+impl Send for DualSenseTriggerZoneForces
+impl Sync for DualSenseTriggerZoneForces
+impl Unpin for DualSenseTriggerZoneForces
+impl UnwindSafe for DualSenseTriggerZoneForces
+```
+
+
+### `decode_dualsense_trigger_effect`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+pub fn decode_dualsense_trigger_effect(raw: [u8; 11]) -> DualSenseTriggerEffect
+```
+
 ### `DualShock4Axis`
 
 Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
@@ -3527,6 +3661,33 @@ impl UnsafeUnpin for SwitchProAxis
 impl UnwindSafe for SwitchProAxis
 ```
 
+### `SwitchProBattery`
+
+Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
+
+```rust
+pub struct SwitchProBattery { pub level: SwitchProBatteryLevel, pub charging: bool, pub usb_powered: bool, }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for SwitchProBattery
+impl Debug for SwitchProBattery
+impl PartialEq for SwitchProBattery
+impl Default for SwitchProBattery
+impl Copy for SwitchProBattery
+impl Eq for SwitchProBattery
+impl StructuralPartialEq for SwitchProBattery
+impl Freeze for SwitchProBattery
+impl RefUnwindSafe for SwitchProBattery
+impl Send for SwitchProBattery
+impl Sync for SwitchProBattery
+impl Unpin for SwitchProBattery
+impl UnsafeUnpin for SwitchProBattery
+impl UnwindSafe for SwitchProBattery
+```
+
 ### `SwitchProController`
 
 Owner/source: `../src/virtualgamepad/controllers.rs.html`
@@ -3534,7 +3695,6 @@ Owner/source: `../src/virtualgamepad/controllers.rs.html`
 ```rust
 pub struct SwitchProController { /* private fields */ }
 pub const fn identity(&self) -> SwitchProIdentity
-pub fn spi_image(&self) -> &SwitchProSpiImage
 pub fn stream_enabled(&self) -> bool
 pub fn motion_report_counter(&self) -> u8
 pub fn wants_write(&self) -> bool
@@ -3542,6 +3702,8 @@ pub fn next_service_in(&self) -> Option<Duration>
 pub fn dropped_output_events(&self) -> u64
 pub fn inputs(&self) -> &SwitchProInputs
 pub fn status(&self) -> SwitchProStatus
+pub fn battery(&self) -> SwitchProBattery
+pub fn set_battery( &mut self, battery: SwitchProBattery, ) -> Result<(), ControlError>
 pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut SwitchProInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>
 pub fn set_inputs(&mut self, state: SwitchProInputs) -> Result<(), ControlError>
 pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>
@@ -3571,6 +3733,32 @@ impl !Sync for SwitchProController
 impl Unpin for SwitchProController
 impl UnsafeUnpin for SwitchProController
 impl !UnwindSafe for SwitchProController
+```
+
+### `SwitchProHomeLight`
+
+Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
+
+```rust
+pub struct SwitchProHomeLight { pub brightness: u8, pub mini_cycle: [u8; 5], }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for SwitchProHomeLight
+impl Debug for SwitchProHomeLight
+impl PartialEq for SwitchProHomeLight
+impl Copy for SwitchProHomeLight
+impl Eq for SwitchProHomeLight
+impl StructuralPartialEq for SwitchProHomeLight
+impl Freeze for SwitchProHomeLight
+impl RefUnwindSafe for SwitchProHomeLight
+impl Send for SwitchProHomeLight
+impl Sync for SwitchProHomeLight
+impl Unpin for SwitchProHomeLight
+impl UnsafeUnpin for SwitchProHomeLight
+impl UnwindSafe for SwitchProHomeLight
 ```
 
 ### `SwitchProIdentity`
@@ -3671,9 +3859,11 @@ Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
 ```rust
 #[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }
 pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions
-pub const fn identity(&self) -> Option<SwitchProIdentity>
-pub fn with_spi_image( self, image: SwitchProSpiImage, ) -> SwitchProOptions
-pub const fn spi_image(&self) -> Option<&SwitchProSpiImage>
+pub const fn with_battery(self, battery: SwitchProBattery) -> SwitchProOptions
+pub const fn battery(self) -> SwitchProBattery
+pub const fn with_imu_gating(self, enabled: bool) -> SwitchProOptions
+pub const fn imu_gating(self) -> bool
+pub const fn identity(self) -> Option<SwitchProIdentity>
 ```
 
 Trait implementations:
@@ -3682,6 +3872,7 @@ Trait implementations:
 impl Clone for SwitchProOptions
 impl Debug for SwitchProOptions
 impl Default for SwitchProOptions
+impl Copy for SwitchProOptions
 impl Freeze for SwitchProOptions
 impl RefUnwindSafe for SwitchProOptions
 impl Send for SwitchProOptions
@@ -3743,37 +3934,6 @@ impl UnsafeUnpin for SwitchProRumble
 impl UnwindSafe for SwitchProRumble
 ```
 
-### `SwitchProSpiImage`
-
-Owner/source: `../src/gr_curated_controllers/switch_pro/spi.rs.html`
-
-```rust
-pub struct SwitchProSpiImage { /* private fields */ }
-pub fn import_raw( base: u32, bytes: &[u8], ) -> Result<SwitchProSpiImage, ControlError>
-pub fn with_region( self, base: u32, bytes: &[u8], ) -> Result<SwitchProSpiImage, ControlError>
-pub fn export_raw( &self, base: u32, len: usize, ) -> Result<Vec<u8>, ControlError>
-pub fn read(&self, address: u32) -> u8
-pub fn colors_available(&self) -> bool
-```
-
-Trait implementations:
-
-```rust
-impl Clone for SwitchProSpiImage
-impl Debug for SwitchProSpiImage
-impl Default for SwitchProSpiImage
-impl PartialEq for SwitchProSpiImage
-impl Eq for SwitchProSpiImage
-impl StructuralPartialEq for SwitchProSpiImage
-impl Freeze for SwitchProSpiImage
-impl RefUnwindSafe for SwitchProSpiImage
-impl Send for SwitchProSpiImage
-impl Sync for SwitchProSpiImage
-impl Unpin for SwitchProSpiImage
-impl UnsafeUnpin for SwitchProSpiImage
-impl UnwindSafe for SwitchProSpiImage
-```
-
 ### `SwitchProStatus`
 
 Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
@@ -3782,6 +3942,9 @@ Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
 pub struct SwitchProStatus { /* private fields */ }
 pub const fn timer(self) -> u8
 pub const fn stream_enabled(self) -> bool
+pub const fn battery(self) -> SwitchProBattery
+pub const fn imu_gating(self) -> bool
+pub const fn imu_enabled(self) -> bool
 ```
 
 Trait implementations:
@@ -4662,6 +4825,7 @@ Owner/source: `../src/virtualgamepad/controllers.rs.html`
 
 ```rust
 pub struct XboxSeriesController { /* private fields */ }
+pub fn identity(&self) -> XboxSeriesIdentity
 pub fn inputs(&self) -> &XboxSeriesInputs
 pub fn status(&self) -> XboxSeriesStatus
 pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>
@@ -4728,12 +4892,44 @@ impl UnsafeUnpin for XboxSeriesInputs
 impl UnwindSafe for XboxSeriesInputs
 ```
 
+### `XboxSeriesIdentity`
+
+Owner/source: `../src/gr_curated_controllers/xbox_series.rs.html`
+
+```rust
+pub struct XboxSeriesIdentity(/* private fields */);
+pub fn generate() -> Result<XboxSeriesIdentity, ProviderError>
+pub fn from_bytes(bytes: [u8; 6]) -> Result<XboxSeriesIdentity, ProviderError>
+pub const fn bytes(self) -> [u8; 6]
+```
+
+Trait implementations:
+
+```rust
+impl Clone for XboxSeriesIdentity
+impl Debug for XboxSeriesIdentity
+impl PartialEq for XboxSeriesIdentity
+impl Copy for XboxSeriesIdentity
+impl Eq for XboxSeriesIdentity
+impl Hash for XboxSeriesIdentity
+impl StructuralPartialEq for XboxSeriesIdentity
+impl Freeze for XboxSeriesIdentity
+impl RefUnwindSafe for XboxSeriesIdentity
+impl Send for XboxSeriesIdentity
+impl Sync for XboxSeriesIdentity
+impl Unpin for XboxSeriesIdentity
+impl UnsafeUnpin for XboxSeriesIdentity
+impl UnwindSafe for XboxSeriesIdentity
+```
+
 ### `XboxSeriesOptions`
 
 Owner/source: `../src/gr_curated_controllers/xbox_series.rs.html`
 
 ```rust
-#[non_exhaustive]pub struct XboxSeriesOptions {}
+#[non_exhaustive]pub struct XboxSeriesOptions { /* private fields */ }
+pub const fn with_identity( self, identity: XboxSeriesIdentity, ) -> XboxSeriesOptions
+pub const fn identity(self) -> Option<XboxSeriesIdentity>
 ```
 
 Trait implementations:

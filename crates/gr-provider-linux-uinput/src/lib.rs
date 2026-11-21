@@ -456,7 +456,7 @@ mod linux_io {
         }
         let mut setup = UinputSetup {
             id: InputId {
-                bustype: 0x03,
+                bustype: spec.bus_type,
                 vendor: spec.identity.vendor_id,
                 product: spec.identity.product_id,
                 version: spec.identity.version,
@@ -727,6 +727,7 @@ mod integration_tests {
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
+                bus_type: 0x03,
                 physical_path: Some(physical.clone()),
                 device_name: "virtualgamepad integration test".into(),
                 identity: NativeDeviceIdentity {
@@ -881,6 +882,7 @@ mod seam_tests {
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
+                bus_type: 0x03,
                 physical_path: None,
                 device_name: "test".into(),
                 identity: NativeDeviceIdentity {

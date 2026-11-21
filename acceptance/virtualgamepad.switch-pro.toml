@@ -1,76 +1,86 @@
 schema_version = 1
 controller = "virtualgamepad.switch-pro"
-research_revision = "abffb5db67032d3661436a209d1310da89ca0f17"
-realizations = ["linux.uinput", "linux.uhid.usb", "linux.dummy_hcd.usb-hid"]
+research_revision = "a67781e2412eceea9440d20dbb350ad5d3352c25"
+realizations = ["linux.uinput", "linux.uhid.usb", "linux.dummy_hcd.usb-hid", "linux.uhid.bluetooth"]
 refused_operations = []
 persistent_resources = []
 
 [[functions]]
 id = "buttons"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/buttons", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/buttons", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/buttons", evidence = ["swpro-vg-exp0014-individual-evdev", "swpro-vg-exp0011-evdev-mapping"], reason = "Evidence linked; per-function acceptance pending." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/buttons", evidence = ["swpro-vg-exp0017-individual-uhid"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/buttons", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/buttons", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }
 
 [[functions]]
 id = "sticks"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/switch-pro/sticks", evidence = ["swpro-vg-exp0014-individual-evdev", "swpro-vg-exp0011-evdev-mapping"], reason = "P5a observed both signed endpoints on all four stick axes through SDL evdev with HIDAPI disabled." }
+"linux.uhid.usb" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/switch-pro/sticks", evidence = ["swpro-vg-exp0009-sdl-motion"], reason = "P5a observed both signed endpoints on all four stick axes through SDL HIDAPI and evdev. Steam did not list this realization." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/sticks", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/sticks", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }
 
 [[functions]]
 id = "triggers"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/triggers", evidence = ["swpro-vg-exp0014-individual-evdev", "swpro-vg-exp0011-evdev-mapping"], reason = "Evidence linked; per-function acceptance pending." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/triggers", evidence = ["swpro-vg-exp0017-individual-uhid"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/triggers", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/triggers", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }
 
 [[functions]]
 id = "identity"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/identity", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/identity", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/identity", evidence = ["swpro-l0-device-info02-fields"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/identity", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/identity", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }
 
 [[functions]]
 id = "lifecycle"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/lifecycle", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/lifecycle", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/lifecycle", evidence = ["swpro-vg-exp0014-individual-evdev"], reason = "Evidence linked; per-function acceptance pending." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/lifecycle", evidence = ["swpro-l0-consumer-kernel-open-order"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/lifecycle", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/lifecycle", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }
 
 [[functions]]
 id = "motion"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/motion", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/motion", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/motion", evidence = ["swpro-vg-exp0009-sdl-motion"], reason = "Evidence linked; per-function acceptance pending.", unit_test_ids = ["switch_pro::protocol::tests::imu_samples_are_gated_only_with_opt_in_and_host_enable", "switch_pro::tests::native_service_retains_imu_enable_status_for_opted_in_frames"] }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/motion", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/motion", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }
 
 [[functions]]
 id = "battery"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/battery", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/battery", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/battery", evidence = ["swpro-l0-device-battery-connection-bits"], reason = "Evidence linked; per-function acceptance pending.", unit_test_ids = ["switch_pro::tests::battery_status_encodes_native_level_charging_and_pro_power"] }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/battery", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/battery", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }
 
 [[functions]]
 id = "player-indicators"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/player-indicators", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/player-indicators", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/player-indicators", evidence = ["swpro-l0-linux-led-battery-consumer"], reason = "Evidence linked; per-function acceptance pending.", unit_test_ids = ["switch_pro::tests::home_light_keeps_generic_ack_and_typed_minicycle_separate_from_players"] }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/player-indicators", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/player-indicators", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }
 
 [[functions]]
 id = "hd-rumble"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "evdev FF_RUMBLE carries two magnitudes, not native Switch frequency/amplitude encoding; conventional rumble is distinct." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "Decode sub-check: raw-word preservation, bounded absolute/relative/mixed samples, neutral and unknown encodings; source-only claims swpro-l0-rumble-absolute-layout, swpro-l0-rumble-sample-layouts, swpro-l0-rumble-logarithmic-units, swpro-l0-rumble-relative-commands at research commit 79f919f22d9c587eb4b3b15383b41c296de1e797 (pending merge and pin adoption). No host or physical run; acceptance remains pending." }
-"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.uinput" = { status = "not-supported", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "evdev FF_RUMBLE carries two magnitudes, not native Switch frequency/amplitude encoding; conventional rumble is distinct. Level: Generic." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/hd-rumble", evidence = ["swpro-l0-device-rumble-word-tables"], reason = "Decode sub-check: raw-word preservation, bounded absolute/relative/mixed samples, neutral and unknown encodings; source-only claims swpro-l0-rumble-absolute-layout, swpro-l0-rumble-sample-layouts, swpro-l0-rumble-logarithmic-units, swpro-l0-rumble-relative-commands at research commit 79f919f22d9c587eb4b3b15383b41c296de1e797 (pending merge and pin adoption). No host or physical run; acceptance remains pending. Level: Native HID." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources. Level: Real USB (experimental)." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }
 
 [[functions]]
 id = "spi-calibration"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/spi-calibration", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/spi-calibration", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/spi-calibration", evidence = ["swpro-l0-device-factory-spi-map"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/spi-calibration", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/spi-calibration", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }

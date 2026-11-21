@@ -181,6 +181,15 @@ mod tests {
             (XboxSeriesDefinition, $module:ident) => {
                 crate::$module::XboxSeriesDefinition::default()
             };
+            (SwitchProDefinition, $module:ident) => {
+                crate::$module::SwitchProDefinition::default()
+            };
+            (DualSenseDefinition, $module:ident) => {
+                crate::$module::DualSenseDefinition::default()
+            };
+            (DualShock4Definition, $module:ident) => {
+                crate::$module::DualShock4Definition::default()
+            };
             ($name:ident, $module:ident) => {
                 crate::$module::$name
             };
@@ -287,7 +296,7 @@ mod tests {
                 let identity = $identity::from_bytes(address).unwrap();
                 let defaults = $options::default();
                 assert_eq!(defaults.identity(), None);
-                let restored = defaults.with_identity(identity);
+                let restored = defaults.clone().with_identity(identity);
                 assert_eq!(restored.identity().unwrap().bytes(), address);
                 assert_eq!(defaults.identity(), None);
                 let mut multicast = address;
