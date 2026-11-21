@@ -13,7 +13,7 @@ selected-target metadata and host outputs. See [ADR-0025](adr/ADR-0025-input-mod
 | Realization | Scope |
 | --- | --- |
 | `linux.uinput` | One gamepad with the Linux xpad evdev layout. It exposes A/B/X/Y, bumpers, View/Menu/Guide/Share, stick clicks, the D-pad hat, four signed stick axes and two 10-bit triggers. Conventional force feedback carries strong and weak main-motor playback. |
-| `linux.uhid.bluetooth` | Local Bluetooth-bus HID for the measured `045e:0b13` report map. Qualified with SDL 3.4.18 over evdev and hidraw on stock `microsoft`: all standard controls, separate Guide/Share, final neutral, main rumble and independent virtual trigger-command reception. Steam identity, controls including Guide, and Ping feedback were qualified with the active-seat dev setup; Guide then closed the test screen to the storefront. A separate physical Bluetooth check confirmed independent left/right trigger actuation as described below. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
+| `linux.uhid.bluetooth` | Local Bluetooth-bus HID for the measured `045e:0b13` report map. Qualified with SDL 3.4.18 over evdev and hidraw on stock `microsoft`: all standard controls, separate Guide/Share, final neutral, main rumble and independent virtual trigger-command reception. Steam identity, standard controls, and Ping feedback were observed with the active-seat dev setup. The Guide observations varied by Steam build, as recorded below. A separate physical Bluetooth check confirmed independent left/right trigger actuation as described below. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
 | USB-bus UHID and `dummy_hcd` USB HID | Inapplicable to the wired GIP controller. GIP and USB/IP feasibility stay with [#168](https://github.com/anderstvoss/virtualgamepad/issues/168). |
 
 The xpad [consumer ledger](https://github.com/anderstvoss/controller-protocol-research/blob/eba02ad610e264a2518a699394255cc7f1d670dd/docs/ledgers/xbox-series-l0.md)
@@ -135,7 +135,7 @@ candidate, kernel and driver scope with the answers.
 | Steam Input consumer | Status |
 | --- | --- |
 | `linux.uinput` | Earlier owner checks confirmed Xbox Series identity and controls excluding Guide; Steam Ping retained 32767/32767 playback and stops. Alpha 2 Guide check: the test screen closed before the owner could determine whether its Guide indicator registered. Big Picture did not open. Registration remains unverified. |
-| `linux.uhid.bluetooth` | Earlier checks with the temporary active-seat dev override confirmed Xbox Series identity and controls excluding Guide; Steam Ping retained native 50/50 main rumble and stops on microsoft. Alpha 2 Guide check on microsoft: the owner saw Guide register briefly, then the test screen closed to the Steam storefront. Big Picture did not open. |
+| `linux.uhid.bluetooth` | With the temporary active-seat dev override on stock `microsoft`, Steam listed the controller as Xbox Series, displayed movement for the other controls, and Ping retained native 50/50 main rumble and stops. For Guide on Steam `1794424036`, the owner saw the indicator briefly before the test closed to the storefront. On Steam `1794536281`, the test closed immediately and focused the main Steam window, so the indicator could not be observed. Neither run entered Big Picture. |
 
 The Alpha 2 Guide observations used candidate
 `324d250bb01a5ddbfc1dd189513d4c9160429ee1`, Steam build `1794424036`,
@@ -145,6 +145,14 @@ Each run sent one Guide press and release, returned to neutral, closed the
 probe and verified removal of its owned nodes. The real Valve controller was
 disconnected. The temporary Steam visibility override was removed afterwards.
 These are Steam consumer observations, not a protocol-correctness oracle.
+
+The Bluetooth Guide rerun used candidate
+`b51e525bf5128492442fcd54ab276cfbe0985ee0`, kernel `7.3.0-1-mainline`,
+and installed SDL `3.4.20` on x86-64 kalux. The probe sent one Guide press
+and release on the stock `microsoft` binding with the temporary seat0
+override. The probe and its device nodes were removed, the override was
+removed, and the original xpadneo module setup was restored.
+See the [kalux evidence](https://github.com/anderstvoss/virtualgamepad/issues/160#issuecomment-7060633638).
 
 ## Alpha 2 host audit
 
