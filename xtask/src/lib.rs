@@ -528,6 +528,7 @@ mod tests {
     fn invalid_pair_or_workload_opens_nothing() {
         let mut fake = Fake::default();
         let mut c = config();
+        c.controller = "virtualgamepad.xbox360".into();
         c.realization = "linux.uhid.bluetooth".into();
         assert!(run(&mut fake, &mut Tick(0), &c, &json!({})).is_err());
         c = config();
