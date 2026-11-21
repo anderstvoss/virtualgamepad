@@ -1567,11 +1567,10 @@ pub fn create_dualshock4_usb_worker(
         controller: ControllerId::new("virtualgamepad.dualshock4"),
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
     };
-    DualShock4Controller(common::ControllerSession::worker(
-        DualShock4Definition::default(),
-        selection,
-        bridge,
-    ), DualShock4DeviceData::default())
+    DualShock4Controller(
+        common::ControllerSession::worker(DualShock4Definition::default(), selection, bridge),
+        DualShock4DeviceData::default(),
+    )
 }
 
 /// Family options for a new `DualShock4` session.
@@ -1829,11 +1828,8 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             RealizationTarget::LINUX_USBIP_USB_AUDIO,
         ] {
-            let session = input_validation_session(
-                DualShock4Definition::default(),
-                target,
-                [true; 3],
-            );
+            let session =
+                input_validation_session(DualShock4Definition::default(), target, [true; 3]);
             let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller
@@ -1935,11 +1931,8 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let (session, io) = snapshot_session(
-                DualShock4Definition::default(),
-                target,
-                [true; 3],
-            );
+            let (session, io) =
+                snapshot_session(DualShock4Definition::default(), target, [true; 3]);
             let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller.commit().unwrap();
@@ -2017,11 +2010,8 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let (session, io) = snapshot_session(
-                DualShock4Definition::default(),
-                target,
-                [true; 3],
-            );
+            let (session, io) =
+                snapshot_session(DualShock4Definition::default(), target, [true; 3]);
             let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller
@@ -2130,11 +2120,8 @@ mod tests {
             RealizationTarget::LINUX_USBIP_USB_AUDIO,
         ] {
             let is_uinput = target == RealizationTarget::LINUX_UINPUT;
-            let session = input_validation_session(
-                DualShock4Definition::default(),
-                target,
-                [true; 3],
-            );
+            let session =
+                input_validation_session(DualShock4Definition::default(), target, [true; 3]);
             let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             check_opposing_dpad!(controller, true);
@@ -2247,11 +2234,8 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let (session, io) = snapshot_session(
-                DualShock4Definition::default(),
-                target,
-                [true, true, true],
-            );
+            let (session, io) =
+                snapshot_session(DualShock4Definition::default(), target, [true, true, true]);
             let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller
                 .0
@@ -2520,8 +2504,9 @@ mod tests {
             let mut state = DualShock4SessionState::default();
             for pressed in [true, false] {
                 state.inputs.set_native(control, pressed);
-                let ProviderFrame::Evdev(events) =
-                    DualShock4Definition::default().encode(selection, &state).unwrap()
+                let ProviderFrame::Evdev(events) = DualShock4Definition::default()
+                    .encode(selection, &state)
+                    .unwrap()
                 else {
                     panic!("evdev")
                 };
@@ -2558,8 +2543,9 @@ mod tests {
                 },
                 status: DualShock4Status::default(),
             };
-            let ProviderFrame::Evdev(events) =
-                DualShock4Definition::default().encode(selection, &state).unwrap()
+            let ProviderFrame::Evdev(events) = DualShock4Definition::default()
+                .encode(selection, &state)
+                .unwrap()
             else {
                 panic!("evdev")
             };

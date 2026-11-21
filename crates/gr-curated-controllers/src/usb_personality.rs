@@ -143,10 +143,16 @@ mod tests {
 
     #[test]
     fn sony_supplied_usb_reports_survive_recreation_and_pairing_stays_separate() {
-        use crate::{dualshock4::DualShock4DeviceData, dualsense::DualSenseDeviceData};
+        use crate::{dualsense::DualSenseDeviceData, dualshock4::DualShock4DeviceData};
         let identity = crate::common::test_address(13);
-        let mut cal = DualSenseDeviceData::default().feature_report(0x05).unwrap().to_vec();
-        let mut fw = DualSenseDeviceData::default().feature_report(0x20).unwrap().to_vec();
+        let mut cal = DualSenseDeviceData::default()
+            .feature_report(0x05)
+            .unwrap()
+            .to_vec();
+        let mut fw = DualSenseDeviceData::default()
+            .feature_report(0x20)
+            .unwrap()
+            .to_vec();
         cal[3] = 17;
         fw[28] = 3;
         let data = DualSenseDeviceData::from_feature_reports(&cal, &fw).unwrap();
@@ -159,8 +165,14 @@ mod tests {
         assert_eq!(feature(&mut restored, 0x20).payload(), &fw[1..]);
         assert_eq!(feature(&mut original, 0x09), feature(&mut restored, 0x09));
 
-        let mut cal4 = DualShock4DeviceData::default().feature_report(0x02).unwrap().to_vec();
-        let mut fw4 = DualShock4DeviceData::default().feature_report(0xa3).unwrap().to_vec();
+        let mut cal4 = DualShock4DeviceData::default()
+            .feature_report(0x02)
+            .unwrap()
+            .to_vec();
+        let mut fw4 = DualShock4DeviceData::default()
+            .feature_report(0xa3)
+            .unwrap()
+            .to_vec();
         cal4[3] = 19;
         fw4[2] = 23;
         let data4 = DualShock4DeviceData::from_feature_reports(&cal4, &fw4).unwrap();
@@ -175,7 +187,7 @@ mod tests {
 
     #[test]
     fn sony_invalid_profiles_are_rejected_before_any_provider_is_opened() {
-        use crate::{dualshock4::DualShock4DeviceData, dualsense::DualSenseDeviceData};
+        use crate::{dualsense::DualSenseDeviceData, dualshock4::DualShock4DeviceData};
         let ds = DualSenseDeviceData::default();
         let cal = ds.feature_report(0x05).unwrap().to_vec();
         let fw = ds.feature_report(0x20).unwrap().to_vec();
@@ -203,9 +215,10 @@ mod tests {
 
     #[test]
     fn sony_runtime_files_round_trip_synthetic_reports_only() {
-        use crate::{dualshock4::DualShock4DeviceData, dualsense::DualSenseDeviceData};
+        use crate::{dualsense::DualSenseDeviceData, dualshock4::DualShock4DeviceData};
         let path = std::env::temp_dir().join(format!(
-            "vg-p10b-synthetic-{}-sense.sonydata", std::process::id()
+            "vg-p10b-synthetic-{}-sense.sonydata",
+            std::process::id()
         ));
         let ds = DualSenseDeviceData::default();
         ds.save_file(&path).unwrap();
@@ -214,7 +227,8 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
 
         let path = std::env::temp_dir().join(format!(
-            "vg-p10b-synthetic-{}-shock.sonydata", std::process::id()
+            "vg-p10b-synthetic-{}-shock.sonydata",
+            std::process::id()
         ));
         let ds4 = DualShock4DeviceData::default();
         ds4.save_file(&path).unwrap();
@@ -222,7 +236,6 @@ mod tests {
         assert!(DualSenseDeviceData::load_file(&path).is_err());
         std::fs::remove_file(&path).unwrap();
     }
-
 }
 
 /// Implementation-only native state transactions for the installed worker.

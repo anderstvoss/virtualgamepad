@@ -2523,11 +2523,8 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             RealizationTarget::LINUX_USBIP_USB_AUDIO,
         ] {
-            let session = input_validation_session(
-                DualSenseDefinition::default(),
-                target,
-                [true; 3],
-            );
+            let session =
+                input_validation_session(DualSenseDefinition::default(), target, [true; 3]);
             let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller.set_battery_exposed(true).unwrap();
@@ -2790,11 +2787,8 @@ mod tests {
             RealizationTarget::LINUX_USBIP_USB_AUDIO,
         ] {
             let is_uinput = target == RealizationTarget::LINUX_UINPUT;
-            let session = input_validation_session(
-                DualSenseDefinition::default(),
-                target,
-                [true; 3],
-            );
+            let session =
+                input_validation_session(DualSenseDefinition::default(), target, [true; 3]);
             let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             check_opposing_dpad!(controller, true);
@@ -2893,11 +2887,8 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
             let is_uinput = target == RealizationTarget::LINUX_UINPUT;
-            let (session, io) = snapshot_session(
-                DualSenseDefinition::default(),
-                target,
-                [true, true, true],
-            );
+            let (session, io) =
+                snapshot_session(DualSenseDefinition::default(), target, [true, true, true]);
             let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller
                 .0
@@ -2998,8 +2989,9 @@ mod tests {
                 controller: ControllerId::new("virtualgamepad.dualsense"),
                 target: RealizationTarget::LINUX_UINPUT,
             };
-            let ProviderFrame::Evdev(original) =
-                DualSenseDefinition::default().encode(selection, &state).unwrap()
+            let ProviderFrame::Evdev(original) = DualSenseDefinition::default()
+                .encode(selection, &state)
+                .unwrap()
             else {
                 panic!()
             };
@@ -3171,8 +3163,9 @@ mod tests {
             let mut state = DualSenseSessionState::default();
             for pressed in [true, false] {
                 state.inputs.set_native(control, pressed);
-                let ProviderFrame::Evdev(events) =
-                    DualSenseDefinition::default().encode(selection, &state).unwrap()
+                let ProviderFrame::Evdev(events) = DualSenseDefinition::default()
+                    .encode(selection, &state)
+                    .unwrap()
                 else {
                     panic!("evdev")
                 };
@@ -3210,8 +3203,9 @@ mod tests {
                 },
                 status: DualSenseStatus::default(),
             };
-            let ProviderFrame::Evdev(events) =
-                DualSenseDefinition::default().encode(selection, &state).unwrap()
+            let ProviderFrame::Evdev(events) = DualSenseDefinition::default()
+                .encode(selection, &state)
+                .unwrap()
             else {
                 panic!("evdev")
             };

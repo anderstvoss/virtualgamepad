@@ -161,19 +161,19 @@ impl BatteryState {
 }
 
 pub use dualsense::{
-    DualSenseAudioPath, DualSenseAxis, DualSenseControl, DualSenseController, DualSenseDeviceData, DualSenseFeature,
-    DualSenseHidOutput, DualSenseIdentity, DualSenseInputs, DualSenseMuteLed, DualSenseOptions,
-    DualSenseOutputEvent, DualSenseSessionState, DualSenseStatus, DualSenseSurface,
-    DualSenseTouchContact, DualSenseTrigger, DualSenseTriggerEffect, DualSenseTriggerEffectUpdate,
-    DualSenseTriggerZoneForces, MotionSample, TouchSlot, create_dualsense,
-    decode_dualsense_trigger_effect,
+    DualSenseAudioPath, DualSenseAxis, DualSenseControl, DualSenseController, DualSenseDeviceData,
+    DualSenseFeature, DualSenseHidOutput, DualSenseIdentity, DualSenseInputs, DualSenseMuteLed,
+    DualSenseOptions, DualSenseOutputEvent, DualSenseSessionState, DualSenseStatus,
+    DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, DualSenseTriggerEffect,
+    DualSenseTriggerEffectUpdate, DualSenseTriggerZoneForces, MotionSample, TouchSlot,
+    create_dualsense, decode_dualsense_trigger_effect,
 };
 pub use dualshock4::{
     DualShock4Axis, DualShock4Control, DualShock4Controller, DualShock4DeviceData,
-    DualShock4HidOutput,
-    DualShock4Identity, DualShock4Inputs, DualShock4MotionSample, DualShock4Options,
-    DualShock4OutputEvent, DualShock4SessionState, DualShock4Status, DualShock4Surface,
-    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, create_dualshock4,
+    DualShock4HidOutput, DualShock4Identity, DualShock4Inputs, DualShock4MotionSample,
+    DualShock4Options, DualShock4OutputEvent, DualShock4SessionState, DualShock4Status,
+    DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger,
+    create_dualshock4,
 };
 pub use switch_pro::{
     SwitchProAxis, SwitchProControl, SwitchProController, SwitchProIdentity, SwitchProInputs,

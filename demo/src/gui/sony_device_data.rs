@@ -48,7 +48,9 @@ impl Selections {
                     };
                     self.feedback = Some(match result {
                         Ok(()) => "Validated device data loaded for the next instance.".into(),
-                        Err(error) => format!("Invalid device data; prior choice retained: {error}"),
+                        Err(error) => {
+                            format!("Invalid device data; prior choice retained: {error}")
+                        }
                     });
                 }
             }
