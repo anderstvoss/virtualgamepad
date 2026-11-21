@@ -429,7 +429,7 @@ impl crate::audio::backend::Backend for Pcm {
             return self
                 .bridge
                 .as_ref()
-                .map(crate::usb_audio_bridge::Bridge::source_underrun_frames);
+                .map(crate::usb_audio_bridge::Bridge::playback_source_silence_frames);
         }
         None
     }

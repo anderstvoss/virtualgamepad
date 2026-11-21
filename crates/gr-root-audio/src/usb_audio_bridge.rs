@@ -63,6 +63,7 @@ struct Metrics {
     bridge_snapshot: Mutex<BridgeSnapshot>,
     silence_ledger: Mutex<SilenceLedger>,
     source_underruns: AtomicU64,
+    playback_source_underruns: AtomicU64,
     graph_input_dropped: AtomicU64,
     graph_input_empty: AtomicU64,
     graph_input_corrupted: AtomicU64,
@@ -175,6 +176,10 @@ impl Metrics {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = session.microphone_accounting();
         self.source_underruns
             .store(session.underrun_frames(), Ordering::Release);
+        self.playback_source_underruns.store(
+            session.playback_silence_frames().unwrap_or(0),
+            Ordering::Release,
+        );
         self.graph_input_dropped
             .store(session.dropped_playback_frames(), Ordering::Release);
         *self
@@ -542,6 +547,12 @@ impl Bridge {
     }
     pub(crate) fn source_underrun_frames(&self) -> u64 {
         self.metrics.source_underruns.load(Ordering::Acquire)
+    }
+    /// H→C sidecar-specific source padding, unlike the legacy aggregate.
+    pub(crate) fn playback_source_silence_frames(&self) -> u64 {
+        self.metrics
+            .playback_source_underruns
+            .load(Ordering::Acquire)
     }
     pub(crate) fn graph_input_dropped_frames(&self) -> u64 {
         self.metrics.graph_input_dropped.load(Ordering::Acquire)
