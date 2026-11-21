@@ -390,7 +390,7 @@ impl Controller {
                                 *player_led_instant,
                                 *led_brightness,
                             );
-                        },
+                        }
                         _ => {}
                     }
                     log.push(format!("DualSense: {event:?}"));

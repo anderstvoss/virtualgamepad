@@ -33,13 +33,13 @@ use std::{
 use virtualgamepad::ControllerSurfaceInfo;
 use virtualgamepad::{
     BatteryLevel, BatteryState, ControllerStatus, DigitalControlUpdate, DualSenseAxis,
-    DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseMuteLed, DualSenseOutputEvent,
-    DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
-    DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample, DualShock4TouchContact,
-    DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId, SwitchProAxis,
-    SwitchProControl, SwitchProController, SwitchProMotionSample, TouchSlot, Xbox360Axis,
-    Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360Trigger, create_dualsense,
-    create_dualshock4, create_switch_pro, create_xbox360,
+    DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseMuteLed,
+    DualSenseOutputEvent, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis,
+    DualShock4Control, DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample,
+    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
+    SwitchProAxis, SwitchProControl, SwitchProController, SwitchProMotionSample, TouchSlot,
+    Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360Trigger,
+    create_dualsense, create_dualshock4, create_switch_pro, create_xbox360,
 };
 
 // Controller IDs are demo-local labels. The Wii supporting constructor also
@@ -2881,7 +2881,11 @@ fn draw_feedback_rows(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
                         draw_feedback_indicator(
                             ui,
                             &format!("{}", index + 1),
-                            if on { Color32::WHITE } else { Color32::DARK_GRAY },
+                            if on {
+                                Color32::WHITE
+                            } else {
+                                Color32::DARK_GRAY
+                            },
                             if indicators.player_leds.is_none() {
                                 "Player LED state not yet observed"
                             } else if on {

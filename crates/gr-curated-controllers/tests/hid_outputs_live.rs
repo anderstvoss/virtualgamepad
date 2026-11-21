@@ -1,9 +1,9 @@
 //! Opt-in synthetic host output evidence. No contact, motion or PCM injection.
 #![cfg(target_os = "linux")]
 use gr_curated_controllers::{
-    CreationOptions, DualSenseAudioPath, DualSenseHidOutput, DualSenseMuteLed, DualSenseOutputEvent,
-    DualShock4HidOutput, DualShock4OutputEvent, SwitchProOutputEvent, SwitchProRumble,
-    create_dualsense, create_dualshock4, create_switch_pro,
+    CreationOptions, DualSenseAudioPath, DualSenseHidOutput, DualSenseMuteLed,
+    DualSenseOutputEvent, DualShock4HidOutput, DualShock4OutputEvent, SwitchProOutputEvent,
+    SwitchProRumble, create_dualsense, create_dualshock4, create_switch_pro,
 };
 use gr_realization_api::{RealizationSessionId, RealizationTarget};
 use std::{

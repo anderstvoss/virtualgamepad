@@ -1974,7 +1974,8 @@ mod tests {
             player_led_instant,
             lightbar_rgb,
             ..
-        } = decode_dualsense_hid_output(Some(2), raw.clone()) else {
+        } = decode_dualsense_hid_output(Some(2), raw.clone())
+        else {
             panic!("known USB report");
         };
         assert_eq!(retained, raw);
@@ -1998,7 +1999,8 @@ mod tests {
             player_led_instant,
             lightbar_rgb,
             ..
-        } = decode_dualsense_hid_output(Some(2), raw.clone()) else {
+        } = decode_dualsense_hid_output(Some(2), raw.clone())
+        else {
             panic!("known USB report");
         };
         assert_eq!(retained, raw);
@@ -2026,7 +2028,8 @@ mod tests {
                 raw: retained,
                 mute_button_led,
                 ..
-            } = decode_dualsense_hid_output(Some(2), raw.clone()) else {
+            } = decode_dualsense_hid_output(Some(2), raw.clone())
+            else {
                 panic!("known USB report");
             };
             assert_eq!(mute_button_led, Some(expected));
@@ -2039,7 +2042,11 @@ mod tests {
         for feature in ["RGB lightbar", "player indicators", "microphone LED"] {
             assert!(RESTRICTIONS.iter().any(|r| r.feature == feature));
         }
-        assert!(EVDEV_OUTPUT_KINDS.iter().all(|kind| matches!(kind, OutputKind::Rumble { .. })));
+        assert!(
+            EVDEV_OUTPUT_KINDS
+                .iter()
+                .all(|kind| matches!(kind, OutputKind::Rumble { .. }))
+        );
     }
 
     #[test]
@@ -3121,7 +3128,11 @@ mod tests {
                     assert_eq!(microphone_muted, valid.then_some(muted));
                     assert_eq!(
                         mute_button_led,
-                        Some(if muted { DualSenseMuteLed::Off } else { DualSenseMuteLed::On })
+                        Some(if muted {
+                            DualSenseMuteLed::Off
+                        } else {
+                            DualSenseMuteLed::On
+                        })
                     );
                     assert_eq!(retained, raw);
                 }
