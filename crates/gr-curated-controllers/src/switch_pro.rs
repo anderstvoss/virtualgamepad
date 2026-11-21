@@ -14,6 +14,8 @@ use gr_controller_contract::{
     TargetRestriction, TriggerInput, TriggerInputKind, TriggerStack,
 };
 mod protocol;
+mod spi;
+pub use spi::SwitchProSpiImage;
 
 use gr_controller_wire::SWITCH_PRO_USB_DESCRIPTOR;
 use gr_realization_api::{
@@ -554,7 +556,10 @@ static USB_SURFACE: SwitchProSurface = SwitchProSurface {
     }
     .build(),
 };
-pub struct SwitchProDefinition;
+#[derive(Clone, Default)]
+pub struct SwitchProDefinition {
+    spi_image: SwitchProSpiImage,
+}
 impl RealizationControllerDefinition for SwitchProDefinition {
     fn controller_id(&self) -> ControllerId {
         ControllerId::new("virtualgamepad.switch-pro")
@@ -808,6 +813,7 @@ fn switch_subcommand_reply(
     subcommand: u8,
     arguments: &[u8],
     identity: SwitchProIdentity,
+    spi_image: &SwitchProSpiImage,
 ) -> (ProviderFrame, bool) {
     let mut bytes = vec![0; 63];
     bytes[..12].copy_from_slice(&switch_input_prefix(state));
@@ -821,7 +827,9 @@ fn switch_subcommand_reply(
             // swpro-l0-consumer-linux-mac-uniq: device-info uses display order.
             bytes[18..24].copy_from_slice(&identity.bytes());
             bytes[24] = 1;
-            bytes[25] = 0; // Colors are not available in SPI.
+            // swpro-l0-device-factory-spi-map / swpro-l0-device-info02-fields:
+            // advertise SPI colours only if all RGB bytes were supplied.
+            bytes[25] = u8::from(spi_image.colors_available());
         }
         0x10 if arguments.len() >= 5 => {
             bytes[12] = 0x90;
@@ -833,7 +841,7 @@ fn switch_subcommand_reply(
                 .take(usize::from(arguments[4]))
                 .enumerate()
             {
-                *byte = switch_spi_byte(
+                *byte = spi_image.read(
                     address.wrapping_add(u32::try_from(index).expect("SPI reply index fits u32")),
                 );
             }
@@ -847,6 +855,8 @@ fn switch_subcommand_reply(
             bytes[14..20].copy_from_slice(&[0, 0xcc, 0, 0xee, 0, 0xff]);
         }
         0x21 => bytes[12] = 0xa0,
+        // Host SPI writes are not implemented. Do not mutate caller-owned images.
+        0x11 | 0x12 => bytes[12] = 0x80,
         _ => bytes[12] = 0x80,
     }
     (
@@ -925,11 +935,18 @@ impl SwitchProIdentity {
 pub struct SwitchProController(
     common::ControllerSession<SwitchProDefinition>,
     SwitchProIdentity,
+    SwitchProSpiImage,
 );
 impl SwitchProController {
     #[must_use]
     pub const fn identity(&self) -> SwitchProIdentity {
         self.1
+    }
+
+    /// Caller-owned read image retained for recreation and runtime export.
+    #[must_use]
+    pub const fn spi_image(&self) -> &SwitchProSpiImage {
+        &self.2
     }
 
     /// Latest accepted host values and revision, retained after close. USB
@@ -1139,7 +1156,7 @@ impl SwitchProController {
                     bytes,
                 } if bytes.len() >= 10 => {
                     let (reply, stream) =
-                        switch_subcommand_reply(&state, bytes[9], &bytes[10..], self.1);
+                        switch_subcommand_reply(&state, bytes[9], &bytes[10..], self.1, &self.2);
                     replies.push(reply);
                     enable |= stream;
                 }
@@ -1771,10 +1788,11 @@ impl From<RawReverseEvent> for SwitchProOutputEvent {
     }
 }
 /// Family options for a new `SwitchPro` session.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct SwitchProOptions {
     identity: Option<SwitchProIdentity>,
+    spi_image: Option<SwitchProSpiImage>,
 }
 
 impl SwitchProOptions {
@@ -1790,6 +1808,19 @@ impl SwitchProOptions {
     #[must_use]
     pub const fn identity(self) -> Option<SwitchProIdentity> {
         self.identity
+    }
+
+    /// Set an independently owned SPI read image before opening the provider.
+    #[must_use]
+    pub fn with_spi_image(mut self, image: SwitchProSpiImage) -> Self {
+        self.spi_image = Some(image);
+        self
+    }
+
+    /// Borrow the explicitly supplied image, if any.
+    #[must_use]
+    pub const fn spi_image(&self) -> Option<&SwitchProSpiImage> {
+        self.spi_image.as_ref()
     }
 }
 
@@ -1821,13 +1852,15 @@ fn create_switch_pro_configured(
         }
     };
     common::require_linux_platform(o.target)?;
-    let identity = family.identity().map_or_else(generate_identity, Ok)?;
+    let identity = family.identity.map_or_else(generate_identity, Ok)?;
+    let spi_image = family.spi_image.unwrap_or_default();
+    let definition = SwitchProDefinition { spi_image: spi_image.clone() };
     let realization = build_realization(identity);
     let is_dummy_hcd = o.target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID;
     let mut controller = if o.target == RealizationTarget::LINUX_UHID_USB {
-        common::create_restored(SwitchProDefinition, realization, o, Some(identity.bytes()))?
+        common::create_restored(definition, realization, o, Some(identity.bytes()))?
     } else {
-        common::create(SwitchProDefinition, realization, o)?
+        common::create(definition, realization, o)?
     };
     if is_dummy_hcd {
         // A physical USB attachment should expose a neutral 0x30 report as
@@ -1837,7 +1870,7 @@ fn create_switch_pro_configured(
             reason: error.to_string(),
         })?;
     }
-    Ok(SwitchProController(controller, identity))
+    Ok(SwitchProController(controller, identity, spi_image))
 }
 /// Workspace test seam. Never opens a real provider or accepts runtime profiles.
 #[cfg(feature = "test-support")]
@@ -1846,8 +1879,8 @@ pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<SwitchProController, ProviderError> {
     let identity = SwitchProIdentity::from_bytes(common::test_address(1))?;
-    common::injected(SwitchProDefinition, session)
-        .map(|session| SwitchProController(session, identity))
+    common::injected(SwitchProDefinition::default(), session)
+        .map(|session| SwitchProController(session, identity, SwitchProSpiImage::default()))
 }
 
 impl crate::registry::ControllerFamily for SwitchProDefinition {
@@ -1946,7 +1979,7 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
             let session =
-                input_validation_session(SwitchProDefinition, target, [true, true, false]);
+                input_validation_session(SwitchProDefinition::default(), target, [true, true, false]);
             let mut controller = SwitchProController(session, fixture_identity());
             controller.service(&mut |_| {}).unwrap();
             let status = controller.status();
@@ -2023,7 +2056,7 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let (session, io) = snapshot_session(SwitchProDefinition, target, [true, true, false]);
+            let (session, io) = snapshot_session(SwitchProDefinition::default(), target, [true, true, false]);
             let mut controller = SwitchProController(session, fixture_identity());
             controller.service(&mut |_| {}).unwrap();
             controller
@@ -2079,7 +2112,7 @@ mod tests {
         ] {
             let is_uinput = target == RealizationTarget::LINUX_UINPUT;
             let session =
-                input_validation_session(SwitchProDefinition, target, [true, true, false]);
+                input_validation_session(SwitchProDefinition::default(), target, [true, true, false]);
             let mut controller = SwitchProController(session, fixture_identity());
             controller.service(&mut |_| {}).unwrap();
             check_opposing_dpad!(controller, is_uinput);
@@ -2143,7 +2176,7 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let (session, io) = snapshot_session(SwitchProDefinition, target, [true, true, false]);
+            let (session, io) = snapshot_session(SwitchProDefinition::default(), target, [true, true, false]);
             let mut controller = SwitchProController(session, fixture_identity());
             controller
                 .0
@@ -2216,7 +2249,7 @@ mod tests {
                 snapshot,
                 expected,
                 invalid,
-                SwitchProDefinition
+                SwitchProDefinition::default()
                     .encode(controller.0.selection(), controller.test_state())
                     .unwrap(),
                 &[(0, 255)]
@@ -2342,7 +2375,7 @@ mod tests {
     #[test]
     fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
         let selection = RealizationSelection {
-            controller: SwitchProDefinition.controller_id(),
+            controller: SwitchProDefinition::default().controller_id(),
             target: RealizationTarget::LINUX_UINPUT,
         };
         for (control, code) in [
@@ -2355,7 +2388,7 @@ mod tests {
             for pressed in [true, false] {
                 state.0.set_native(control, pressed);
                 let ProviderFrame::Evdev(events) =
-                    SwitchProDefinition.encode(selection, &state).unwrap()
+                    SwitchProDefinition::default().encode(selection, &state).unwrap()
                 else {
                     panic!("evdev")
                 };
@@ -2417,10 +2450,10 @@ mod tests {
     }
     #[test]
     fn usb_frame_is_numbered() {
-        let f = SwitchProDefinition
+        let f = SwitchProDefinition::default()
             .encode(
                 RealizationSelection {
-                    controller: SwitchProDefinition.controller_id(),
+                    controller: SwitchProDefinition::default().controller_id(),
                     target: RealizationTarget::LINUX_UHID_USB,
                 },
                 &<(SwitchProInputs, SwitchProStatus)>::default(),
@@ -2431,10 +2464,10 @@ mod tests {
 
     #[test]
     fn dummy_hcd_frame_preserves_the_numbered_openpuck_usb_report() {
-        let frame = SwitchProDefinition
+        let frame = SwitchProDefinition::default()
             .encode(
                 RealizationSelection {
-                    controller: SwitchProDefinition.controller_id(),
+                    controller: SwitchProDefinition::default().controller_id(),
                     target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 },
                 &<(SwitchProInputs, SwitchProStatus)>::default(),
@@ -2444,7 +2477,7 @@ mod tests {
             matches!(frame, ProviderFrame::DummyHcdInput(bytes) if bytes.len() == 64 && bytes[0] == 0x30)
         );
         assert!(
-            SwitchProDefinition
+            SwitchProDefinition::default()
                 .realization_manifest()
                 .entries()
                 .iter()
@@ -2480,10 +2513,10 @@ mod tests {
 
     #[test]
     fn evdev_realization_preserves_hid_controls_without_motion_claims() {
-        let frame = SwitchProDefinition
+        let frame = SwitchProDefinition::default()
             .encode(
                 RealizationSelection {
-                    controller: SwitchProDefinition.controller_id(),
+                    controller: SwitchProDefinition::default().controller_id(),
                     target: RealizationTarget::LINUX_UINPUT,
                 },
                 &<(SwitchProInputs, SwitchProStatus)>::default(),
@@ -2632,7 +2665,7 @@ mod tests {
         let mut arguments = address.to_le_bytes().to_vec();
         arguments.push(u8::try_from(expected.len()).unwrap());
         let (reply, enabled) =
-            switch_subcommand_reply(&state, 0x10, &arguments, fixture_identity());
+            switch_subcommand_reply(&state, 0x10, &arguments, fixture_identity(), &SwitchProSpiImage::default());
         assert!(!enabled);
         let mut bytes = vec![0; 63];
         bytes[..12].copy_from_slice(&switch_input_prefix(&state));
@@ -2700,7 +2733,7 @@ mod tests {
         assert_spi_reply(0x6050, &[0xff; 11]);
         let state = <(SwitchProInputs, SwitchProStatus)>::default();
         let identity = fixture_identity();
-        let (reply, enabled) = switch_subcommand_reply(&state, 0x02, &[], identity);
+        let (reply, enabled) = switch_subcommand_reply(&state, 0x02, &[], identity, &SwitchProSpiImage::default());
         assert!(!enabled);
         let mut bytes = vec![0; 63];
         bytes[..12].copy_from_slice(&switch_input_prefix(&state));
@@ -2719,12 +2752,12 @@ mod tests {
     #[test]
     fn steam_style_subcommands_receive_full_replies_and_enable_motion() {
         let state = <(SwitchProInputs, SwitchProStatus)>::default();
-        let (device_info, enabled) = switch_subcommand_reply(&state, 0x02, &[], fixture_identity());
+        let (device_info, enabled) = switch_subcommand_reply(&state, 0x02, &[], fixture_identity(), &SwitchProSpiImage::default());
         assert!(!enabled);
         assert!(
             matches!(device_info, ProviderFrame::HidInput { report_id: Some(0x21), bytes } if bytes.len() == 63 && bytes[12] == 0x82 && bytes[13] == 0x02)
         );
-        let (mode, enabled) = switch_subcommand_reply(&state, 0x03, &[0x30], fixture_identity());
+        let (mode, enabled) = switch_subcommand_reply(&state, 0x03, &[0x30], fixture_identity(), &SwitchProSpiImage::default());
         assert!(enabled);
         assert!(
             matches!(mode, ProviderFrame::HidInput { report_id: Some(0x21), bytes } if bytes[12] == 0x80 && bytes[13] == 0x03)
@@ -2733,10 +2766,59 @@ mod tests {
             matches!(switch_usb_reply(2, fixture_identity()), ProviderFrame::HidInput { report_id: Some(0x81), bytes } if bytes.len() == 63 && bytes[0] == 2)
         );
         let (calibration, enabled) =
-            switch_subcommand_reply(&state, 0x10, &[0x20, 0x60, 0, 0, 6], fixture_identity());
+            switch_subcommand_reply(&state, 0x10, &[0x20, 0x60, 0, 0, 6], fixture_identity(), &SwitchProSpiImage::default());
         assert!(!enabled);
         assert!(
             matches!(calibration, ProviderFrame::HidInput { report_id: Some(0x21), bytes } if bytes[12] == 0x90 && bytes[14..25] == [0x20, 0x60, 0, 0, 6, 0, 0, 0, 0, 0, 0])
         );
+    }
+
+
+    #[test]
+    fn supplied_spi_bytes_reach_subcommand_replies_and_colour_flag() {
+        // Synthetic patterned factory and user values, never captured calibration.
+        let image = SwitchProSpiImage::default()
+            .with_region(0x6020, &[0x15, 0x2a, 0x3c])
+            .unwrap()
+            .with_region(0x8010, &[0x42, 0x24])
+            .unwrap()
+            .with_region(0x6050, &[0x20; 12])
+            .unwrap();
+        let state = <(SwitchProInputs, SwitchProStatus)>::default();
+        for (address, expected) in [(0x6020, vec![0x15, 0x2a, 0x3c]), (0x8010, vec![0x42, 0x24])] {
+            let mut arguments = address.to_le_bytes().to_vec();
+            arguments.push(expected.len() as u8);
+            let (frame, enabled) =
+                switch_subcommand_reply(&state, 0x10, &arguments, fixture_identity(), &image);
+            assert!(!enabled);
+            let ProviderFrame::HidInput { bytes, .. } = frame else { panic!("HID expected") };
+            assert_eq!(&bytes[19..19 + expected.len()], expected);
+        }
+        let (info, _) = switch_subcommand_reply(&state, 0x02, &[], fixture_identity(), &image);
+        let ProviderFrame::HidInput { bytes, .. } = info else { panic!("HID expected") };
+        assert_eq!(bytes[25], 1);
+        let partial = SwitchProSpiImage::default().with_region(0x6050, &[0x20; 3]).unwrap();
+        let (info, _) = switch_subcommand_reply(&state, 0x02, &[], fixture_identity(), &partial);
+        let ProviderFrame::HidInput { bytes, .. } = info else { panic!("HID expected") };
+        assert_eq!(bytes[25], 0);
+    }
+
+    #[test]
+    fn spi_host_writes_leave_caller_image_unchanged_and_options_restore_it() {
+        let image = SwitchProSpiImage::default().with_region(0x8010, &[0x11, 0x22]).unwrap();
+        let options = SwitchProOptions::default().with_spi_image(image.clone());
+        assert_eq!(options.clone().spi_image(), Some(&image));
+        let recreated = options.with_identity(fixture_identity());
+        assert_eq!(recreated.spi_image(), Some(&image));
+        let state = <(SwitchProInputs, SwitchProStatus)>::default();
+        for command in [0x11, 0x12] {
+            let (reply, enabled) =
+                switch_subcommand_reply(&state, command, &[0x10, 0x80, 0, 0, 2, 1, 2], fixture_identity(), &image);
+            assert!(!enabled);
+            let ProviderFrame::HidInput { bytes, .. } = reply else { panic!("HID expected") };
+            assert_eq!(bytes[13], command);
+            assert_eq!(bytes[12], 0x80); // Existing generic reply, no write mutation.
+            assert_eq!(image.export_raw(0x8010, 2).unwrap(), [0x11, 0x22]);
+        }
     }
 }

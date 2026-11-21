@@ -104,7 +104,7 @@ pub use gr_curated_controllers::{
     DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger,
     MotionSample, SwitchProAxis, SwitchProControl, SwitchProInputs, SwitchProMotionSample,
     SwitchProRumble, SwitchProRumbleBand, SwitchProRumbleDecoded, SwitchProRumbleSample,
-    SwitchProRumbleSamples, SwitchProRumbleWord, SwitchProStatus, SwitchProSurface, TouchSlot,
+    SwitchProRumbleSamples, SwitchProRumbleWord, SwitchProSpiImage, SwitchProStatus, SwitchProSurface, TouchSlot,
     Xbox360Axis, Xbox360Control, Xbox360Inputs, Xbox360Status, Xbox360Surface, Xbox360Trigger,
     decode_switch_pro_rumble_word, decode_switch_pro_rumble_word_with_previous,
 };
