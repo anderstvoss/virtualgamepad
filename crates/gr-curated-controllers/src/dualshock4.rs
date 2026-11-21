@@ -777,14 +777,15 @@ static USBIP_SURFACE: DualShock4Surface = DualShock4Surface {
     .build(),
 };
 
+#[derive(Clone, Default)]
 pub struct DualShock4Definition {
     device_data: Option<DualShock4DeviceData>,
 }
-#[allow(non_upper_case_globals)]
-pub const DualShock4Definition: DualShock4Definition = DualShock4Definition { device_data: None };
 impl DualShock4Definition {
     pub(crate) const fn configured(device_data: DualShock4DeviceData) -> Self {
-        Self { device_data: Some(device_data) }
+        Self {
+            device_data: Some(device_data),
+        }
     }
 }
 impl RealizationControllerDefinition for DualShock4Definition {
@@ -1553,7 +1554,7 @@ pub fn create_dualshock4_usb_worker(
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
     };
     DualShock4Controller(common::ControllerSession::worker(
-        DualShock4Definition,
+        DualShock4Definition::default(),
         selection,
         bridge,
     ), DualShock4DeviceData::default())
@@ -1624,7 +1625,9 @@ pub fn create_dualshock4(
         spec.unique_id = identity.unique_id();
     }
     let mut c = common::create_restored(
-        DualShock4Definition { device_data: family.device_data() },
+        DualShock4Definition {
+            device_data: family.device_data(),
+        },
         realization,
         options,
         identity.map(DualShock4Identity::bytes),
@@ -1695,7 +1698,7 @@ impl common::HidDriver for DualShock4Definition {
 pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<DualShock4Controller, ProviderError> {
-    common::injected(DualShock4Definition, session)
+    common::injected(DualShock4Definition::default(), session)
         .map(|session| DualShock4Controller(session, DualShock4DeviceData::default()))
 }
 
@@ -1731,7 +1734,7 @@ impl crate::registry::ControllerFamily for DualShock4Definition {
         &INPUT_TOPOLOGY_WITH_MOTION
     }
     fn manifest() -> RealizationManifest {
-        Self.realization_manifest()
+        Self::default().realization_manifest()
     }
     fn realizations() -> &'static [crate::registry::FamilyRealization] {
         static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
@@ -1812,7 +1815,7 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             RealizationTarget::LINUX_USBIP_USB_AUDIO,
         ] {
-            let session = input_validation_session(DualShock4Definition, target, [true; 3]);
+            let session = input_validation_session(DualShock4Definition::default(), target, [true; 3]);
             let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller
@@ -1914,7 +1917,7 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let (session, io) = snapshot_session(DualShock4Definition, target, [true; 3]);
+            let (session, io) = snapshot_session(DualShock4Definition::default(), target, [true; 3]);
             let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller.commit().unwrap();
@@ -1972,7 +1975,7 @@ mod tests {
                     state.status.sequence = state.status.sequence.wrapping_add(1);
                     state.status.touch_sequence = state.status.touch_sequence.wrapping_add(1);
                 },
-                DualShock4Definition
+                DualShock4Definition::default()
                     .encode(controller.0.selection(), &expected)
                     .unwrap(),
                 if target == RealizationTarget::LINUX_UHID_USB {
@@ -1992,7 +1995,7 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let (session, io) = snapshot_session(DualShock4Definition, target, [true; 3]);
+            let (session, io) = snapshot_session(DualShock4Definition::default(), target, [true; 3]);
             let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller
@@ -2101,7 +2104,7 @@ mod tests {
             RealizationTarget::LINUX_USBIP_USB_AUDIO,
         ] {
             let is_uinput = target == RealizationTarget::LINUX_UINPUT;
-            let session = input_validation_session(DualShock4Definition, target, [true; 3]);
+            let session = input_validation_session(DualShock4Definition::default(), target, [true; 3]);
             let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             check_opposing_dpad!(controller, true);
@@ -2214,7 +2217,7 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let (session, io) = snapshot_session(DualShock4Definition, target, [true, true, true]);
+            let (session, io) = snapshot_session(DualShock4Definition::default(), target, [true, true, true]);
             let mut controller = DualShock4Controller(session, DualShock4DeviceData::default());
             controller
                 .0
@@ -2284,7 +2287,7 @@ mod tests {
                 snapshot,
                 expected,
                 invalid,
-                DualShock4Definition
+                DualShock4Definition::default()
                     .encode(controller.0.selection(), controller.test_state())
                     .unwrap(),
                 &[(6, 0xf0), (9, 255), (10, 255), (33, 255)]
@@ -2297,7 +2300,7 @@ mod tests {
     fn whole_state_sequences_the_last_touch_release_with_changed_motion() {
         use common::session_tests::snapshot_session;
         let (session, _) = snapshot_session(
-            DualShock4Definition,
+            DualShock4Definition::default(),
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             [true; 3],
         );
@@ -2471,7 +2474,7 @@ mod tests {
     #[test]
     fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
         let selection = RealizationSelection {
-            controller: DualShock4Definition.controller_id(),
+            controller: DualShock4Definition::default().controller_id(),
             target: RealizationTarget::LINUX_UINPUT,
         };
         for (control, code) in [
@@ -2484,7 +2487,7 @@ mod tests {
             for pressed in [true, false] {
                 state.inputs.set_native(control, pressed);
                 let ProviderFrame::Evdev(events) =
-                    DualShock4Definition.encode(selection, &state).unwrap()
+                    DualShock4Definition::default().encode(selection, &state).unwrap()
                 else {
                     panic!("evdev")
                 };
@@ -2505,7 +2508,7 @@ mod tests {
         };
         assert!(spec.key_codes.contains(&312) && spec.key_codes.contains(&313));
         let selection = RealizationSelection {
-            controller: DualShock4Definition.controller_id(),
+            controller: DualShock4Definition::default().controller_id(),
             target: RealizationTarget::LINUX_UINPUT,
         };
         for (left, right, expected) in [
@@ -2522,7 +2525,7 @@ mod tests {
                 status: DualShock4Status::default(),
             };
             let ProviderFrame::Evdev(events) =
-                DualShock4Definition.encode(selection, &state).unwrap()
+                DualShock4Definition::default().encode(selection, &state).unwrap()
             else {
                 panic!("evdev")
             };
@@ -2568,9 +2571,9 @@ mod tests {
             id: Some(0x12),
         };
         for session in [7, 7 + (1 << 16)] {
-            let mut first = DualShock4Definition
+            let mut first = DualShock4Definition::default()
                 .hid_protocol(RealizationSessionId(session), [2, 1, 2, 3, 4, 5]);
-            let mut second = DualShock4Definition
+            let mut second = DualShock4Definition::default()
                 .hid_protocol(RealizationSessionId(session), [2, 1, 2, 3, 4, 6]);
             let expected = first.request(&get, 0).0;
             assert_ne!(expected, second.request(&get, 0).0);
@@ -2625,10 +2628,10 @@ mod tests {
 
     #[test]
     fn dummy_hcd_frame_preserves_the_numbered_openpuck_usb_report() {
-        let frame = DualShock4Definition
+        let frame = DualShock4Definition::default()
             .encode(
                 RealizationSelection {
-                    controller: DualShock4Definition.controller_id(),
+                    controller: DualShock4Definition::default().controller_id(),
                     target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 },
                 &DualShock4SessionState::default(),
@@ -2638,7 +2641,7 @@ mod tests {
             matches!(frame, ProviderFrame::DummyHcdInput(bytes) if bytes.len() == 64 && bytes[0] == 1)
         );
         assert!(
-            DualShock4Definition
+            DualShock4Definition::default()
                 .realization_manifest()
                 .entries()
                 .iter()
@@ -2662,10 +2665,10 @@ mod tests {
     }
     #[test]
     fn usb_frame_is_numbered() {
-        let f = DualShock4Definition
+        let f = DualShock4Definition::default()
             .encode(
                 RealizationSelection {
-                    controller: DualShock4Definition.controller_id(),
+                    controller: DualShock4Definition::default().controller_id(),
                     target: RealizationTarget::LINUX_UHID_USB,
                 },
                 &DualShock4SessionState::default(),
@@ -2676,10 +2679,10 @@ mod tests {
 
     #[test]
     fn evdev_realization_preserves_hid_controls_without_motion_claims() {
-        let frame = DualShock4Definition
+        let frame = DualShock4Definition::default()
             .encode(
                 RealizationSelection {
-                    controller: DualShock4Definition.controller_id(),
+                    controller: DualShock4Definition::default().controller_id(),
                     target: RealizationTarget::LINUX_UINPUT,
                 },
                 &DualShock4SessionState::default(),
@@ -2798,10 +2801,10 @@ mod tests {
                 RealizationTarget::LINUX_UHID_USB,
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             ] {
-                let encoded = DualShock4Definition
+                let encoded = DualShock4Definition::default()
                     .encode(
                         RealizationSelection {
-                            controller: DualShock4Definition.controller_id(),
+                            controller: DualShock4Definition::default().controller_id(),
                             target,
                         },
                         &state,
