@@ -40,11 +40,30 @@ pub fn dualsense(
     dualsense::DualSenseDefinition.hid_protocol(RealizationSessionId(0), identity)
 }
 
+/// Use an explicitly validated immutable feature profile for USB/IP.
+#[must_use]
+pub fn dualsense_with_device_data(
+    identity: [u8; 6],
+    data: dualsense::DualSenseDeviceData,
+) -> impl WorkerProtocol<State = dualsense::DualSenseSessionState, Output = RawReverseEvent> {
+    dualsense::DualSenseUsbProtocol::with_device_data(identity, Some(data))
+}
+
 #[must_use]
 pub fn dualshock4(
     identity: [u8; 6],
 ) -> impl WorkerProtocol<State = dualshock4::DualShock4SessionState, Output = RawReverseEvent> {
     dualshock4::DualShock4Definition.hid_protocol(RealizationSessionId(0), identity)
+}
+
+/// Use an explicitly validated immutable DualShock 4 USB/IP feature profile.
+#[must_use]
+pub fn dualshock4_with_device_data(
+    identity: [u8; 6],
+    data: dualshock4::DualShock4DeviceData,
+) -> impl WorkerProtocol<State = dualshock4::DualShock4SessionState, Output = RawReverseEvent> {
+    dualshock4::DualShock4Definition::configured(data)
+        .hid_protocol(RealizationSessionId(0), identity)
 }
 
 #[must_use]
