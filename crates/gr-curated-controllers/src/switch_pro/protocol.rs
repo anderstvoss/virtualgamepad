@@ -77,11 +77,10 @@ impl SwitchUsbProtocol {
                     )));
             }
             Some(1) if bytes.len() >= 10 => {
-                if self.is_bluetooth() && (
-                    matches!(bytes[9], 0x20..=0x22)
-                    || (bytes[9] == 0x03
-                        && !matches!(bytes.get(10), Some(&0x30 | &0x3f)))
-                ) {
+                if self.is_bluetooth()
+                    && (matches!(bytes[9], 0x20..=0x22)
+                        || (bytes[9] == 0x03 && !matches!(bytes.get(10), Some(&0x30 | &0x3f))))
+                {
                     // Only source-defined simple/full input mode is available.
                     // Pro-specific MCU behavior is unverified; no successful
                     // NFC/IR MCU or unsupported report-mode response is invented.
@@ -130,11 +129,13 @@ impl Protocol for SwitchUsbProtocol {
         self.state.1.timer = self.timer;
         self.state.1.stream_enabled = self.stream_enabled;
         let mut reports: Vec<_> = self.pending.drain(..).collect();
-        reports.push(common::logical_input(if self.is_bluetooth() && !self.stream_enabled {
-            switch_simple_frame(&self.state)
-        } else {
-            switch_frame(&self.state)
-        }));
+        reports.push(common::logical_input(
+            if self.is_bluetooth() && !self.stream_enabled {
+                switch_simple_frame(&self.state)
+            } else {
+                switch_frame(&self.state)
+            },
+        ));
         self.timer = self.timer.wrapping_add(1);
         self.next = self.stream_enabled.then_some(now.saturating_add(4000));
         Ok(reports)
@@ -219,7 +220,7 @@ impl crate::retained::RetainedProtocol for SwitchUsbProtocol {
 #[cfg(test)]
 mod bluetooth_tests {
     use super::*;
-    use gr_hid::{Report, ReportType, Reply, RequestKind};
+    use gr_hid::{Reply, Report, ReportType, RequestKind};
 
     fn identity(index: u32) -> SwitchProIdentity {
         SwitchProIdentity(common::test_address(index))
@@ -236,7 +237,10 @@ mod bluetooth_tests {
         let neutral = protocol.input(&Default::default(), 0).unwrap();
         assert_eq!(neutral.len(), 1);
         assert_eq!(neutral[0].id(), Some(0x3f));
-        assert_eq!(neutral[0].payload(), &[0, 0, 8, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80]);
+        assert_eq!(
+            neutral[0].payload(),
+            &[0, 0, 8, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80]
+        );
         assert!(!protocol.stream_enabled);
         let (ack, event) = protocol.request(&RequestKind::Set(subcommand(0x03, &[0x30])), 4);
         assert_eq!(ack, Reply::Set(Ok(())));
@@ -250,7 +254,9 @@ mod bluetooth_tests {
         assert_eq!(full[1].payload()[1], 0x80); // full battery; Pro Bluetooth connection bits
         assert!(protocol.stream_enabled);
         assert_eq!(
-            protocol.request(&RequestKind::Set(subcommand(0x03, &[0x3f])), 6).0,
+            protocol
+                .request(&RequestKind::Set(subcommand(0x03, &[0x3f])), 6)
+                .0,
             Reply::Set(Ok(()))
         );
         let simple_again = protocol.input(&Default::default(), 7).unwrap();
@@ -269,7 +275,10 @@ mod bluetooth_tests {
             Err(ReplyError::Unsupported)
         );
         let mcu_output = Report::new(ReportType::Output, Some(0x11), vec![0; 9]).unwrap();
-        assert_eq!(bt.process_inner(&mcu_output, 0), Err(ReplyError::Unsupported));
+        assert_eq!(
+            bt.process_inner(&mcu_output, 0),
+            Err(ReplyError::Unsupported)
+        );
         assert!(bt.pending.is_empty());
         let mut usb = SwitchUsbProtocol::new(identity(1), false);
         assert_eq!(usb.process_inner(&usb_command, 0), Ok(()));
@@ -282,12 +291,26 @@ mod bluetooth_tests {
         let mut b = SwitchUsbProtocol::new(identity(2), true);
         let inputs = Default::default();
         for id in [0x02, 0x10, 0x30, 0x38, 0x40, 0x48] {
-            let arg = if id == 0x10 { vec![0x20, 0x60, 0, 0, 4] } else { vec![1] };
-            assert_eq!(a.request(&RequestKind::Set(subcommand(id, &arg)), 1).0, Reply::Set(Ok(())));
+            let arg = if id == 0x10 {
+                vec![0x20, 0x60, 0, 0, 4]
+            } else {
+                vec![1]
+            };
+            assert_eq!(
+                a.request(&RequestKind::Set(subcommand(id, &arg)), 1).0,
+                Reply::Set(Ok(()))
+            );
             let reply = a.input(&inputs, 2).unwrap();
             assert_eq!(reply[0].id(), Some(0x21));
             assert_eq!(reply[0].payload()[13], id);
-            assert_eq!(reply[0].payload()[12], match id { 0x02 => 0x82, 0x10 => 0x90, _ => 0x80 });
+            assert_eq!(
+                reply[0].payload()[12],
+                match id {
+                    0x02 => 0x82,
+                    0x10 => 0x90,
+                    _ => 0x80,
+                }
+            );
             if id == 0x10 {
                 assert_eq!(&reply[0].payload()[14..19], &arg);
                 let (usb_reply, _) =
@@ -309,7 +332,10 @@ mod bluetooth_tests {
         assert_ne!(&reply_a[0].payload()[18..24], &reply_b[0].payload()[18..24]);
         // Rumble-only 0x10 carries no subcommand ACK, but retains raw motor words.
         let rumble = Report::new(ReportType::Output, Some(0x10), vec![0; 9]).unwrap();
-        assert_eq!(a.request(&RequestKind::Set(rumble), 5).0, Reply::Set(Ok(())));
+        assert_eq!(
+            a.request(&RequestKind::Set(rumble), 5).0,
+            Reply::Set(Ok(()))
+        );
         assert_eq!(a.input(&inputs, 6).unwrap().len(), 1);
     }
 

@@ -565,13 +565,10 @@ static HID_SURFACE: SwitchProSurface = SwitchProSurface {
  * No USB-proprietary report IDs, MCU mode, or audio endpoints are declared.
  */
 const SWITCH_PRO_BT_DESCRIPTOR: &[u8] = &[
-    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x06, 0x00, 0xff,
-    0x85, 0x3f, 0x09, 0x01, 0x75, 0x08, 0x95, 0x0b, 0x81, 0x02,
-    0x85, 0x30, 0x09, 0x02, 0x75, 0x08, 0x95, 0x3f, 0x81, 0x02,
-    0x85, 0x21, 0x09, 0x03, 0x75, 0x08, 0x95, 0x3f, 0x81, 0x02,
-    0x85, 0x01, 0x09, 0x04, 0x75, 0x08, 0x95, 0x30, 0x91, 0x02,
-    0x85, 0x10, 0x09, 0x05, 0x75, 0x08, 0x95, 0x30, 0x91, 0x02,
-    0xc0,
+    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x06, 0x00, 0xff, 0x85, 0x3f, 0x09, 0x01, 0x75, 0x08, 0x95,
+    0x0b, 0x81, 0x02, 0x85, 0x30, 0x09, 0x02, 0x75, 0x08, 0x95, 0x3f, 0x81, 0x02, 0x85, 0x21, 0x09,
+    0x03, 0x75, 0x08, 0x95, 0x3f, 0x81, 0x02, 0x85, 0x01, 0x09, 0x04, 0x75, 0x08, 0x95, 0x30, 0x91,
+    0x02, 0x85, 0x10, 0x09, 0x05, 0x75, 0x08, 0x95, 0x30, 0x91, 0x02, 0xc0,
 ];
 static BT_SURFACE: SwitchProSurface = SwitchProSurface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
@@ -855,14 +852,22 @@ fn switch_simple_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame 
         _ => 8,
     };
     for (idx, value) in [
-        s.0.left.0.raw(), s.0.left.1.raw(),
-        s.0.right.0.raw(), s.0.right.1.raw(),
-    ].into_iter().enumerate() {
+        s.0.left.0.raw(),
+        s.0.left.1.raw(),
+        s.0.right.0.raw(),
+        s.0.right.1.raw(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let centered = u16::try_from(i32::from(value) - i32::from(i16::MIN))
             .expect("signed stick offset is a u16 raw code");
         bytes[3 + idx * 2..5 + idx * 2].copy_from_slice(&centered.to_le_bytes());
     }
-    ProviderFrame::HidInput { report_id: Some(0x3f), bytes }
+    ProviderFrame::HidInput {
+        report_id: Some(0x3f),
+        bytes,
+    }
 }
 
 fn switch_input_prefix(state: &(SwitchProInputs, SwitchProStatus)) -> [u8; 12] {
@@ -2000,10 +2005,22 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             ],
         ),
-        crate::registry::refusal(BT_RESTRICTIONS[1], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
-        crate::registry::refusal(BT_RESTRICTIONS[2], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
-        crate::registry::refusal(BT_RESTRICTIONS[3], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
-        crate::registry::refusal(BT_RESTRICTIONS[4], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[1],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[2],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[3],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[4],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
         crate::registry::refusal(
             RETAINED_DUMMY[1],
             &[RealizationTarget::LINUX_DUMMY_HCD_USB_HID],
@@ -2762,7 +2779,10 @@ mod tests {
         };
         assert_eq!(bt.target, RealizationTarget::LINUX_UHID_BLUETOOTH);
         assert_eq!(bt.bus_type, 5);
-        assert_eq!((bt.identity.vendor_id, bt.identity.product_id), (0x057e, 0x2009));
+        assert_eq!(
+            (bt.identity.vendor_id, bt.identity.product_id),
+            (0x057e, 0x2009)
+        );
         assert!(bt.numbered_input_reports && bt.numbered_output_reports);
         assert!(!bt.numbered_feature_reports);
         for id in [0x3f, 0x30, 0x21, 0x01, 0x10] {
@@ -2815,7 +2835,10 @@ mod tests {
             gr_controller_contract::DpadDirection::Up,
             gr_controller_contract::DpadDirection::Down,
         ] {
-            opposite.set_digital(DigitalControlUpdate::Dpad { direction, pressed: true });
+            opposite.set_digital(DigitalControlUpdate::Dpad {
+                direction,
+                pressed: true,
+            });
         }
         let ProviderFrame::HidInput { bytes, .. } =
             switch_simple_frame(&(opposite, SwitchProStatus::default()))
@@ -2828,18 +2851,26 @@ mod tests {
     #[test]
     fn bluetooth_surface_has_every_provider_specific_refusal() {
         let family = <SwitchProDefinition as crate::registry::ControllerFamily>::realizations();
-        let bt = family.iter().find(|r| r.surface.target() == RealizationTarget::LINUX_UHID_BLUETOOTH).unwrap();
+        let bt = family
+            .iter()
+            .find(|r| r.surface.target() == RealizationTarget::LINUX_UHID_BLUETOOTH)
+            .unwrap();
         assert_eq!(bt.tier, crate::registry::RealizationTier::PlayableFull);
         assert_eq!(bt.permission, crate::registry::PermissionClass::Uhid);
-        for restriction in BT_RESTRICTIONS {
+        for (index, restriction) in BT_RESTRICTIONS.into_iter().enumerate() {
             assert!(bt.surface.restrictions().contains(&restriction));
-            assert!(
+            let entries: Vec<_> =
                 <SwitchProDefinition as crate::registry::ControllerFamily>::REFUSED_OPERATIONS
                     .iter()
-                    .any(|r| r.name == restriction.feature
-                        && r.detail == restriction.reason
-                        && r.targets == [RealizationTarget::LINUX_UHID_BLUETOOTH])
-            );
+                    .filter(|r| r.name == restriction.feature && r.detail == restriction.reason)
+                    .collect();
+            assert_eq!(entries.len(), 1);
+            assert!(entries[0]
+                .targets
+                .contains(&RealizationTarget::LINUX_UHID_BLUETOOTH));
+            if index > 0 {
+                assert_eq!(entries[0].targets, &[RealizationTarget::LINUX_UHID_BLUETOOTH]);
+            }
         }
     }
 
