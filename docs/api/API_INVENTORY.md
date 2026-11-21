@@ -3534,6 +3534,7 @@ Owner/source: `../src/virtualgamepad/controllers.rs.html`
 ```rust
 pub struct SwitchProController { /* private fields */ }
 pub const fn identity(&self) -> SwitchProIdentity
+pub fn spi_image(&self) -> &SwitchProSpiImage
 pub fn stream_enabled(&self) -> bool
 pub fn motion_report_counter(&self) -> u8
 pub fn wants_write(&self) -> bool
@@ -3671,6 +3672,8 @@ Owner/source: `../src/gr_curated_controllers/switch_pro.rs.html`
 #[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }
 pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions
 pub const fn identity(self) -> Option<SwitchProIdentity>
+pub fn with_spi_image( self, image: SwitchProSpiImage, ) -> SwitchProOptions
+pub const fn spi_image(&self) -> Option<&SwitchProSpiImage>
 ```
 
 Trait implementations:
@@ -3679,7 +3682,6 @@ Trait implementations:
 impl Clone for SwitchProOptions
 impl Debug for SwitchProOptions
 impl Default for SwitchProOptions
-impl Copy for SwitchProOptions
 impl Freeze for SwitchProOptions
 impl RefUnwindSafe for SwitchProOptions
 impl Send for SwitchProOptions
@@ -3739,6 +3741,37 @@ impl Sync for SwitchProRumble
 impl Unpin for SwitchProRumble
 impl UnsafeUnpin for SwitchProRumble
 impl UnwindSafe for SwitchProRumble
+```
+
+### `SwitchProSpiImage`
+
+Owner/source: `../src/gr_curated_controllers/switch_pro/spi.rs.html`
+
+```rust
+pub struct SwitchProSpiImage { /* private fields */ }
+pub fn import_raw( base: u32, bytes: &[u8], ) -> Result<SwitchProSpiImage, ControlError>
+pub fn with_region( self, base: u32, bytes: &[u8], ) -> Result<SwitchProSpiImage, ControlError>
+pub fn export_raw( &self, base: u32, len: usize, ) -> Result<Vec<u8>, ControlError>
+pub fn read(&self, address: u32) -> u8
+pub fn colors_available(&self) -> bool
+```
+
+Trait implementations:
+
+```rust
+impl Clone for SwitchProSpiImage
+impl Debug for SwitchProSpiImage
+impl Default for SwitchProSpiImage
+impl PartialEq for SwitchProSpiImage
+impl Eq for SwitchProSpiImage
+impl StructuralPartialEq for SwitchProSpiImage
+impl Freeze for SwitchProSpiImage
+impl RefUnwindSafe for SwitchProSpiImage
+impl Send for SwitchProSpiImage
+impl Sync for SwitchProSpiImage
+impl Unpin for SwitchProSpiImage
+impl UnsafeUnpin for SwitchProSpiImage
+impl UnwindSafe for SwitchProSpiImage
 ```
 
 ### `SwitchProStatus`
