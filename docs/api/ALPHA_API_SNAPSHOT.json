@@ -309,7 +309,7 @@
         },
         "enum.DualSenseFeature.html": {
           "declarations": [
-            "pub enum DualSenseFeature { Touch, Motion, Lightbar, AdaptiveTriggers, Audio, }"
+            "pub enum DualSenseFeature { Touch, Motion, Lightbar, PlayerIndicators, MicrophoneLed, AdaptiveTriggers, Audio, }"
           ],
           "traits": [
             "impl Clone for DualSenseFeature",
@@ -326,7 +326,7 @@
         },
         "enum.DualSenseHidOutput.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 20 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<DualSenseMuteLed>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, led_brightness: u8, lightbar_setup: Option<u8>, release_leds: Option<bool>, player_leds: Option<u8>, player_led_instant: Option<bool>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }"
           ],
           "traits": [
             "impl Clone for DualSenseHidOutput",
@@ -338,6 +338,23 @@
             "impl Sync for DualSenseHidOutput",
             "impl Unpin for DualSenseHidOutput",
             "impl UnwindSafe for DualSenseHidOutput"
+          ]
+        },
+        "enum.DualSenseMuteLed.html": {
+          "declarations": [
+            "pub enum DualSenseMuteLed { Off, On, Pulse, Unknown(u8), }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseMuteLed",
+            "impl Copy for DualSenseMuteLed",
+            "impl Debug for DualSenseMuteLed",
+            "impl Eq for DualSenseMuteLed",
+            "impl PartialEq for DualSenseMuteLed",
+            "impl RefUnwindSafe for DualSenseMuteLed",
+            "impl Send for DualSenseMuteLed",
+            "impl Sync for DualSenseMuteLed",
+            "impl Unpin for DualSenseMuteLed",
+            "impl UnwindSafe for DualSenseMuteLed"
           ]
         },
         "enum.DualSenseOutputEvent.html": {
@@ -778,23 +795,6 @@
             "impl UnwindSafe for SwitchProRumbleSamples"
           ]
         },
-        "enum.TouchSlot.html": {
-          "declarations": [
-            "pub enum TouchSlot { First, Second, }"
-          ],
-          "traits": [
-            "impl Clone for TouchSlot",
-            "impl Copy for TouchSlot",
-            "impl Debug for TouchSlot",
-            "impl Eq for TouchSlot",
-            "impl PartialEq for TouchSlot",
-            "impl RefUnwindSafe for TouchSlot",
-            "impl Send for TouchSlot",
-            "impl Sync for TouchSlot",
-            "impl Unpin for TouchSlot",
-            "impl UnwindSafe for TouchSlot"
-          ]
-        },
         "enum.TouchpadActuation.html": {
           "declarations": [
             "pub enum TouchpadActuation { None, Button(AuxiliaryButtonInput), Deflection { id: InputControlId, range: InputAxisRange, }, }"
@@ -810,6 +810,23 @@
             "impl Sync for TouchpadActuation",
             "impl Unpin for TouchpadActuation",
             "impl UnwindSafe for TouchpadActuation"
+          ]
+        },
+        "enum.TouchSlot.html": {
+          "declarations": [
+            "pub enum TouchSlot { First, Second, }"
+          ],
+          "traits": [
+            "impl Clone for TouchSlot",
+            "impl Copy for TouchSlot",
+            "impl Debug for TouchSlot",
+            "impl Eq for TouchSlot",
+            "impl PartialEq for TouchSlot",
+            "impl RefUnwindSafe for TouchSlot",
+            "impl Send for TouchSlot",
+            "impl Sync for TouchSlot",
+            "impl Unpin for TouchSlot",
+            "impl UnwindSafe for TouchSlot"
           ]
         },
         "enum.TriggerInputKind.html": {
@@ -1032,27 +1049,27 @@
           ],
           "traits": []
         },
-        "fn.create_xbox360.html": {
-          "declarations": [
-            "pub fn create_xbox360( options: CreationOptions, family: Xbox360Options, ) -> Result<Xbox360Controller, ControllerError>"
-          ],
-          "traits": []
-        },
         "fn.create_xbox_series.html": {
           "declarations": [
             "pub fn create_xbox_series( options: CreationOptions, family: XboxSeriesOptions, ) -> Result<XboxSeriesController, ControllerError>"
           ],
           "traits": []
         },
-        "fn.decode_switch_pro_rumble_word.html": {
+        "fn.create_xbox360.html": {
           "declarations": [
-            "pub fn decode_switch_pro_rumble_word(raw: [u8; 4]) -> SwitchProRumbleWord"
+            "pub fn create_xbox360( options: CreationOptions, family: Xbox360Options, ) -> Result<Xbox360Controller, ControllerError>"
           ],
           "traits": []
         },
         "fn.decode_switch_pro_rumble_word_with_previous.html": {
           "declarations": [
             "pub fn decode_switch_pro_rumble_word_with_previous( raw: [u8; 4], previous: Option<SwitchProRumbleSample>, ) -> SwitchProRumbleWord"
+          ],
+          "traits": []
+        },
+        "fn.decode_switch_pro_rumble_word.html": {
+          "declarations": [
+            "pub fn decode_switch_pro_rumble_word(raw: [u8; 4]) -> SwitchProRumbleWord"
           ],
           "traits": []
         },
@@ -3810,7 +3827,7 @@
         },
         "enum.DualSenseFeature.html": {
           "declarations": [
-            "pub enum DualSenseFeature { Touch, Motion, Lightbar, AdaptiveTriggers, Audio, }"
+            "pub enum DualSenseFeature { Touch, Motion, Lightbar, PlayerIndicators, MicrophoneLed, AdaptiveTriggers, Audio, }"
           ],
           "traits": [
             "impl Clone for DualSenseFeature",
@@ -3827,7 +3844,7 @@
         },
         "enum.DualSenseHidOutput.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }"
+            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 20 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<DualSenseMuteLed>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, led_brightness: u8, lightbar_setup: Option<u8>, release_leds: Option<bool>, player_leds: Option<u8>, player_led_instant: Option<bool>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }"
           ],
           "traits": [
             "impl Clone for DualSenseHidOutput",
@@ -3839,6 +3856,23 @@
             "impl Sync for DualSenseHidOutput",
             "impl Unpin for DualSenseHidOutput",
             "impl UnwindSafe for DualSenseHidOutput"
+          ]
+        },
+        "enum.DualSenseMuteLed.html": {
+          "declarations": [
+            "pub enum DualSenseMuteLed { Off, On, Pulse, Unknown(u8), }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseMuteLed",
+            "impl Copy for DualSenseMuteLed",
+            "impl Debug for DualSenseMuteLed",
+            "impl Eq for DualSenseMuteLed",
+            "impl PartialEq for DualSenseMuteLed",
+            "impl RefUnwindSafe for DualSenseMuteLed",
+            "impl Send for DualSenseMuteLed",
+            "impl Sync for DualSenseMuteLed",
+            "impl Unpin for DualSenseMuteLed",
+            "impl UnwindSafe for DualSenseMuteLed"
           ]
         },
         "enum.DualSenseOutputEvent.html": {
@@ -4279,23 +4313,6 @@
             "impl UnwindSafe for SwitchProRumbleSamples"
           ]
         },
-        "enum.TouchSlot.html": {
-          "declarations": [
-            "pub enum TouchSlot { First, Second, }"
-          ],
-          "traits": [
-            "impl Clone for TouchSlot",
-            "impl Copy for TouchSlot",
-            "impl Debug for TouchSlot",
-            "impl Eq for TouchSlot",
-            "impl PartialEq for TouchSlot",
-            "impl RefUnwindSafe for TouchSlot",
-            "impl Send for TouchSlot",
-            "impl Sync for TouchSlot",
-            "impl Unpin for TouchSlot",
-            "impl UnwindSafe for TouchSlot"
-          ]
-        },
         "enum.TouchpadActuation.html": {
           "declarations": [
             "pub enum TouchpadActuation { None, Button(AuxiliaryButtonInput), Deflection { id: InputControlId, range: InputAxisRange, }, }"
@@ -4311,6 +4328,23 @@
             "impl Sync for TouchpadActuation",
             "impl Unpin for TouchpadActuation",
             "impl UnwindSafe for TouchpadActuation"
+          ]
+        },
+        "enum.TouchSlot.html": {
+          "declarations": [
+            "pub enum TouchSlot { First, Second, }"
+          ],
+          "traits": [
+            "impl Clone for TouchSlot",
+            "impl Copy for TouchSlot",
+            "impl Debug for TouchSlot",
+            "impl Eq for TouchSlot",
+            "impl PartialEq for TouchSlot",
+            "impl RefUnwindSafe for TouchSlot",
+            "impl Send for TouchSlot",
+            "impl Sync for TouchSlot",
+            "impl Unpin for TouchSlot",
+            "impl UnwindSafe for TouchSlot"
           ]
         },
         "enum.TriggerInputKind.html": {
@@ -4533,27 +4567,27 @@
           ],
           "traits": []
         },
-        "fn.create_xbox360.html": {
-          "declarations": [
-            "pub fn create_xbox360( options: CreationOptions, family: Xbox360Options, ) -> Result<Xbox360Controller, ControllerError>"
-          ],
-          "traits": []
-        },
         "fn.create_xbox_series.html": {
           "declarations": [
             "pub fn create_xbox_series( options: CreationOptions, family: XboxSeriesOptions, ) -> Result<XboxSeriesController, ControllerError>"
           ],
           "traits": []
         },
-        "fn.decode_switch_pro_rumble_word.html": {
+        "fn.create_xbox360.html": {
           "declarations": [
-            "pub fn decode_switch_pro_rumble_word(raw: [u8; 4]) -> SwitchProRumbleWord"
+            "pub fn create_xbox360( options: CreationOptions, family: Xbox360Options, ) -> Result<Xbox360Controller, ControllerError>"
           ],
           "traits": []
         },
         "fn.decode_switch_pro_rumble_word_with_previous.html": {
           "declarations": [
             "pub fn decode_switch_pro_rumble_word_with_previous( raw: [u8; 4], previous: Option<SwitchProRumbleSample>, ) -> SwitchProRumbleWord"
+          ],
+          "traits": []
+        },
+        "fn.decode_switch_pro_rumble_word.html": {
+          "declarations": [
+            "pub fn decode_switch_pro_rumble_word(raw: [u8; 4]) -> SwitchProRumbleWord"
           ],
           "traits": []
         },
