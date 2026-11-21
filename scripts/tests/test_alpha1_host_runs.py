@@ -87,7 +87,7 @@ class MatrixParsing(unittest.TestCase):
             (root / "uevent").write_text("HID_ID=0003:0000057E:00002009\n"
                                          "HID_PHYS=virtualgamepad/synthetic\n")
             self.assertEqual(matrix.node_phys(root), "virtualgamepad/synthetic")
-            self.assertIsNone(matrix.node_phys(root / "missing"))
+            self.assertIsNone(matrix.node_phys(root.parent / "unrelated-nonexistent"))
 
     @patch.object(matrix, "invoke", return_value="")
     @patch.object(matrix.os, "geteuid", return_value=1000)
