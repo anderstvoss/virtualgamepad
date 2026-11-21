@@ -41,6 +41,54 @@ implementations, and a VirtualGamepad maintainer narrative; these are not
 independent physical experiments. No sustained audio, native matching, or host
 test was run for this documentation audit.
 
+## Reproducing the real USB topology
+
+The **Generic**, **Native HID** and **Real USB** level labels describe the host
+presentation, not proof of controller equivalence, sustained audio, physical
+actuation or application routing. Real radio is reserved. The existing
+realization IDs remain unchanged; acceptance manifests record these levels in
+`reason` text only until #408 defines a schema field.
+
+| Level and realization | Topology the host receives | Audio/haptic boundary |
+| --- | --- | --- |
+| **Generic** — `linux.uinput` | Generic evdev input/FF nodes, not a USB HID/UAC composite. | Conventional force feedback where declared; no emulated speaker, microphone or USB audio endpoint. |
+| **Native HID** — `linux.uhid.usb` plus opt-in `audio-pipewire` | Controller-specific HID on the kernel USB *bus type*, plus independent caller-session PipeWire playback/capture nodes. The sound nodes do **not** inherit the HID device's USB ancestry. | The application may explicitly select the associated sound nodes; automatic HID–sound routing by SDL, Steam or Proton is **unknown**, not guaranteed. |
+| **Native HID** — `linux.uhid.bluetooth` | Controller-specific UHID on the Bluetooth *bus type*; no physical Bluetooth radio or USB audio composite is created. | Native rumble and controller in-band speaker commands are separate from UAC audio. Wii speaker playback is still refused; Bluetooth-bus metadata do not imply radio pairing. |
+| **Real USB** — `linux.usbip.usb-audio` plus `audio-usbip` | A USB/IP/VHCI device with **one composite USB parent**, HID interface and UAC2 audio-control/playback/capture interfaces; the Linux sound subsystem identifies its ALSA card by that VHCI USB ancestry. | Needs the provisioned root broker and unprivileged worker. Optional `audio-pipewire` supports NativeClient bridging. This is **functional UAC2**, not a physical controller descriptor match; the DualSense reference described by the research corpus is UAC1. |
+| **Real USB (experimental)** — `linux.dummy_hcd.usb-hid` | Experimental USB HID presentation without the compiled USB/IP UAC2 audio function. | Does not reproduce the HID-plus-audio composite and remains `not-supported` in the affected acceptance cells. |
+
+For the USB/IP descriptor layout, see the
+[compiled UAC2/HID configuration](https://github.com/anderstvoss/virtualgamepad/blob/62f98b628839d173e3b894111544eea6b62163a7/crates/gr-usbip/src/profile.rs#L158-L176);
+for Linux's USB-parent/ALSA-card check, see the
+[VHCI sound-card resolver](https://github.com/anderstvoss/virtualgamepad/blob/62f98b628839d173e3b894111544eea6b62163a7/crates/gr-root-audio/src/usb_audio.rs#L193-L233).
+[ADR-0017](https://github.com/anderstvoss/virtualgamepad/blob/62f98b628839d173e3b894111544eea6b62163a7/docs/adr/ADR-0017-primary-realization-and-audio-components.md#L9-L24)
+defines the distinction between associated PipeWire components and a single USB
+composite. The controller-native Steam haptic PCM/MIDI commands and Wii speaker
+protocol are **in-band HID** subsystems, not standalone USB Audio Class or USB
+MIDI interfaces; see
+[ADR-0023](https://github.com/anderstvoss/virtualgamepad/blob/62f98b628839d173e3b894111544eea6b62163a7/docs/adr/ADR-0023-controller-subsystems.md#L8-L27) and
+[ADR-0024](https://github.com/anderstvoss/virtualgamepad/blob/62f98b628839d173e3b894111544eea6b62163a7/docs/adr/ADR-0024-host-output-stream.md#L85-L96).
+
+The pinned research claims
+[`audio-consumer-sidecar-hid-sound-association-unknown`](https://github.com/anderstvoss/controller-protocol-research/blob/4684fce0dc2dd993dd8c3e8846c86c537fdcf7e1/records/claim/audio-consumer-sidecar-hid-sound-association-unknown.json)
+and
+[`audio-consumer-proton-steam-audio-association-unknown`](https://github.com/anderstvoss/controller-protocol-research/blob/4684fce0dc2dd993dd8c3e8846c86c537fdcf7e1/records/claim/audio-consumer-proton-steam-audio-association-unknown.json)
+do **not** establish automatic association or routing of independent HID and
+sound nodes. Neither does common USB ancestry alone prove how a proprietary
+Steam client selects an audio endpoint. The
+[`audio-dualsense-usb-uac1-topology`](https://github.com/anderstvoss/controller-protocol-research/blob/4684fce0dc2dd993dd8c3e8846c86c537fdcf7e1/records/claim/audio-dualsense-usb-uac1-topology.json)
+claim cites a historical physical-reference description, not a new controlled
+descriptor experiment.
+
+**Proposed host checks — not run in this documentation change:** On a separately
+provisioned Linux host, inspect the USB/IP device's interface descriptors and
+common VHCI parent, then resolve ALSA playback/capture endpoints and exercise
+both directions with bounded markers. Independently enumerate UHID and
+PipeWire sidecar nodes, confirm their separate ancestry, and test explicit
+selection versus automatic selection in each targeted SDL/Steam/Proton consumer.
+Record successes, failures, disconnect cleanup and permissions per realization
+and ownership mode. None of these proposed checks are acceptance evidence.
+
 ## Choose the presentation at creation
 
 - `LINUX_UHID_USB` with `audio-pipewire`: HID plus associated PipeWire sink/source

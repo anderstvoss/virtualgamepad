@@ -107,6 +107,56 @@ impl AudioRead {
         }
     }
 }
+/// Directional, stage-local frame ledger for one owned queue. Counts are
+/// cumulative, scoped to this queue and not a host-device delivery receipt.
+/// Queue discard and callback rejection can describe the same frame; do not sum
+/// these columns. None means a stage was not observable, not zero loss.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AudioDirectionAccounting {
+    pub direction: SampleDirection,
+    /// Starts at one for a new queue; advances without wrapping on flush/reset.
+    pub generation: u64,
+    pub produced_frames: u64,
+    pub accepted_frames: u64,
+    pub consumed_frames: u64,
+    pub dropped_at_ingress_frames: u64,
+    pub dropped_on_flush_frames: u64,
+    pub dropped_on_close_frames: u64,
+    pub queued_frames: u64,
+    /// Graph input rejection is a reason-specific view of ingress loss, not
+    /// an independent number of lost frames.
+    pub dropped_in_callback_frames: Option<u64>,
+    /// Unknown until a worker stage exports an independently sampled counter.
+    pub dropped_in_worker_frames: Option<u64>,
+    /// Source underrun padding, not controller capture or client receipt.
+    pub silence_inserted_frames: Option<u64>,
+    pub discontinuities: u64,
+}
+impl AudioDirectionAccounting {
+    fn from_queue(
+        direction: SampleDirection,
+        queue: gr_audio_contract::queue::PcmQueueAccounting,
+        callback_rejected: Option<u64>,
+        silence: Option<u64>,
+    ) -> Self {
+        Self {
+            direction,
+            generation: queue.generation,
+            produced_frames: queue.produced_frames,
+            accepted_frames: queue.accepted_frames,
+            consumed_frames: queue.consumed_frames,
+            dropped_at_ingress_frames: queue.discarded_frames,
+            dropped_on_flush_frames: queue.flushed_frames,
+            dropped_on_close_frames: queue.terminal_frames,
+            queued_frames: queue.queued_frames,
+            dropped_in_callback_frames: callback_rejected,
+            dropped_in_worker_frames: None,
+            silence_inserted_frames: silence,
+            discontinuities: queue.discontinuities,
+        }
+    }
+}
 /// Retained application health, independent of backend graph instrumentation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioDiagnostics {
@@ -114,6 +164,8 @@ pub struct AudioDiagnostics {
     failed: bool,
     underrun_frames: u64,
     dropped_playback_frames: u64,
+    playback_accounting: Option<AudioDirectionAccounting>,
+    microphone_accounting: Option<AudioDirectionAccounting>,
     last_error: Option<AudioError>,
 }
 impl AudioDiagnostics {
@@ -136,6 +188,16 @@ impl AudioDiagnostics {
     #[must_use]
     pub const fn last_error(&self) -> Option<&AudioError> {
         self.last_error.as_ref()
+    }
+    /// The host-playback ingress queue, when available.
+    #[must_use]
+    pub const fn playback_accounting(&self) -> Option<&AudioDirectionAccounting> {
+        self.playback_accounting.as_ref()
+    }
+    /// The controller-microphone queue, when available.
+    #[must_use]
+    pub const fn microphone_accounting(&self) -> Option<&AudioDirectionAccounting> {
+        self.microphone_accounting.as_ref()
     }
 }
 
@@ -313,6 +375,22 @@ impl ControllerAudio {
             failed,
             underrun_frames: self.session.underrun_frames(),
             dropped_playback_frames: self.session.dropped_playback_frames(),
+            playback_accounting: self.session.playback_accounting().map(|queue| {
+                AudioDirectionAccounting::from_queue(
+                    SampleDirection::HostToController,
+                    queue,
+                    self.session.playback_callback_rejected_frames(),
+                    self.session.playback_silence_frames(),
+                )
+            }),
+            microphone_accounting: self.session.microphone_accounting().map(|queue| {
+                AudioDirectionAccounting::from_queue(
+                    SampleDirection::ControllerToHost,
+                    queue,
+                    self.session.microphone_callback_rejected_frames(),
+                    self.session.microphone_silence_frames(),
+                )
+            }),
             last_error: self.session.error().cloned(),
         }
     }

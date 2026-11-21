@@ -309,7 +309,7 @@
         },
         "enum.DualSenseFeature.html": {
           "declarations": [
-            "pub enum DualSenseFeature { Touch, Motion, Lightbar, AdaptiveTriggers, Audio, }"
+            "pub enum DualSenseFeature { Touch, Motion, Lightbar, PlayerIndicators, MicrophoneLed, AdaptiveTriggers, Audio, }"
           ],
           "traits": [
             "impl Clone for DualSenseFeature",
@@ -326,7 +326,7 @@
         },
         "enum.DualSenseHidOutput.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }",
+            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 20 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<DualSenseMuteLed>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, led_brightness: u8, lightbar_setup: Option<u8>, release_leds: Option<bool>, player_leds: Option<u8>, player_led_instant: Option<bool>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }",
             "pub fn trigger_effects( &self, ) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>"
           ],
           "traits": [
@@ -339,6 +339,23 @@
             "impl Sync for DualSenseHidOutput",
             "impl Unpin for DualSenseHidOutput",
             "impl UnwindSafe for DualSenseHidOutput"
+          ]
+        },
+        "enum.DualSenseMuteLed.html": {
+          "declarations": [
+            "pub enum DualSenseMuteLed { Off, On, Pulse, Unknown(u8), }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseMuteLed",
+            "impl Copy for DualSenseMuteLed",
+            "impl Debug for DualSenseMuteLed",
+            "impl Eq for DualSenseMuteLed",
+            "impl PartialEq for DualSenseMuteLed",
+            "impl RefUnwindSafe for DualSenseMuteLed",
+            "impl Send for DualSenseMuteLed",
+            "impl Sync for DualSenseMuteLed",
+            "impl Unpin for DualSenseMuteLed",
+            "impl UnwindSafe for DualSenseMuteLed"
           ]
         },
         "enum.DualSenseOutputEvent.html": {
@@ -1104,7 +1121,9 @@
             "pub const fn failed(&self) -> bool",
             "pub const fn underrun_frames(&self) -> u64",
             "pub const fn dropped_playback_frames(&self) -> u64",
-            "pub const fn last_error(&self) -> Option<&AudioError>"
+            "pub const fn last_error(&self) -> Option<&AudioError>",
+            "pub const fn playback_accounting(&self) -> Option<&AudioDirectionAccounting>",
+            "pub const fn microphone_accounting(&self) -> Option<&AudioDirectionAccounting>"
           ],
           "traits": [
             "impl Clone for AudioDiagnostics",
@@ -1116,6 +1135,23 @@
             "impl Sync for AudioDiagnostics",
             "impl Unpin for AudioDiagnostics",
             "impl UnwindSafe for AudioDiagnostics"
+          ]
+        },
+        "struct.AudioDirectionAccounting.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct AudioDirectionAccounting {Show 13 fields pub direction: SampleDirection, pub generation: u64, pub produced_frames: u64, pub accepted_frames: u64, pub consumed_frames: u64, pub dropped_at_ingress_frames: u64, pub dropped_on_flush_frames: u64, pub dropped_on_close_frames: u64, pub queued_frames: u64, pub dropped_in_callback_frames: Option<u64>, pub dropped_in_worker_frames: Option<u64>, pub silence_inserted_frames: Option<u64>, pub discontinuities: u64, }"
+          ],
+          "traits": [
+            "impl Clone for AudioDirectionAccounting",
+            "impl Copy for AudioDirectionAccounting",
+            "impl Debug for AudioDirectionAccounting",
+            "impl Eq for AudioDirectionAccounting",
+            "impl PartialEq for AudioDirectionAccounting",
+            "impl RefUnwindSafe for AudioDirectionAccounting",
+            "impl Send for AudioDirectionAccounting",
+            "impl Sync for AudioDirectionAccounting",
+            "impl Unpin for AudioDirectionAccounting",
+            "impl UnwindSafe for AudioDirectionAccounting"
           ]
         },
         "struct.AudioEndpoint.html": {
@@ -3439,6 +3475,7 @@
         "struct.XboxSeriesController.html": {
           "declarations": [
             "pub struct XboxSeriesController { /* private fields */ }",
+            "pub fn identity(&self) -> XboxSeriesIdentity",
             "pub fn inputs(&self) -> &XboxSeriesInputs",
             "pub fn status(&self) -> XboxSeriesStatus",
             "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
@@ -3468,6 +3505,27 @@
             "impl Unpin for XboxSeriesController"
           ]
         },
+        "struct.XboxSeriesIdentity.html": {
+          "declarations": [
+            "pub struct XboxSeriesIdentity(/* private fields */);",
+            "pub fn generate() -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesIdentity",
+            "impl Copy for XboxSeriesIdentity",
+            "impl Debug for XboxSeriesIdentity",
+            "impl Eq for XboxSeriesIdentity",
+            "impl Hash for XboxSeriesIdentity",
+            "impl PartialEq for XboxSeriesIdentity",
+            "impl RefUnwindSafe for XboxSeriesIdentity",
+            "impl Send for XboxSeriesIdentity",
+            "impl Sync for XboxSeriesIdentity",
+            "impl Unpin for XboxSeriesIdentity",
+            "impl UnwindSafe for XboxSeriesIdentity"
+          ]
+        },
         "struct.XboxSeriesInputs.html": {
           "declarations": [
             "pub struct XboxSeriesInputs { pub sticks: [[i16; 2]; 2], /* private fields */ }",
@@ -3493,7 +3551,9 @@
         },
         "struct.XboxSeriesOptions.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesOptions {}"
+            "#[non_exhaustive]pub struct XboxSeriesOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: XboxSeriesIdentity, ) -> XboxSeriesOptions",
+            "pub const fn identity(self) -> Option<XboxSeriesIdentity>"
           ],
           "traits": [
             "impl Clone for XboxSeriesOptions",
@@ -3887,7 +3947,7 @@
         },
         "enum.DualSenseFeature.html": {
           "declarations": [
-            "pub enum DualSenseFeature { Touch, Motion, Lightbar, AdaptiveTriggers, Audio, }"
+            "pub enum DualSenseFeature { Touch, Motion, Lightbar, PlayerIndicators, MicrophoneLed, AdaptiveTriggers, Audio, }"
           ],
           "traits": [
             "impl Clone for DualSenseFeature",
@@ -3904,7 +3964,7 @@
         },
         "enum.DualSenseHidOutput.html": {
           "declarations": [
-            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }",
+            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 20 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<DualSenseMuteLed>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, led_brightness: u8, lightbar_setup: Option<u8>, release_leds: Option<bool>, player_leds: Option<u8>, player_led_instant: Option<bool>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }",
             "pub fn trigger_effects( &self, ) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>"
           ],
           "traits": [
@@ -3917,6 +3977,23 @@
             "impl Sync for DualSenseHidOutput",
             "impl Unpin for DualSenseHidOutput",
             "impl UnwindSafe for DualSenseHidOutput"
+          ]
+        },
+        "enum.DualSenseMuteLed.html": {
+          "declarations": [
+            "pub enum DualSenseMuteLed { Off, On, Pulse, Unknown(u8), }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseMuteLed",
+            "impl Copy for DualSenseMuteLed",
+            "impl Debug for DualSenseMuteLed",
+            "impl Eq for DualSenseMuteLed",
+            "impl PartialEq for DualSenseMuteLed",
+            "impl RefUnwindSafe for DualSenseMuteLed",
+            "impl Send for DualSenseMuteLed",
+            "impl Sync for DualSenseMuteLed",
+            "impl Unpin for DualSenseMuteLed",
+            "impl UnwindSafe for DualSenseMuteLed"
           ]
         },
         "enum.DualSenseOutputEvent.html": {
@@ -4682,7 +4759,9 @@
             "pub const fn failed(&self) -> bool",
             "pub const fn underrun_frames(&self) -> u64",
             "pub const fn dropped_playback_frames(&self) -> u64",
-            "pub const fn last_error(&self) -> Option<&AudioError>"
+            "pub const fn last_error(&self) -> Option<&AudioError>",
+            "pub const fn playback_accounting(&self) -> Option<&AudioDirectionAccounting>",
+            "pub const fn microphone_accounting(&self) -> Option<&AudioDirectionAccounting>"
           ],
           "traits": [
             "impl Clone for AudioDiagnostics",
@@ -4694,6 +4773,23 @@
             "impl Sync for AudioDiagnostics",
             "impl Unpin for AudioDiagnostics",
             "impl UnwindSafe for AudioDiagnostics"
+          ]
+        },
+        "struct.AudioDirectionAccounting.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct AudioDirectionAccounting {Show 13 fields pub direction: SampleDirection, pub generation: u64, pub produced_frames: u64, pub accepted_frames: u64, pub consumed_frames: u64, pub dropped_at_ingress_frames: u64, pub dropped_on_flush_frames: u64, pub dropped_on_close_frames: u64, pub queued_frames: u64, pub dropped_in_callback_frames: Option<u64>, pub dropped_in_worker_frames: Option<u64>, pub silence_inserted_frames: Option<u64>, pub discontinuities: u64, }"
+          ],
+          "traits": [
+            "impl Clone for AudioDirectionAccounting",
+            "impl Copy for AudioDirectionAccounting",
+            "impl Debug for AudioDirectionAccounting",
+            "impl Eq for AudioDirectionAccounting",
+            "impl PartialEq for AudioDirectionAccounting",
+            "impl RefUnwindSafe for AudioDirectionAccounting",
+            "impl Send for AudioDirectionAccounting",
+            "impl Sync for AudioDirectionAccounting",
+            "impl Unpin for AudioDirectionAccounting",
+            "impl UnwindSafe for AudioDirectionAccounting"
           ]
         },
         "struct.AudioEndpoint.html": {
@@ -7017,6 +7113,7 @@
         "struct.XboxSeriesController.html": {
           "declarations": [
             "pub struct XboxSeriesController { /* private fields */ }",
+            "pub fn identity(&self) -> XboxSeriesIdentity",
             "pub fn inputs(&self) -> &XboxSeriesInputs",
             "pub fn status(&self) -> XboxSeriesStatus",
             "pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>",
@@ -7046,6 +7143,27 @@
             "impl Unpin for XboxSeriesController"
           ]
         },
+        "struct.XboxSeriesIdentity.html": {
+          "declarations": [
+            "pub struct XboxSeriesIdentity(/* private fields */);",
+            "pub fn generate() -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub fn from_bytes(bytes: [u8; 6]) -> Result<XboxSeriesIdentity, ProviderError>",
+            "pub const fn bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for XboxSeriesIdentity",
+            "impl Copy for XboxSeriesIdentity",
+            "impl Debug for XboxSeriesIdentity",
+            "impl Eq for XboxSeriesIdentity",
+            "impl Hash for XboxSeriesIdentity",
+            "impl PartialEq for XboxSeriesIdentity",
+            "impl RefUnwindSafe for XboxSeriesIdentity",
+            "impl Send for XboxSeriesIdentity",
+            "impl Sync for XboxSeriesIdentity",
+            "impl Unpin for XboxSeriesIdentity",
+            "impl UnwindSafe for XboxSeriesIdentity"
+          ]
+        },
         "struct.XboxSeriesInputs.html": {
           "declarations": [
             "pub struct XboxSeriesInputs { pub sticks: [[i16; 2]; 2], /* private fields */ }",
@@ -7071,7 +7189,9 @@
         },
         "struct.XboxSeriesOptions.html": {
           "declarations": [
-            "#[non_exhaustive]pub struct XboxSeriesOptions {}"
+            "#[non_exhaustive]pub struct XboxSeriesOptions { /* private fields */ }",
+            "pub const fn with_identity( self, identity: XboxSeriesIdentity, ) -> XboxSeriesOptions",
+            "pub const fn identity(self) -> Option<XboxSeriesIdentity>"
           ],
           "traits": [
             "impl Clone for XboxSeriesOptions",

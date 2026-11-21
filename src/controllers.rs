@@ -978,6 +978,12 @@ pub struct XboxSeriesController {
 }
 
 impl XboxSeriesController {
+    /// Read the caller-restorable synthetic identity, including after close.
+    #[must_use]
+    pub fn identity(&self) -> crate::XboxSeriesIdentity {
+        self.controller.inner.identity()
+    }
+
     /// Borrow accepted native input levels.
     #[must_use]
     pub fn inputs(&self) -> &XboxSeriesInputs {

@@ -48,10 +48,13 @@ pub struct Session {
     input_losses: Vec<(String, Arc<InputLoss>)>,
     playback: Option<PcmConsumer>,
     playback_observer: Option<PcmObserver>,
+    microphone_observer: Option<PcmObserver>,
     microphone: Option<PcmProducer>,
     stop: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
     underruns: Arc<AtomicU64>,
+    playback_source_underruns: Option<Arc<AtomicU64>>,
+    microphone_source_underruns: Option<Arc<AtomicU64>>,
     activate_input: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<Result<(), AudioError>>>,
     error: Option<AudioError>,
@@ -126,7 +129,10 @@ impl Session {
             endpoints,
             playback,
             playback_observer,
+            microphone_observer,
             microphone,
+            playback_source_underruns,
+            microphone_source_underruns,
         } = prepare(profile, options, creation, source_preroll, association)?;
         let clocks = specs
             .iter()
@@ -165,10 +171,13 @@ impl Session {
             input_losses,
             playback,
             playback_observer,
+            microphone_observer,
             microphone,
             stop,
             failed,
             underruns,
+            playback_source_underruns,
+            microphone_source_underruns,
             activate_input,
             worker: Some(worker),
             error: None,
@@ -257,11 +266,50 @@ impl Session {
     pub fn underrun_frames(&self) -> u64 {
         self.underruns.load(Ordering::Relaxed)
     }
+    /// Frames padded by the H→C native-client source, if present.
+    #[must_use]
+    pub fn playback_silence_frames(&self) -> Option<u64> {
+        self.playback_source_underruns
+            .as_ref()
+            .map(|count| count.load(Ordering::Acquire))
+    }
+    /// Frames padded by the C→H host source, independent of H→C preroll.
+    #[must_use]
+    pub fn microphone_silence_frames(&self) -> Option<u64> {
+        self.microphone_source_underruns
+            .as_ref()
+            .map(|count| count.load(Ordering::Acquire))
+    }
     #[must_use]
     pub fn dropped_playback_frames(&self) -> u64 {
         self.playback_observer
             .as_ref()
             .map_or(0, PcmObserver::discarded_frames)
+    }
+    /// Backend-local queue accounting; not a host-receipt observation.
+    #[must_use]
+    pub fn playback_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        self.playback_observer.as_ref().map(PcmObserver::accounting)
+    }
+    /// Retained for Samples and `NativeClient` ownership alike.
+    #[must_use]
+    pub fn microphone_accounting(&self) -> Option<gr_audio_contract::queue::PcmQueueAccounting> {
+        self.microphone_observer
+            .as_ref()
+            .map(PcmObserver::accounting)
+    }
+    #[must_use]
+    pub fn microphone_callback_rejected_frames(&self) -> Option<u64> {
+        self.endpoints
+            .iter()
+            .any(|ep| {
+                ep.direction == SampleDirection::ControllerToHost
+                    && ep.access == AudioAccess::NativeClient
+            })
+            .then(|| {
+                self.microphone_accounting()
+                    .map_or(0, |a| a.discarded_frames)
+            })
     }
     #[must_use]
     pub fn queued_playback_frames(&self) -> Option<usize> {
@@ -473,6 +521,7 @@ impl InputLoss {
 struct Spec {
     association: Option<SidecarIdentity>,
     input_loss: Arc<InputLoss>,
+    source_underruns: Arc<AtomicU64>,
     clock: Arc<timing::Shared>,
     name: String,
     format: PcmFormat,
@@ -496,6 +545,7 @@ struct Callback {
     scratch: Box<[i16]>,
     failed: Arc<AtomicBool>,
     underruns: Arc<AtomicU64>,
+    source_underruns: Arc<AtomicU64>,
     source_preroll: usize,
     source_started: bool,
 }
@@ -553,6 +603,7 @@ impl ManagedStream {
             scratch: vec![0; SCRATCH_SAMPLES].into_boxed_slice(),
             failed: failed.clone(),
             underruns: underruns.clone(),
+            source_underruns: spec.source_underruns,
             source_preroll: spec.source_preroll,
             source_started: false,
         };
@@ -826,15 +877,18 @@ fn process(stream: &pw::stream::Stream, data: &mut Callback) {
                         if read.frames < frames && data.source_preroll != 0 {
                             data.source_started = false;
                         }
-                        data.underruns
-                            .fetch_add((frames - read.frames) as u64, Ordering::Relaxed);
+                        record_source_silence(
+                            &data.underruns,
+                            &data.source_underruns,
+                            frames - read.frames,
+                        );
                     }
                     Err(_) => {
                         data.failed.store(true, Ordering::Release);
                     }
                 }
             } else {
-                data.underruns.fetch_add(frames as u64, Ordering::Relaxed);
+                record_source_silence(&data.underruns, &data.source_underruns, frames);
             }
             for (pair, sample) in bytes[..count * 2]
                 .chunks_exact_mut(2)
@@ -848,7 +902,15 @@ fn process(stream: &pw::stream::Stream, data: &mut Callback) {
             *chunk.stride_mut() = i32::try_from(channels * 2).unwrap_or(0);
         }
     }
-    if let Some(time) = clock_time {
+    record_callback_timing(data, clock_time.as_ref(), transferred);
+}
+
+fn record_callback_timing(
+    data: &mut Callback,
+    time: Option<&pw::stream::Time>,
+    transferred: usize,
+) {
+    if let Some(time) = time {
         let rate = time.rate();
         data.tracker.record(
             &data.clock,
@@ -861,6 +923,13 @@ fn process(stream: &pw::stream::Stream, data: &mut Callback) {
     }
 }
 
+fn record_source_silence(total: &AtomicU64, direction: &AtomicU64, frames: usize) {
+    let frames = frames as u64;
+    if frames != 0 {
+        total.fetch_add(frames, Ordering::Relaxed);
+        direction.fetch_add(frames, Ordering::Relaxed);
+    }
+}
 fn source_ready(started: bool, queued: usize, requested: usize, preroll: usize) -> bool {
     started || preroll == 0 || queued >= requested.saturating_add(preroll)
 }
@@ -940,10 +1009,32 @@ fn ingest(
 
 struct Prepared {
     specs: Vec<Spec>,
+    playback_source_underruns: Option<Arc<AtomicU64>>,
+    microphone_source_underruns: Option<Arc<AtomicU64>>,
     endpoints: Vec<Endpoint>,
     playback: Option<PcmConsumer>,
     playback_observer: Option<PcmObserver>,
+    microphone_observer: Option<PcmObserver>,
     microphone: Option<PcmProducer>,
+}
+fn node_spec(
+    association: Option<&SidecarIdentity>,
+    name: String,
+    format: &PcmFormat,
+    io: Io,
+    source_preroll: usize,
+    source_underruns: Arc<AtomicU64>,
+) -> Spec {
+    Spec {
+        association: association.cloned(),
+        clock: Arc::default(),
+        input_loss: Arc::default(),
+        source_underruns,
+        name,
+        format: format.clone(),
+        io,
+        source_preroll,
+    }
 }
 fn prepare(
     profile: &AudioProfile,
@@ -956,7 +1047,10 @@ fn prepare(
     let mut endpoints = Vec::new();
     let mut playback = None;
     let mut playback_observer = None;
+    let mut microphone_observer = None;
     let mut microphone = None;
+    let mut playback_source_underruns = None;
+    let mut microphone_source_underruns = None;
     for description in profile.streams() {
         let format = description.format().clone();
         let direction = description.direction();
@@ -977,49 +1071,50 @@ fn prepare(
         match direction {
             SampleDirection::HostToController => {
                 playback_observer = Some(tx.observer());
-                specs.push(Spec {
-                    association: association.cloned(),
-                    clock: Arc::default(),
-                    input_loss: Arc::default(),
-                    name: host_node.clone(),
-                    format: format.clone(),
-                    io: Io::Sink(tx),
-                    source_preroll: 0,
-                });
+                specs.push(node_spec(
+                    association,
+                    host_node.clone(),
+                    &format,
+                    Io::Sink(tx),
+                    0,
+                    Arc::default(),
+                ));
                 if let Some(name) = &caller_node {
-                    specs.push(Spec {
-                        association: association.cloned(),
-                        clock: Arc::default(),
-                        input_loss: Arc::default(),
-                        name: name.clone(),
-                        format: format.clone(),
-                        io: Io::Source(rx),
+                    let silence = Arc::new(AtomicU64::new(0));
+                    playback_source_underruns = Some(silence.clone());
+                    specs.push(node_spec(
+                        association,
+                        name.clone(),
+                        &format,
+                        Io::Source(rx),
                         source_preroll,
-                    });
+                        silence,
+                    ));
                 } else {
                     playback = Some(rx);
                 }
             }
             SampleDirection::ControllerToHost => {
-                specs.push(Spec {
-                    association: association.cloned(),
-                    clock: Arc::default(),
-                    input_loss: Arc::default(),
-                    name: host_node.clone(),
-                    format: format.clone(),
-                    io: Io::Source(rx),
+                microphone_observer = Some(tx.observer());
+                let silence = Arc::new(AtomicU64::new(0));
+                microphone_source_underruns = Some(silence.clone());
+                specs.push(node_spec(
+                    association,
+                    host_node.clone(),
+                    &format,
+                    Io::Source(rx),
                     source_preroll,
-                });
+                    silence,
+                ));
                 if let Some(name) = &caller_node {
-                    specs.push(Spec {
-                        association: association.cloned(),
-                        clock: Arc::default(),
-                        input_loss: Arc::default(),
-                        name: name.clone(),
-                        format: format.clone(),
-                        io: Io::Sink(tx),
-                        source_preroll: 0,
-                    });
+                    specs.push(node_spec(
+                        association,
+                        name.clone(),
+                        &format,
+                        Io::Sink(tx),
+                        0,
+                        Arc::default(),
+                    ));
                 } else {
                     microphone = Some(tx);
                 }
@@ -1036,9 +1131,12 @@ fn prepare(
     }
     Ok(Prepared {
         specs,
+        playback_source_underruns,
+        microphone_source_underruns,
         endpoints,
         playback,
         playback_observer,
+        microphone_observer,
         microphone,
     })
 }
@@ -1111,6 +1209,50 @@ fn format_pod(format: &PcmFormat) -> Result<Vec<u8>, AudioError> {
 mod tests {
     use super::*;
     use gr_audio_contract::{AudioChannel as C, AudioStreamDescription};
+    #[test]
+    fn source_silence_is_directional_without_changing_legacy_total() {
+        let total = AtomicU64::new(0);
+        let playback = AtomicU64::new(0);
+        let microphone = AtomicU64::new(0);
+        record_source_silence(&total, &playback, 3);
+        record_source_silence(&total, &microphone, 5);
+        record_source_silence(&total, &microphone, 0);
+        assert_eq!(playback.load(Ordering::Relaxed), 3);
+        assert_eq!(microphone.load(Ordering::Relaxed), 5);
+        assert_eq!(total.load(Ordering::Relaxed), 8);
+    }
+
+    #[test]
+    fn native_client_direction_tracks_only_its_own_source() {
+        let format = PcmFormat::new(48_000, &[C::AudibleLeft, C::AudibleRight]).unwrap();
+        let options = AudioOptions::new(gr_audio_contract::AudioExposure::Emulated)
+            .with_playback_access(AudioAccess::NativeClient)
+            .with_microphone_access(AudioAccess::NativeClient);
+        for direction in [
+            SampleDirection::HostToController,
+            SampleDirection::ControllerToHost,
+        ] {
+            let profile = AudioProfile::new(
+                "direction-only",
+                &[AudioStreamDescription::new(
+                    "only",
+                    direction,
+                    format.clone(),
+                )],
+                "test",
+            );
+            let prepared = prepare(&profile, options, 9, 0, None).unwrap();
+            assert_eq!(
+                prepared.playback_source_underruns.is_some(),
+                direction == SampleDirection::HostToController
+            );
+            assert_eq!(
+                prepared.microphone_source_underruns.is_some(),
+                direction == SampleDirection::ControllerToHost
+            );
+        }
+    }
+
     #[test]
     fn usb_source_preroll_uses_requested_graph_block_and_rearms_after_gap() {
         assert!(!source_ready(false, 383, 256, 128));

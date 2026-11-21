@@ -488,7 +488,7 @@ impl UnwindSafe for DualSenseControl
 Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
-pub enum DualSenseFeature { Touch, Motion, Lightbar, AdaptiveTriggers, Audio, }
+pub enum DualSenseFeature { Touch, Motion, Lightbar, PlayerIndicators, MicrophoneLed, AdaptiveTriggers, Audio, }
 ```
 
 Trait implementations:
@@ -514,7 +514,8 @@ impl UnwindSafe for DualSenseFeature
 Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
 
 ```rust
-#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }
+#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 20 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<DualSenseMuteLed>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, led_brightness: u8, lightbar_setup: Option<u8>, release_leds: Option<bool>, player_leds: Option<u8>, player_led_instant: Option<bool>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }
+pub fn trigger_effects( &self, ) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)>
 ```
 
 Trait implementations:
@@ -532,6 +533,32 @@ impl Sync for DualSenseHidOutput
 impl Unpin for DualSenseHidOutput
 impl UnsafeUnpin for DualSenseHidOutput
 impl UnwindSafe for DualSenseHidOutput
+```
+
+### `DualSenseMuteLed`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+pub enum DualSenseMuteLed { Off, On, Pulse, Unknown(u8), }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for DualSenseMuteLed
+impl Debug for DualSenseMuteLed
+impl PartialEq for DualSenseMuteLed
+impl Copy for DualSenseMuteLed
+impl Eq for DualSenseMuteLed
+impl StructuralPartialEq for DualSenseMuteLed
+impl Freeze for DualSenseMuteLed
+impl RefUnwindSafe for DualSenseMuteLed
+impl Send for DualSenseMuteLed
+impl Sync for DualSenseMuteLed
+impl Unpin for DualSenseMuteLed
+impl UnsafeUnpin for DualSenseMuteLed
+impl UnwindSafe for DualSenseMuteLed
 ```
 
 ### `DualSenseOutputEvent`
@@ -2424,6 +2451,86 @@ impl Sync for DualSenseTrigger
 impl Unpin for DualSenseTrigger
 impl UnsafeUnpin for DualSenseTrigger
 impl UnwindSafe for DualSenseTrigger
+```
+
+### `DualSenseTriggerEffect`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+#[non_exhaustive]pub enum DualSenseTriggerEffect { Off, Feedback { zones: DualSenseTriggerZoneForces, }, Weapon { start_zone: u8, end_zone: u8, strength: u8, }, Vibration { zones: DualSenseTriggerZoneForces, frequency_code: u8, }, Unknown { mode: u8, raw: [u8; 11], }, }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for DualSenseTriggerEffect
+impl Copy for DualSenseTriggerEffect
+impl Debug for DualSenseTriggerEffect
+impl Eq for DualSenseTriggerEffect
+impl PartialEq for DualSenseTriggerEffect
+impl RefUnwindSafe for DualSenseTriggerEffect
+impl Send for DualSenseTriggerEffect
+impl Sync for DualSenseTriggerEffect
+impl Unpin for DualSenseTriggerEffect
+impl UnwindSafe for DualSenseTriggerEffect
+```
+
+
+### `DualSenseTriggerEffectUpdate`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+pub struct DualSenseTriggerEffectUpdate { pub valid: bool, pub raw: [u8; 11], pub effect: Option<DualSenseTriggerEffect>, }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for DualSenseTriggerEffectUpdate
+impl Copy for DualSenseTriggerEffectUpdate
+impl Debug for DualSenseTriggerEffectUpdate
+impl Eq for DualSenseTriggerEffectUpdate
+impl PartialEq for DualSenseTriggerEffectUpdate
+impl RefUnwindSafe for DualSenseTriggerEffectUpdate
+impl Send for DualSenseTriggerEffectUpdate
+impl Sync for DualSenseTriggerEffectUpdate
+impl Unpin for DualSenseTriggerEffectUpdate
+impl UnwindSafe for DualSenseTriggerEffectUpdate
+```
+
+
+### `DualSenseTriggerZoneForces`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+pub struct DualSenseTriggerZoneForces { pub active_zones: u16, pub start_zone: u8, pub end_zone: u8, pub strengths: [Option<u8>; 10], }
+```
+
+Trait implementations:
+
+```rust
+impl Clone for DualSenseTriggerZoneForces
+impl Copy for DualSenseTriggerZoneForces
+impl Debug for DualSenseTriggerZoneForces
+impl Eq for DualSenseTriggerZoneForces
+impl PartialEq for DualSenseTriggerZoneForces
+impl RefUnwindSafe for DualSenseTriggerZoneForces
+impl Send for DualSenseTriggerZoneForces
+impl Sync for DualSenseTriggerZoneForces
+impl Unpin for DualSenseTriggerZoneForces
+impl UnwindSafe for DualSenseTriggerZoneForces
+```
+
+
+### `decode_dualsense_trigger_effect`
+
+Owner/source: `../src/gr_curated_controllers/dualsense.rs.html`
+
+```rust
+pub fn decode_dualsense_trigger_effect(raw: [u8; 11]) -> DualSenseTriggerEffect
 ```
 
 ### `DualShock4Axis`
@@ -4629,6 +4736,7 @@ Owner/source: `../src/virtualgamepad/controllers.rs.html`
 
 ```rust
 pub struct XboxSeriesController { /* private fields */ }
+pub fn identity(&self) -> XboxSeriesIdentity
 pub fn inputs(&self) -> &XboxSeriesInputs
 pub fn status(&self) -> XboxSeriesStatus
 pub fn edit_inputs( &mut self, edit: impl FnOnce(&mut XboxSeriesInputs) -> Result<(), ControlError>, ) -> Result<(), ControlError>
@@ -4695,12 +4803,44 @@ impl UnsafeUnpin for XboxSeriesInputs
 impl UnwindSafe for XboxSeriesInputs
 ```
 
+### `XboxSeriesIdentity`
+
+Owner/source: `../src/gr_curated_controllers/xbox_series.rs.html`
+
+```rust
+pub struct XboxSeriesIdentity(/* private fields */);
+pub fn generate() -> Result<XboxSeriesIdentity, ProviderError>
+pub fn from_bytes(bytes: [u8; 6]) -> Result<XboxSeriesIdentity, ProviderError>
+pub const fn bytes(self) -> [u8; 6]
+```
+
+Trait implementations:
+
+```rust
+impl Clone for XboxSeriesIdentity
+impl Debug for XboxSeriesIdentity
+impl PartialEq for XboxSeriesIdentity
+impl Copy for XboxSeriesIdentity
+impl Eq for XboxSeriesIdentity
+impl Hash for XboxSeriesIdentity
+impl StructuralPartialEq for XboxSeriesIdentity
+impl Freeze for XboxSeriesIdentity
+impl RefUnwindSafe for XboxSeriesIdentity
+impl Send for XboxSeriesIdentity
+impl Sync for XboxSeriesIdentity
+impl Unpin for XboxSeriesIdentity
+impl UnsafeUnpin for XboxSeriesIdentity
+impl UnwindSafe for XboxSeriesIdentity
+```
+
 ### `XboxSeriesOptions`
 
 Owner/source: `../src/gr_curated_controllers/xbox_series.rs.html`
 
 ```rust
-#[non_exhaustive]pub struct XboxSeriesOptions {}
+#[non_exhaustive]pub struct XboxSeriesOptions { /* private fields */ }
+pub const fn with_identity( self, identity: XboxSeriesIdentity, ) -> XboxSeriesOptions
+pub const fn identity(self) -> Option<XboxSeriesIdentity>
 ```
 
 Trait implementations:
