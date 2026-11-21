@@ -32,10 +32,16 @@ in a device-data value**; callers must select `with_identity(...)`
 on the family options to restore their independent identity.
 
 USB/UHID accepts the selected immutable feature reports directly.
-USB/IP carries their validated pair on the private worker control
-channel and requires an acknowledgment *before* the worker starts
-servicing USB requests. The privileged broker's executable arguments
-carry no report bytes. Supplying a pair cannot partially update a live
+**Known gap — `linux.usbip.usb-audio`:** the audio/USB/IP worker still
+serves only the existing synthetic feature data. Supplying even a
+validated `DualSenseDeviceData` or `DualShock4DeviceData` value
+explicitly through `with_device_data(...)` returns
+`ControllerError::Unsupported` **before opening the worker**. To retain
+synthetic USB/IP behavior, omit `with_device_data` entirely. This
+avoids changing the installed worker's wire protocol; a compatible
+broker/audio-workstream design must close the gap separately.
+No caller-selected report bytes are sent in worker frames or executable
+arguments in this PR. Supplying a pair cannot partially update a live
 controller. The current Sony Bluetooth-bus realization is not on
 the checked `main`; this API accepts **numbered USB reports only**.
 Bluetooth forms (including CRC-bearing variants) are rejected; no
@@ -69,8 +75,8 @@ recreation. Saving defaults writes only the synthetic pair.
 
 Pure synthetic test vectors exercise USB GET defaults versus pinned
 compiled fixture construction, supplied GET responses, invalid report
-rejection, round-trip serialization, and re-creation from a retained
-value. No host, hardware capture, Bluetooth, or USB/IP timing run is
+rejection, round-trip serialization, re-creation from a retained
+value, and typed USB/IP refusal without opening a worker. No host, hardware capture, Bluetooth, or USB/IP timing run is
 asserted; actual host protocol acceptance remains unqualified.
 
 Related tracking: vg #154, #155, #162, #365.
