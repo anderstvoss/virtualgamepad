@@ -11,6 +11,7 @@ publish = false
 [dependencies]
 gr-audio-contract = { path = "../gr-audio-contract", version = "0.1" }
 gr-hid = { path = "../gr-hid", version = "0.1" }
+getrandom = "=0.3.4"
 gr-controller-wire = { path = "../gr-controller-wire", version = "0.1" }
 gr-controller-contract = { path = "../gr-controller-contract", version = "0.1" }
 gr-controller-runtime = { path = "../gr-controller-runtime", version = "0.1" }
