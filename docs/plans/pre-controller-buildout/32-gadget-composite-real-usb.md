@@ -1,4 +1,4 @@
-# Audio round 2: `dummy_hcd` HID + UAC composite as Real USB
+# Brief 32: `dummy_hcd` HID + UAC composite as Real USB
 
 **Status:** decision brief, recommendation only. **No code, broker, IPC or realization-ID change.** All gadget/host/physical checks below are **not run**. This does not promote controller support, streaming quality or physical matching. Refs [#258](https://github.com/anderstvoss/virtualgamepad/issues/258), [#365](https://github.com/anderstvoss/virtualgamepad/issues/365) and [#408](https://github.com/anderstvoss/virtualgamepad/issues/408).
 
