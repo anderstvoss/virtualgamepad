@@ -86,6 +86,7 @@ impl Default for SwitchProInputs {
 const fn motion_targets() -> RealizationTargetSet {
     RealizationTargetSet::new(&[
         RealizationTarget::LINUX_UHID_USB,
+        RealizationTarget::LINUX_UHID_BLUETOOTH,
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
     ])
 }
@@ -336,6 +337,20 @@ static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "console pairing",
     reason: "Steam/Linux mode deliberately omits Switch-console pairing and SPI calibration persistence",
 }];
+static BT_RESTRICTIONS: [TargetRestriction; 3] = [
+    TargetRestriction {
+        feature: "Bluetooth radio and reconnection",
+        reason: "Bluetooth-bus UHID is a local HID presentation, with no radio, BlueZ, discovery, pairing or reconnection transport",
+    },
+    TargetRestriction {
+        feature: "NFC and infrared MCU",
+        reason: "the Switch Pro-specific MCU 0x11/0x31 exchange is not established by pinned consumer sources; controller-family research leads are insufficient",
+    },
+    TargetRestriction {
+        feature: "Bluetooth controller audio",
+        reason: "the selected UHID HID report surface carries no PCM or headset transport; Bluetooth audio requires a separate endpoint",
+    },
+];
 static EVDEV_RESTRICTIONS: [TargetRestriction; 5] = [
     common::FEEDBACK_RESTRICTION,
     TargetRestriction {
@@ -539,6 +554,33 @@ static HID_SURFACE: SwitchProSurface = SwitchProSurface {
     }
     .build(),
 };
+
+/* Synthetic, source-derived Bluetooth-bus descriptor. Pinned consumer parsers
+ * establish report IDs and payload lengths, not retail SDP/descriptor bytes.
+ * No USB-proprietary report IDs, MCU mode, or audio endpoints are declared.
+ */
+const SWITCH_PRO_BT_DESCRIPTOR: &[u8] = &[
+    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x06, 0x00, 0xff,
+    0x85, 0x3f, 0x09, 0x01, 0x75, 0x08, 0x95, 0x0b, 0x81, 0x02,
+    0x85, 0x30, 0x09, 0x02, 0x75, 0x08, 0x95, 0x3f, 0x81, 0x02,
+    0x85, 0x21, 0x09, 0x03, 0x75, 0x08, 0x95, 0x3f, 0x81, 0x02,
+    0x85, 0x01, 0x09, 0x04, 0x75, 0x08, 0x95, 0x30, 0x91, 0x02,
+    0x85, 0x10, 0x09, 0x05, 0x75, 0x08, 0x95, 0x30, 0x91, 0x02,
+    0xc0,
+];
+static BT_SURFACE: SwitchProSurface = SwitchProSurface {
+    common: gr_controller_contract::construction::ControllerSurfaceSpec {
+        target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+        validation_status: RealizationValidationStatus::ResearchBacked,
+        digital_controls: &DIGITAL,
+        axes: &AXES,
+        outputs: &OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
+        restrictions: &BT_RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
+    }
+    .build(),
+};
 static RETAINED_DUMMY: [TargetRestriction; 2] =
     [RESTRICTIONS[0], crate::retained::DUMMY_RESTRICTION];
 static USB_SURFACE: SwitchProSurface = SwitchProSurface {
@@ -560,7 +602,7 @@ impl RealizationControllerDefinition for SwitchProDefinition {
         ControllerId::new("virtualgamepad.switch-pro")
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        static E: [RealizationManifestEntry; 3] = [
+        static E: [RealizationManifestEntry; 4] = [
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
@@ -577,6 +619,13 @@ impl RealizationControllerDefinition for SwitchProDefinition {
             },
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UHID_USB,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: true,
+                },
+                audio_sidecar: None,
+            },
+            RealizationManifestEntry {
+                target: RealizationTarget::LINUX_UHID_BLUETOOTH,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -609,6 +658,7 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
             sel.target,
             RealizationTarget::LINUX_UINPUT
                 | RealizationTarget::LINUX_UHID_USB
+                | RealizationTarget::LINUX_UHID_BLUETOOTH
                 | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
         ) {
             return Err(common::unavailable(sel.target));
@@ -634,6 +684,12 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
         };
         if sel.target == RealizationTarget::LINUX_UHID_USB {
             Ok(ProviderFrame::HidInput { report_id, bytes })
+        } else if sel.target == RealizationTarget::LINUX_UHID_BLUETOOTH {
+            if s.1.stream_enabled {
+                Ok(ProviderFrame::HidInput { report_id, bytes })
+            } else {
+                Ok(switch_simple_frame(s))
+            }
         } else {
             let Some(report_id) = report_id else {
                 unreachable!("Switch USB reports are numbered")
@@ -761,6 +817,46 @@ fn switch_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
     }
 }
 
+// SDL 535d80b lines 137-152 and 2183-2257: 0x3f uses separate
+// face/shoulder, menu and hat bytes followed by raw signed stick axes.
+// This is a synthetic golden encoding, not a captured retail report.
+fn switch_simple_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
+    let mut bytes = vec![0; 11];
+    bytes[0] = u8::from(s.0.face[0])
+        | (u8::from(s.0.face[1]) << 1)
+        | (u8::from(s.0.face[2]) << 2)
+        | (u8::from(s.0.face[3]) << 3)
+        | (u8::from(s.0.buttons[0]) << 4)
+        | (u8::from(s.0.buttons[1]) << 5)
+        | (u8::from(s.0.buttons[2]) << 6)
+        | (u8::from(s.0.buttons[3]) << 7);
+    bytes[1] = u8::from(s.0.buttons[4])
+        | (u8::from(s.0.buttons[5]) << 1)
+        | (u8::from(s.0.buttons[8]) << 2)
+        | (u8::from(s.0.buttons[9]) << 3)
+        | (u8::from(s.0.buttons[6]) << 4)
+        | (u8::from(s.0.buttons[7]) << 5);
+    let [up, down, left, right] = s.0.dpad;
+    bytes[2] = match (up, down, left, right) {
+        (true, false, false, false) => 0,
+        (true, false, false, true) => 1,
+        (false, false, false, true) => 2,
+        (false, true, false, true) => 3,
+        (false, true, false, false) => 4,
+        (false, true, true, false) => 5,
+        (false, false, true, false) => 6,
+        (true, false, true, false) => 7,
+        _ => 8,
+    };
+    for (idx, value) in [
+        s.0.left.0.raw(), s.0.left.1.raw(),
+        s.0.right.0.raw(), s.0.right.1.raw(),
+    ].into_iter().enumerate() {
+        bytes[3 + idx * 2..5 + idx * 2].copy_from_slice(&value.to_le_bytes());
+    }
+    ProviderFrame::HidInput { report_id: Some(0x3f), bytes }
+}
+
 fn switch_input_prefix(state: &(SwitchProInputs, SwitchProStatus)) -> [u8; 12] {
     let ProviderFrame::HidInput { bytes, .. } = switch_frame(state) else {
         unreachable!("Switch frame is always HID input")
@@ -872,6 +968,24 @@ fn hid(identity: SwitchProIdentity) -> NativeControllerRealization {
             version: 0x0220,
         },
         descriptor: SWITCH_PRO_USB_DESCRIPTOR.to_vec(),
+        numbered_input_reports: true,
+        numbered_output_reports: true,
+        numbered_feature_reports: false,
+    })
+}
+fn bluetooth_hid(identity: SwitchProIdentity) -> NativeControllerRealization {
+    NativeControllerRealization::Uhid(NativeHidRealization {
+        target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+        bus_type: 5,
+        device_name: "Pro Controller".into(),
+        physical_path: "virtualgamepad/uhid/switch-pro-bluetooth".into(),
+        unique_id: common::address_label(identity.bytes()),
+        identity: NativeDeviceIdentity {
+            vendor_id: 0x057e,
+            product_id: 0x2009,
+            version: 0x0220,
+        },
+        descriptor: SWITCH_PRO_BT_DESCRIPTOR.to_vec(),
         numbered_input_reports: true,
         numbered_output_reports: true,
         numbered_feature_reports: false,
@@ -993,6 +1107,7 @@ impl SwitchProController {
         match self.0.selection().target {
             RealizationTarget::LINUX_UINPUT => &EVDEV_SURFACE,
             RealizationTarget::LINUX_UHID_USB => &HID_SURFACE,
+            RealizationTarget::LINUX_UHID_BLUETOOTH => &BT_SURFACE,
             _ => &USB_SURFACE,
         }
     }
@@ -1077,7 +1192,10 @@ impl SwitchProController {
         self.0.commit()
     }
     pub fn refresh_motion(&mut self) -> Result<(), CommitError> {
-        if self.0.selection().target == RealizationTarget::LINUX_UHID_USB {
+        if matches!(
+            self.0.selection().target,
+            RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+        ) {
             return self.0.commit();
         }
         if self.0.state().1.stream_enabled {
@@ -1117,7 +1235,10 @@ impl SwitchProController {
         &mut self,
         callback: &mut dyn FnMut(SwitchProOutputEvent),
     ) -> Result<(), ProviderError> {
-        if self.0.selection().target == RealizationTarget::LINUX_UHID_USB {
+        if matches!(
+            self.0.selection().target,
+            RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+        ) {
             return self
                 .0
                 .drain(&mut |event| callback(SwitchProOutputEvent::from(event)));
@@ -1809,6 +1930,7 @@ fn create_switch_pro_configured(
     let build_realization: fn(SwitchProIdentity) -> NativeControllerRealization = match o.target {
         RealizationTarget::LINUX_UINPUT => |_| evdev_realization(),
         RealizationTarget::LINUX_UHID_USB => hid,
+        RealizationTarget::LINUX_UHID_BLUETOOTH => bluetooth_hid,
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => |_| {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
                 controller: gr_controller_wire::registry::ids::SWITCH_PRO,
@@ -1824,7 +1946,10 @@ fn create_switch_pro_configured(
     let identity = family.identity().map_or_else(generate_identity, Ok)?;
     let realization = build_realization(identity);
     let is_dummy_hcd = o.target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID;
-    let mut controller = if o.target == RealizationTarget::LINUX_UHID_USB {
+    let mut controller = if matches!(
+        o.target,
+        RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+    ) {
         common::create_restored(SwitchProDefinition, realization, o, Some(identity.bytes()))?
     } else {
         common::create(SwitchProDefinition, realization, o)?
@@ -1863,9 +1988,13 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
             &[
                 RealizationTarget::LINUX_UINPUT,
                 RealizationTarget::LINUX_UHID_USB,
+                RealizationTarget::LINUX_UHID_BLUETOOTH,
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             ],
         ),
+        crate::registry::refusal(BT_RESTRICTIONS[0], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
+        crate::registry::refusal(BT_RESTRICTIONS[1], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
+        crate::registry::refusal(BT_RESTRICTIONS[2], &[RealizationTarget::LINUX_UHID_BLUETOOTH]),
         crate::registry::refusal(
             RETAINED_DUMMY[1],
             &[RealizationTarget::LINUX_DUMMY_HCD_USB_HID],
@@ -1893,6 +2022,11 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
                 &USB_SURFACE.common,
                 crate::registry::RealizationTier::FaithfulUsb,
                 crate::registry::PermissionClass::RootBroker,
+            ),
+            crate::registry::FamilyRealization::new(
+                &BT_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
             ),
         ];
         REALIZATIONS

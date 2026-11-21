@@ -1,6 +1,7 @@
 use super::{
     RawReverseEvent, RealizationSessionId, SwitchProDefinition, SwitchProIdentity, SwitchProInputs,
-    SwitchProStatus, common, switch_frame, switch_subcommand_reply, switch_usb_reply,
+    SwitchProStatus, common, switch_frame, switch_simple_frame, switch_subcommand_reply,
+    switch_usb_reply,
 };
 use gr_hid::{
     Command, Delivery, Error, Lifecycle, Protocol, Reply, ReplyError, Report, ReportType,
@@ -19,9 +20,10 @@ pub(crate) struct SwitchUsbProtocol {
     next: Option<u64>,
     active: bool,
     valid: bool,
+    bluetooth: bool,
 }
 impl SwitchUsbProtocol {
-    fn new(identity: SwitchProIdentity) -> Self {
+    fn new(identity: SwitchProIdentity, bluetooth: bool) -> Self {
         Self {
             identity,
             state: <(SwitchProInputs, SwitchProStatus)>::default(),
@@ -32,6 +34,7 @@ impl SwitchUsbProtocol {
             next: Some(0),
             active: true,
             valid: true,
+            bluetooth,
         }
     }
     fn process(&mut self, report: &Report, now: u64) -> Result<(), ReplyError> {
@@ -53,7 +56,7 @@ impl SwitchUsbProtocol {
             return Err(ReplyError::Busy);
         }
         match report.id() {
-            Some(0x80) if !bytes.is_empty() => {
+            Some(0x80) if !self.bluetooth && !bytes.is_empty() => {
                 self.pending
                     .push_back(common::logical_input(switch_usb_reply(
                         bytes[0],
@@ -61,9 +64,18 @@ impl SwitchUsbProtocol {
                     )));
             }
             Some(1) if bytes.len() >= 10 => {
+                if self.bluetooth && matches!(bytes[9], 0x20 | 0x21 | 0x22) {
+                    // Pro-specific MCU behavior is unverified; never synthesize
+                    // a successful NFC/IR MCU response on the Bluetooth path.
+                    return Err(ReplyError::Unsupported);
+                }
                 let (reply, enable) =
                     switch_subcommand_reply(&self.state, bytes[9], &bytes[10..], self.identity);
-                self.stream_enabled |= enable;
+                if self.bluetooth && bytes[9] == 0x03 && bytes.get(10) == Some(&0x3f) {
+                    self.stream_enabled = false;
+                } else {
+                    self.stream_enabled |= enable;
+                }
                 self.pending.push_back(common::logical_input(reply));
             }
             Some(0x10) if bytes.len() >= 9 => {} // Rumble-only report; typed raw output preserved.
@@ -100,7 +112,11 @@ impl Protocol for SwitchUsbProtocol {
         self.state.1.timer = self.timer;
         self.state.1.stream_enabled = self.stream_enabled;
         let mut reports: Vec<_> = self.pending.drain(..).collect();
-        reports.push(common::logical_input(switch_frame(&self.state)));
+        reports.push(common::logical_input(if self.bluetooth && !self.stream_enabled {
+            switch_simple_frame(&self.state)
+        } else {
+            switch_frame(&self.state)
+        }));
         self.timer = self.timer.wrapping_add(1);
         self.next = self.stream_enabled.then_some(now.saturating_add(4000));
         Ok(reports)
@@ -160,7 +176,18 @@ impl common::HidDriver for SwitchProDefinition {
 
     type Hid = SwitchUsbProtocol;
     fn hid_protocol(&self, _: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
-        SwitchUsbProtocol::new(SwitchProIdentity(identity))
+        SwitchUsbProtocol::new(SwitchProIdentity(identity), false)
+    }
+    fn hid_protocol_for_target(
+        &self,
+        _: RealizationSessionId,
+        identity: [u8; 6],
+        target: gr_realization_api::RealizationTarget,
+    ) -> Self::Hid {
+        SwitchUsbProtocol::new(
+            SwitchProIdentity(identity),
+            target == gr_realization_api::RealizationTarget::LINUX_UHID_BLUETOOTH,
+        )
     }
 }
 
