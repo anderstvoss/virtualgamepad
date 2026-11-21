@@ -3,7 +3,7 @@ mod rumble;
 pub use rumble::{DualShock4Rumble, WiiRemoteRumble, Xbox360Rumble, XboxSeriesRumble};
 
 use crate::{
-    ControllerError, DualSenseHidOutput, DualShock4HidOutput, ForceFeedbackEvent, SwitchProRumble,
+    ControllerError, DualSenseHidOutput, DualShock4HidOutput, ForceFeedbackEvent, SwitchProHomeLight, SwitchProRumble,
 };
 
 /// Host lifecycle observation, not controller destruction or automatic reopening.
@@ -53,6 +53,8 @@ pub enum Xbox360OutputEvent {
 pub enum SwitchProOutputEvent {
     HostLifecycle(HostLifecycle),
     ForceFeedback(ForceFeedbackEvent),
+    /// Source-only HOME button light request, not a player indicator.
+    HomeLight(SwitchProHomeLight),
     /// Native payload retains modes/subcommands beyond the compressed motor words.
     Output {
         report_id: Option<u8>,
@@ -111,6 +113,7 @@ pub(crate) fn switch_pro(
     Ok(match event {
         E::HidLifecycle(e) => Some(SwitchProOutputEvent::HostLifecycle(lifecycle(e))),
         E::ForceFeedback(e) => Some(SwitchProOutputEvent::ForceFeedback(e)),
+        E::HomeLight(light) => Some(SwitchProOutputEvent::HomeLight(light)),
         E::Output { report_id, bytes } => Some(SwitchProOutputEvent::Output { report_id, bytes }),
         E::HostRequest { .. } => return Err(request_leaked()),
         E::Other | E::ProviderEvent(_) => None,
