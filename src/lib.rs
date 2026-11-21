@@ -62,7 +62,8 @@ mod creation;
 #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
 mod usb_audio;
 pub use audio::{
-    AudioDiagnostics, AudioEndpoint, AudioEndpointSelector, AudioRead, ControllerAudio,
+    AudioDiagnostics, AudioDirectionAccounting, AudioEndpoint, AudioEndpointSelector, AudioRead,
+    ControllerAudio,
 };
 mod controllers;
 mod output;

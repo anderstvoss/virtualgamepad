@@ -1139,7 +1139,9 @@
             "pub const fn failed(&self) -> bool",
             "pub const fn underrun_frames(&self) -> u64",
             "pub const fn dropped_playback_frames(&self) -> u64",
-            "pub const fn last_error(&self) -> Option<&AudioError>"
+            "pub const fn last_error(&self) -> Option<&AudioError>",
+            "pub const fn playback_accounting(&self) -> Option<&AudioDirectionAccounting>",
+            "pub const fn microphone_accounting(&self) -> Option<&AudioDirectionAccounting>"
           ],
           "traits": [
             "impl Clone for AudioDiagnostics",
@@ -1151,6 +1153,23 @@
             "impl Sync for AudioDiagnostics",
             "impl Unpin for AudioDiagnostics",
             "impl UnwindSafe for AudioDiagnostics"
+          ]
+        },
+        "struct.AudioDirectionAccounting.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct AudioDirectionAccounting {Show 13 fields pub direction: SampleDirection, pub generation: u64, pub produced_frames: u64, pub accepted_frames: u64, pub consumed_frames: u64, pub dropped_at_ingress_frames: u64, pub dropped_on_flush_frames: u64, pub dropped_on_close_frames: u64, pub queued_frames: u64, pub dropped_in_callback_frames: Option<u64>, pub dropped_in_worker_frames: Option<u64>, pub silence_inserted_frames: Option<u64>, pub discontinuities: u64, }"
+          ],
+          "traits": [
+            "impl Clone for AudioDirectionAccounting",
+            "impl Copy for AudioDirectionAccounting",
+            "impl Debug for AudioDirectionAccounting",
+            "impl Eq for AudioDirectionAccounting",
+            "impl PartialEq for AudioDirectionAccounting",
+            "impl RefUnwindSafe for AudioDirectionAccounting",
+            "impl Send for AudioDirectionAccounting",
+            "impl Sync for AudioDirectionAccounting",
+            "impl Unpin for AudioDirectionAccounting",
+            "impl UnwindSafe for AudioDirectionAccounting"
           ]
         },
         "struct.AudioEndpoint.html": {
@@ -4801,7 +4820,9 @@
             "pub const fn failed(&self) -> bool",
             "pub const fn underrun_frames(&self) -> u64",
             "pub const fn dropped_playback_frames(&self) -> u64",
-            "pub const fn last_error(&self) -> Option<&AudioError>"
+            "pub const fn last_error(&self) -> Option<&AudioError>",
+            "pub const fn playback_accounting(&self) -> Option<&AudioDirectionAccounting>",
+            "pub const fn microphone_accounting(&self) -> Option<&AudioDirectionAccounting>"
           ],
           "traits": [
             "impl Clone for AudioDiagnostics",
@@ -4813,6 +4834,23 @@
             "impl Sync for AudioDiagnostics",
             "impl Unpin for AudioDiagnostics",
             "impl UnwindSafe for AudioDiagnostics"
+          ]
+        },
+        "struct.AudioDirectionAccounting.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct AudioDirectionAccounting {Show 13 fields pub direction: SampleDirection, pub generation: u64, pub produced_frames: u64, pub accepted_frames: u64, pub consumed_frames: u64, pub dropped_at_ingress_frames: u64, pub dropped_on_flush_frames: u64, pub dropped_on_close_frames: u64, pub queued_frames: u64, pub dropped_in_callback_frames: Option<u64>, pub dropped_in_worker_frames: Option<u64>, pub silence_inserted_frames: Option<u64>, pub discontinuities: u64, }"
+          ],
+          "traits": [
+            "impl Clone for AudioDirectionAccounting",
+            "impl Copy for AudioDirectionAccounting",
+            "impl Debug for AudioDirectionAccounting",
+            "impl Eq for AudioDirectionAccounting",
+            "impl PartialEq for AudioDirectionAccounting",
+            "impl RefUnwindSafe for AudioDirectionAccounting",
+            "impl Send for AudioDirectionAccounting",
+            "impl Sync for AudioDirectionAccounting",
+            "impl Unpin for AudioDirectionAccounting",
+            "impl UnwindSafe for AudioDirectionAccounting"
           ]
         },
         "struct.AudioEndpoint.html": {

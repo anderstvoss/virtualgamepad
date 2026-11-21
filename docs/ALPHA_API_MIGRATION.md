@@ -1,5 +1,16 @@
 # Pre-alpha API refinement migration
 
+## Brief 16 A0 — per-direction loss accounting (ar1-audio-telemetry)
+
+**Additive ordinary-root API** (both default and all-feature snapshot views; no renamed or removed symbols):
+- `AudioDiagnostics::playback_accounting() -> Option<&AudioDirectionAccounting>` and `AudioDiagnostics::microphone_accounting() -> Option<&AudioDirectionAccounting>`.
+- `AudioDirectionAccounting` (`#[non_exhaustive]`, `Clone + Copy + Debug + PartialEq + Eq`) exposes `direction: SampleDirection`, `generation: u64`, `produced_frames`, `accepted_frames`, `consumed_frames`, `dropped_at_ingress_frames`, `dropped_on_flush_frames`, `dropped_on_close_frames`, `queued_frames`, `discontinuities` (all frame counters `u64`), and optional `dropped_in_callback_frames`, `dropped_in_worker_frames`, `silence_inserted_frames` (`Option<u64>`).
+- Internal/supporting queue SPI adds `PcmQueueAccounting` and `PcmProducer::accounting()`, `PcmConsumer::accounting()`, `PcmConsumer::observer()`, `PcmObserver::accounting()`, with generation and cumulative queue counter fields. PipeWire `Session` and USB client-pump `SampleStreams` expose local queue snapshots; no broker or worker IPC wire change.
+
+Source padding is now attributed to the specific PipeWire direction while the original legacy aggregate `underrun_frames()` is preserved. Real USB Samples mode reports `None` for its unobserved retained silence stage; callers must consult separately queried USB microphone progress.
+
+**Migration:** Existing `diagnostics()` consumers require no change; the five existing getters keep their meanings. New getters return `None` for an uninstrumented direction; optional stage fields are not numerical zeros. A record is a nontransactional **queue-local** snapshot: graph/worker/USB stage counts may overlap, so never sum unrelated counters to claim end-to-end frames. `generation` distinguishes explicit flush/reset from numerical counter wrap; the queue refuses generation overflow. See [A0 loss inventory](AUDIO_LOSS_ACCOUNTING.md) and [synthetic receipt](../crates/gr-audio-contract/tests/fake_clock_receipt.rs). The alpha API snapshot is regenerated/reviewed separately in this PR; live host and physical qualification were **not run**.
+
 ## P10a · Xbox Series synthetic identity (Alpha 2)
 
 `XboxSeriesIdentity` is added to the ordinary root and supporting Xbox Series
