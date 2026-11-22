@@ -173,6 +173,9 @@ def check(root, write=False, verify_remote=False):
             # steam-s3-1302-report-shapes / steam-s3-1302-usb-interface.
             # Compile the exact decoded capture, without parsing profiles at runtime.
             raw = bytes.fromhex(data.decode())
+            if name == 'wii-p6-retail-plus-rvl-cnt-01-descriptor' and hashlib.sha256(raw).hexdigest() != (
+                    '4d40cb52850ded69a8c1474fff35dfd3e102d4b10ad3579258ab37f4a36fb3ef'):
+                raise ValueError('physical descriptor raw hash mismatch: ' + name)
             if name == 'steam-s3-1302-report-descriptor' and hashlib.sha256(raw).hexdigest() != (
                     '315a037c849ef9510d222ae520bb18c1b72552d26eb116c91b0750901a5c51fd'):
                 raise ValueError('physical descriptor raw hash mismatch: ' + name)
