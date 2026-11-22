@@ -271,8 +271,9 @@ pub(super) fn frame(role: Role, state: &RuntimeState) -> ProviderFrame {
 // Reuse for Original and TR is a compatibility choice, not retail validation
 // of either unmeasured revision. W8 speaker controls/data decode as before;
 // speaker audio playback remains refused.
-pub(super) const DESCRIPTOR: &[u8; 217] =
-    &include!("../../../../tests/fixtures/protocol-research/wii-p6-retail-plus-rvl-cnt-01-descriptor.rs");
+pub(super) const DESCRIPTOR: &[u8; 217] = &include!(
+    "../../../../tests/fixtures/protocol-research/wii-p6-retail-plus-rvl-cnt-01-descriptor.rs"
+);
 /// HID/input version reported by a real RVL-CNT-01 over Bluetooth, measured on
 /// one retail Original remote (#158 comment 7061259225). It is a model-level
 /// value, not a per-unit identifier. No RVL-CNT-01-TR value has been measured,
