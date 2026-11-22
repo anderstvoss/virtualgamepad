@@ -77,8 +77,8 @@ pub static TOPOLOGY: InputTopology = InputTopologySpec {
 .build();
 static RESTRICTIONS: &[TargetRestriction] = &[
     TargetRestriction {
-        feature: "host-visible Bluetooth identity",
-        reason: "the typed address is available on the handle; the pinned consumer evidence does not establish address semantics for UHID uniq",
+        feature: "Bluetooth radio pairing",
+        reason: "UHID publishes the typed address as kernel uniq; it does not create a radio device or a pairing channel",
     },
     TargetRestriction {
         feature: "source-only compatibility model",
