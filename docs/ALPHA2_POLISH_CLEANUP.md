@@ -1,7 +1,7 @@
 # Alpha 2 controller polish cleanup
 
 Baseline virtualgamepad revision `d9cc4445bcd0901f84d10635c6b82403f0e1d765`. The virtual host tests used SDL 3.4.20.
-The research records link the baseline experiments to the existing claims. [Research PR #167](https://github.com/anderstvoss/controller-protocol-research/pull/167).
+The pinned research records link the baseline experiments to the existing claims. [Baseline host evidence](https://github.com/anderstvoss/controller-protocol-research/blob/a584c3bb43d13009eaed8127d232b86fe41723ad/docs/alpha2-polish-host-evidence.md).
 
 ## USB stock and generic binding
 
@@ -22,7 +22,7 @@ Steam listed the stock USB-bus Switch Pro and displayed neutral sticks and trigg
 
 The stock Wii driver bound, and its `uniq` matched the typed synthetic identity. Four of four synthetic EEPROM chunks matched through an exact-node hidraw ACL. After an `ENOMEM` probe and memory compaction, SDL default enumeration found one owned evdev joystick. SDL did not list the owned hidraw through its default HIDAPI configuration. The original ACL was verified before close, and the device was removed.
 
-The retail-descriptor PR was still open at review. P6 default enumeration, HIDAPI claim and Dolphin reruns remain pending on the merged revision. [Retail descriptor PR](https://github.com/anderstvoss/virtualgamepad/pull/432).
+The baseline used the synthetic descriptor. The retail-descriptor follow-up tests each Wii Remote revision separately. [Retail descriptor PR](https://github.com/anderstvoss/virtualgamepad/pull/432).
 
 ## Synthetic calibration
 
@@ -54,3 +54,27 @@ Each timing batch ran 50 cycles with `--sdl` and no latency budgets. The baselin
 ## Authorized private checks
 
 Two Original Wii EEPROM Save/Load cycles matched the private source envelope. Both virtual instances were removed. The USB DualSense read-only capture returned both requested feature reports. On each virtual DualSense bus, both reports matched after accounting for Bluetooth CRC framing, and kernel and SDL calibration and firmware matched. Both virtual realizations were removed.
+
+## Cleanup 2 run matrix
+
+The cleanup 2 matrix uses distinct receipt IDs for the retail Wii Original and
+Plus, USB stock and generic binding, Steam Switch Pro generic, Steam DualSense
+gyro, Bluetooth SDL mapping, and the six corrected timing batches. Its baseline
+is `dda74f526bd40054a1552bce54e2e5e103c4941a`. [Run matrix](../scripts/alpha2-polish-matrix.json).
+
+- Wii records driver probe completion, typed identity, synthetic EEPROM replies,
+  default SDL enumeration, SDL HIDAPI claim, and Dolphin discovery separately.
+- Generic binding records the stock and parameter-enabled arms independently.
+  The Xbox 360 stock driver already covers the generic path. A privileged arm
+  requires the original HID parameter value and a stock-binding check after
+  restoration.
+- The Steam gyro row records the owned endpoint, feature and output traffic,
+  provider replies and motion reports alongside the calibration UI response.
+- SDL mapping acceptance for these Bluetooth pads requires the default HIDAPI
+  path to map each isolated control and return it to neutral. The HIDAPI-off
+  evdev arm measures fallback compatibility separately.
+- Timing runs N1 and N3 for 50 cycles with SDL and no latency budgets. Each row
+  counts creation, appearance, direct open, SDL open and removal independently.
+
+Cleanup 2 outcomes remain pending in this document until their experiment
+records are available in the pinned research corpus.
