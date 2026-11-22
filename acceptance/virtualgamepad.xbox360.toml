@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.xbox360"
-research_revision = "47bd06220804f8f58ec4bc07eea322bf76c8a673"
+research_revision = "07bfb6ca38537fabf056be628e53d1c9898608fb"
 realizations = ["linux.uinput", "linux.uhid.usb", "linux.dummy_hcd.usb-hid", "linux.usbip.usb-audio"]
 refused_operations = []
 persistent_resources = []
@@ -43,7 +43,7 @@ id = "lifecycle"
 "linux.uinput" = { status = "wip", test_id = "acceptance/xbox360/lifecycle", evidence = ["x360-vg-exp0010-evdev-ff"], reason = "Historical virtual consumer evidence for this realization only; per-function acceptance pending, so the cell is not promoted." }
 "linux.uhid.usb" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#usb-stock-and-generic-binding", test_id = "acceptance/xbox360/lifecycle", evidence = ["x360-vg-exp0009-standard-hid-controls", "x360-vg-exp0017-individual-uhid"], reason = "Three stock USB-bus UHID sessions exposed their owned nodes, opened in SDL evdev, and removed their HID parent on close." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/xbox360/lifecycle", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_FOLLOWUP.md#usbip-consumer-timing", test_id = "acceptance/xbox360/lifecycle", evidence = [], reason = "P5a follow-up observed creation, evdev open, SDL open and measured removal of the broker-owned attachment in all N1 and N3 slots." }
+"linux.usbip.usb-audio" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_FOLLOWUP.md#usbip-consumer-timing", test_id = "acceptance/xbox360/lifecycle", evidence = ["vg-p5a-followup-xbox360-usbip-timing"], reason = "P5a follow-up observed creation, evdev open, SDL open and measured removal of the broker-owned attachment in all N1 and N3 slots." }
 
 [[functions]]
 id = "rumble"
