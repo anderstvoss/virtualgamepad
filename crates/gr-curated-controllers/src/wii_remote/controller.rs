@@ -3,7 +3,9 @@ use super::{
 };
 use crate::{CreationOptions, common};
 use gr_controller_contract::{CommitError, ControlError, ControllerSurface, DigitalControlUpdate};
-use gr_realization_api::{ProviderError, RawReverseEvent, RealizationTarget};
+use gr_realization_api::{
+    NativeControllerRealization, ProviderError, RawReverseEvent, RealizationTarget,
+};
 
 pub struct WiiRemoteController {
     identity: WiiRemoteIdentity,
@@ -65,12 +67,21 @@ pub(super) fn create(
         role: Role::Core,
         provider: provider.clone(),
     };
-    let specification = if target == RealizationTarget::LINUX_UINPUT {
-        realizations::specification(Role::Core, revision)
+    let session = if target == RealizationTarget::LINUX_UINPUT {
+        common::create(
+            driver,
+            realizations::specification(Role::Core, revision),
+            options,
+        )
     } else {
-        realizations::hid(revision)
-    };
-    let session = common::create(driver, specification, options)?.require_protocol(|| {
+        let mut realization = realizations::hid(revision);
+        let NativeControllerRealization::Uhid(spec) = &mut realization else {
+            unreachable!("Wii Bluetooth realization must use UHID");
+        };
+        spec.unique_id = common::address_label(identity.bytes());
+        common::create_with_hid_uniq(driver, realization, options)
+    }?;
+    let session = session.require_protocol(|| {
         let mut protocol = super::codec::WiiProtocol::default();
         protocol.state = state.clone();
         protocol
