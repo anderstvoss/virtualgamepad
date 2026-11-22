@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -38,6 +40,17 @@ class Alpha2PolishReportTests(unittest.TestCase):
         text = report.markdown_table(self.matrix, rows)
         self.assertIn("verified (sessions 3)", text)
         self.assertNotIn("private observation", text)
+
+    def test_cleanup_prefix_lists_distinct_rows_and_excludes_baseline(self):
+        result = subprocess.run(
+            [sys.executable, report.__file__, self.attempt, SHA, "--row-prefix", "cleanup2-"],
+            check=True, capture_output=True, text=True,
+        )
+        self.assertIn("`cleanup2-map-dualsense-hidapi`", result.stdout)
+        self.assertIn("`cleanup2-map-dualsense-evdev`", result.stdout)
+        self.assertIn("`cleanup2-timing-dualsense-n1`", result.stdout)
+        self.assertIn("`cleanup2-timing-dualsense-n3`", result.stdout)
+        self.assertNotIn("`timing-dualsense-n1`", result.stdout)
 
     def test_resume_preserves_manifest_order_and_rejects_leftovers(self):
         self.create_receipt(status="expected refusal")
