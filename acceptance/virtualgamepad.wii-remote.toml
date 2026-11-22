@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.wii-remote"
-research_revision = "a67781e2412eceea9440d20dbb350ad5d3352c25"
+research_revision = "07bfb6ca38537fabf056be628e53d1c9898608fb"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
 refused_operations = ["speaker-audio", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
 persistent_resources = ["caller-imported-eeprom", "caller-imported-extension-calibration"]
@@ -86,7 +86,7 @@ id = "rumble"
 [[functions]]
 id = "live-rumble-consumer"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "untested: native uinput live rumble not run; deterministic fake-provider path covered. Level: Generic." }
+"linux.uinput" = { status = "virtual-live", live_evidence = "docs/WII_REMOTE.md#p6-retail-uinput-rumble-probe", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "Two bounded stock uinput FF consumer probes on 2e18a9c3 completed upload/play/stop/erase, retained rumble off/on/off and exact removal of all three owned nodes after two closes. Software intent only, not physical motor delivery. Level: Generic." }
 "linux.uhid.bluetooth" = { status = "virtual-live", live_evidence = "docs/WII_REMOTE.md#bounded-host-evidence", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding"], reason = "Virtual bus 5 kernel evdev upload/play/stop/erase succeeded and retained native rumble was seen. This is software intent delivery, not physical vibration. Level: Native HID." }
 
 [[functions]]
@@ -129,13 +129,13 @@ id = "retail-eeprom-size"
 id = "original-identity"
 [functions.cells]
 "linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::every_native_node_matches_the_independently_extracted_kernel_capability_set", evidence = ["wii-original-remote-consumer-revision"], reason = "Source-backed name/VID/PID; provider bus is USB 3 instead of the kernel consumer Bluetooth 5 and has no fuzz field." }
-"linux.uhid.bluetooth" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#wii-bluetooth-consumers", test_id = "wii_remote::realizations::tests::bluetooth_identity_numbering_and_synthetic_descriptor_are_exact", evidence = ["wii-original-remote-consumer-revision", "wii-c5-functional-descriptor"], reason = "Stock Wii kernel binding and exact typed virtual uniq equality were observed on the Original Bluetooth-bus UHID realization." }
+"linux.uhid.bluetooth" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#wii-bluetooth-consumers", test_id = "wii_remote::realizations::tests::bluetooth_descriptor_equals_pinned_retail_research_fixture", evidence = ["wii-original-remote-consumer-revision", "wii-p6-retail-plus-rvl-cnt-01-descriptor-observed", "wii-p6-retail-plus-rvl-cnt-01-descriptor-comparison"], reason = "Stock Wii kernel binding and exact typed virtual uniq equality were observed on the Original Bluetooth-bus UHID realization at d9cc444, before the retail descriptor swap. Bus 5 now uses the byte-exact descriptor captured on one RVL-036 Plus advertising RVL-CNT-01, a compatibility choice; the post-change P6 consumer reruns are pending." }
 
 [[functions]]
 id = "tr-identity"
 [functions.cells]
-"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::bluetooth_identity_numbering_and_synthetic_descriptor_are_exact", evidence = ["wii-tr-consumer-revision"], reason = "Source-backed distinct TR name/product; live TR consumer run not performed." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::bluetooth_identity_numbering_and_synthetic_descriptor_are_exact", evidence = ["wii-tr-consumer-revision"], reason = "TR remains distinct from Original/early Plus; live TR or physical revision acceptance untested." }
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::bluetooth_identity_numbering_and_retail_descriptor_are_exact", evidence = ["wii-tr-consumer-revision"], reason = "Source-backed distinct TR name/product; live TR consumer run not performed." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::bluetooth_descriptor_equals_pinned_retail_research_fixture", evidence = ["wii-tr-consumer-revision", "wii-p6-retail-plus-rvl-cnt-01-descriptor-comparison"], reason = "TR identity remains distinct; the P6 RVL-CNT-01 (non-TR) descriptor is reused only as a compatibility choice. No TR capture, live TR acceptance or merged-commit rerun." }
 
 [[functions]]
 id = "early-plus-identity"
@@ -342,7 +342,7 @@ id = "motionplus-passthrough-calibration-copy"
 id = "plus-identity-discovery"
 [functions.cells]
 "linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::plus_native_roles_preserve_all_source_controls_with_plus_identity", evidence = ["wii-gap-plustrace-acceptance-and-revision-contract", "wii-c5-evdev-native-values"], reason = "Plus-scoped native source regression preserves core, gyro and child capabilities with product 0330. No live Plus acceptance or HID register behavior is inherited from Original." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::bluetooth_identity_numbering_and_synthetic_descriptor_are_exact", evidence = ["wii-gap-plus-bluetooth-identities", "wii-gap-plustrace-acceptance-and-revision-contract"], reason = "Plus Tr creation uses Bluetooth 057e:0330 and Nintendo RVL-CNT-01-TR; synthetic descriptor, no physical capture or inherited Original acceptance." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::bluetooth_descriptor_equals_pinned_retail_research_fixture", evidence = ["wii-gap-plus-bluetooth-identities", "wii-gap-plustrace-acceptance-and-revision-contract", "wii-p6-retail-plus-rvl-cnt-01-descriptor-observed", "wii-p6-retail-plus-rvl-cnt-01-descriptor-comparison"], reason = "Plus TR creation uses Bluetooth 057e:0330 and Nintendo RVL-CNT-01-TR. P6 physically captured only RVL-036 advertising RVL-CNT-01; using its descriptor for TR is an unvalidated compatibility choice. No TR physical capture or post-change acceptance." }
 
 [[functions]]
 id = "plus-builtin-motionplus-probe-activation"

@@ -264,29 +264,16 @@ pub(super) fn frame(role: Role, state: &RuntimeState) -> ProviderFrame {
     });
     ProviderFrame::Evdev(events)
 }
-// Interim, independently authored W2 synthetic descriptor, owner option B
-// (#158 comment6354044408). Generic Desktop/Game Pad collection; fields remain
-// vendor-page Variable bytes. Historical wii-c5-functional-descriptor supplies
-// the historical report table; wii-c5-report-layouts supplies payload sizes.
-// W8 adds control ACKs and a rumble-only data sink, not audio playback:
-// audio-wii-dolphin-control-and-stream-reports supplies 14/18/19 payload sizes.
-// No rnconrad bytes or retail-authenticity claim. Retail-evidence successor:#238.
-pub(super) const DESCRIPTOR: &[u8] = &[
-    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x06, 0x00, 0xff, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08,
-    0x85, 0x20, 0x09, 0x01, 0x95, 0x06, 0x81, 0x02, 0x85, 0x21, 0x09, 0x01, 0x95, 0x15, 0x81, 0x02,
-    0x85, 0x22, 0x09, 0x01, 0x95, 0x04, 0x81, 0x02, 0x85, 0x30, 0x09, 0x01, 0x95, 0x02, 0x81, 0x02,
-    0x85, 0x31, 0x09, 0x01, 0x95, 0x05, 0x81, 0x02, 0x85, 0x32, 0x09, 0x01, 0x95, 0x0a, 0x81, 0x02,
-    0x85, 0x33, 0x09, 0x01, 0x95, 0x11, 0x81, 0x02, 0x85, 0x34, 0x09, 0x01, 0x95, 0x15, 0x81, 0x02,
-    0x85, 0x35, 0x09, 0x01, 0x95, 0x15, 0x81, 0x02, 0x85, 0x36, 0x09, 0x01, 0x95, 0x15, 0x81, 0x02,
-    0x85, 0x37, 0x09, 0x01, 0x95, 0x15, 0x81, 0x02, 0x85, 0x3d, 0x09, 0x01, 0x95, 0x15, 0x81, 0x02,
-    0x85, 0x3e, 0x09, 0x01, 0x95, 0x15, 0x81, 0x02, 0x85, 0x3f, 0x09, 0x01, 0x95, 0x15, 0x81, 0x02,
-    0x85, 0x10, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02, 0x85, 0x11, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02,
-    0x85, 0x12, 0x09, 0x01, 0x95, 0x02, 0x91, 0x02, 0x85, 0x13, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02,
-    0x85, 0x15, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02, 0x85, 0x16, 0x09, 0x01, 0x95, 0x15, 0x91, 0x02,
-    0x85, 0x17, 0x09, 0x01, 0x95, 0x06, 0x91, 0x02, 0x85, 0x1a, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02,
-    0x85, 0x14, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02, 0x85, 0x18, 0x09, 0x01, 0x95, 0x15, 0x91, 0x02,
-    0x85, 0x19, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02, 0xc0,
-];
+// P6: byte-for-byte retail RVL-036/RVL-CNT-01 HID descriptor captured in
+// wii-p6-retail-plus-rvl-cnt-01-descriptor-observed and compared in
+// wii-p6-retail-plus-rvl-cnt-01-descriptor-comparison. The compiled byte array
+// is generated from the pinned physical research fixture, not transcribed.
+// Reuse for Original and TR is a compatibility choice, not retail validation
+// of either unmeasured revision. W8 speaker controls/data decode as before;
+// speaker audio playback remains refused.
+pub(super) const DESCRIPTOR: &[u8; 217] = &include!(
+    "../../../../tests/fixtures/protocol-research/wii-p6-retail-plus-rvl-cnt-01-descriptor.rs"
+);
 /// HID/input version reported by a real RVL-CNT-01 over Bluetooth, measured on
 /// one retail Original remote (#158 comment 7061259225). It is a model-level
 /// value, not a per-unit identifier. No RVL-CNT-01-TR value has been measured,
@@ -428,7 +415,7 @@ mod tests {
     }
 
     #[test]
-    fn bluetooth_identity_numbering_and_synthetic_descriptor_are_exact() {
+    fn bluetooth_identity_numbering_and_retail_descriptor_are_exact() {
         for (revision, name, pid) in [
             (WiiRemoteRevision::Original, "Nintendo RVL-CNT-01", 0x0306),
             (WiiRemoteRevision::Tr, "Nintendo RVL-CNT-01-TR", 0x0330),
@@ -445,26 +432,30 @@ mod tests {
                     && s.numbered_output_reports
                     && !s.numbered_feature_reports
             );
-            let mut expected: Vec<_> = include_str!(
-                "../../../../tests/fixtures/protocol-research/wii-c5-functional-descriptor.hex"
-            )
-            .split_whitespace()
-            .map(|b| u8::from_str_radix(b, 16).unwrap())
+            assert_eq!(s.descriptor.len(), 217);
+        }
+    }
+    #[test]
+    fn bluetooth_descriptor_equals_pinned_retail_research_fixture() {
+        // Research fixture wii-p6-retail-plus-rvl-cnt-01-descriptor, obtained
+        // from the captured unit; no bytes originate from the interim model.
+        let fixture = include_str!(
+            "../../../../tests/fixtures/protocol-research/wii-p6-retail-plus-rvl-cnt-01-descriptor.hex"
+        );
+        let raw_hex = fixture.trim();
+        assert_eq!(raw_hex.len(), 217 * 2);
+        let expected: Vec<u8> = raw_hex
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
             .collect();
-            // Historical C5 vendor collection is retained as a research fixture.
-            // W2 changes only collection usage/page and restores the vendor page
-            // before the byte fields. W8 appends only three source-sized output
-            // entries; every historical report byte remains covered exactly.
-            let end = expected.len() - 1;
-            expected.splice(
-                end..end,
-                [
-                    0x85, 0x14, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02, 0x85, 0x18, 0x09, 0x01, 0x95,
-                    0x15, 0x91, 0x02, 0x85, 0x19, 0x09, 0x01, 0x95, 0x01, 0x91, 0x02,
-                ],
-            );
-            assert_eq!(&s.descriptor[..9], &[5, 1, 9, 5, 0xa1, 1, 6, 0, 0xff]);
-            assert_eq!(&s.descriptor[9..], &expected[7..]);
+        assert_eq!(expected.len(), 217);
+        assert_eq!(&DESCRIPTOR[..], expected.as_slice());
+        for revision in [WiiRemoteRevision::Original, WiiRemoteRevision::Tr] {
+            let NativeControllerRealization::Uhid(spec) = hid(revision) else {
+                unreachable!()
+            };
+            assert_eq!(spec.descriptor.as_slice(), expected.as_slice());
         }
     }
     #[test]
