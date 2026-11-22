@@ -962,6 +962,16 @@ optional raw observations as an authoritative stream. Wii supporting snapshot:
 Existing events, raw payloads, FF effect types and retained snapshots are unchanged.
 These additive ordinary-root declarations do not change protocol admission or qualify physical output.
 
+## P9b — DualShock 4 Bluetooth-bus UHID (Alpha 2, #155 / #365)
+
+The explicit `RealizationTarget::LINUX_UHID_BLUETOOTH` selection is available in `create_dualshock4` and the family manifest; no implicit USB fallback or transport auto-selection is introduced. `DualShock4Inputs`, `set_inputs`, `edit_inputs`, `status()` and `DualShock4Identity` remain the shared semantic API. Restored identity now also applies to the Bluetooth-bus UHID `uniq`; a newly created Bluetooth session generates its own instance identity.
+
+**Public API delta:** the existing non-exhaustive `DualShock4HidOutput` enum gains `BluetoothOutput { raw: Vec<u8>, right_motor: u8, left_motor: u8, lightbar_rgb: Option<[u8;3]>, blink: Option<[u8;2]> }`. Existing USB `UsbOutput` remains unchanged. Matchers should continue to include the `Unknown` fallback. `host_outputs()` uses the same retained `motors`, `lightbar_rgb` and `blink` fields on both UHID transports. Bluetooth audio has no endpoint and is explicitly restricted.
+
+**Supporting-crate definition delta:** `gr-curated-controllers::dualshock4::DualShock4Definition` is now a transport-tagged struct rather than a zero-sized unit struct. A same-named public constant preserves existing value-expression construction for USB callers; a private constructor selects Bluetooth only inside the explicit factory. This supporting definition is not exported through the ordinary `virtualgamepad` root API snapshot. External users should use `create_dualshock4` rather than rely on the representation of this supporting definition.
+
+Source evidence only: research [draft PR #159](https://github.com/anderstvoss/controller-protocol-research/pull/159) and claims `ds4-bt-consumer-input-envelope`, `ds4-bt-consumer-output-effects`, `ds4-bt-consumer-calibration-open`, `ds4-bt-consumer-identity-uniq`. The pin follows after research merges. No host run or physical-device validation was performed here; P5b local kalux run remains outstanding.
+
 ## P9a DualSense Bluetooth-bus UHID (#154, #365)
 
 **Public API delta:** `create_dualsense(CreationOptions::new(RealizationId::LINUX_UHID_BLUETOOTH), DualSenseOptions::default())` now accepts this exact target, with no USB fallback. The existing `RealizationId`, `DualSenseInputs`, `DualSenseStatus`, `DualSenseIdentity`, `set_inputs`, `edit_inputs`, and `host_outputs` signatures do not change. The report codec is internal. The checked-in alpha API snapshot and generated inventory have **no signature additions**, so the snapshot must remain byte-identical after `scripts/check-alpha-api.py`.

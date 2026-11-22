@@ -717,7 +717,11 @@ fn creation_targets_follow_each_registered_family_and_compiled_factories() {
             targets.contains(&RealizationId::LINUX_UHID_BLUETOOTH),
             matches!(
                 kind,
-                Kind::DualSense | Kind::WiiRemote | Kind::XboxSeries | Kind::SwitchPro
+                Kind::DualSense
+                    | Kind::DualShock4
+                    | Kind::WiiRemote
+                    | Kind::XboxSeries
+                    | Kind::SwitchPro
             )
         );
         for target in targets {
