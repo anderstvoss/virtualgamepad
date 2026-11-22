@@ -7,6 +7,36 @@ per-feature dispositions in
 [`acceptance/virtualgamepad.wii-remote.toml`](../acceptance/virtualgamepad.wii-remote.toml).
 It is not physical-reference or whole-controller acceptance.
 
+## P6 retail uinput rumble probe
+
+On 2026-11-21, the stock `scripts/wii-evdev-rumble-probe.c` was run twice
+against virtualgamepad `2e18a9c3faeaf0ee4835882f7b264ed7ad004ed4`.
+Both runs completed the kernel uinput FF upload, play, stop, and erase
+sequence; retained rumble state changed off, on, off. All three owned
+event nodes disappeared after two closes. This is bounded live Linux
+uinput consumer/software-intent evidence, not proof of physical motor
+delivery or a new test on the merged descriptor. See
+[the Wii tracker result](https://github.com/anderstvoss/virtualgamepad/issues/158#issuecomment-7072384755).
+
+## P6 pinned retail HID descriptor
+
+The generated 217-byte `wii-p6-retail-plus-rvl-cnt-01-descriptor` fixture
+comes directly from the research capture of one retail RVL-036 Wii Remote Plus
+advertising `Nintendo RVL-CNT-01`; its two SDP reads and a bound hidraw read
+agreed. Claims:
+`wii-p6-retail-plus-rvl-cnt-01-descriptor-observed` and
+`wii-p6-retail-plus-rvl-cnt-01-descriptor-comparison`.
+It retains the Game Pad application collection, report directions, IDs and
+payload lengths of the W2/W8 interim model, but changes vendor-page main-item
+flags from Variable (0x02) to retail Array (0x00). The pinned research fixture
+is the source of the compiled bytes; the historical C5 synthetic fixture is
+not modified. The descriptor is reused by Original and TR realizations as a
+compatibility choice; the single observed Plus unit does not validate those
+other revisions. W8 speaker configuration/data decode and acknowledgements
+remain, while speaker audio is explicitly refused. hid-wiimote, SDL and Dolphin
+must be rerun locally against the merged commit; prior results do not qualify
+this replacement.
+
 ## Native ownership and use
 
 At the ordinary root, call
@@ -153,10 +183,11 @@ The final input/status contract and neutralization rules are recorded in
   IR 1023/1023 sentinel. There is no explicit evdev point-visibility/blob field.
 - Wii LED-class and `power_supply` endpoints belong to the HID kernel driver;
   plain uinput cannot provide them. Its target surface states this limitation.
-- Bluetooth-bus UHID uses Nintendo identity and an authored interim synthetic
-  Generic Desktop/Game Pad collection with vendor-page fields and source-backed
-  report sizes (W2 option B; retail-evidence successor #238). It is not a retail
-  descriptor. Bus 5 is local kernel metadata: no radio, pairing or BlueZ.
+- Bluetooth-bus UHID uses Nintendo identity and the pinned retail RVL-036
+  descriptor with Generic Desktop/Game Pad collection and vendor-page Array
+  fields. That capture covers one Plus advertising RVL-CNT-01, not the other
+  revisions using the same bytes. Bus 5 is local kernel metadata: no radio,
+  pairing or BlueZ.
   The Original reports version 0x8601, measured on one retail remote. No -TR
   value has been measured, so -TR keeps version 0.
 - SDL and Steam pick a gamepad mapping from device identity. On a real remote
@@ -362,8 +393,9 @@ its records; none establishes retail fidelity or a firmware report clock.
 Encrypted workflows and Classic Pro stay refused. EEPROM images remain
 opaque, length-validated caller imports, with no invented checksums or per-device
 factory values (`wii-gap-extension-calibration-checksum-unknown`,
-`wii-gap-classic-pro-full-id-physical-unknown`). The subsequent W2 owner decision on #158 authorizes only the interim synthetic
-Game Pad collection described below; the retail descriptor remains unknown.
+`wii-gap-classic-pro-full-id-physical-unknown`). The subsequent W2 owner decision on #158 authorized the interim synthetic
+Game Pad collection described below. P6 later superseded its descriptor bytes
+with the bounded retail capture; the W2 consumer observations remain historical.
 Permissions, consumer discovery and timing remain separate acceptance questions;
 the earlier C5/W1 measurements are never relabelled as Part C measurements.
 
@@ -376,8 +408,8 @@ IDs and payload lengths were unchanged at W2; speaker IDs 14/18/19 were absent.
 The historical `wii-c5-functional-descriptor` fixture still records C5 and is
 used to verify the historical report body. W8 later appends source-sized speaker
 control reports and data handling for rumble only, without playback. No rnconrad candidate bytes were
-copied or used as a template. Retail-evidence replacement is tracked in#238;
-this interim descriptor makes no retail authenticity claim.
+copied or used as a template. The P6 retail fixture subsequently replaced this interim
+descriptor (#238); these historical W2 observations are not P6 consumer runs.
 
 Unsupported active MotionPlus A4FE selectors now use the same atomic deactivation
 path as 55 at A400F0: ACK, unplug/current-port statuses, data pause and preserved
