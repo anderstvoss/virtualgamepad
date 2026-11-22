@@ -48,7 +48,7 @@ id = "lifecycle"
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/lifecycle", evidence = ["ds-vg-exp0006-uhid-startup"], reason = "Evidence linked; per-function acceptance pending." }
 "linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualsense/lifecycle", evidence = ["ds-l0-consumer-probe-feature-failure-tolerance"], reason = "Source-backed Bluetooth HID report format only; synthetic codec and physical behavior unvalidated on a host." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/lifecycle", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/lifecycle", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.usbip.usb-audio" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_FOLLOWUP.md#usbip-consumer-timing", test_id = "acceptance/dualsense/lifecycle", evidence = [], reason = "P5a follow-up observed creation, evdev open, SDL open and measured removal of the broker-owned attachment in all N1 and N3 slots." }
 
 [[functions]]
 id = "touchpad"

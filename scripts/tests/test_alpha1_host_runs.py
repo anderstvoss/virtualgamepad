@@ -69,6 +69,17 @@ class MatrixParsing(unittest.TestCase):
         self.assertTrue(matrix.summarize_probe(json.dumps(raw), "hidapi", 0)["passed"])
         self.assertFalse(matrix.summarize_probe(json.dumps(raw), "hidapi", 1)["passed"])
 
+    @patch.object(matrix.subprocess, "run")
+    def test_driver_bind_error_exposes_errno_without_raw_diagnostic(self, run):
+        run.return_value = Mock(
+            returncode=1,
+            stderr="tee: private-device: No such device\n",
+        )
+        path = Path("/sys/bus/hid/drivers/hid-generic/bind")
+        with self.assertRaisesRegex(matrix.HostRunError, r"^hid-generic/bind: .*ENODEV"):
+            matrix.write_sysfs(path, "owned-synthetic-device")
+        self.assertEqual(run.call_args.kwargs["env"]["LC_ALL"], "C")
+
     def test_invalid_sdl_contract_cannot_pass(self):
         self.assertFalse(matrix.summarize_probe("invalid", "evdev", 0)["passed"])
         self.assertFalse(matrix.summarize_probe("", "hidapi", 0)["passed"])

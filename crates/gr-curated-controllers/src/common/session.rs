@@ -63,6 +63,10 @@ pub trait WorkerBridge<S>: Send {
     fn update(&mut self, state: &S) -> Result<(), ProviderError>;
     fn output(&mut self) -> Result<Option<RawReverseEvent>, ProviderError>;
     fn diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics;
+    /// Host object verified while establishing the worker attachment.
+    fn observed_host_path(&self) -> Option<&std::path::Path> {
+        None
+    }
     /// Cumulative worker-side output loss, retained after closure.
     fn dropped_output_events(&self) -> u64;
     fn close(&mut self) -> Result<(), ProviderError>;
@@ -124,9 +128,16 @@ impl<D: HidDriver> ControllerSession<D> {
         bridge: Box<dyn WorkerBridge<D::State>>,
     ) -> Self {
         let state = driver.neutral_state();
+        let association = crate::ControllerAssociation {
+            observed_host_path: bridge
+                .observed_host_path()
+                .and_then(std::path::Path::to_str)
+                .map(str::to_owned),
+            ..crate::ControllerAssociation::default()
+        };
         Self {
             selection,
-            association: crate::ControllerAssociation::default(),
+            association,
             backend: Backend::Worker {
                 marker: (),
                 driver,

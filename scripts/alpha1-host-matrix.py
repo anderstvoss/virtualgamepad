@@ -256,13 +256,23 @@ def condition(family, realization, name, labels, environment):
 
 
 def write_sysfs(path, value):
+    operation = "/".join(path.parts[-2:])
     try:
-        result = subprocess.run(["sudo", "-n", "tee", str(path)], input=value,
-                                text=True, capture_output=True, check=False, timeout=10)
+        result = subprocess.run(
+            ["sudo", "-n", "tee", str(path)], input=value,
+            text=True, capture_output=True, check=False, timeout=10,
+            env={**os.environ, "LC_ALL": "C"},
+        )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise HostRunError("per-device privileged binding write unavailable") from exc
+        raise HostRunError(f"{operation}: privileged binding write unavailable") from exc
     if result.returncode:
-        raise HostRunError("per-device privileged binding write failed")
+        # Report the errno associated with tee's last diagnostic field, without
+        # copying the instance name, raw command output, or a filesystem path.
+        import errno
+        diagnostic = result.stderr.strip().rsplit(": ", 1)[-1]
+        code = next((name for number, name in errno.errorcode.items()
+                     if os.strerror(number) == diagnostic), "unknown errno")
+        raise HostRunError(f"{operation}: privileged binding write failed ({code})")
 
 
 def current_driver(hid):
