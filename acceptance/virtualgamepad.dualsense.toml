@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.dualsense"
-research_revision = "d13fe7e4f521785d2c4fb394a2919bd43b972c3b"
+research_revision = "cdba7ae7dd4b76e57522ecf3cec49560ed528370"
 realizations = ["linux.uinput", "linux.uhid.usb", "linux.uhid.bluetooth", "linux.dummy_hcd.usb-hid", "linux.usbip.usb-audio"]
 refused_operations = []
 persistent_resources = []
@@ -17,8 +17,8 @@ id = "buttons"
 [[functions]]
 id = "sticks"
 [functions.cells]
-"linux.uinput" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/dualsense/sticks", evidence = ["ds-vg-exp0011-evdev-mapping"], reason = "P5a observed both signed endpoints on all four stick axes through SDL evdev." }
-"linux.uhid.usb" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/dualsense/sticks", evidence = ["ds-vg-exp0008-sdl-standard-motion"], reason = "P5a observed both signed endpoints on all four stick axes through SDL HIDAPI. The evdev-only probe did not open its selected node." }
+"linux.uinput" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/dualsense/sticks", evidence = ["ds-vg-exp0011-evdev-mapping", "vg-p5a-stock-dualsense-linux-uinput-bound-ed8065b4be2c"], reason = "P5a observed both signed endpoints on all four stick axes through SDL evdev." }
+"linux.uhid.usb" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_USB_HOST_ACCEPTANCE.md#stock-consumer-matrix", test_id = "acceptance/dualsense/sticks", evidence = ["ds-vg-exp0008-sdl-standard-motion", "vg-p5a-stock-dualsense-linux-uhid-usb-bound-ed8065b4be2c"], reason = "P5a observed both signed endpoints on all four stick axes through SDL HIDAPI. The evdev-only probe did not open its selected node." }
 "linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualsense/sticks", evidence = ["ds-l0-kernel-usb-bt-input-shape"], reason = "Source-backed Bluetooth HID report format only; synthetic codec and physical behavior unvalidated on a host." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/sticks", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
