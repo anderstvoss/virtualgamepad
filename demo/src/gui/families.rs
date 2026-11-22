@@ -203,10 +203,12 @@ impl Kind {
                 }
                 create_dualshock4(creation, family).map(Controller::DualShock4)
             }
-            Self::SwitchPro => {
-                create_switch_pro(creation, virtualgamepad::SwitchProOptions::default())
-                    .map(Controller::SwitchPro)
-            }
+            Self::SwitchPro => create_switch_pro(
+                creation,
+                virtualgamepad::SwitchProOptions::default()
+                    .with_spi_image(options.switch_spi.image().clone()),
+            )
+            .map(Controller::SwitchPro),
             Self::WiiRemote => create_wii_session(
                 options,
                 gr_curated_controllers::wii_remote::create_wii_remote,
@@ -702,6 +704,7 @@ mod steam_tests {
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteOptions::default(),
                 steam_options: super::super::SteamController2026Options::default(),
+                switch_spi: super::super::switch_pro_spi::Settings::default(),
                 sony_data: super::super::sony_device_data::Selections::default(),
             };
             let mut captured = Vec::new();
@@ -758,6 +761,7 @@ mod wii_tests {
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteOptions::default(),
                 steam_options: super::super::SteamController2026Options::default(),
+                switch_spi: super::super::switch_pro_spi::Settings::default(),
                 sony_data: super::super::sony_device_data::Selections::default(),
             };
             let state = create_wii_session(&options, |common, family| {
@@ -837,6 +841,7 @@ mod wii_tests {
                 wii_imports: super::super::wii_import::Imports::default(),
                 wii_compat: super::super::WiiRemoteOptions::default(),
                 steam_options: super::super::SteamController2026Options::default(),
+                switch_spi: super::super::switch_pro_spi::Settings::default(),
                 sony_data: super::super::sony_device_data::Selections::default(),
             };
             let received = create_wii_session(&options, |common, family| {
@@ -881,6 +886,7 @@ mod compat_creation_tests {
                                 wii_imports: super::super::wii_import::Imports::default(),
                                 wii_compat: compat.clone(),
                                 steam_options: super::super::SteamController2026Options::default(),
+                                switch_spi: super::super::switch_pro_spi::Settings::default(),
                                 sony_data: super::super::sony_device_data::Selections::default(),
                             };
                             assert_eq!(

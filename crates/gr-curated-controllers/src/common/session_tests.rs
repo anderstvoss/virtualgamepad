@@ -395,7 +395,7 @@ fn every_family_owns_exact_feature_and_set_completion_with_reused_kernel_ids() {
         [true; 3],
         &[(2, 37), (18, 16), (163, 49)],
     );
-    probes(&SwitchProDefinition, [true, true, false], &[]);
+    probes(&SwitchProDefinition::default(), [true, true, false], &[]);
     probes(&Xbox360Definition, [false; 3], &[]);
 }
 #[test]
@@ -451,7 +451,7 @@ fn dualsense_validates_set_before_ack_and_keeps_retry_identity() {
 }
 #[test]
 fn switch_handshake_runs_without_callbacks_or_semantic_commits() {
-    let (mut rt, io) = rig(&SwitchProDefinition, [true, true, false]);
+    let (mut rt, io) = rig(&SwitchProDefinition::default(), [true, true, false]);
     rt.service(0).unwrap();
     io.lock()
         .unwrap()
@@ -498,8 +498,11 @@ fn switch_restored_identity_is_shared_by_both_host_probe_replies() {
         identity
     );
     for identity in [identity, distinct, identity] {
-        let (mut runtime, io) =
-            rig_with_address(&SwitchProDefinition, [true, true, false], identity.bytes());
+        let (mut runtime, io) = rig_with_address(
+            &SwitchProDefinition::default(),
+            [true, true, false],
+            identity.bytes(),
+        );
         let mut subcommand = vec![0; 63];
         subcommand[9] = 2;
         io.lock().unwrap().events.extend([
@@ -722,7 +725,7 @@ fn feedback_cycle<D: HidDriver>(driver: D) {
 fn all_families_complete_evdev_upload_play_stop_erase_in_consuming_poll() {
     feedback_cycle(DualSenseDefinition::default());
     feedback_cycle(DualShock4Definition::default());
-    feedback_cycle(SwitchProDefinition);
+    feedback_cycle(SwitchProDefinition::default());
     feedback_cycle(Xbox360Definition);
 }
 #[test]
@@ -775,7 +778,7 @@ fn evdev_rejects_unsupported_effects_and_invalid_ids_with_exact_errors() {
 }
 #[test]
 fn evdev_unsent_reply_is_owned_retried_and_observed_exactly_once() {
-    let (mut session, record) = evdev_rig(SwitchProDefinition);
+    let (mut session, record) = evdev_rig(SwitchProDefinition::default());
     record
         .lock()
         .unwrap()
@@ -887,7 +890,7 @@ fn evdev_effect_ownership_is_independent_across_same_application_ids() {
 #[test]
 fn evdev_overflow_and_partial_read_failure_cancel_owned_requests() {
     for overflow in [false, true] {
-        let (mut session, record) = evdev_rig(SwitchProDefinition);
+        let (mut session, record) = evdev_rig(SwitchProDefinition::default());
         {
             let mut r = record.lock().unwrap();
             r.burst = 33;
@@ -1027,7 +1030,7 @@ fn evdev_face_positions<D: HidDriver>(driver: &D, west: u16, north: u16) {
 fn every_evdev_family_preserves_individual_spatial_face_buttons() {
     evdev_face_positions(&DualSenseDefinition::default(), 308, 307);
     evdev_face_positions(&DualShock4Definition::default(), 308, 307);
-    evdev_face_positions(&SwitchProDefinition, 308, 307);
+    evdev_face_positions(&SwitchProDefinition::default(), 308, 307);
     // xpad retains legacy BTN_X/BTN_Y codes; SDL maps that profile accordingly.
     evdev_face_positions(&Xbox360Definition, 307, 308);
 }
@@ -1117,7 +1120,7 @@ fn family_failure_isolation<D: HidDriver>(driver: &D, numbered: [bool; 3]) {
 fn all_hid_families_isolate_removal_and_partial_read_failure_with_reused_ids() {
     family_failure_isolation(&DualSenseDefinition::default(), [true; 3]);
     family_failure_isolation(&DualShock4Definition::default(), [true; 3]);
-    family_failure_isolation(&SwitchProDefinition, [true, true, false]);
+    family_failure_isolation(&SwitchProDefinition::default(), [true, true, false]);
     family_failure_isolation(&Xbox360Definition, [false; 3]);
 }
 
@@ -1175,7 +1178,7 @@ fn evdev_service_contract<D: HidDriver>(driver: D) {
 fn every_evdev_family_completes_required_batch_before_optional_observers() {
     evdev_service_contract(DualSenseDefinition::default());
     evdev_service_contract(DualShock4Definition::default());
-    evdev_service_contract(SwitchProDefinition);
+    evdev_service_contract(SwitchProDefinition::default());
     evdev_service_contract(Xbox360Definition);
 }
 
@@ -1358,14 +1361,14 @@ where
 fn all_family_neutralization_is_one_edit_with_retryable_delivery_and_terminal_close() {
     neutralization_is_transactional(DualSenseDefinition::default());
     neutralization_is_transactional(DualShock4Definition::default());
-    neutralization_is_transactional(SwitchProDefinition);
+    neutralization_is_transactional(SwitchProDefinition::default());
     neutralization_is_transactional(Xbox360Definition);
 }
 
 #[test]
 fn switch_rumble_set_completes_exactly_and_rejects_missing_counter_or_motor_bytes() {
     for length in 0..=64 {
-        let (mut rt, io) = rig(&SwitchProDefinition, [true, true, false]);
+        let (mut rt, io) = rig(&SwitchProDefinition::default(), [true, true, false]);
         rt.service(0).unwrap();
         let mut bytes = vec![0x10];
         bytes.extend(vec![0; length]);
@@ -1638,7 +1641,7 @@ fn all_hid_protocols_observe_lifecycle_in_order_without_replay() {
     }
     check(&DualSenseDefinition::default(), [true; 3]);
     check(&DualShock4Definition::default(), [true; 3]);
-    check(&SwitchProDefinition, [true, true, false]);
+    check(&SwitchProDefinition::default(), [true, true, false]);
     check(&Xbox360Definition, [false; 3]);
 }
 

@@ -1,7 +1,7 @@
 use super::{
     RawReverseEvent, RealizationSessionId, SwitchProDefinition, SwitchProIdentity, SwitchProInputs,
-    SwitchProStatus, common, switch_frame, switch_simple_frame, switch_subcommand_reply,
-    switch_usb_reply,
+    SwitchProSpiImage, SwitchProStatus, common, switch_frame, switch_simple_frame,
+    switch_subcommand_reply, switch_usb_reply,
 };
 use gr_hid::{
     Command, Delivery, Error, Lifecycle, Protocol, Reply, ReplyError, Report, ReportType,
@@ -30,6 +30,7 @@ impl ImuActivation {
 #[derive(Clone)]
 pub(crate) struct SwitchUsbProtocol {
     identity: SwitchProIdentity,
+    spi_image: SwitchProSpiImage,
     retained: crate::retained::SwitchProOutputState,
     state: (SwitchProInputs, SwitchProStatus),
     pub(crate) timer: u8,
@@ -42,9 +43,10 @@ pub(crate) struct SwitchUsbProtocol {
     transport: SwitchHidTransport,
 }
 impl SwitchUsbProtocol {
-    fn new(identity: SwitchProIdentity, bluetooth: bool) -> Self {
+    fn new(identity: SwitchProIdentity, spi_image: SwitchProSpiImage, bluetooth: bool) -> Self {
         Self {
             identity,
+            spi_image,
             state: <(SwitchProInputs, SwitchProStatus)>::default(),
             retained: crate::retained::SwitchProOutputState::default(),
             timer: 0,
@@ -103,8 +105,13 @@ impl SwitchUsbProtocol {
                     // NFC/IR MCU or unsupported report-mode response is invented.
                     return Err(ReplyError::Unsupported);
                 }
-                let (reply, enable) =
-                    switch_subcommand_reply(&self.state, bytes[9], &bytes[10..], self.identity);
+                let (reply, enable) = switch_subcommand_reply(
+                    &self.state,
+                    bytes[9],
+                    &bytes[10..],
+                    self.identity,
+                    &self.spi_image,
+                );
                 if self.is_bluetooth() && bytes[9] == 0x03 && bytes.get(10) == Some(&0x3f) {
                     self.stream_enabled = false;
                 } else {
@@ -222,7 +229,7 @@ impl common::HidDriver for SwitchProDefinition {
 
     type Hid = SwitchUsbProtocol;
     fn hid_protocol(&self, _: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
-        SwitchUsbProtocol::new(SwitchProIdentity(identity), false)
+        SwitchUsbProtocol::new(SwitchProIdentity(identity), self.spi_image.clone(), false)
     }
     fn hid_protocol_for_target(
         &self,
@@ -232,6 +239,7 @@ impl common::HidDriver for SwitchProDefinition {
     ) -> Self::Hid {
         SwitchUsbProtocol::new(
             SwitchProIdentity(identity),
+            self.spi_image.clone(),
             target == gr_realization_api::RealizationTarget::LINUX_UHID_BLUETOOTH,
         )
     }
@@ -260,7 +268,7 @@ mod bluetooth_tests {
     }
     #[test]
     fn neutral_simple_report_first_then_host_selected_full_and_back() {
-        let mut protocol = SwitchUsbProtocol::new(identity(1), true);
+        let mut protocol = SwitchUsbProtocol::new(identity(1), SwitchProSpiImage::default(), true);
         let neutral = protocol.input(&Default::default(), 0).unwrap();
         assert_eq!(neutral.len(), 1);
         assert_eq!(neutral[0].id(), Some(0x3f));
@@ -292,7 +300,7 @@ mod bluetooth_tests {
 
     #[test]
     fn bluetooth_rejects_usb_handshake_and_unverified_mcu_without_pending_replies() {
-        let mut bt = SwitchUsbProtocol::new(identity(1), true);
+        let mut bt = SwitchUsbProtocol::new(identity(1), SwitchProSpiImage::default(), true);
         let usb_command = Report::new(ReportType::Output, Some(0x80), vec![0x02]).unwrap();
         assert_eq!(bt.process_inner(&usb_command, 0), Err(ReplyError::Invalid));
         let mcu = subcommand(0x21, &[0x01]);
@@ -307,15 +315,15 @@ mod bluetooth_tests {
             Err(ReplyError::Unsupported)
         );
         assert!(bt.pending.is_empty());
-        let mut usb = SwitchUsbProtocol::new(identity(1), false);
+        let mut usb = SwitchUsbProtocol::new(identity(1), SwitchProSpiImage::default(), false);
         assert_eq!(usb.process_inner(&usb_command, 0), Ok(()));
         assert_eq!(usb.pending.front().unwrap().id(), Some(0x81));
     }
 
     #[test]
     fn bluetooth_acks_each_source_requested_subcommand_and_preserves_identity() {
-        let mut a = SwitchUsbProtocol::new(identity(1), true);
-        let mut b = SwitchUsbProtocol::new(identity(2), true);
+        let mut a = SwitchUsbProtocol::new(identity(1), SwitchProSpiImage::default(), true);
+        let mut b = SwitchUsbProtocol::new(identity(2), SwitchProSpiImage::default(), true);
         let inputs = Default::default();
         for id in [0x02, 0x10, 0x30, 0x38, 0x40, 0x48] {
             let arg = if id == 0x10 {
@@ -340,8 +348,13 @@ mod bluetooth_tests {
             );
             if id == 0x10 {
                 assert_eq!(&reply[0].payload()[14..19], &arg);
-                let (usb_reply, _) =
-                    super::switch_subcommand_reply(&Default::default(), 0x10, &arg, identity(1));
+                let (usb_reply, _) = super::switch_subcommand_reply(
+                    &Default::default(),
+                    0x10,
+                    &arg,
+                    identity(1),
+                    &SwitchProSpiImage::default(),
+                );
                 let gr_realization_api::ProviderFrame::HidInput {
                     bytes: usb_bytes, ..
                 } = usb_reply
@@ -368,7 +381,7 @@ mod bluetooth_tests {
 
     #[test]
     fn malformed_output_request_is_rejected_before_any_queued_reply() {
-        let mut bt = SwitchUsbProtocol::new(identity(1), true);
+        let mut bt = SwitchUsbProtocol::new(identity(1), SwitchProSpiImage::default(), true);
         for (id, len) in [(1, 9), (0x10, 8), (0x80, 1), (0x11, 9), (1, 49)] {
             let request = Report::new(ReportType::Output, Some(id), vec![0; len]).unwrap();
             assert!(matches!(
@@ -386,7 +399,11 @@ mod tests {
 
     #[test]
     fn imu_samples_are_gated_only_with_opt_in_and_host_enable() {
-        let mut gated = SwitchUsbProtocol::new(super::super::tests::fixture_identity(), false);
+        let mut gated = SwitchUsbProtocol::new(
+            super::super::tests::fixture_identity(),
+            SwitchProSpiImage::default(),
+            false,
+        );
         let mut ungated = gated.clone();
         let mut inputs = SwitchProInputs::default();
         inputs.set_motion(super::super::SwitchProMotionSample {

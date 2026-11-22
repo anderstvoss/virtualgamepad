@@ -66,8 +66,8 @@ fn dualshock4_motor_rgb_and_blink_validity_are_independent() {
 }
 #[test]
 fn switch_motor_counter_is_not_a_semantic_change_and_lights_survive_rumble() {
-    let mut p =
-        crate::switch_pro::SwitchProDefinition.hid_protocol(RealizationSessionId(7), [0; 6]);
+    let mut p = crate::switch_pro::SwitchProDefinition::default()
+        .hid_protocol(RealizationSessionId(7), [0; 6]);
     let mut lights = vec![0; 11];
     lights[1..9].fill(3);
     lights[9] = 0x30;
@@ -137,7 +137,8 @@ fn malformed_and_wrong_report_types_preserve_every_retained_field() {
         31,
     );
     rejected(
-        crate::switch_pro::SwitchProDefinition.hid_protocol(RealizationSessionId(7), [0; 6]),
+        crate::switch_pro::SwitchProDefinition::default()
+            .hid_protocol(RealizationSessionId(7), [0; 6]),
         Some(0x10),
         9,
     );

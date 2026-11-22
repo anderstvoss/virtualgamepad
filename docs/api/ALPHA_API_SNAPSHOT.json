@@ -2676,6 +2676,7 @@
           "declarations": [
             "pub struct SwitchProController { /* private fields */ }",
             "pub const fn identity(&self) -> SwitchProIdentity",
+            "pub fn spi_image(&self) -> &SwitchProSpiImage",
             "pub fn stream_enabled(&self) -> bool",
             "pub fn motion_report_counter(&self) -> u8",
             "pub fn wants_write(&self) -> bool",
@@ -2797,14 +2798,15 @@
             "#[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }",
             "pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions",
             "pub const fn with_battery(self, battery: SwitchProBattery) -> SwitchProOptions",
-            "pub const fn battery(self) -> SwitchProBattery",
+            "pub const fn battery(&self) -> SwitchProBattery",
             "pub const fn with_imu_gating(self, enabled: bool) -> SwitchProOptions",
-            "pub const fn imu_gating(self) -> bool",
-            "pub const fn identity(self) -> Option<SwitchProIdentity>"
+            "pub const fn imu_gating(&self) -> bool",
+            "pub const fn identity(&self) -> Option<SwitchProIdentity>",
+            "pub fn with_spi_image(self, image: SwitchProSpiImage) -> SwitchProOptions",
+            "pub const fn spi_image(&self) -> Option<&SwitchProSpiImage>"
           ],
           "traits": [
             "impl Clone for SwitchProOptions",
-            "impl Copy for SwitchProOptions",
             "impl Debug for SwitchProOptions",
             "impl Default for SwitchProOptions",
             "impl RefUnwindSafe for SwitchProOptions",
@@ -2922,13 +2924,35 @@
             "impl UnwindSafe for SwitchProRumbleWord"
           ]
         },
+        "struct.SwitchProSpiImage.html": {
+          "declarations": [
+            "pub struct SwitchProSpiImage { /* private fields */ }",
+            "pub fn import_raw( base: u32, bytes: &[u8], ) -> Result<SwitchProSpiImage, ControlError>",
+            "pub fn with_region( self, base: u32, bytes: &[u8], ) -> Result<SwitchProSpiImage, ControlError>",
+            "pub fn export_raw(&self, base: u32, len: usize) -> Result<Vec<u8>, ControlError>",
+            "pub fn read(&self, address: u32) -> u8",
+            "pub fn colors_available(&self) -> bool"
+          ],
+          "traits": [
+            "impl Clone for SwitchProSpiImage",
+            "impl Debug for SwitchProSpiImage",
+            "impl Default for SwitchProSpiImage",
+            "impl Eq for SwitchProSpiImage",
+            "impl PartialEq for SwitchProSpiImage",
+            "impl RefUnwindSafe for SwitchProSpiImage",
+            "impl Send for SwitchProSpiImage",
+            "impl Sync for SwitchProSpiImage",
+            "impl Unpin for SwitchProSpiImage",
+            "impl UnwindSafe for SwitchProSpiImage"
+          ]
+        },
         "struct.SwitchProStatus.html": {
           "declarations": [
             "pub struct SwitchProStatus { /* private fields */ }",
             "pub const fn timer(self) -> u8",
             "pub const fn stream_enabled(self) -> bool",
-            "pub const fn battery(self) -> SwitchProBattery",
-            "pub const fn imu_gating(self) -> bool",
+            "pub const fn battery(&self) -> SwitchProBattery",
+            "pub const fn imu_gating(&self) -> bool",
             "pub const fn imu_enabled(self) -> bool"
           ],
           "traits": [
@@ -6428,6 +6452,7 @@
           "declarations": [
             "pub struct SwitchProController { /* private fields */ }",
             "pub const fn identity(&self) -> SwitchProIdentity",
+            "pub fn spi_image(&self) -> &SwitchProSpiImage",
             "pub fn stream_enabled(&self) -> bool",
             "pub fn motion_report_counter(&self) -> u8",
             "pub fn wants_write(&self) -> bool",
@@ -6549,14 +6574,15 @@
             "#[non_exhaustive]pub struct SwitchProOptions { /* private fields */ }",
             "pub const fn with_identity( self, identity: SwitchProIdentity, ) -> SwitchProOptions",
             "pub const fn with_battery(self, battery: SwitchProBattery) -> SwitchProOptions",
-            "pub const fn battery(self) -> SwitchProBattery",
+            "pub const fn battery(&self) -> SwitchProBattery",
             "pub const fn with_imu_gating(self, enabled: bool) -> SwitchProOptions",
-            "pub const fn imu_gating(self) -> bool",
-            "pub const fn identity(self) -> Option<SwitchProIdentity>"
+            "pub const fn imu_gating(&self) -> bool",
+            "pub const fn identity(&self) -> Option<SwitchProIdentity>",
+            "pub fn with_spi_image(self, image: SwitchProSpiImage) -> SwitchProOptions",
+            "pub const fn spi_image(&self) -> Option<&SwitchProSpiImage>"
           ],
           "traits": [
             "impl Clone for SwitchProOptions",
-            "impl Copy for SwitchProOptions",
             "impl Debug for SwitchProOptions",
             "impl Default for SwitchProOptions",
             "impl RefUnwindSafe for SwitchProOptions",
@@ -6674,13 +6700,35 @@
             "impl UnwindSafe for SwitchProRumbleWord"
           ]
         },
+        "struct.SwitchProSpiImage.html": {
+          "declarations": [
+            "pub struct SwitchProSpiImage { /* private fields */ }",
+            "pub fn import_raw( base: u32, bytes: &[u8], ) -> Result<SwitchProSpiImage, ControlError>",
+            "pub fn with_region( self, base: u32, bytes: &[u8], ) -> Result<SwitchProSpiImage, ControlError>",
+            "pub fn export_raw(&self, base: u32, len: usize) -> Result<Vec<u8>, ControlError>",
+            "pub fn read(&self, address: u32) -> u8",
+            "pub fn colors_available(&self) -> bool"
+          ],
+          "traits": [
+            "impl Clone for SwitchProSpiImage",
+            "impl Debug for SwitchProSpiImage",
+            "impl Default for SwitchProSpiImage",
+            "impl Eq for SwitchProSpiImage",
+            "impl PartialEq for SwitchProSpiImage",
+            "impl RefUnwindSafe for SwitchProSpiImage",
+            "impl Send for SwitchProSpiImage",
+            "impl Sync for SwitchProSpiImage",
+            "impl Unpin for SwitchProSpiImage",
+            "impl UnwindSafe for SwitchProSpiImage"
+          ]
+        },
         "struct.SwitchProStatus.html": {
           "declarations": [
             "pub struct SwitchProStatus { /* private fields */ }",
             "pub const fn timer(self) -> u8",
             "pub const fn stream_enabled(self) -> bool",
-            "pub const fn battery(self) -> SwitchProBattery",
-            "pub const fn imu_gating(self) -> bool",
+            "pub const fn battery(&self) -> SwitchProBattery",
+            "pub const fn imu_gating(&self) -> bool",
             "pub const fn imu_enabled(self) -> bool"
           ],
           "traits": [

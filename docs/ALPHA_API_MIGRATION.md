@@ -962,6 +962,13 @@ optional raw observations as an authoritative stream. Wii supporting snapshot:
 Existing events, raw payloads, FF effect types and retained snapshots are unchanged.
 These additive ordinary-root declarations do not change protocol admission or qualify physical output.
 
+### #365 · P10c Switch Pro caller-owned SPI image (source-only; no physical validation)
+
+- Add `SwitchProSpiImage` to the ordinary root and curated supporting crate. The image is an independent sparse value with `import_raw(base, bytes)`, `with_region(base, bytes)`, `export_raw(base, len)`, `read(address)` and `colors_available()`. Supported base windows are factory `0x6000..0x6fff` and user `0x8000..0x8fff`; all other offsets retain synthetic erased defaults. No real calibration or device dump is tracked.
+- `SwitchProOptions` adds `with_spi_image(image)` and `spi_image()`. `identity(self)` becomes `identity(&self)` to avoid consuming an image-owning option. It loses `Copy` due to independently owned image storage; use `clone()` for reuse. `SwitchProController::spi_image()` borrows the image retained for caller-managed recreation/export.
+- USB UHID and dummy-HCD SPI read replies consume that image; untouched defaults match the previous synthetic byte function. Device-info advertises SPI colors only when the complete RGB region is explicitly supplied. Host subcommands `0x11`/`0x12` continue to have no write side effects; there is no dirty resource to snapshot or discard.
+- The demo exposes raw factory/user file Load/Save beside creation identity preview. Files have **no header**; the selected button supplies the base address. Save uses the existing atomic file writer and rejects Git checkout destinations. No live Bluetooth realization or physical test is claimed. Source claims: `swpro-l0-device-factory-spi-map`, `swpro-l0-device-user-spi-magic`, `swpro-l0-consumer-kernel-calibration-fallback`, `swpro-l0-consumer-sdl-calibration-fallback`.
+
 ## P9b — DualShock 4 Bluetooth-bus UHID (Alpha 2, #155 / #365)
 
 The explicit `RealizationTarget::LINUX_UHID_BLUETOOTH` selection is available in `create_dualshock4` and the family manifest; no implicit USB fallback or transport auto-selection is introduced. `DualShock4Inputs`, `set_inputs`, `edit_inputs`, `status()` and `DualShock4Identity` remain the shared semantic API. Restored identity now also applies to the Bluetooth-bus UHID `uniq`; a newly created Bluetooth session generates its own instance identity.
