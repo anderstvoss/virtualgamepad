@@ -617,7 +617,7 @@ impl UnwindSafe for DualShock4Control
 Owner/source: `../src/gr_curated_controllers/dualshock4.rs.html`
 
 ```rust
-#[non_exhaustive]pub enum DualShock4HidOutput { UsbOutput { raw: Vec<u8>, right_motor: u8, left_motor: u8, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }
+#[non_exhaustive]pub enum DualShock4HidOutput { UsbOutput { raw: Vec<u8>, right_motor: u8, left_motor: u8, lightbar_rgb: Option<[u8; 3]>, }, BluetoothOutput { raw: Vec<u8>, right_motor: u8, left_motor: u8, lightbar_rgb: Option<[u8; 3]>, blink: Option<[u8; 2]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }
 ```
 
 Trait implementations:

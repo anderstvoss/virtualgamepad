@@ -131,7 +131,7 @@ fn burst<D: HidDriver>(
 #[test]
 fn hid_latest_values_survive_bursts_eviction_polling_and_close() {
     burst(
-        DualSenseDefinition,
+        DualSenseDefinition::default(),
         [true; 3],
         2,
         |v| {
@@ -146,7 +146,7 @@ fn hid_latest_values_survive_bursts_eviction_polling_and_close() {
         },
     );
     burst(
-        DualShock4Definition,
+        DualShock4Definition::default(),
         [true; 3],
         5,
         |v| {
@@ -161,7 +161,7 @@ fn hid_latest_values_survive_bursts_eviction_polling_and_close() {
         },
     );
     burst(
-        SwitchProDefinition,
+        SwitchProDefinition::default(),
         [true, true, false],
         0x10,
         |v| {
@@ -177,8 +177,8 @@ fn hid_latest_values_survive_bursts_eviction_polling_and_close() {
 }
 #[test]
 fn evicted_partial_update_is_still_retained_and_sessions_are_independent() {
-    let (mut one, record) = hid(DualSenseDefinition, [true; 3]);
-    let (two, _) = hid(DualSenseDefinition, [true; 3]);
+    let (mut one, record) = hid(DualSenseDefinition::default(), [true; 3]);
+    let (two, _) = hid(DualSenseDefinition::default(), [true; 3]);
     let mut trigger = vec![0; 47];
     trigger[0] = 4;
     trigger[10..21].fill(7);
@@ -195,7 +195,7 @@ fn evicted_partial_update_is_still_retained_and_sessions_are_independent() {
 }
 #[test]
 fn reply_retry_uses_exact_bytes_without_advancing_revision_twice() {
-    let (mut session, record) = hid(DualSenseDefinition, [true; 3]);
+    let (mut session, record) = hid(DualSenseDefinition::default(), [true; 3]);
     let mut b = vec![0; 48];
     b[0] = 2;
     b[2] = 4;
@@ -347,9 +347,9 @@ fn native_rumble_is_retained_for_each_family_without_counting_upload_or_retries(
             })
         };
     }
-    check!(DualSenseDefinition);
-    check!(DualShock4Definition);
-    check!(SwitchProDefinition);
+    check!(DualSenseDefinition::default());
+    check!(DualShock4Definition::default());
+    check!(SwitchProDefinition::default());
     check!(Xbox360Definition);
 }
 struct Bridge<S> {
@@ -457,8 +457,8 @@ fn incomplete_dummy_hcd_protocol_ownership_cannot_claim_retained_snapshots() {
         session.close();
         assert_eq!(record.lock().unwrap().closes, 1);
     }
-    check(DualSenseDefinition);
-    check(DualShock4Definition);
-    check(SwitchProDefinition);
+    check(DualSenseDefinition::default());
+    check(DualShock4Definition::default());
+    check(SwitchProDefinition::default());
     check(Xbox360Definition);
 }
