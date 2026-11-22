@@ -45,8 +45,8 @@ id = "identity"
 id = "lifecycle"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/lifecycle", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/lifecycle", evidence = ["ds-vg-exp0006-uhid-startup"], reason = "Evidence linked; per-function acceptance pending." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualsense/lifecycle", evidence = ["ds-l0-consumer-probe-feature-failure-tolerance"], reason = "Source-backed Bluetooth HID report format only; synthetic codec and physical behavior unvalidated on a host." }
+"linux.uhid.usb" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#usb-stock-and-generic-binding", test_id = "acceptance/dualsense/lifecycle", evidence = ["ds-vg-exp0006-uhid-startup"], reason = "Three stock USB-bus UHID sessions exposed their owned nodes, opened in SDL evdev, and removed their HID parent on close." }
+"linux.uhid.bluetooth" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#bluetooth-bus-uhid-lifecycle-and-output", test_id = "acceptance/dualsense/lifecycle", evidence = ["ds-l0-consumer-probe-feature-failure-tolerance"], reason = "Two stock Bluetooth-bus UHID sessions opened in evdev and SDL and closed independently. Timing batch endpoint selection is tracked separately." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/lifecycle", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "virtual-live", live_evidence = "docs/ALPHA2_P5A_FOLLOWUP.md#usbip-consumer-timing", test_id = "acceptance/dualsense/lifecycle", evidence = ["vg-p5a-followup-dualsense-usbip-timing"], reason = "P5a follow-up observed creation, evdev open, SDL open and measured removal of the broker-owned attachment in all N1 and N3 slots." }
 
@@ -82,7 +82,7 @@ id = "rumble"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = ["ds-vg-exp0010-evdev-ff", "ds-vg-exp0011-evdev-mapping"], reason = "Evidence linked; per-function acceptance pending. Level: Generic." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = ["ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending. Level: Native HID." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = ["ds-l0-kernel-output-usb-bt"], reason = "Source-backed Bluetooth HID report format only; synthetic codec and physical behavior unvalidated on a host." }
+"linux.uhid.bluetooth" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#bluetooth-bus-uhid-lifecycle-and-output", test_id = "acceptance/dualsense/rumble", evidence = ["ds-l0-kernel-output-usb-bt"], reason = "An owned SDL rumble action produced the typed compatible vibration output within the bounded window." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources. Level: Real USB (experimental)." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = ["ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending. Level: Real USB." }
 
@@ -91,7 +91,7 @@ id = "lightbar"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/lightbar", test_ids = ["dualsense::tests::led_fields_are_validity_gated_and_keep_the_original_report"], evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/lightbar", test_ids = ["dualsense::tests::led_fields_are_validity_gated_and_keep_the_original_report"], evidence = ["ds-l0-led-inventory", "ds-l0-led-common-offsets", "ds-l0-led-valid-flags", "ds-l0-led-lightbar-setup", "ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualsense/lightbar", evidence = ["ds-l0-led-bt31-offsets"], reason = "Source-backed Bluetooth HID report format only; synthetic codec and physical behavior unvalidated on a host." }
+"linux.uhid.bluetooth" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#bluetooth-bus-uhid-lifecycle-and-output", test_id = "acceptance/dualsense/lightbar", evidence = ["ds-l0-led-bt31-offsets"], reason = "The isolated SDL RGB request matched the typed Bluetooth lightbar output." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/lightbar", test_ids = ["dualsense::tests::led_fields_are_validity_gated_and_keep_the_original_report"], evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/lightbar", test_ids = ["dualsense::tests::led_fields_are_validity_gated_and_keep_the_original_report"], evidence = ["ds-l0-led-inventory", "ds-l0-led-common-offsets", "ds-l0-led-valid-flags", "ds-l0-led-lightbar-setup", "ds-l0-device-usb02-valid-flags"], reason = "Evidence linked; per-function acceptance pending." }
 
@@ -144,7 +144,7 @@ id = "speaker-audio"
 id = "calibration"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/calibration", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/calibration", evidence = ["ds-l0-device-feature05-shape"], reason = "Evidence linked; per-function acceptance pending." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/dualsense/calibration", evidence = ["ds-l0-consumer-kernel-calibration-fallback"], reason = "Source-backed Bluetooth HID report format only; synthetic codec and physical behavior unvalidated on a host." }
+"linux.uhid.usb" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#synthetic-calibration", test_id = "acceptance/dualsense/calibration", evidence = ["ds-l0-device-feature05-shape"], reason = "Kernel and SDL HIDAPI applied the predicted synthetic accelerometer scale change on USB-bus UHID." }
+"linux.uhid.bluetooth" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#synthetic-calibration", test_id = "acceptance/dualsense/calibration", evidence = ["ds-l0-consumer-kernel-calibration-fallback"], reason = "Kernel and SDL HIDAPI applied the predicted synthetic accelerometer scale change on Bluetooth-bus UHID." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/calibration", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
 "linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/calibration", evidence = ["ds-l0-device-feature05-shape"], reason = "Evidence linked; per-function acceptance pending." }
