@@ -4,17 +4,18 @@ use crate::audio::AudioLifecycle;
 use crate::{
     BatteryLevel, CommitError, ControlError, ControllerAssociation, ControllerDiagnostics,
     ControllerError, ControllerId, CreationOptions, DigitalControlUpdate, DualSenseAxis,
-    DualSenseControl, DualSenseFeature, DualSenseInputs, DualSenseOutputEvent, DualSenseStatus,
-    DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
-    DualShock4Inputs, DualShock4MotionSample, DualShock4OutputEvent, DualShock4Surface,
-    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId,
-    ServiceReadiness, SteamController2026Button, SteamController2026Inputs,
-    SteamController2026OutputEvent, SteamController2026Outputs, SwitchProAxis, SwitchProBattery,
-    SwitchProControl, SwitchProInputs, SwitchProMotionSample, SwitchProOutputEvent,
-    SwitchProSurface, TouchSlot, WiiEepromImage, WiiExtension, WiiIrPoint, WiiRemoteButton,
-    WiiRemoteInputs, WiiRemoteOutputEvent, WiiRemoteOutputs, WiiResourceDisposition, Xbox360Axis,
-    Xbox360Control, Xbox360Inputs, Xbox360OutputEvent, Xbox360Surface, Xbox360Trigger,
-    XboxSeriesButton, XboxSeriesInputs, XboxSeriesOutputEvent, XboxSeriesOutputState,
+    DualSenseControl, DualSenseDeviceData, DualSenseFeature, DualSenseInputs, DualSenseOutputEvent,
+    DualSenseStatus, DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis,
+    DualShock4Control, DualShock4DeviceData, DualShock4Inputs, DualShock4MotionSample,
+    DualShock4OutputEvent, DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot,
+    DualShock4Trigger, MotionSample, RealizationId, ServiceReadiness, SteamController2026Button,
+    SteamController2026Inputs, SteamController2026OutputEvent, SteamController2026Outputs,
+    SwitchProAxis, SwitchProBattery, SwitchProControl, SwitchProInputs, SwitchProMotionSample,
+    SwitchProOutputEvent, SwitchProSurface, TouchSlot, WiiEepromImage, WiiExtension, WiiIrPoint,
+    WiiRemoteButton, WiiRemoteInputs, WiiRemoteOutputEvent, WiiRemoteOutputs,
+    WiiResourceDisposition, Xbox360Axis, Xbox360Control, Xbox360Inputs, Xbox360OutputEvent,
+    Xbox360Surface, Xbox360Trigger, XboxSeriesButton, XboxSeriesInputs, XboxSeriesOutputEvent,
+    XboxSeriesOutputState,
 };
 // The family adapter owns only static dispatch; protocol semantics stay curated.
 trait Family {
@@ -443,6 +444,7 @@ macro_rules! audio_access {
 pub struct DualSenseController {
     controller: Controller<gr_curated_controllers::DualSenseController>,
     identity: Option<DualSenseIdentity>,
+    device_data: DualSenseDeviceData,
 }
 impl DualSenseController {
     #[cfg(any(test, all(target_os = "linux", feature = "audio-usbip")))]
@@ -450,6 +452,7 @@ impl DualSenseController {
         association: ControllerAssociation,
         inner: gr_curated_controllers::DualSenseController,
         identity: Option<DualSenseIdentity>,
+        device_data: DualSenseDeviceData,
         audio: Option<crate::ControllerAudio>,
     ) -> Self {
         Self {
@@ -459,6 +462,7 @@ impl DualSenseController {
                 audio,
             },
             identity,
+            device_data,
         }
     }
     audio_access!();
@@ -509,6 +513,11 @@ impl DualSenseController {
     pub const fn identity(&self) -> Option<DualSenseIdentity> {
         self.identity
     }
+    /// This instance's validated calibration and firmware, even after close.
+    #[must_use]
+    pub const fn device_data(&self) -> &DualSenseDeviceData {
+        &self.device_data
+    }
 }
 /// Create an explicitly selected `DualSense` realization.
 /// # Errors
@@ -517,11 +526,21 @@ pub fn create_dualsense(
     options: CreationOptions,
     mut family: DualSenseOptions,
 ) -> Result<DualSenseController, ControllerError> {
+    if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO
+        && family.device_data().is_some()
+    {
+        return Err(ControllerError::Unsupported {
+            reason:
+                "caller-supplied DualSense device data is unsupported by the USB/IP audio worker"
+                    .into(),
+        });
+    }
+    let device_data = family.device_data().unwrap_or_default();
     let identity = sony_identity(options, family.identity(), DualSenseIdentity::generate)?;
     if let Some(identity) = identity {
         #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
         if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
-            return create_dualsense_usb(options, identity);
+            return create_dualsense_usb(options, identity, device_data);
         }
         family = family.with_identity(identity);
     }
@@ -537,6 +556,7 @@ pub fn create_dualsense(
     Ok(DualSenseController {
         controller,
         identity,
+        device_data,
     })
 }
 
@@ -544,6 +564,7 @@ pub fn create_dualsense(
 pub struct DualShock4Controller {
     controller: Controller<gr_curated_controllers::DualShock4Controller>,
     identity: Option<DualShock4Identity>,
+    device_data: DualShock4DeviceData,
 }
 impl DualShock4Controller {
     #[cfg(any(test, all(target_os = "linux", feature = "audio-usbip")))]
@@ -551,6 +572,7 @@ impl DualShock4Controller {
         association: ControllerAssociation,
         inner: gr_curated_controllers::DualShock4Controller,
         identity: Option<DualShock4Identity>,
+        device_data: DualShock4DeviceData,
         audio: Option<crate::ControllerAudio>,
     ) -> Self {
         Self {
@@ -560,6 +582,7 @@ impl DualShock4Controller {
                 audio,
             },
             identity,
+            device_data,
         }
     }
     audio_access!();
@@ -601,6 +624,11 @@ impl DualShock4Controller {
     pub const fn identity(&self) -> Option<DualShock4Identity> {
         self.identity
     }
+    /// This instance's validated calibration and firmware, even after close.
+    #[must_use]
+    pub const fn device_data(&self) -> &DualShock4DeviceData {
+        &self.device_data
+    }
 }
 /// Create an explicitly selected `DualShock4` realization.
 /// # Errors
@@ -609,11 +637,21 @@ pub fn create_dualshock4(
     options: CreationOptions,
     mut family: DualShock4Options,
 ) -> Result<DualShock4Controller, ControllerError> {
+    if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO
+        && family.device_data().is_some()
+    {
+        return Err(ControllerError::Unsupported {
+            reason:
+                "caller-supplied DualShock 4 device data is unsupported by the USB/IP audio worker"
+                    .into(),
+        });
+    }
+    let device_data = family.device_data().unwrap_or_default();
     let identity = sony_identity(options, family.identity(), DualShock4Identity::generate)?;
     if let Some(identity) = identity {
         #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
         if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
-            return create_dualshock4_usb(options, identity);
+            return create_dualshock4_usb(options, identity, device_data);
         }
         family = family.with_identity(identity);
     }
@@ -629,6 +667,7 @@ pub fn create_dualshock4(
     Ok(DualShock4Controller {
         controller,
         identity,
+        device_data,
     })
 }
 
@@ -654,6 +693,11 @@ impl SwitchProController {
     #[must_use]
     pub const fn identity(&self) -> SwitchProIdentity {
         self.controller.inner.identity()
+    }
+    /// Borrow the retained SPI image for explicit caller-managed export/recreation.
+    #[must_use]
+    pub fn spi_image(&self) -> &crate::SwitchProSpiImage {
+        self.controller.inner.spi_image()
     }
     /// Whether the host selected streaming input reports.
     #[must_use]
@@ -1066,6 +1110,7 @@ fn sony_identity<T>(
 fn create_dualsense_usb(
     options: CreationOptions,
     identity: DualSenseIdentity,
+    device_data: DualSenseDeviceData,
 ) -> Result<DualSenseController, ControllerError> {
     let audio_options = options.audio();
     let options = options.internal()?;
@@ -1099,6 +1144,7 @@ fn create_dualsense_usb(
         association,
         inner,
         Some(identity),
+        device_data,
         Some(audio),
     ))
 }
@@ -1107,6 +1153,7 @@ fn create_dualsense_usb(
 fn create_dualshock4_usb(
     options: CreationOptions,
     identity: DualShock4Identity,
+    device_data: DualShock4DeviceData,
 ) -> Result<DualShock4Controller, ControllerError> {
     let audio_options = options.audio();
     let options = options.internal()?;
@@ -1140,6 +1187,7 @@ fn create_dualshock4_usb(
         association,
         inner,
         Some(identity),
+        device_data,
         Some(audio),
     ))
 }

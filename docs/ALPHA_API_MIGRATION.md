@@ -31,6 +31,9 @@ generated inventory's Xbox Series pages are updated for this delta.
 
 
 This is a deliberate breaking candidate update before the final alpha freeze.
+
+**P9c Switch Pro (Bluetooth-bus UHID):** the family now declares an additional explicitly selectable `linux.uhid.bluetooth` realization with source-only restrictions for MCU, radio and audio. Existing `SwitchProOptions`, handle input/status/output types, and root public signatures are unchanged. No API snapshot delta is expected; the checked-in snapshot remains authoritative. Consumer code must request this target explicitly; never fall back to USB.
+
 Start with the [final alpha.1 → alpha.2 consumer table](#alpha1--alpha2-final-consumer-table).
 The PR sections below are chronological history: intermediate combined state
 closures and standalone identity/image/options constructors are superseded by
@@ -959,6 +962,29 @@ optional raw observations as an authoritative stream. Wii supporting snapshot:
 Existing events, raw payloads, FF effect types and retained snapshots are unchanged.
 These additive ordinary-root declarations do not change protocol admission or qualify physical output.
 
+### #365 · P10c Switch Pro caller-owned SPI image (source-only; no physical validation)
+
+- Add `SwitchProSpiImage` to the ordinary root and curated supporting crate. The image is an independent sparse value with `import_raw(base, bytes)`, `with_region(base, bytes)`, `export_raw(base, len)`, `read(address)` and `colors_available()`. Supported base windows are factory `0x6000..0x6fff` and user `0x8000..0x8fff`; all other offsets retain synthetic erased defaults. No real calibration or device dump is tracked.
+- `SwitchProOptions` adds `with_spi_image(image)` and `spi_image()`. `identity(self)` becomes `identity(&self)` to avoid consuming an image-owning option. It loses `Copy` due to independently owned image storage; use `clone()` for reuse. `SwitchProController::spi_image()` borrows the image retained for caller-managed recreation/export.
+- USB UHID and dummy-HCD SPI read replies consume that image; untouched defaults match the previous synthetic byte function. Device-info advertises SPI colors only when the complete RGB region is explicitly supplied. Host subcommands `0x11`/`0x12` continue to have no write side effects; there is no dirty resource to snapshot or discard.
+- The demo exposes raw factory/user file Load/Save beside creation identity preview. Files have **no header**; the selected button supplies the base address. Save uses the existing atomic file writer and rejects Git checkout destinations. No live Bluetooth realization or physical test is claimed. Source claims: `swpro-l0-device-factory-spi-map`, `swpro-l0-device-user-spi-magic`, `swpro-l0-consumer-kernel-calibration-fallback`, `swpro-l0-consumer-sdl-calibration-fallback`.
+
+## P9b — DualShock 4 Bluetooth-bus UHID (Alpha 2, #155 / #365)
+
+The explicit `RealizationTarget::LINUX_UHID_BLUETOOTH` selection is available in `create_dualshock4` and the family manifest; no implicit USB fallback or transport auto-selection is introduced. `DualShock4Inputs`, `set_inputs`, `edit_inputs`, `status()` and `DualShock4Identity` remain the shared semantic API. Restored identity now also applies to the Bluetooth-bus UHID `uniq`; a newly created Bluetooth session generates its own instance identity.
+
+**Public API delta:** the existing non-exhaustive `DualShock4HidOutput` enum gains `BluetoothOutput { raw: Vec<u8>, right_motor: u8, left_motor: u8, lightbar_rgb: Option<[u8;3]>, blink: Option<[u8;2]> }`. Existing USB `UsbOutput` remains unchanged. Matchers should continue to include the `Unknown` fallback. `host_outputs()` uses the same retained `motors`, `lightbar_rgb` and `blink` fields on both UHID transports. Bluetooth audio has no endpoint and is explicitly restricted.
+
+**Supporting-crate definition delta:** `gr-curated-controllers::dualshock4::DualShock4Definition` is now a transport-tagged struct rather than a zero-sized unit struct. A same-named public constant preserves existing value-expression construction for USB callers; a private constructor selects Bluetooth only inside the explicit factory. This supporting definition is not exported through the ordinary `virtualgamepad` root API snapshot. External users should use `create_dualshock4` rather than rely on the representation of this supporting definition.
+
+Source evidence only: research [draft PR #159](https://github.com/anderstvoss/controller-protocol-research/pull/159) and claims `ds4-bt-consumer-input-envelope`, `ds4-bt-consumer-output-effects`, `ds4-bt-consumer-calibration-open`, `ds4-bt-consumer-identity-uniq`. The pin follows after research merges. No host run or physical-device validation was performed here; P5b local kalux run remains outstanding.
+
+## P9a DualSense Bluetooth-bus UHID (#154, #365)
+
+**Public API delta:** `create_dualsense(CreationOptions::new(RealizationId::LINUX_UHID_BLUETOOTH), DualSenseOptions::default())` now accepts this exact target, with no USB fallback. The existing `RealizationId`, `DualSenseInputs`, `DualSenseStatus`, `DualSenseIdentity`, `set_inputs`, `edit_inputs`, and `host_outputs` signatures do not change. The report codec is internal. The checked-in alpha API snapshot and generated inventory have **no signature additions**, so the snapshot must remain byte-identical after `scripts/check-alpha-api.py`.
+
+The explicit Bluetooth creation path generates one creation-owned identity if none was supplied; that same identity supplies UHID `uniq`, the pairing feature response and restoration. The local UHID node reports bus 5 and 054c:0ce6 but does not pair, connect over radio or expose Bluetooth audio. The descriptor is a synthetic source-compatible report declaration; all per-function acceptance entries remain WIP. Linux host / SDL / Steam tests are not run in this cloud PR and follow in P5b. Source-only research: [p9a gap brief](https://github.com/anderstvoss/controller-protocol-research/blob/40e43c5c1580f0791aa7fae9aa83661c128fc36c/docs/p9a-dualsense-bt-uhid.md).
+
 ## Audio Round 2 — cooperative Native HID PipeWire sidecar association
 
 - Added `AudioSidecarAssociation` and
@@ -985,6 +1011,30 @@ These additive ordinary-root declarations do not change protocol admission or qu
 - `DualSenseHidOutput::UsbOutput` adds `led_brightness: u8` (raw; conflicting encoding in research claim `ds-cgap-led-brightness-encoding-disagreement`), `lightbar_setup: Option<u8>` (valid_flag2 bit 1), `release_leds: Option<bool>` (Some(true) for valid_flag1 bit 3, otherwise None), and `player_led_instant: Option<bool>` (valid_flag1 bit 4). `player_leds` now contains only five indicator bits (0–4), with bit 5 exposed separately.
 - Consumers needing the complete original packet should continue to use `raw`. The legacy retained `DualSenseOutputState.player_leds` remains the original player-LED byte; it does not adopt the new event field's mask. No other retained-state ABI or wire serialization changes.
 - Updated GUI presents five indicators, instant/fade, mute pulse/unknown, and uninterpreted brightness. The changes and tests are source-only; L1–L8 physical checks are not run.
+
+### #365 · Sony caller-supplied device data (P10b)
+
+- Add ordinary-root `DualSenseDeviceData` and `DualShock4DeviceData`.
+  Both default to the existing byte-stable synthetic calibration and firmware
+  USB feature replies; neither includes a device identity.
+- Import with `from_feature_reports(calibration, firmware)`,
+  `with_feature_report(report_id, bytes)`, or `load_file(path)`.
+  Read with `feature_report(report_id)` and export with
+  `save_file(path)`. Imports reject unknown reports, wrong sizes,
+  zero calibration denominators and Bluetooth framing.
+- New `DualSenseOptions::with_device_data(data)` /
+  `DualShock4Options::with_device_data(data)` builders and
+  `device_data()` accessors supply and inspect per-instance settings.
+  Controller handles also expose `device_data()` after close.
+- No existing caller migration is required for defaults; the previous
+  synthetic values remain unchanged. To restore a custom profile, capture
+  `controller.device_data()` before disposal and pass a copy in the next
+  creation's family options. Restore pairing identity separately.
+- Explicit Sony device data on `linux.usbip.usb-audio` returns typed
+  `ControllerError::Unsupported` before opening a worker. USB/IP continues
+  using its existing synthetic feature replies and unchanged worker protocol.
+  No physical capture, host observation or Bluetooth qualification is claimed.
+  See [Device data](DEVICE_DATA.md).
 
 ## Alpha 2 p2b — Switch Pro native battery, HOME light and optional IMU gating (#156 / #365)
 

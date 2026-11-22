@@ -81,9 +81,9 @@ fn controlled_bus_startup_probe() {
                 devices(&prefix).is_empty(),
                 "ambiguous existing probe device"
             );
-            let runtime = common::create(DualSenseDefinition, realization, options)
+            let runtime = common::create(DualSenseDefinition::default(), realization, options)
                 .expect("open instrumented personality");
-            let mut controller = DualSenseController(runtime);
+            let mut controller = DualSenseController(runtime, DualSenseDeviceData::default());
             controller.commit().expect("initial neutral input");
             let start = Instant::now();
             let mut step = 0_i16;

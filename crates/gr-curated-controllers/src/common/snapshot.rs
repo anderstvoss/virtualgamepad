@@ -7,7 +7,10 @@ use gr_hid::{
 };
 use std::collections::BTreeMap;
 
+type FeatureEnhancement<S> = ([u8; 2], fn(&S, u64, u8) -> Report);
+
 #[derive(Clone)]
+#[allow(clippy::struct_excessive_bools)] // Independent opt-in protocol behaviors set by each family.
 pub(crate) struct SnapshotProtocol<S: Clone, R: OutputState = ()> {
     pub neutral: S,
     pub encode: fn(&S, u64, u8) -> Report,
@@ -15,6 +18,9 @@ pub(crate) struct SnapshotProtocol<S: Clone, R: OutputState = ()> {
     pub features: BTreeMap<gr_realization_api::NativeHidReportKey, Vec<u8>>,
     pub numbered: [bool; 3],
     pub period: Option<u64>,
+    initial_encode: fn(&S, u64, u8) -> Report,
+    enhance_on_feature: Option<FeatureEnhancement<S>>,
+    drop_invalid_output: bool,
     refresh_on_open: bool,
     sequence: u8,
     next: Option<u64>,
@@ -39,6 +45,9 @@ impl<S: Clone, R: OutputState> SnapshotProtocol<S, R> {
             features,
             numbered,
             period,
+            initial_encode: encode,
+            enhance_on_feature: None,
+            drop_invalid_output: false,
             refresh_on_open: false,
             sequence: 1,
             next: Some(0),
@@ -47,6 +56,21 @@ impl<S: Clone, R: OutputState> SnapshotProtocol<S, R> {
             last: None,
             retained: R::default(),
         }
+    }
+    /// Switch transport framing after a supported feature read or accepted output.
+    /// This is opt-in and has no effect on USB personalities.
+    pub(crate) fn with_feature_enhancement(
+        mut self,
+        ids: [u8; 2],
+        full_encode: fn(&S, u64, u8) -> Report,
+    ) -> Self {
+        self.enhance_on_feature = Some((ids, full_encode));
+        self
+    }
+
+    pub(crate) fn reject_invalid_host_output(mut self) -> Self {
+        self.drop_invalid_output = true;
+        self
     }
 
     /// Request a fresh current-state snapshot when the consumer opens this HID.
@@ -94,6 +118,13 @@ impl<S: Clone, R: OutputState> Protocol for SnapshotProtocol<S, R> {
                     })
                     .and_then(|b| Report::from_wire(ReportType::Feature, self.numbered[2], b).ok())
                     .ok_or(ReplyError::Unsupported);
+                if reply.is_ok() {
+                    if let Some((ids, full_encode)) = self.enhance_on_feature {
+                        if id.is_some_and(|id| ids.contains(&id)) {
+                            self.encode = full_encode;
+                        }
+                    }
+                }
                 (Reply::Get(reply), None)
             }
             RequestKind::Get {
@@ -113,6 +144,11 @@ impl<S: Clone, R: OutputState> Protocol for SnapshotProtocol<S, R> {
             RequestKind::Set(report) => {
                 let result =
                     (self.validate_output)(report).and_then(|()| self.retained.apply(report));
+                if result.is_ok() {
+                    if let Some((_, full_encode)) = self.enhance_on_feature {
+                        self.encode = full_encode;
+                    }
+                }
                 let output = result.is_ok().then(|| RawReverseEvent::HidOutput {
                     report_id: report.id(),
                     bytes: report.payload().to_vec(),
@@ -126,6 +162,11 @@ impl<S: Clone, R: OutputState> Protocol for SnapshotProtocol<S, R> {
             self.retained
                 .apply(&report)
                 .map_err(|_| Error::InvalidState)?;
+            if let Some((_, full_encode)) = self.enhance_on_feature {
+                self.encode = full_encode;
+            }
+        } else if self.drop_invalid_output {
+            return Ok(None);
         }
         Ok(Some(RawReverseEvent::HidOutput {
             report_id: report.id(),
@@ -140,6 +181,7 @@ impl<S: Clone, R: OutputState> Protocol for SnapshotProtocol<S, R> {
                 numbered_feature,
             } => {
                 self.valid = self.numbered == [numbered_input, numbered_output, numbered_feature];
+                self.encode = self.initial_encode;
                 self.active = true;
                 self.next = Some(now);
             }

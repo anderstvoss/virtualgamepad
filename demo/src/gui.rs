@@ -4,6 +4,8 @@ mod audio_topology;
 mod editor;
 mod families;
 mod native_editor;
+mod sony_device_data;
+mod switch_pro_spi;
 mod wii_eeprom;
 mod wii_host;
 mod wii_import;
@@ -54,6 +56,8 @@ struct ControllerOptions {
     wii_imports: wii_import::Imports,
     wii_compat: WiiRemoteOptions,
     steam_options: SteamController2026Options,
+    switch_spi: switch_pro_spi::Settings,
+    sony_data: sony_device_data::Selections,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
@@ -272,7 +276,11 @@ fn draw_advanced_options(
     target: RealizationId,
     kind: Kind,
     audio_creation: &mut audio_lab::CreationAudio,
-    steam_options: &mut SteamController2026Options,
+    (steam_options, sony_data, switch_spi): (
+        &mut SteamController2026Options,
+        &mut sony_device_data::Selections,
+        &mut switch_pro_spi::Settings,
+    ),
     (wii_revision, wii_imports, wii_compat): (
         &mut WiiRemoteRevision,
         &mut wii_import::Imports,
@@ -311,6 +319,9 @@ fn draw_advanced_options(
                                 bottom: 2,
                             }),
                     );
+                    if kind == Kind::SwitchPro {
+                        switch_spi.draw(ui);
+                    }
                     draw_wii_revision_selector(ui, kind, wii_revision);
                     if kind == Kind::WiiRemote {
                         wii_imports.draw(ui, target);
@@ -319,6 +330,7 @@ fn draw_advanced_options(
                     if kind == Kind::Steam {
                         families::draw_steam_toggles(ui, target, steam_options);
                     }
+                    sony_data.draw(ui, kind);
                     ui.strong("Audio configuration");
                     audio_lab::draw_creation(ui, audio_creation, target, kind.supports_audio());
                 })
@@ -706,13 +718,16 @@ fn valid_creation_target(kind: Kind, current: RealizationId) -> RealizationId {
     }
 }
 
-// Wii resources and Steam creation options belong to their saved sessions.
+// Wii, Switch Pro and Steam resources belong to their saved sessions.
 fn recreation_options(
     kind: Kind,
     saved: &ControllerOptions,
     choices: ControllerOptions,
 ) -> ControllerOptions {
-    if matches!(kind, Kind::WiiRemote | Kind::Steam) {
+    if matches!(
+        kind,
+        Kind::WiiRemote | Kind::Steam | Kind::DualSense | Kind::DualShock4 | Kind::SwitchPro
+    ) {
         ControllerOptions {
             id: choices.id,
             ..saved.clone()
@@ -1479,6 +1494,8 @@ pub struct App {
     wii_imports: wii_import::Imports,
     wii_compat: WiiRemoteOptions,
     steam_options: SteamController2026Options,
+    switch_spi: switch_pro_spi::Settings,
+    sony_data: sony_device_data::Selections,
     name_draft: String,
     create_count: u32,
     advanced_options_open: bool,
@@ -1504,6 +1521,8 @@ impl Default for App {
             wii_imports: wii_import::Imports::default(),
             wii_compat: WiiRemoteOptions::default(),
             steam_options: SteamController2026Options::default(),
+            switch_spi: switch_pro_spi::Settings::default(),
+            sony_data: sony_device_data::Selections::default(),
             name_draft: String::new(),
             create_count: 1,
             advanced_options_open: false,
@@ -1686,6 +1705,8 @@ impl App {
             wii_imports: self.wii_imports.clone(),
             wii_compat: self.wii_compat.clone(),
             steam_options: self.steam_options.clone(),
+            switch_spi: self.switch_spi.clone(),
+            sony_data: self.sony_data.clone(),
         }
     }
 
@@ -2058,7 +2079,7 @@ impl eframe::App for App {
                                     self.target,
                                     self.kind,
                                     &mut self.audio_creation,
-                                    &mut self.steam_options,
+                                    (&mut self.steam_options, &mut self.sony_data, &mut self.switch_spi),
                                     (&mut self.wii_revision, &mut self.wii_imports, &mut self.wii_compat),
                                 )
                                 .panel_rect;
@@ -2670,6 +2691,8 @@ fn draw_controller_state(
                     ("Recreate with original creation choices", "Closes this Wii first, then recreates its saved target, revision, calibration imports and compatibility options. Siblings stay open.")
                 } else if controller.kind == Kind::Steam {
                     ("Recreate with original creation choices", "Closes this Steam controller first, then recreates its saved target and Steam options. Siblings stay open.")
+                } else if controller.kind == Kind::SwitchPro {
+                    ("Recreate with original creation choices", "Closes this Switch Pro controller first, then recreates its saved target and SPI image. Siblings stay open.")
                 } else {
                     ("Recreate with current creation choices", "Closes this creation first, then creates the same family with supported sidebar realization/audio choices. Siblings stay open.")
                 };
@@ -4615,6 +4638,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)] // One egui frame mirrors the full sidebar layout being measured.
     fn advanced_options_use_their_own_scroll_area_and_expand_with_space() {
         for (screen_height, should_scroll_inside_advanced) in [(600.0, true), (900.0, false)] {
             let context = egui::Context::default();
@@ -4622,6 +4646,16 @@ mod tests {
             let mut sidebar_content_height = 0.0;
             let mut advanced_layout = None;
             let mut audio_creation = audio_lab::CreationAudio::default();
+            let mut family = (
+                SteamController2026Options::default(),
+                sony_device_data::Selections::default(),
+                switch_pro_spi::Settings::default(),
+            );
+            let mut wii = (
+                WiiRemoteRevision::Original,
+                wii_import::Imports::default(),
+                WiiRemoteOptions::default(),
+            );
             let _ = context.run(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
@@ -4661,12 +4695,8 @@ mod tests {
                                                 audio_lab::default_creation_target(),
                                                 Kind::DualSense,
                                                 &mut audio_creation,
-                                                &mut SteamController2026Options::default(),
-                                                (
-                                                    &mut WiiRemoteRevision::Original,
-                                                    &mut wii_import::Imports::default(),
-                                                    &mut WiiRemoteOptions::default(),
-                                                ),
+                                                (&mut family.0, &mut family.1, &mut family.2),
+                                                (&mut wii.0, &mut wii.1, &mut wii.2),
                                             ));
                                             ui.add_sized(
                                                 [SIDEBAR_WIDTH, 1.0],

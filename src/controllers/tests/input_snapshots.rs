@@ -237,7 +237,7 @@ root_snapshot_case!(
     DualSenseInputs,
     "virtualgamepad.dualsense",
     BYTE_AXES,
-    [None, None],
+    [None, DualSenseDeviceData::default(), None],
     |snapshot, invalid| {
         let axis = DualSenseAxis::new;
         snapshot.set_sticks((axis(0), axis(255)), (axis(255), axis(0)));
@@ -269,7 +269,7 @@ root_snapshot_case!(
     DualShock4Inputs,
     "virtualgamepad.dualshock4",
     BYTE_AXES,
-    [None, None],
+    [None, DualShock4DeviceData::default(), None],
     |snapshot, invalid| {
         let axis = DualShock4Axis::new;
         snapshot.set_sticks((axis(0), axis(255)), (axis(255), axis(0)));
@@ -382,7 +382,7 @@ fn root_sony_refresh_commits_a_new_motion_sample() {
         }
     }
     macro_rules! check {
-        ($create:ident, $handle:ident, $module:ident, $id:literal) => {{
+        ($create:ident, $handle:ident, $module:ident, $id:literal, $data:ty) => {{
             let samples = Arc::new(Mutex::new(Vec::new()));
             let io = Arc::new(Mutex::new(Record::default()));
             let inner = gr_curated_controllers::$create(Box::new(Bridge {
@@ -398,7 +398,8 @@ fn root_sony_refresh_commits_a_new_motion_sample() {
                 inner.association(),
                 inner.surface().common(),
             );
-            let mut controller = $handle::from_parts(association, inner, None, None);
+            let mut controller =
+                $handle::from_parts(association, inner, None, <$data>::default(), None);
             controller.commit().unwrap();
             let previous = accepted_inputs!(controller, $module).clone();
             let clock = accepted_clock!(controller, $module);
@@ -427,12 +428,14 @@ fn root_sony_refresh_commits_a_new_motion_sample() {
         create_dualsense_usb_worker,
         DualSenseController,
         dualsense,
-        "virtualgamepad.dualsense"
+        "virtualgamepad.dualsense",
+        DualSenseDeviceData
     );
     check!(
         create_dualshock4_usb_worker,
         DualShock4Controller,
         dualshock4,
-        "virtualgamepad.dualshock4"
+        "virtualgamepad.dualshock4",
+        DualShock4DeviceData
     );
 }

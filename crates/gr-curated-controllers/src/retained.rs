@@ -169,7 +169,17 @@ impl OutputState for DualSenseOutputState {
 impl OutputState for DualShock4OutputState {
     worker_view!(DualShock4);
     fn apply(&mut self, report: &Report) -> Result<(), ReplyError> {
-        let b = report.payload();
+        let payload = report.payload();
+        // BT report 0x11 adds hardware/audio control ahead of the common
+        // effect flags. Its CRC is checked by the controller protocol first.
+        let b = if report.id() == Some(0x11) {
+            payload.get(2..).ok_or(ReplyError::Invalid)?
+        } else {
+            payload
+        };
+        if b.len() < 10 {
+            return Err(ReplyError::Invalid);
+        }
         let mut next = self.clone();
         if b[0] & 1 != 0 {
             next.motors = Some([b[4], b[3]]);
