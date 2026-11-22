@@ -7,6 +7,19 @@ per-feature dispositions in
 [`acceptance/virtualgamepad.wii-remote.toml`](../acceptance/virtualgamepad.wii-remote.toml).
 It is not physical-reference or whole-controller acceptance.
 
+
+## P6 retail uinput rumble probe
+
+On 2026-11-21, the stock `scripts/wii-evdev-rumble-probe.c` was run twice
+against virtualgamepad `2e18a9c3faeaf0ee4835882f7b264ed7ad004ed4`.
+Both runs completed the kernel uinput FF upload, play, stop, and erase
+sequence; retained rumble state changed off, on, off. All three owned
+event nodes disappeared after two closes. This is bounded live Linux
+uinput consumer/software-intent evidence, not proof of physical motor
+delivery or a new test on the merged descriptor. See
+[the Wii tracker result](https://github.com/anderstvoss/virtualgamepad/issues/158#issuecomment-7072384755).
+
+
 ## Native ownership and use
 
 At the ordinary root, call
