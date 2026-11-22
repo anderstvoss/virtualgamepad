@@ -962,6 +962,12 @@ optional raw observations as an authoritative stream. Wii supporting snapshot:
 Existing events, raw payloads, FF effect types and retained snapshots are unchanged.
 These additive ordinary-root declarations do not change protocol admission or qualify physical output.
 
+## P9a DualSense Bluetooth-bus UHID (#154, #365)
+
+**Public API delta:** `create_dualsense(CreationOptions::new(RealizationId::LINUX_UHID_BLUETOOTH), DualSenseOptions::default())` now accepts this exact target, with no USB fallback. The existing `RealizationId`, `DualSenseInputs`, `DualSenseStatus`, `DualSenseIdentity`, `set_inputs`, `edit_inputs`, and `host_outputs` signatures do not change. The report codec is internal. The checked-in alpha API snapshot and generated inventory have **no signature additions**, so the snapshot must remain byte-identical after `scripts/check-alpha-api.py`.
+
+The explicit Bluetooth creation path generates one creation-owned identity if none was supplied; that same identity supplies UHID `uniq`, the pairing feature response and restoration. The local UHID node reports bus 5 and 054c:0ce6 but does not pair, connect over radio or expose Bluetooth audio. The descriptor is a synthetic source-compatible report declaration; all per-function acceptance entries remain WIP. Linux host / SDL / Steam tests are not run in this cloud PR and follow in P5b. Source-only research: [p9a gap brief](https://github.com/anderstvoss/controller-protocol-research/blob/40e43c5c1580f0791aa7fae9aa83661c128fc36c/docs/p9a-dualsense-bt-uhid.md).
+
 ## Audio Round 2 — cooperative Native HID PipeWire sidecar association
 
 - Added `AudioSidecarAssociation` and

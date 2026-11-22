@@ -1,5 +1,6 @@
 //! `DualSense` controller with native input, touch, motion, and output types.
 
+mod bluetooth;
 #[cfg(all(test, target_os = "linux"))]
 mod host_probe;
 mod protocol;
@@ -585,6 +586,24 @@ static HID_RESTRICTIONS: [TargetRestriction; 2] = [
         reason: "the USB HID report contract is research-backed until reference-device comparison",
     },
 ];
+static BLUETOOTH_RESTRICTIONS: [TargetRestriction; 4] = [
+    TargetRestriction {
+        feature: "Bluetooth radio and pairing",
+        reason: "Bluetooth-bus UHID exposes a local HID node but cannot discover, pair or reconnect over a radio; actual Bluetooth is deferred to #164",
+    },
+    TargetRestriction {
+        feature: "Bluetooth controller audio",
+        reason: "Bluetooth-bus UHID has no PCM/audio transport and this realization does not create an audio sidecar",
+    },
+    TargetRestriction {
+        feature: "Bluetooth retail descriptor fidelity",
+        reason: "the synthetic Bluetooth HID report descriptor is source-compatible; no physical reference descriptor is available for byte-level comparison",
+    },
+    TargetRestriction {
+        feature: "Bluetooth adaptive-trigger actuator fidelity",
+        reason: "output effect bytes are retained and decoded, but no physical actuation or advanced haptics transport has been validated",
+    },
+];
 const BYTE_AXIS: InputAxisRange = InputAxisRange {
     minimum: 0,
     maximum: 255,
@@ -792,6 +811,19 @@ static HID_SURFACE: DualSenseSurface = DualSenseSurface {
     }
     .build(),
 };
+static BLUETOOTH_SURFACE: DualSenseSurface = DualSenseSurface {
+    common: gr_controller_contract::construction::ControllerSurfaceSpec {
+        target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+        validation_status: RealizationValidationStatus::ResearchBacked,
+        digital_controls: &DIGITAL,
+        axes: &AXES,
+        outputs: &OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
+        restrictions: &BLUETOOTH_RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
+    }
+    .build(),
+};
 static USB_RESTRICTIONS: [TargetRestriction; 2] = [
     TargetRestriction {
         feature: "controller audio routing",
@@ -841,6 +873,7 @@ static USBIP_SURFACE: DualSenseSurface = DualSenseSurface {
 const fn motion_targets() -> RealizationTargetSet {
     RealizationTargetSet::new(&[
         RealizationTarget::LINUX_UHID_USB,
+        RealizationTarget::LINUX_UHID_BLUETOOTH,
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         RealizationTarget::LINUX_USBIP_USB_AUDIO,
     ])
@@ -859,7 +892,7 @@ impl RealizationControllerDefinition for DualSenseDefinition {
         ControllerId::new("virtualgamepad.dualsense")
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        static ENTRIES: [RealizationManifestEntry; 4] = [
+        static ENTRIES: [RealizationManifestEntry; 5] = [
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
@@ -869,6 +902,13 @@ impl RealizationControllerDefinition for DualSenseDefinition {
             },
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UHID_USB,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: true,
+                },
+                audio_sidecar: None,
+            },
+            RealizationManifestEntry {
+                target: RealizationTarget::LINUX_UHID_BLUETOOTH,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -915,6 +955,7 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
             selection.target,
             RealizationTarget::LINUX_UINPUT
                 | RealizationTarget::LINUX_UHID_USB
+                | RealizationTarget::LINUX_UHID_BLUETOOTH
                 | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
                 | RealizationTarget::LINUX_USBIP_USB_AUDIO
         ) {
@@ -948,6 +989,12 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
     ) -> Result<Self::Frame, ControlError> {
         if selection.target == RealizationTarget::LINUX_UHID_USB {
             return Ok(dualsense_hid_input_report(state));
+        }
+        if selection.target == RealizationTarget::LINUX_UHID_BLUETOOTH {
+            return Ok(ProviderFrame::HidInput {
+                report_id: Some(bluetooth::ENHANCED_ID),
+                bytes: bluetooth::enhanced_input(state).payload().to_vec(),
+            });
         }
         if selection.target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID {
             let ProviderFrame::HidInput {
@@ -1741,6 +1788,7 @@ impl DualSenseController {
     pub fn surface(&self) -> &'static DualSenseSurface {
         match self.0.selection().target {
             RealizationTarget::LINUX_UHID_USB => &HID_SURFACE,
+            RealizationTarget::LINUX_UHID_BLUETOOTH => &BLUETOOTH_SURFACE,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID => &USB_SURFACE,
             RealizationTarget::LINUX_USBIP_USB_AUDIO => &USBIP_SURFACE,
             _ => &SURFACE,
@@ -2080,6 +2128,26 @@ fn hid_realization(_session: RealizationSessionId) -> NativeControllerRealizatio
         numbered_feature_reports: true,
     })
 }
+fn bluetooth_realization(_session: RealizationSessionId) -> NativeControllerRealization {
+    // Source-backed consumer report lengths; not a captured retail descriptor.
+    NativeControllerRealization::Uhid(NativeHidRealization {
+        target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+        bus_type: 5,
+        device_name: "DualSense Wireless Controller".into(),
+        physical_path: "virtualgamepad/uhid/dualsense-bluetooth".into(),
+        unique_id: "virtualgamepad-dualsense".into(),
+        identity: NativeDeviceIdentity {
+            vendor_id: 0x054c,
+            product_id: 0x0ce6,
+            version: 0x0110,
+        },
+        descriptor: bluetooth::DESCRIPTOR.to_vec(),
+        numbered_input_reports: true,
+        numbered_output_reports: true,
+        numbered_feature_reports: true,
+    })
+}
+
 /// Validated USB calibration and firmware feature reports, without pairing identity.
 ///
 /// Caller bytes are accepted only for the two device-data reports. Pairing
@@ -2255,11 +2323,21 @@ pub fn create_dualsense(
     options: CreationOptions,
     family: DualSenseOptions,
 ) -> Result<DualSenseController, ProviderError> {
-    let identity = family.identity();
+    let identity = if options.target == RealizationTarget::LINUX_UHID_BLUETOOTH {
+        // The Bluetooth uniq and feature identity must be derived from the
+        // same creation-owned value, including for fresh concurrent sessions.
+        Some(match family.identity() {
+            Some(identity) => identity,
+            None => DualSenseIdentity::generate()?,
+        })
+    } else {
+        family.identity()
+    };
     let device_data = family.device_data().unwrap_or_default();
     let mut realization = match options.target {
         RealizationTarget::LINUX_UINPUT => realization(),
         RealizationTarget::LINUX_UHID_USB => hid_realization(options.session),
+        RealizationTarget::LINUX_UHID_BLUETOOTH => bluetooth_realization(options.session),
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
                 controller: gr_controller_wire::registry::ids::DUALSENSE,
@@ -2271,7 +2349,10 @@ pub fn create_dualsense(
             });
         }
     };
-    if options.target == RealizationTarget::LINUX_UHID_USB {
+    if matches!(
+        options.target,
+        RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+    ) {
         common::require_linux_platform(options.target)?;
     }
     if let (Some(identity), NativeControllerRealization::Uhid(spec)) = (identity, &mut realization)
@@ -2322,6 +2403,22 @@ impl crate::registry::ControllerFamily for DualSenseDefinition {
         crate::registry::refusal(RESTRICTIONS[7], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(RESTRICTIONS[8], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(HID_RESTRICTIONS[0], &[RealizationTarget::LINUX_UHID_USB]),
+        crate::registry::refusal(
+            BLUETOOTH_RESTRICTIONS[0],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BLUETOOTH_RESTRICTIONS[1],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BLUETOOTH_RESTRICTIONS[2],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BLUETOOTH_RESTRICTIONS[3],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
         crate::registry::FamilyOperation {
             name: "UHID physical-device fidelity",
             ..crate::registry::refusal(HID_RESTRICTIONS[1], &[RealizationTarget::LINUX_UHID_USB])
@@ -2364,6 +2461,11 @@ impl crate::registry::ControllerFamily for DualSenseDefinition {
             ),
             crate::registry::FamilyRealization::new(
                 &HID_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
+            ),
+            crate::registry::FamilyRealization::new(
+                &BLUETOOTH_SURFACE.common,
                 crate::registry::RealizationTier::PlayableFull,
                 crate::registry::PermissionClass::Uhid,
             ),
@@ -3361,6 +3463,7 @@ mod tests {
     #[test]
     fn motion_support_includes_dummy_hcd_and_reports_the_exact_available_targets() {
         assert!(supports_motion(RealizationTarget::LINUX_UHID_USB));
+        assert!(supports_motion(RealizationTarget::LINUX_UHID_BLUETOOTH));
         assert!(supports_motion(RealizationTarget::LINUX_DUMMY_HCD_USB_HID));
         assert!(supports_motion(RealizationTarget::LINUX_USBIP_USB_AUDIO));
         assert!(!supports_motion(RealizationTarget::LINUX_UINPUT));
@@ -3368,6 +3471,7 @@ mod tests {
             motion_targets(),
             RealizationTargetSet::new(&[
                 RealizationTarget::LINUX_UHID_USB,
+                RealizationTarget::LINUX_UHID_BLUETOOTH,
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 RealizationTarget::LINUX_USBIP_USB_AUDIO,
             ])
