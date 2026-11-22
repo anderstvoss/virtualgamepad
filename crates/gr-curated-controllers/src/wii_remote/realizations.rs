@@ -439,12 +439,16 @@ mod tests {
     fn bluetooth_descriptor_equals_pinned_retail_research_fixture() {
         // Research fixture wii-p6-retail-plus-rvl-cnt-01-descriptor, obtained
         // from the captured unit; no bytes originate from the interim model.
-        let expected: Vec<u8> = include_str!(
+        let fixture = include_str!(
             "../../../../tests/fixtures/protocol-research/wii-p6-retail-plus-rvl-cnt-01-descriptor.hex"
-        )
-        .split_whitespace()
-        .map(|byte| u8::from_str_radix(byte, 16).unwrap())
-        .collect();
+        );
+        let raw_hex = fixture.trim();
+        assert_eq!(raw_hex.len(), 217 * 2);
+        let expected: Vec<u8> = raw_hex
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect();
         assert_eq!(expected.len(), 217);
         assert_eq!(&DESCRIPTOR[..], expected.as_slice());
         for revision in [WiiRemoteRevision::Original, WiiRemoteRevision::Tr] {
