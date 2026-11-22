@@ -1,10 +1,10 @@
-//! Independent HID short-item walk; no candidate retail descriptor bytes.
+//! Independent HID short-item walk of the pinned P6 retail descriptor.
 use super::DESCRIPTOR;
 use std::collections::BTreeMap;
 
 #[test]
-fn interim_gamepad_collection_preserves_vendor_variable_report_table() {
-    // W2 option B, #158 comment6354044408; wii-c5-report-layouts.
+fn retail_gamepad_collection_preserves_vendor_array_report_table() {
+    // wii-p6-retail-plus-rvl-cnt-01-descriptor-comparison; wii-c5-report-layouts.
     let mut cursor = 0;
     let mut page = 0;
     let mut usage = None;
@@ -16,7 +16,7 @@ fn interim_gamepad_collection_preserves_vendor_variable_report_table() {
     let mut reports = BTreeMap::new();
     while cursor < DESCRIPTOR.len() {
         let prefix = DESCRIPTOR[cursor];
-        assert_ne!(prefix, 0xfe, "no long items in the authored descriptor");
+        assert_ne!(prefix, 0xfe, "no long items in the retail descriptor");
         let length = match prefix & 3 {
             3 => 4,
             n => usize::from(n),
@@ -47,7 +47,7 @@ fn interim_gamepad_collection_preserves_vendor_variable_report_table() {
             (0, direction @ (8 | 9 | 11)) => {
                 assert_eq!(depth, 1);
                 assert_eq!(page, 0xff00, "report fields stay vendor-defined");
-                assert_eq!(value, 2, "Data/Variable/Absolute flags retained");
+                assert_eq!(value, 0, "retail Data/Array/Absolute flags retained");
                 assert_eq!(usage, Some(1));
                 assert_ne!(report_id, 0);
                 *reports.entry((direction, report_id)).or_insert(0) += size * count;

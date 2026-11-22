@@ -19,6 +19,21 @@ use virtualgamepad::{
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 struct Capture(PathBuf);
+impl Capture {
+    fn create() -> std::io::Result<(Self, File)> {
+        let path = std::env::temp_dir().join(format!(
+            "virtualgamepad-acceptance-{}-{}.json",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)?;
+        Ok((Self(path), file))
+    }
+}
 impl Drop for Capture {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.0);
@@ -113,9 +128,24 @@ impl UsbAttachment {
     }
 }
 
+fn owned_hid_child(device: &Path, physical_paths: &[String]) -> bool {
+    device.canonicalize().is_ok_and(|path| {
+        path.ancestors()
+            .filter_map(|ancestor| fs::read_to_string(ancestor.join("uevent")).ok())
+            .find_map(|properties| {
+                properties.lines().find_map(|line| {
+                    line.strip_prefix("HID_PHYS=")
+                        .map(|phys| physical_paths.iter().any(|label| label == phys))
+                })
+            })
+            .unwrap_or(false)
+    })
+}
+
 fn matching_nodes(
     physical_paths: &[String],
     usb_attachment: Option<&UsbAttachment>,
+    include_hid_children: bool,
 ) -> Result<BTreeSet<PathBuf>, String> {
     if physical_paths.is_empty() && usb_attachment.is_none() {
         return Err("no creation-owned node selector for this realization".into());
@@ -150,7 +180,12 @@ fn matching_nodes(
                         .lines()
                         .find_map(|s| s.strip_prefix("HID_PHYS=").map(str::to_owned))
                 });
-            if owned_by_usb || phys.is_some_and(|phys| physical_paths.contains(&phys)) {
+            if owned_by_usb
+                || phys.is_some_and(|phys| physical_paths.contains(&phys))
+                || (include_hid_children
+                    && class == "input"
+                    && owned_hid_child(&device, physical_paths))
+            {
                 result.insert(PathBuf::from(if class == "input" {
                     format!("/dev/input/{name}")
                 } else {
@@ -515,6 +550,43 @@ fn wait_child(
         thread::sleep(Duration::from_millis(1));
     }
 }
+fn is_bluetooth_timing_family(controller: &Controller) -> bool {
+    let target = match controller {
+        Controller::DualSense(c) => c.surface().common().target(),
+        Controller::DualShock4(c) => c.surface().common().target(),
+        Controller::SwitchPro(c) => c.surface().common().target(),
+        _ => return false,
+    };
+    target == RealizationId::LINUX_UHID_BLUETOOTH
+}
+
+fn is_udev_joystick(node: &Path) -> bool {
+    let Some(name) = node.file_name() else {
+        return false;
+    };
+    let Ok(device) = fs::read_to_string(Path::new("/sys/class/input").join(name).join("dev"))
+    else {
+        return false;
+    };
+    let data = Path::new("/run/udev/data").join(format!("c{}", device.trim()));
+    fs::read_to_string(data).is_ok_and(|properties| {
+        properties
+            .lines()
+            .any(|line| line == "E:ID_INPUT_JOYSTICK=1")
+    })
+}
+
+fn timing_joystick(
+    nodes: &BTreeSet<PathBuf>,
+    is_joystick: impl Fn(&Path) -> bool,
+) -> Option<&PathBuf> {
+    let mut candidates = nodes
+        .iter()
+        .filter(|node| node.starts_with("/dev/input") && is_joystick(node));
+    let node = candidates.next()?;
+    candidates.next().is_none().then_some(node)
+}
+
 fn usb_timing_consumer(nodes: &BTreeSet<PathBuf>) -> Option<&PathBuf> {
     // USB/IP SDL timing uses evdev. Hidraw and auxiliary input nodes are
     // recorded for attachment ownership but are not SDL open prerequisites.
@@ -531,20 +603,24 @@ fn open_session_consumers(s: &mut Session) -> Result<Value, String> {
     let mut access = Vec::new();
     s.phases
         .insert("consumer_open_attempt_ns", elapsed_ns(s.created));
-    let usb_event = s
-        .usb_attachment
-        .as_ref()
-        .and_then(|_| usb_timing_consumer(&s.nodes));
-    for node in s.nodes.iter().filter(|node| {
-        if s.usb_attachment.is_some() {
-            Some(*node) == usb_event
+    let bluetooth_timing = is_bluetooth_timing_family(&s.controller);
+    let selected = if bluetooth_timing {
+        timing_joystick(&s.nodes, is_udev_joystick)
+    } else {
+        s.usb_attachment
+            .as_ref()
+            .and_then(|_| usb_timing_consumer(&s.nodes))
+    };
+    let nodes = s.nodes.iter().filter(|node| {
+        if bluetooth_timing || s.usb_attachment.is_some() {
+            Some(*node) == selected
         } else {
             !series_bt || node.starts_with("/dev/input")
         }
-    }) {
-        let (file, diagnostic) =
-            open_consumer_diagnostics(node, series || s.usb_attachment.is_some())
-                .map_err(|e| e.to_string())?;
+    });
+    for node in nodes {
+        let (file, diagnostic) = open_consumer_diagnostics(node, series || selected.is_some())
+            .map_err(|e| e.to_string())?;
         access.push(diagnostic);
         s.phases
             .entry("consumer_first_open_ns")
@@ -554,7 +630,7 @@ fn open_session_consumers(s: &mut Session) -> Result<Value, String> {
     if s.consumers.is_empty() {
         return Err("no owned consumer node opened".into());
     }
-    let consumer = if s.usb_attachment.is_some() || series_bt {
+    let consumer = if selected.is_some() || series_bt {
         "harness evdev"
     } else {
         "harness evdev/hidraw"
@@ -614,12 +690,13 @@ impl Backend for Linux {
         stage: &str,
         peers: &mut [&mut Session],
     ) -> Result<Value, String> {
+        let bluetooth_timing = is_bluetooth_timing_family(&s.controller);
         match stage {
             "node_present"|"node_gone"=>{
                 let deadline=Instant::now()+Duration::from_secs(2);
                 loop {
                     for peer in peers.iter_mut() { peer.service.service(|| peer.controller.service()); }
-                    let nodes=matching_nodes(&s.physical_paths, s.usb_attachment.as_ref())?;
+                    let nodes=matching_nodes(&s.physical_paths, s.usb_attachment.as_ref(), bluetooth_timing)?;
                     let usb_attached = s.usb_attachment.as_ref().map(UsbAttachment::is_attached)
                         .transpose().map_err(|error| error.kind().to_string())?;
                     let usb_ready = usb_attached.is_none() || probe_node(&nodes, false).is_some();
@@ -634,7 +711,9 @@ impl Backend for Linux {
                         Controller::XboxSeries(c) => series_nodes_ready(&nodes, c.surface().target() == RealizationId::LINUX_UHID_BLUETOOTH),
                         _ => true,
                     };
-                    if stage=="node_present" && !nodes.is_empty() && series_ready && usb_ready
+                    let bluetooth_ready = !bluetooth_timing
+                        || timing_joystick(&nodes, is_udev_joystick).is_some();
+                    if stage=="node_present" && !nodes.is_empty() && series_ready && usb_ready && bluetooth_ready
                         && (!steam_hid || nodes.iter().any(|p| !p.starts_with("/dev/input"))) {
                         s.nodes=nodes;
                         return Ok(json!({"poll_interval_ns":1_000_000,"phases_since_create_ns":s.phases,"devices":s.nodes.iter().map(|p| {
@@ -662,10 +741,10 @@ impl Backend for Linux {
                 let series = matches!(&s.controller, Controller::XboxSeries(_));
                 let series_hidapi = matches!(&s.controller, Controller::XboxSeries(c)
                     if c.surface().target() == RealizationId::LINUX_UHID_BLUETOOTH) && xbox_hidapi();
-                let node=probe_node(&s.nodes, steam_hid || series_hidapi).ok_or("no owned node for requested SDL backend")?;
-                let path = std::env::temp_dir().join(format!("virtualgamepad-acceptance-{}-{}.json", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
-                let file = OpenOptions::new().write(true).create_new(true).open(&path).map_err(|e|e.to_string())?;
-                let capture = Capture(path);
+                let node=if bluetooth_timing { timing_joystick(&s.nodes, is_udev_joystick) }
+                    else { probe_node(&s.nodes, steam_hid || series_hidapi) }
+                    .ok_or("no owned node for requested SDL backend")?;
+                let (capture, file) = Capture::create().map_err(|e|e.to_string())?;
                 if series_hidapi && bound_driver(node).as_deref() != Some("microsoft") {
                     return Err("Xbox HIDAPI acceptance requires stock microsoft binding".into());
                 }
@@ -674,6 +753,7 @@ impl Backend for Linux {
                 let mut command = Command::new("bash");
                 command.arg(self.root.join("scripts/run-sdl3-gamepad-probe.sh"))
                     .arg(node).arg(if steam_hid || series { "1800" } else { "100" });
+                if bluetooth_timing { command.env("SDL_JOYSTICK_HIDAPI", "0"); }
                 if series {
                     command.arg(if series_hidapi { "--gamepad-trigger-rumble-script" } else { "--gamepad-rumble-script" }).arg("--reopen");
                     command.env("SDL_JOYSTICK_HIDAPI", if series_hidapi { "1" } else { "0" });
@@ -750,7 +830,7 @@ mod tests {
     #[test]
     fn missing_node_selector_cannot_report_empty_owned_set() {
         assert_eq!(
-            super::matching_nodes(&[], None),
+            super::matching_nodes(&[], None, false),
             Err("no creation-owned node selector for this realization".into())
         );
     }
@@ -809,7 +889,7 @@ mod tests {
             assert!(!owned.is_attached()?);
             assert!(sibling.is_dir());
             assert!(
-                super::matching_nodes(&[], Some(&owned))
+                super::matching_nodes(&[], Some(&owned), false)
                     .expect("validated selector")
                     .is_empty()
             );
@@ -889,6 +969,70 @@ mod tests {
             for (hidraw, expected) in [(false, &input), (true, &raw)] {
                 assert_eq!(super::probe_node(&nodes, hidraw), nodes.get(expected));
             }
+        }
+    }
+
+    #[test]
+    fn sony_event_suffix_uses_the_exact_nearest_hid_ancestor() {
+        use std::{fs, os::unix::fs::symlink, path::PathBuf};
+
+        struct DirectoryCleanup(PathBuf);
+        impl Drop for DirectoryCleanup {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+
+        let temp = std::env::temp_dir().join(format!(
+            "vg-hid-ancestry-{}-{}",
+            std::process::id(),
+            super::NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        fs::create_dir(&temp).unwrap();
+        let _cleanup = DirectoryCleanup(temp.clone());
+        let hid = temp.join("hid");
+        let event = hid.join("input/input5");
+        fs::create_dir_all(&event).unwrap();
+        let link = temp.join("device");
+        symlink(&event, &link).unwrap();
+        let label = "virtualgamepad/uhid/test-alpha";
+        fs::write(event.join("phys"), format!("{label}/input0")).unwrap();
+        fs::write(hid.join("uevent"), format!("HID_PHYS={label}\n")).unwrap();
+
+        assert!(super::owned_hid_child(&link, &[label.into()]));
+        assert!(!super::owned_hid_child(
+            &link,
+            &["virtualgamepad/uhid/test".into()]
+        ));
+        fs::write(hid.join("uevent"), format!("HID_PHYS={label}-peer\n")).unwrap();
+        fs::write(temp.join("uevent"), format!("HID_PHYS={label}\n")).unwrap();
+        assert!(!super::owned_hid_child(&link, &[label.into()]));
+    }
+
+    #[test]
+    fn bluetooth_timing_waits_for_the_unique_udev_joystick_after_early_companions() {
+        use std::{collections::BTreeSet, path::PathBuf};
+
+        let raw = PathBuf::from("/dev/hidraw900");
+        let sensor = PathBuf::from("/dev/input/event901");
+        let joystick = PathBuf::from("/dev/input/event902");
+        let second_joystick = PathBuf::from("/dev/input/event903");
+        let all = BTreeSet::from([raw.clone(), sensor.clone(), joystick.clone()]);
+        for (nodes, classified, expected) in [
+            (BTreeSet::from([raw.clone()]), false, None),
+            (BTreeSet::from([raw, sensor]), false, None),
+            (all.clone(), false, None),
+            (all, true, Some(&joystick)),
+            (
+                BTreeSet::from([joystick.clone(), second_joystick.clone()]),
+                true,
+                None,
+            ),
+        ] {
+            let is_joystick = |node: &std::path::Path| {
+                classified && (node == joystick || node == second_joystick)
+            };
+            assert_eq!(super::timing_joystick(&nodes, is_joystick), expected);
         }
     }
 
