@@ -76,5 +76,8 @@ is `dda74f526bd40054a1552bce54e2e5e103c4941a`. [Run matrix](../scripts/alpha2-po
 - Timing runs N1 and N3 for 50 cycles with SDL and no latency budgets. Each row
   counts creation, appearance, direct open, SDL open and removal independently.
 
+Use `scripts/alpha2-polish-report.py ATTEMPT_DIR SHA --row-prefix cleanup2-`
+to render the receipts with separate row IDs for each backend and concurrency.
+
 Cleanup 2 outcomes remain pending in this document until their experiment
 records are available in the pinned research corpus.
