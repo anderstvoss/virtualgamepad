@@ -41,9 +41,9 @@ id = "identity"
 id = "lifecycle"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/lifecycle", evidence = ["swpro-vg-exp0014-individual-evdev"], reason = "Evidence linked; per-function acceptance pending." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/lifecycle", evidence = ["swpro-l0-consumer-kernel-open-order"], reason = "Evidence linked; per-function acceptance pending." }
+"linux.uhid.usb" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#usb-stock-and-generic-binding", test_id = "acceptance/switch-pro/lifecycle", evidence = ["swpro-l0-consumer-kernel-open-order"], reason = "Three stock USB-bus UHID sessions exposed their owned nodes, opened in SDL evdev, and removed their HID parent on close." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/lifecycle", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/lifecycle", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }
+"linux.uhid.bluetooth" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#bluetooth-bus-uhid-lifecycle-and-output", test_id = "acceptance/switch-pro/lifecycle", evidence = [], reason = "Two stock Bluetooth-bus UHID sessions opened in evdev and SDL and closed independently. Timing batch endpoint selection is tracked separately." }
 
 [[functions]]
 id = "motion"
@@ -75,12 +75,12 @@ id = "hd-rumble"
 "linux.uinput" = { status = "not-supported", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "evdev FF_RUMBLE carries two magnitudes, not native Switch frequency/amplitude encoding; conventional rumble is distinct. Level: Generic." }
 "linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/hd-rumble", evidence = ["swpro-l0-device-rumble-word-tables"], reason = "Decode sub-check: raw-word preservation, bounded absolute/relative/mixed samples, neutral and unknown encodings; source-only claims swpro-l0-rumble-absolute-layout, swpro-l0-rumble-sample-layouts, swpro-l0-rumble-logarithmic-units, swpro-l0-rumble-relative-commands at research commit 79f919f22d9c587eb4b3b15383b41c296de1e797 (pending merge and pin adoption). No host or physical run; acceptance remains pending. Level: Native HID." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources. Level: Real USB (experimental)." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }
+"linux.uhid.bluetooth" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#bluetooth-bus-uhid-lifecycle-and-output", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "An owned SDL rumble action produced matching typed nonzero motor intent on Bluetooth-bus UHID." }
 
 [[functions]]
 id = "spi-calibration"
 [functions.cells]
 "linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/spi-calibration", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
-"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/spi-calibration", evidence = ["swpro-l0-device-factory-spi-map"], reason = "Evidence linked; per-function acceptance pending." }
+"linux.uhid.usb" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#synthetic-calibration", test_id = "acceptance/switch-pro/spi-calibration", evidence = ["swpro-l0-device-factory-spi-map"], reason = "hid-nintendo and SDL applied the predicted left-axis scale from a caller-supplied SPI image over USB-bus UHID." }
 "linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/spi-calibration", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "acceptance/switch-pro/spi-calibration", evidence = [], reason = "Local source-derived Bluetooth-bus UHID only; P9c source-only evidence is not included in the pinned revision; this does not establish physical or P5b host acceptance. Research PR #161 and pin adoption remain pending." }
+"linux.uhid.bluetooth" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#synthetic-calibration", test_id = "acceptance/switch-pro/spi-calibration", evidence = [], reason = "hid-nintendo and SDL applied the predicted left-axis scale from a caller-supplied SPI image over Bluetooth-bus UHID." }

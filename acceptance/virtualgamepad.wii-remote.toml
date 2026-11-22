@@ -129,7 +129,7 @@ id = "retail-eeprom-size"
 id = "original-identity"
 [functions.cells]
 "linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::every_native_node_matches_the_independently_extracted_kernel_capability_set", evidence = ["wii-original-remote-consumer-revision"], reason = "Source-backed name/VID/PID; provider bus is USB 3 instead of the kernel consumer Bluetooth 5 and has no fuzz field." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::bluetooth_identity_numbering_and_synthetic_descriptor_are_exact", evidence = ["wii-original-remote-consumer-revision", "wii-c5-functional-descriptor"], reason = "Original identity on UHID bus 5 with authored interim Generic Desktop/Game Pad collection and vendor-page fields (W2 option B); historical wii-c5-functional-descriptor supplies report table only. Retail-evidence successor 238; no retail/physical claim." }
+"linux.uhid.bluetooth" = { status = "virtual-live", live_evidence = "docs/ALPHA2_POLISH_CLEANUP.md#wii-bluetooth-consumers", test_id = "wii_remote::realizations::tests::bluetooth_identity_numbering_and_synthetic_descriptor_are_exact", evidence = ["wii-original-remote-consumer-revision", "wii-c5-functional-descriptor"], reason = "Stock Wii kernel binding and exact typed virtual uniq equality were observed on the Original Bluetooth-bus UHID realization." }
 
 [[functions]]
 id = "tr-identity"
