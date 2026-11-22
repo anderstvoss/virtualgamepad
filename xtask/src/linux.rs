@@ -120,12 +120,13 @@ fn matching_nodes(
     if physical_paths.is_empty() && usb_attachment.is_none() {
         return Err("no creation-owned node selector for this realization".into());
     }
-    if let Some(attachment) = usb_attachment
-        && !attachment
+    if let Some(attachment) = usb_attachment {
+        if !attachment
             .is_attached()
             .map_err(|error| error.kind().to_string())?
-    {
-        return Ok(BTreeSet::new());
+        {
+            return Ok(BTreeSet::new());
+        }
     }
     let mut result = BTreeSet::new();
     for (class, prefix) in [("input", "event"), ("hidraw", "hidraw")] {
