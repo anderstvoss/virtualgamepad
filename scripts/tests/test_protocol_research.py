@@ -151,7 +151,7 @@ class ResearchWorkflow(unittest.TestCase):
         path = self.corpus / 'fixtures' / (name + '.hex')
         damaged = bytearray.fromhex(path.read_text())
         damaged[-2] ^= 1
-        path.write_text(damaged.hex() + '\\n')
+        path.write_text(damaged.hex() + '\n')
         record_path = self.corpus / 'records/fixture' / (name + '.json')
         record = json.loads(record_path.read_text())
         record['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
