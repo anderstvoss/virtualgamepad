@@ -79,5 +79,25 @@ is `dda74f526bd40054a1552bce54e2e5e103c4941a`. [Run matrix](../scripts/alpha2-po
 Use `scripts/alpha2-polish-report.py ATTEMPT_DIR SHA --row-prefix cleanup2-`
 to render the receipts with separate row IDs for each backend and concurrency.
 
-Cleanup 2 outcomes remain pending in this document until their experiment
-records are available in the pinned research corpus.
+### Cleanup 2 outcomes
+
+Full results: [cleanup 2 host evidence](https://github.com/anderstvoss/controller-protocol-research/blob/b0b4e66f344d6cc072e42578b7782e3371f7bc4b/docs/alpha2-polish-cleanup-2.md).
+
+- Wii retail descriptor: typed identity matched for Original and Plus. Both
+  hid-wiimote probes failed with `ENOMEM` before usable nodes appeared, so the
+  EEPROM, SDL and Dolphin reruns remain open.
+- Generic binding: all 12 stock sessions bound and cleaned up. The `ENODEV`
+  from cleanup 1 matches hid-generic declining devices that a specialized
+  driver claims under the stock setting. The parameter-enabled arms and the
+  Steam Switch Pro generic arm remain open because the run had no privileged
+  access.
+- Steam DualSense gyro: Steam held the owned hidraw node and received
+  successful feature replies and sustained multi-axis motion reports. The
+  calibration screen still stayed neutral, so the cause remains open.
+- Bluetooth SDL mapping (default HIDAPI): Switch Pro mapped 8/8. Both Sony
+  pads mapped each control in isolation. Their sticks settle at SDL `+128`
+  after the first excursion, which is the HIDAPI value for raw neutral `0x80`,
+  so the strict return-to-initial-zero count (4/8) understates the mapping.
+  HIDAPI-off evdev fallback mapped 1/8, 1/8 and 4/8.
+- Bluetooth timing: every N1 and N3 batch reached all endpoints (50/50 and
+  150/150 for create, appear, direct open, SDL open and removal).
