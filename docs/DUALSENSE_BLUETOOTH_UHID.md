@@ -23,4 +23,6 @@ Features `0x05` (calibration), `0x09` (pairing identity), and `0x20` (firmware) 
 - [Pinned SDL Bluetooth mode discovery](https://github.com/libsdl-org/SDL/blob/535d80badefc83c5c527ec5748f2a20d6a9310fe/src/joystick/hidapi/SDL_hidapi_ps5.c#L399-L416)
 - [Source-only gap report](https://github.com/anderstvoss/controller-protocol-research/blob/40e43c5c1580f0791aa7fae9aa83661c128fc36c/docs/p9a-dualsense-bt-uhid.md)
 
-**Evidence ceiling:** consumer source, synthetic deterministic tests. Exact physical Bluetooth descriptor, mode-transition timing, physical sensor rates, output actuation, real radio and pairing are not verified. Local Linux/SDL/Steam host runs follow in the P5b kalux qualification. **Not run** in this agent environment. All `acceptance/virtualgamepad.dualsense.toml` Bluetooth cells remain WIP; no support-matrix promotion.
+**Evidence ceiling:** source and synthetic protocol tests plus bounded P5b Linux/SDL host acceptance. Kalux verified 50/50 N1 and 150/150 N3 Bluetooth UHID create, direct/SDL open and removal cycles; isolated SDL control mapping was partial, with baseline-centering issues. These are virtual-host observations, **not** physical Bluetooth descriptor, mode-transition timing, real sensor cadence, actuator, radio or pairing evidence. See [Alpha 2 cleanup results](ALPHA2_POLISH_CLEANUP.md) and [#365](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-7073966945). The family target remains WIP.
+
+TODO(alpha2-final): DualSense Bluetooth output decoding and final P8 status.
