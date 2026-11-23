@@ -30,7 +30,7 @@ constructors. Bluetooth-bus UHID is local HID, not radio discovery or pairing.
 
 ## Per-controller support dispositions
 
-| Controller | `linux.uinput` (Generic) | `linux.uhid.usb` (Native HID) | `linux.uhid.bluetooth` (Native HID) | `linux.usbip.usb-audio` (Real USB) | `linux.dummy_hcd.usb-hid` (Real USB) | Actual Bluetooth |
+| Controller | `linux.uinput` (Generic) | `linux.uhid.usb` (Native HID) | `linux.uhid.bluetooth`¹ (Native HID) | `linux.usbip.usb-audio` (Real USB) | `linux.dummy_hcd.usb-hid` (Real USB) | Actual Bluetooth |
 | --- | --- | --- | --- | --- | --- | --- |
 | DualSense | WIP | WIP | WIP | WIP, opt-in | Declared, refused² | Deferred |
 | DualShock 4 | WIP | WIP | WIP | WIP, opt-in | Declared, refused² | Deferred |
@@ -82,25 +82,29 @@ and [ADR-0025](adr/ADR-0025-input-model.md).
 - **Deferred:** future transport/receiver work, not a shipping realization.
 - **Declared, refused:** present in the manifest, but creation rejects before
   opening resources. Not a usable target.
-- **✓\*:** implemented and accepted for the documented scope without physical
-  reference validation. Link deterministic and available consumer evidence and
-  limitations; this is not physical equivalence.
-- **✓:** accepted for the documented scope with linked physical reference
-  validation. Record the device/profile, tested functions, consumer conditions
-  and remaining limitations. Testing a virtual device alone does not qualify.
+The **per-function** acceptance manifests use explicit machine-readable
+statuses rather than the family overview's WIP label: `wip` (pending),
+`not-supported` (refused/inapplicable), `source-evidence` (pinned source or
+synthetic tests), `virtual-live` (bounded observed virtual host behavior), and
+`physical-evidence` (a scoped physical correspondence finding). They do not
+automatically mean a complete controller or realization is accepted. A manifest
+cell's `reason`, `evidence`, `test_id` and optional `live_evidence` state
+what was actually verified.
 
-No cells are promoted yet, including those with successful Linux/SDL experiments.
-See the historical [gate ledger](history/alpha-1/GATE_STATUS.md) and
-[acceptance evidence](history/alpha-1/CORE_ACCEPTANCE.md) for those results.
+No **family-level** target is promoted yet; individual functions have
+`virtual-live` and `physical-evidence` records. Historical Alpha 1 context is
+in the [gate ledger](history/alpha-1/GATE_STATUS.md) and
+[acceptance evidence](history/alpha-1/CORE_ACCEPTANCE.md).
 
 ## Per-controller function matrices
 
-Create a separate function matrix for each controller during acceptance or its
-follow-up issue. Rows name native functions; columns name realizations using the
-same statuses. Cover applicable controls, motion, touch, outputs, identity,
-accessories and lifecycle. Link each accepted cell to evidence and technical
-limitations. Do not mark a whole controller accepted because one function works,
-or require an absent native function merely because another controller has it.
+The seven existing `acceptance/virtualgamepad.*.toml` files are the
+per-controller function matrices. Rows name native functions and columns name
+realizations, with per-function statuses defined above. They cover applicable
+controls, motion, touch, outputs, identity, accessories and lifecycle, with
+individual evidence and technical limits. Do not mark a whole controller
+accepted because one function works or infer an absent native capability from
+another family's feature set.
 
 Normal root constructors reject dummy_hcd before resource creation. The
 [historical function review](history/alpha-1/CURRENT_CONTROLLER_REFINEMENT.md)
