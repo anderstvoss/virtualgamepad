@@ -452,6 +452,71 @@ mod tests {
     }
 
     #[test]
+    fn level_labels_mechanisms_and_permissions_are_stable() {
+        for (tier, label) in [
+            (RealizationTier::Generic, "Generic"),
+            (RealizationTier::NativeHid, "Native HID"),
+            (RealizationTier::RealUsb, "Real USB"),
+            (RealizationTier::RealRadio, "Real radio"),
+        ] {
+            assert_eq!(tier.label(), label);
+            assert!(!tier.description().is_empty());
+        }
+        for (target, tier, mechanism, permission) in [
+            (
+                RealizationTarget::LINUX_UINPUT,
+                RealizationTier::Generic,
+                RealizationMechanism::Uinput,
+                PermissionClass::Uinput,
+            ),
+            (
+                RealizationTarget::LINUX_UHID_USB,
+                RealizationTier::NativeHid,
+                RealizationMechanism::Uhid,
+                PermissionClass::Uhid,
+            ),
+            (
+                RealizationTarget::LINUX_UHID_BLUETOOTH,
+                RealizationTier::NativeHid,
+                RealizationMechanism::Uhid,
+                PermissionClass::Uhid,
+            ),
+            (
+                RealizationTarget::LINUX_USBIP_USB_AUDIO,
+                RealizationTier::RealUsb,
+                RealizationMechanism::UsbIpVhci,
+                PermissionClass::RootBroker,
+            ),
+            (
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                RealizationTier::RealUsb,
+                RealizationMechanism::DummyHcd,
+                PermissionClass::RootBroker,
+            ),
+        ] {
+            let found: Vec<_> = FAMILIES
+                .iter()
+                .filter_map(|family| family.realization_for(target))
+                .collect();
+            assert!(!found.is_empty());
+            for realization in found {
+                assert_eq!(realization.tier, tier);
+                assert_eq!(realization.mechanism(), mechanism);
+                assert_eq!(realization.permission, permission);
+                assert_eq!(
+                    realization.display_label(),
+                    format!(
+                        "{} — {} · {}",
+                        target.as_str(),
+                        tier.label(),
+                        permission.requirement()
+                    )
+                );
+            }
+        }
+    }
+
+    #[test]
     fn unique_ids_tags_and_consistent_surface_manifest_pairs() {
         let mut ids = std::collections::HashSet::new();
         let mut tags = std::collections::HashSet::new();

@@ -193,7 +193,7 @@ pub fn run<B: Backend, C: Clock>(
         virtual_evidence_status(backend.observes_live_virtual_devices(), &samples);
     Ok(
         json!({"schema_version":1,"kind":"virtual_host_run","evidence_status":evidence_status,"controller":config.controller,
-        "realization":config.realization,"tier":format!("{:?}",realization.tier),"permission":format!("{:?}",realization.permission),
+        "realization":config.realization,"tier":realization.tier.label(),"mechanism":realization.mechanism().label(),"permission":realization.permission.requirement(),
         "config":{"cycles":config.cycles,"concurrency":config.concurrency},"environment":environment,
         "resources":{"before":baseline,"after":after},"summaries":summaries,"samples":samples}),
     )
@@ -480,6 +480,16 @@ mod tests {
         )
         .unwrap();
         assert!(run.get("evidence_status").is_some_and(Value::is_null));
+    }
+
+    #[test]
+    fn acceptance_rendering_includes_stable_level_mechanism_and_permission() {
+        let mut fake = Fake::default();
+        let result = run(&mut fake, &mut Tick(0), &config(), &json!({})).unwrap();
+        assert_eq!(result["realization"], "linux.uinput");
+        assert_eq!(result["tier"], "Generic");
+        assert_eq!(result["mechanism"], "uinput");
+        assert_eq!(result["permission"], "needs uinput access");
     }
 
     #[test]

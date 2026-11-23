@@ -699,6 +699,13 @@ fn creation_targets(kind: Kind) -> Vec<RealizationId> {
         .collect()
 }
 
+/// Include the application-visible fidelity level and device access requirement.
+fn target_display(kind: Kind, target: RealizationId) -> String {
+    kind.entry()
+        .realization_for(target)
+        .map_or_else(|| target.as_str().to_owned(), |realization| realization.display_label())
+}
+
 fn valid_creation_target(kind: Kind, current: RealizationId) -> RealizationId {
     let targets = creation_targets(kind);
     if targets.contains(&current) {
@@ -761,12 +768,12 @@ fn draw_target_selector(
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     let response = egui::ComboBox::from_id_salt("controller_target")
-                        .selected_text(target.as_str())
+                        .selected_text(target_display(kind, *target))
                         .truncate()
                         .width(combo_width)
                         .show_ui(ui, |ui| {
                             for option in creation_targets(kind) {
-                                ui.selectable_value(target, option, option.as_str());
+                                ui.selectable_value(target, option, target_display(kind, option));
                             }
                         })
                         .response;
@@ -774,7 +781,7 @@ fn draw_target_selector(
                         egui::WidgetInfo::labeled(
                             egui::WidgetType::ComboBox,
                             response.enabled(),
-                            format!("Controller target: {}", target.as_str()),
+                            format!("Controller target: {}", target_display(kind, *target)),
                         )
                     });
                 },
@@ -1608,7 +1615,7 @@ impl App {
                 index + 1,
                 controller.name,
                 controller_identifier(controller),
-                controller.options.target.as_str(),
+                target_display(controller.kind, controller.options.target),
                 controller.kind.label(),
                 controller.edits.applied,
                 controller.edits.submitted,
@@ -2607,7 +2614,7 @@ fn draw_controller_state(
     recreation_clicked: &mut bool,
 ) -> Option<audio_lab::Action> {
     let identifier = controller_identifier(controller);
-    let target = controller.options.target.as_str();
+    let target = target_display(controller.kind, controller.options.target);
     ui.group(|ui| {
         if controller.service_worker.is_some()
             && controller.wii_binding.as_mut().is_some_and(wii_host::BindingCheck::missing_driver)
@@ -3523,6 +3530,20 @@ mod tests {
     }
 
     #[test]
+    fn every_visible_target_includes_level_and_permission() {
+        for kind in Kind::registered() {
+            for target in creation_targets(kind) {
+                let metadata = kind.entry().realization_for(target).unwrap();
+                let displayed = target_display(kind, target);
+                assert!(displayed.starts_with(target.as_str()));
+                assert!(displayed.contains(metadata.tier.label()));
+                assert!(displayed.contains(metadata.permission.requirement()));
+                assert!(!metadata.mechanism().label().is_empty());
+            }
+        }
+    }
+
+    #[test]
     fn creation_selectors_name_family_and_target_on_keyboard_focus() {
         for (original_kind, original_target) in Kind::registered().into_iter().flat_map(|kind| {
             creation_targets(kind)
@@ -3574,7 +3595,7 @@ mod tests {
                 "{labels:?}"
             );
             assert!(
-                labels.contains(&format!("Controller target: {}", original_target.as_str())),
+                labels.contains(&format!("Controller target: {}", target_display(original_kind, original_target))),
                 "{labels:?}"
             );
             assert!(labels.contains("Adjacent control"), "{labels:?}");

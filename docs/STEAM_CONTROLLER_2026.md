@@ -47,6 +47,13 @@ Kernel and SDL may share Valve source lineage; agreement alone is not faithful.
   [current decision](https://github.com/anderstvoss/virtualgamepad/issues/159#issuecomment-6646272685)
   allows this supporting API to evolve with its own reviewed snapshot.
 
+### Realization levels
+
+| Realization ID | Level | Mechanism | Permission |
+| --- | --- | --- | --- |
+| `linux.uinput` | Generic | uinput | needs uinput access |
+| `linux.uhid.usb` | Native HID | UHID | needs UHID access |
+
 ## Realization differences
 
 | Capability | Wired UHID | Reduced uinput |

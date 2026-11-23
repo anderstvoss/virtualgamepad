@@ -7,6 +7,13 @@ per-feature dispositions in
 [`acceptance/virtualgamepad.wii-remote.toml`](../acceptance/virtualgamepad.wii-remote.toml).
 It is not physical-reference or whole-controller acceptance.
 
+### Realization levels
+
+| Realization ID | Level | Mechanism | Permission |
+| --- | --- | --- | --- |
+| `linux.uinput` | Generic | uinput | needs uinput access |
+| `linux.uhid.bluetooth` | Native HID | UHID | needs UHID access |
+
 ## P6 retail uinput rumble probe
 
 On 2026-11-21, the stock `scripts/wii-evdev-rumble-probe.c` was run twice
