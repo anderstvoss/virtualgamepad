@@ -4,6 +4,12 @@ This realization presents a **local** Nintendo Switch Pro HID node with Bluetoot
 
 The behavioral target is source-backed Linux `hid-nintendo` and SDL Switch HIDAPI, not verified physical-equivalence. See the draft [P9c research brief](https://github.com/anderstvoss/controller-protocol-research/blob/e223aceb8e47b5a772941f14f4fc92e77fabb052/docs/p9c-switch-pro-bt-uhid.md) and its `swpro-bt-*` claim IDs; the vg research pin remains unchanged until that PR merges.
 
+### Realization levels
+
+| Realization ID | Level | Mechanism | Permission |
+| --- | --- | --- | --- |
+| `linux.uhid.bluetooth` | Native HID | UHID | needs UHID access |
+
 ## Scope and limitations
 
 - Bluetooth startup must not use the proprietary USB 0x80 handshake; input begins in source-described simple 0x3F mode and changes to full 0x30 following subcommand 0x03.

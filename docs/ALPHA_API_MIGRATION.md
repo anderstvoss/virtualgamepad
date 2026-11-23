@@ -1,5 +1,32 @@
 # Pre-alpha API refinement migration
 
+## Alpha 2: descriptive realization levels (#408)
+
+`gr_curated_controllers::registry::RealizationTier` variants are renamed
+as follows (old names are removed, not aliased):
+
+| Before | After | Display label |
+| --- | --- | --- |
+| `PlayableReduced` | `Generic` | Generic |
+| `PlayableFull` | `NativeHid` | Native HID |
+| `FaithfulUsb` | `RealUsb` | Real USB |
+| `FaithfulRadio` | `RealRadio` | Real radio (reserved) |
+
+Curated registry metadata also adds `RealizationMechanism`,
+`RealizationTier::label()/description()`,
+`PermissionClass::requirement()`,
+`FamilyRealization::mechanism()/display_label()`, and
+`FamilyEntry::realization_for(target)`. Consumers matching the old tier
+variants must use the new names. Acceptance JSON `tier` now contains the
+human-readable level label; `permission` contains a human-readable access
+requirement and `mechanism` is added. Its unchanged `realization` key
+continues to contain the original ID. **No `RealizationId` constant or
+string, broker message, or IPC wire field is changed.**
+
+The root and separately snapshotted Wii/Steam APIs do not export the curated
+`registry` module; their checked-in public API snapshots are unchanged.
+See [application API](APPLICATION_API.md#realization-levels-and-device-access).
+
 ## Brief 16 A0 — per-direction loss accounting (ar1-audio-telemetry)
 
 **Additive ordinary-root API** (both default and all-feature snapshot views; no renamed or removed symbols):

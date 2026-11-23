@@ -10,10 +10,10 @@ use gr_realization_api::{ControllerId, RealizationTarget};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RealizationTier {
-    PlayableReduced,
-    PlayableFull,
-    FaithfulUsb,
-    FaithfulRadio,
+    Generic,
+    NativeHid,
+    RealUsb,
+    RealRadio,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionClass {
@@ -40,6 +40,105 @@ impl FamilyRealization {
         }
     }
 }
+impl RealizationTier {
+    /// Human-readable level of fidelity supplied to host applications.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Generic => "Generic",
+            Self::NativeHid => "Native HID",
+            Self::RealUsb => "Real USB",
+            Self::RealRadio => "Real radio",
+        }
+    }
+
+    /// What an application sees at this realization level.
+    #[must_use]
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::Generic => "Generic evdev gamepad, broadly compatible with reduced fidelity.",
+            Self::NativeHid => {
+                "Controller-native HID protocol; kernel, SDL and Steam can bind as for the real pad."
+            }
+            Self::RealUsb => {
+                "Complete virtual USB device, including associated interfaces such as audio where present."
+            }
+            Self::RealRadio => {
+                "Reserved for physical radio discovery and pairing; not implemented."
+            }
+        }
+    }
+}
+
+/// Linux device presentation mechanism; independent of the fidelity level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RealizationMechanism {
+    Uinput,
+    Uhid,
+    UsbIpVhci,
+    DummyHcd,
+}
+
+impl RealizationMechanism {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Uinput => "uinput",
+            Self::Uhid => "UHID",
+            Self::UsbIpVhci => "USB/IP-VHCI",
+            Self::DummyHcd => "dummy_hcd",
+        }
+    }
+}
+
+impl PermissionClass {
+    #[must_use]
+    pub const fn requirement(self) -> &'static str {
+        match self {
+            Self::Uinput => "needs uinput access",
+            Self::Uhid => "needs UHID access",
+            Self::RootBroker => "needs root broker",
+        }
+    }
+}
+
+impl FamilyRealization {
+    /// Device mechanism, derived from the unchanged, typed realization target.
+    #[must_use]
+    pub fn mechanism(&self) -> RealizationMechanism {
+        match self.surface.target() {
+            RealizationTarget::LINUX_UINPUT => RealizationMechanism::Uinput,
+            RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH => {
+                RealizationMechanism::Uhid
+            }
+            RealizationTarget::LINUX_USBIP_USB_AUDIO => RealizationMechanism::UsbIpVhci,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID => RealizationMechanism::DummyHcd,
+            _ => unreachable!("unknown realization mechanism"),
+        }
+    }
+
+    /// Display text for selectors, diagnostics and application UIs.
+    #[must_use]
+    pub fn display_label(&self) -> String {
+        format!(
+            "{} — {} · {}",
+            self.surface.target().as_str(),
+            self.tier.label(),
+            self.permission.requirement()
+        )
+    }
+}
+
+impl FamilyEntry {
+    /// Find typed realization metadata in this compiled controller family.
+    #[must_use]
+    pub fn realization_for(&self, target: RealizationTarget) -> Option<&'static FamilyRealization> {
+        (self.realizations)()
+            .iter()
+            .find(|realization| realization.surface.target() == target)
+    }
+}
+
 /// Whether an option is a consumer compatibility shim or an opt-in feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -359,6 +458,89 @@ mod tests {
     }
 
     #[test]
+    fn level_labels_mechanisms_and_permissions_are_stable() {
+        for (target, id) in [
+            (RealizationTarget::LINUX_UINPUT, "linux.uinput"),
+            (RealizationTarget::LINUX_UHID_USB, "linux.uhid.usb"),
+            (
+                RealizationTarget::LINUX_UHID_BLUETOOTH,
+                "linux.uhid.bluetooth",
+            ),
+            (
+                RealizationTarget::LINUX_USBIP_USB_AUDIO,
+                "linux.usbip.usb-audio",
+            ),
+            (
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                "linux.dummy_hcd.usb-hid",
+            ),
+        ] {
+            assert_eq!(target.as_str(), id);
+        }
+        for (tier, label) in [
+            (RealizationTier::Generic, "Generic"),
+            (RealizationTier::NativeHid, "Native HID"),
+            (RealizationTier::RealUsb, "Real USB"),
+            (RealizationTier::RealRadio, "Real radio"),
+        ] {
+            assert_eq!(tier.label(), label);
+            assert!(!tier.description().is_empty());
+        }
+        for (target, tier, mechanism, permission) in [
+            (
+                RealizationTarget::LINUX_UINPUT,
+                RealizationTier::Generic,
+                RealizationMechanism::Uinput,
+                PermissionClass::Uinput,
+            ),
+            (
+                RealizationTarget::LINUX_UHID_USB,
+                RealizationTier::NativeHid,
+                RealizationMechanism::Uhid,
+                PermissionClass::Uhid,
+            ),
+            (
+                RealizationTarget::LINUX_UHID_BLUETOOTH,
+                RealizationTier::NativeHid,
+                RealizationMechanism::Uhid,
+                PermissionClass::Uhid,
+            ),
+            (
+                RealizationTarget::LINUX_USBIP_USB_AUDIO,
+                RealizationTier::RealUsb,
+                RealizationMechanism::UsbIpVhci,
+                PermissionClass::RootBroker,
+            ),
+            (
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                RealizationTier::RealUsb,
+                RealizationMechanism::DummyHcd,
+                PermissionClass::RootBroker,
+            ),
+        ] {
+            let found: Vec<_> = FAMILIES
+                .iter()
+                .filter_map(|family| family.realization_for(target))
+                .collect();
+            assert!(!found.is_empty());
+            for realization in found {
+                assert_eq!(realization.tier, tier);
+                assert_eq!(realization.mechanism(), mechanism);
+                assert_eq!(realization.permission, permission);
+                assert_eq!(
+                    realization.display_label(),
+                    format!(
+                        "{} — {} · {}",
+                        target.as_str(),
+                        tier.label(),
+                        permission.requirement()
+                    )
+                );
+            }
+        }
+    }
+
+    #[test]
     fn unique_ids_tags_and_consistent_surface_manifest_pairs() {
         let mut ids = std::collections::HashSet::new();
         let mut tags = std::collections::HashSet::new();
@@ -410,14 +592,14 @@ mod tests {
                 let realization = matches[0];
                 let (tier, permission) = match entry.target {
                     RealizationTarget::LINUX_UINPUT => {
-                        (RealizationTier::PlayableReduced, PermissionClass::Uinput)
+                        (RealizationTier::Generic, PermissionClass::Uinput)
                     }
                     RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH => {
-                        (RealizationTier::PlayableFull, PermissionClass::Uhid)
+                        (RealizationTier::NativeHid, PermissionClass::Uhid)
                     }
                     RealizationTarget::LINUX_DUMMY_HCD_USB_HID
                     | RealizationTarget::LINUX_USBIP_USB_AUDIO => {
-                        (RealizationTier::FaithfulUsb, PermissionClass::RootBroker)
+                        (RealizationTier::RealUsb, PermissionClass::RootBroker)
                     }
                     _ => panic!("unknown tier"),
                 };

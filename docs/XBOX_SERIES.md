@@ -12,11 +12,11 @@ selected-target metadata and host outputs. See [ADR-0025](adr/ADR-0025-input-mod
 
 For Bluetooth UHID, the first input report after open reflects the current input state.
 
-| Realization | Scope |
-| --- | --- |
-| `linux.uinput` | One gamepad with the Linux xpad evdev layout. It exposes A/B/X/Y, bumpers, View/Menu/Guide/Share, stick clicks, the D-pad hat, four signed stick axes and two 10-bit triggers. Conventional force feedback carries strong and weak main-motor playback. |
-| `linux.uhid.bluetooth` | Local Bluetooth-bus HID for the measured `045e:0b13` report map. Qualified with SDL 3.4.18 over evdev and hidraw on stock `microsoft`: all standard controls, separate Guide/Share, final neutral, main rumble and independent virtual trigger-command reception. Steam identity, standard controls, and Ping feedback were observed with the active-seat dev setup. The Guide observations varied by Steam build, as recorded below. A separate physical Bluetooth check confirmed independent left/right trigger actuation as described below. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
-| USB-bus UHID and `dummy_hcd` USB HID | Inapplicable to the wired GIP controller. GIP and USB/IP feasibility stay with [#168](https://github.com/anderstvoss/virtualgamepad/issues/168). |
+| Realization | Level | Mechanism · permission | Scope |
+| --- | --- | --- | --- |
+| `linux.uinput` | Generic | uinput · needs uinput access | One gamepad with the Linux xpad evdev layout. It exposes A/B/X/Y, bumpers, View/Menu/Guide/Share, stick clicks, the D-pad hat, four signed stick axes and two 10-bit triggers. Conventional force feedback carries strong and weak main-motor playback. |
+| `linux.uhid.bluetooth` | Native HID | UHID · needs UHID access | Local Bluetooth-bus HID for the measured `045e:0b13` report map. Qualified with SDL 3.4.18 over evdev and hidraw on stock `microsoft`: all standard controls, separate Guide/Share, final neutral, main rumble and independent virtual trigger-command reception. Steam identity, standard controls, and Ping feedback were observed with the active-seat dev setup. The Guide observations varied by Steam build, as recorded below. A separate physical Bluetooth check confirmed independent left/right trigger actuation as described below. Actual radio and pairing are tracked in [#164](https://github.com/anderstvoss/virtualgamepad/issues/164). |
+| USB-bus UHID and `dummy_hcd` USB HID | N/A | Not declared | Inapplicable to the wired GIP controller. GIP and USB/IP feasibility stay with [#168](https://github.com/anderstvoss/virtualgamepad/issues/168). |
 
 The xpad [consumer ledger](https://github.com/anderstvoss/controller-protocol-research/blob/eba02ad610e264a2518a699394255cc7f1d670dd/docs/ledgers/xbox-series-l0.md)
 covers the gamepad name, input ID, event codes, ranges and force-feedback

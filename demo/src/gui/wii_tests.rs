@@ -787,7 +787,7 @@ fn wii_recreation_retains_target_revision_and_compat_despite_sidebar_changes() {
 }
 
 #[test]
-fn every_registered_realization_is_named_by_its_exact_id() {
+fn every_registered_realization_is_named_by_its_exact_id_and_level() {
     for kind in Kind::registered() {
         for original_target in creation_targets(kind) {
             let mut target = original_target;
@@ -796,7 +796,9 @@ fn every_registered_realization_is_named_by_its_exact_id() {
             });
             assert_eq!(target, original_target);
             assert!(
-                labels.iter().any(|(label, _)| label == target.as_str()),
+                labels
+                    .iter()
+                    .any(|(label, _)| label == &target_display(kind, target)),
                 "{}: expected {}, got {labels:?}",
                 kind.label(),
                 target
