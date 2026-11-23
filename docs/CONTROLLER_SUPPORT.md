@@ -5,12 +5,11 @@ Emulated audio is opt-in WIP; see the [audio guide](CONTROLLER_AUDIO.md).
 
 Sustained audio continuity and latency are not validated in alpha; occasional audio dropouts may occur.
 
-All support entries remain **WIP**; bounded alpha acceptance does not promote
-these cells. WIP includes implemented work under assessment and work not yet
-started. It does not
-promise that every combination will ship. Xbox Series has uinput and Bluetooth-bus UHID with bounded host evidence. Wii Remote has a
-WIP supporting package and an explicit per-feature matrix; no whole-controller
-support promotion is inferred.
+The **family-level** status of every compiled, usable realization remains WIP.
+An individual per-function manifest cell can separately be `source-evidence`,
+`virtual-live` or `physical-evidence` without promoting the entire family.
+The inventory below distinguishes compiled WIP targets, undeclared targets,
+deferred transport work, and declared targets that reject creation.
 
 ## Application-visible realization levels
 
@@ -31,24 +30,33 @@ constructors. Bluetooth-bus UHID is local HID, not radio discovery or pairing.
 
 ## Per-controller support dispositions
 
-| Controller | Linux uinput / evdev (Generic) | USB personality over Linux UHID (Native HID) | USB HID through dummy_hcd (Real USB) | Bluetooth personality over UHID¹ (Native HID) | Actual Bluetooth¹ (Real radio, reserved) |
-| --- | --- | --- | --- | --- | --- |
-| DualSense | WIP | WIP | Unavailable² | WIP | WIP |
-| DualShock 4 | WIP | WIP | Unavailable² | WIP | WIP |
-| Switch Pro | WIP | WIP | Unavailable² | WIP | WIP |
-| Xbox 360 | WIP | WIP | Unavailable² | WIP | WIP |
-| Steam Controller (2026) + Puck | WIP | WIP | WIP | WIP | WIP |
-| Xbox Series | WIP⁴ | N/A⁴ | N/A⁴ | WIP⁴ | Deferred⁴ |
-| Wii Remote | WIP | Unavailable³ | Unavailable³ | WIP | Deferred³ |
+| Controller | `linux.uinput` (Generic) | `linux.uhid.usb` (Native HID) | `linux.uhid.bluetooth` (Native HID) | `linux.usbip.usb-audio` (Real USB) | `linux.dummy_hcd.usb-hid` (Real USB) | Actual Bluetooth |
+| --- | --- | --- | --- | --- | --- | --- |
+| DualSense | WIP | WIP | WIP | WIP, opt-in | Declared, refused² | Deferred |
+| DualShock 4 | WIP | WIP | WIP | WIP, opt-in | Declared, refused² | Deferred |
+| Switch Pro | WIP | WIP | WIP | Undeclared | Declared, refused² | Deferred |
+| Xbox 360, standard HID (not XInput) | WIP | WIP | Undeclared | WIP, opt-in | Declared, refused² | Deferred |
+| Steam Controller 2026, wired | WIP (reduced) | WIP | Undeclared | Undeclared | Undeclared | Deferred |
+| Xbox Series | WIP (reduced)⁴ | Undeclared | WIP⁴ | Undeclared | Undeclared | Deferred |
+| Wii Remote | WIP³ | Undeclared (fixture only)³ | WIP³ | Undeclared | Undeclared | Deferred |
+
+The Steam Puck/receiver is a **deferred separate receiver concept**, not a
+compiled Steam Controller 2026 realization. For all seven families, the exact
+target inventory is `acceptance/virtualgamepad.<family>.toml:4`.
 
 ¹ `linux.uhid.bluetooth` is a local UHID node with Bluetooth bus5 metadata,
 available only where a compiled family manifest declares it. It provides no
-radio, pairing or BlueZ. DualSense has a [source-backed Bluetooth-bus UHID realization](DUALSENSE_BLUETOOTH_UHID.md) (P9a, #154) with a synthetic report descriptor, and Switch Pro has a [source-backed Bluetooth-bus UHID realization](SWITCH_PRO_BLUETOOTH.md) (P9c, #156); neither has P5b host acceptance. Actual Bluetooth remains deferred to #164. USB
-personality over UHID is a virtual HID presentation; dummy_hcd is separate.
+radio, pairing or BlueZ. DualSense, DualShock 4 and Switch Pro have compiled source-backed Bluetooth-bus
+UHID realizations ([DualSense](DUALSENSE_BLUETOOTH_UHID.md),
+[DS4](dualshock4-bluetooth.md), [Switch Pro](SWITCH_PRO_BLUETOOTH.md));
+the bounded P5b host observations do not establish physical equivalence.
+Actual Bluetooth remains deferred to #164. USB personality over UHID is
+virtual HID, not a USB bus device; dummy_hcd is separate.
 The Xbox 360 HID profiles are standard HID, not USB XInput. DualShock 4's
 Bluetooth-bus UHID realization is described in the [DS4 implementation note](dualshock4-bluetooth.md);
-the DS4 table cell remains WIP pending acceptance. This table does not
-claim hardware fidelity, full function parity, audio or composite USB support.
+the DS4 table cell remains WIP pending acceptance. This table does not claim physical equivalence or full native function parity.
+USB/IP composite HID/UAC2 and UHID/PipeWire audio are opt-in and declared
+only for DualSense, DualShock 4 and Xbox 360.
 
 ² The implemented Linux f_hid interface exposes report IDs without full GET_REPORT
 metadata or an explicit negative reply. All creation entrypoints reject this
@@ -68,7 +76,12 @@ and [ADR-0025](adr/ADR-0025-input-model.md).
 - **N/A:** explicitly not planned for this controller/realization, with a reason.
   Use this after scope review, for example for protocols outside a controller's
   intended generation. Missing hardware alone is not N/A.
-- **WIP:** incomplete, unstarted, blocked or awaiting support review.
+- **WIP:** a compiled and constructible family target still under review; not
+  a physical-equivalence verdict. Individual functions use finer manifest grades.
+- **Undeclared:** no compiled production target for this family/realization.
+- **Deferred:** future transport/receiver work, not a shipping realization.
+- **Declared, refused:** present in the manifest, but creation rejects before
+  opening resources. Not a usable target.
 - **✓\*:** implemented and accepted for the documented scope without physical
   reference validation. Link deterministic and available consumer evidence and
   limitations; this is not physical equivalence.
@@ -96,7 +109,7 @@ records the Alpha 1 per-function assessment.
 ³ D6/D7 authorize the Wii supporting package on uinput and Bluetooth-bus UHID.
 USB-bus UHID remains a fixture-only experiment, dummy_hcd is not declared, and
 actual Bluetooth is deferred. See the [Wii package and qualification](WII_REMOTE.md)
-and its [38-row feature matrix](../acceptance/virtualgamepad.wii-remote.toml).
+and its [per-function matrix](../acceptance/virtualgamepad.wii-remote.toml).
 Source-backed code and bounded virtual-host observations do not promote missing
 physical, SDL HIDAPI or Dolphin acceptance cells.
 
@@ -114,3 +127,5 @@ Linux and SDL evidence. Actual Bluetooth is #164. Wired GIP stays with #168.
 | USB/IP HID/UAC2 | Yes, opt-in WIP | Framing/personality/IPC/ownership/rollback | Selected installed sample/lifecycle trials | Native continuity/full latency matrix deferred (#135/#145); seven scoped broker security/recovery phases passed (#115 closed) | Unavailable; UAC2 differs from reference UAC1 |
 
 No support cell is promoted by compilation, issue closure or API signature freeze.
+
+TODO(alpha2-final): P8 family support-matrix promotion after P5/P6/P7 and P10d.
