@@ -2,6 +2,12 @@
 
 **Status:** local synthetic UHID with bus metadata 5; no radio, pairing, BlueZ or physical Bluetooth connection. Source evidence only; host runs follow in local kalux P5b (**not run**). The support-matrix cell stays **WIP**.
 
+### Realization levels
+
+| Realization ID | Level | Mechanism | Permission |
+| --- | --- | --- | --- |
+| `linux.uhid.bluetooth` | Native HID | UHID | needs UHID access |
+
 ## Exact selection and semantic state
 
 `create_dualshock4` requires explicit `LINUX_UHID_BLUETOOTH` to create the Bluetooth-bus node. USB and Bluetooth cannot silently substitute for each other. Both expose `DualShock4Inputs`, `set_inputs`, `edit_inputs`, `status()` and native button, axis, motion and two-contact touch semantics. Supplying `DualShock4Options::with_identity` sets the Bluetooth UHID `uniq` according to the instance identity, while a new Bluetooth session allocates its own identity. No private identity is logged, committed or synthesized in documentation.

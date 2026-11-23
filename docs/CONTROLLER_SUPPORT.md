@@ -12,7 +12,26 @@ promise that every combination will ship. Xbox Series has uinput and Bluetooth-b
 WIP supporting package and an explicit per-feature matrix; no whole-controller
 support promotion is inferred.
 
-| Controller | Linux uinput / evdev | USB personality over Linux UHID | USB HID through dummy_hcd | Bluetooth personality over UHID¹ | Actual Bluetooth¹ |
+## Application-visible realization levels
+
+The level describes what the application receives, **not an acceptance verdict**.
+The realization IDs remain stable. Individual families declare only a subset
+of these realizations; experimental `dummy_hcd` is refused by normal root
+constructors. Bluetooth-bus UHID is local HID, not radio discovery or pairing.
+
+| Realization ID | Level | Mechanism | Permission | Application-visible result |
+| --- | --- | --- | --- | --- |
+| `linux.uinput` | Generic | uinput | needs uinput access | Generic evdev gamepad; reduced protocol fidelity |
+| `linux.uhid.usb` | Native HID | UHID | needs UHID access | Native HID reports, USB bus metadata; driver/SDL/Steam integration |
+| `linux.uhid.bluetooth` | Native HID | UHID | needs UHID access | Native HID reports, Bluetooth bus metadata but no physical radio |
+| `linux.usbip.usb-audio` | Real USB | USB/IP-VHCI | needs root broker | Composite virtual USB interfaces, including declared audio |
+| `linux.dummy_hcd.usb-hid` | Real USB | dummy_hcd | needs root broker | Experimental USB gadget path; currently refused |
+
+**Real radio** is a reserved level, with no declared realization.
+
+## Per-controller support dispositions
+
+| Controller | Linux uinput / evdev (Generic) | USB personality over Linux UHID (Native HID) | USB HID through dummy_hcd (Real USB) | Bluetooth personality over UHID¹ (Native HID) | Actual Bluetooth¹ (Real radio, reserved) |
 | --- | --- | --- | --- | --- | --- |
 | DualSense | WIP | WIP | Unavailable² | WIP | WIP |
 | DualShock 4 | WIP | WIP | Unavailable² | WIP | WIP |

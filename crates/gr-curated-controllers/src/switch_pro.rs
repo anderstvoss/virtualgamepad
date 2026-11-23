@@ -2221,22 +2221,22 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
         static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
             crate::registry::FamilyRealization::new(
                 &EVDEV_SURFACE.common,
-                crate::registry::RealizationTier::PlayableReduced,
+                crate::registry::RealizationTier::Generic,
                 crate::registry::PermissionClass::Uinput,
             ),
             crate::registry::FamilyRealization::new(
                 &HID_SURFACE.common,
-                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::RealizationTier::NativeHid,
                 crate::registry::PermissionClass::Uhid,
             ),
             crate::registry::FamilyRealization::new(
                 &USB_SURFACE.common,
-                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::RealizationTier::RealUsb,
                 crate::registry::PermissionClass::RootBroker,
             ),
             crate::registry::FamilyRealization::new(
                 &BT_SURFACE.common,
-                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::RealizationTier::NativeHid,
                 crate::registry::PermissionClass::Uhid,
             ),
         ];
@@ -3234,7 +3234,7 @@ mod tests {
             .iter()
             .find(|r| r.surface.target() == RealizationTarget::LINUX_UHID_BLUETOOTH)
             .unwrap();
-        assert_eq!(bt.tier, crate::registry::RealizationTier::PlayableFull);
+        assert_eq!(bt.tier, crate::registry::RealizationTier::NativeHid);
         assert_eq!(bt.permission, crate::registry::PermissionClass::Uhid);
         for (index, restriction) in BT_RESTRICTIONS.into_iter().enumerate() {
             assert!(bt.surface.restrictions().contains(&restriction));

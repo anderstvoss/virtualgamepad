@@ -439,12 +439,12 @@ impl ControllerFamily for XboxSeriesDefinition {
         static REALIZATIONS: &[FamilyRealization] = &[
             FamilyRealization::new(
                 &SURFACE,
-                registry::RealizationTier::PlayableReduced,
+                registry::RealizationTier::Generic,
                 registry::PermissionClass::Uinput,
             ),
             FamilyRealization::new(
                 &BLUETOOTH,
-                registry::RealizationTier::PlayableFull,
+                registry::RealizationTier::NativeHid,
                 registry::PermissionClass::Uhid,
             ),
         ];
