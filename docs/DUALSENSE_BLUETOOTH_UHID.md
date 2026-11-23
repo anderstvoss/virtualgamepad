@@ -2,6 +2,12 @@
 
 **Status:** WIP, source-backed protocol only. This is local `linux.uhid.bluetooth` with Linux UHID bus type 5, Sony 054c:0ce6 and a synthetic HID descriptor. It is not Bluetooth radio, BlueZ, pairing, security or reconnection ([#164](https://github.com/anderstvoss/virtualgamepad/issues/164)). No report herein is a captured reference-device report.
 
+### Realization levels
+
+| Realization ID | Level | Mechanism | Permission |
+| --- | --- | --- | --- |
+| `linux.uhid.bluetooth` | Native HID | UHID | needs UHID access |
+
 ## Explicit creation and scope
 
 Select `RealizationId::LINUX_UHID_BLUETOOTH` with `create_dualsense(CreationOptions::new(...), DualSenseOptions::default())` (or supply `DualSenseOptions::with_identity` using the existing restoration API). Bluetooth and USB targets are distinct and never substitute for each other. One session-owned identity drives the Bluetooth `uniq` value and feature reply. The `DualSenseInputs` and `DualSenseStatus` APIs, transactional edits, status, and retained typed output are common to the USB implementation.

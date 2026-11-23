@@ -28,6 +28,30 @@ The example is a short lifecycle illustration. A live endpoint requires continuo
 servicing. See [`controller_loop`](../examples/controller_loop.rs) for a bounded
 application owner for the original four families.
 
+## Realization levels and device access
+
+Keep using the existing `RealizationId::LINUX_*` constants. The identifiers
+are stable; the compiled curated registry provides typed presentation metadata.
+A consumer with a `gr-curated-controllers` dependency can look up
+`gr_curated_controllers::registry::FAMILIES` by `ControllerId`, then call
+`FamilyEntry::realization_for(target)` to obtain the
+`FamilyRealization` for that family and target. Its `tier` has
+`label()` and `description()`; `mechanism()` identifies the Linux
+device mechanism, and `permission.requirement()` describes host access.
+`display_label()` combines the unchanged ID, level and permission.
+
+| Realization ID | Level | Mechanism | Permission |
+| --- | --- | --- | --- |
+| `linux.uinput` | Generic | uinput | needs uinput access |
+| `linux.uhid.usb` | Native HID | UHID | needs UHID access |
+| `linux.uhid.bluetooth` | Native HID | UHID | needs UHID access |
+| `linux.usbip.usb-audio` | Real USB | USB/IP-VHCI | needs root broker |
+| `linux.dummy_hcd.usb-hid` | Real USB | dummy_hcd | needs root broker |
+
+The reserved **Real radio** level has no realization. Neither a level label
+nor a registry declaration establishes host acceptance, protocol fidelity or
+physical radio capability; consult the [support matrix](CONTROLLER_SUPPORT.md).
+
 ## Selection and identity
 
 Choose an exact realization with `CreationOptions::new(target)`. All seven

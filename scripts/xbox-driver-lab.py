@@ -23,7 +23,7 @@ HELPER = Path('/usr/local/libexec/virtualgamepad/xbox-driver-lab.py')
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C'}
 MODULES = {'xpad': ('xpad',), 'xone-wired': ('xone_wired', 'xone_gip_gamepad', 'xone_gip_headset')}
 DRIVERS = {'xpad': 'xpad', 'xone': 'xone-wired'}
-REQUESTS = ('status', 'load-xpadneo', 'unload-xpadneo',
+REQUESTS = ('status', 'load-xpadneo', 'unload-xpadneo', 'load-microsoft', 'unload-microsoft',
             *(f'{action}{name}' for action in ('', 'load-', 'unload-') for name in DRIVERS))
 
 
@@ -124,27 +124,33 @@ def xpadneo_reference(entry):
     return bool(identities.intersection((read(entry / 'uevent') or '').splitlines()))
 
 
-def xpadneo(request):
-    directory = HID / 'drivers' / 'xpadneo'
+def bluetooth_module(request):
+    action, _, name = request.partition('-')
+    module = {'xpadneo': 'hid_xpadneo', 'microsoft': 'hid_microsoft'}[name]
+    directory = HID / 'drivers' / name
     bound = []
     if directory.exists():
         bound = [entry for entry in directory.iterdir()
                  if entry.is_symlink() and entry.name.count(':') == 2]
-    if request == 'load-xpadneo':
-        run('modprobe', 'hid_xpadneo')
-    elif (MODULE_SYSFS / 'hid_xpadneo').exists():
-        if len(bound) > 1 or any(not xpadneo_reference(entry) for entry in bound):
-            raise ValueError('xpadneo owns additional or unsupported HID devices; disconnect them before unload')
-        run('rmmod', 'hid_xpadneo')
-    loaded = (MODULE_SYSFS / 'hid_xpadneo').exists()
-    return f'xpadneo: {"loaded" if loaded else "unloaded"}'
+    if action == 'load':
+        run('modprobe', module)
+    elif (MODULE_SYSFS / module).exists():
+        if len(bound) > 1 or any(
+                not xpadneo_reference(entry)
+                or (name == 'microsoft' and 'HID_ID=0005:0000045E:00000B13'
+                    not in (read(entry / 'uevent') or '').splitlines())
+                for entry in bound):
+            raise ValueError(f'{name} owns additional or unsupported HID devices; disconnect them before unload')
+        run('rmmod', module)
+    loaded = (MODULE_SYSFS / module).exists()
+    return f'{name}: {"loaded" if loaded else "unloaded"}'
 
 
 def handle(request):
     if request not in REQUESTS:
         raise ValueError('unknown request')
-    if request in ('load-xpadneo', 'unload-xpadneo'):
-        return xpadneo(request)
+    if request in ('load-xpadneo', 'unload-xpadneo', 'load-microsoft', 'unload-microsoft'):
+        return bluetooth_module(request)
     reference = target()
     if request != 'status':
         action, _, alias = request.rpartition('-')

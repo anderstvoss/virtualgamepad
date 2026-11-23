@@ -90,10 +90,10 @@ class DriverLab(unittest.TestCase):
                 lab.handle('unload-snd')
         target.assert_not_called()
 
-    def hid_fixture(self):
+    def hid_fixture(self, name='xpadneo'):
         hid = self.root / 'hid'
         modules = self.root / 'modules'
-        directory = hid / 'drivers' / 'xpadneo'
+        directory = hid / 'drivers' / name
         directory.mkdir(parents=True)
         modules.mkdir()
         return hid, modules, directory
@@ -144,6 +144,72 @@ class DriverLab(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'additional or unsupported'):
                 lab.handle('unload-xpadneo')
             run.assert_not_called()
+
+    def test_microsoft_load_unload_and_repeated_cleanup_need_no_usb(self):
+        hid, modules, _ = self.hid_fixture('microsoft')
+
+        def execute(command, name):
+            self.assertEqual(name, 'hid_microsoft')
+            if command == 'modprobe':
+                (modules / name).mkdir()
+            else:
+                (modules / name).rmdir()
+
+        with patch.object(lab, 'HID', hid), patch.object(lab, 'MODULE_SYSFS', modules), \
+                patch.object(lab, 'target') as target, \
+                patch.object(lab, 'run', side_effect=execute) as run:
+            self.assertEqual(lab.handle('load-microsoft'), 'microsoft: loaded')
+            self.assertEqual(lab.handle('unload-microsoft'), 'microsoft: unloaded')
+            self.assertEqual(lab.handle('unload-microsoft'), 'microsoft: unloaded')
+        target.assert_not_called()
+        self.assertEqual(run.call_args_list, [unittest.mock.call('modprobe', 'hid_microsoft'),
+                                              unittest.mock.call('rmmod', 'hid_microsoft')])
+
+    def test_microsoft_unload_allows_one_series_but_refuses_other_hardware(self):
+        hid, modules, directory = self.hid_fixture('microsoft')
+        (modules / 'hid_microsoft').mkdir()
+        device = hid / 'devices' / '0005:045E:0B13.0001'
+        device.mkdir(parents=True)
+        event = device / 'uevent'
+        event.write_text('HID_ID=0005:0000045E:00000B13\n')
+        (directory / device.name).symlink_to(device)
+        with patch.object(lab, 'HID', hid), patch.object(lab, 'MODULE_SYSFS', modules), \
+                patch.object(lab, 'run') as run:
+            lab.handle('unload-microsoft')
+            run.assert_called_once_with('rmmod', 'hid_microsoft')
+            run.reset_mock()
+            (directory / '0005:045E:0B13.0002').symlink_to(device)
+            with self.assertRaisesRegex(ValueError, 'additional or unsupported'):
+                lab.handle('unload-microsoft')
+            run.assert_not_called()
+            (directory / '0005:045E:0B13.0002').unlink()
+            for identity in ('0005:0000045E:0000028E', '0003:0000045E:00000B13',
+                             '0003:0000045E:000007DA'):
+                with self.subTest(identity=identity):
+                    event.write_text(f'HID_ID={identity}\n')
+                    with self.assertRaisesRegex(ValueError, 'additional or unsupported'):
+                        lab.handle('unload-microsoft')
+                    run.assert_not_called()
+            event.write_text('HID_ID=0005:0000045E:00000B13\n')
+            link = directory / device.name
+            link.unlink()
+            (directory / '0003:045E:0B13.0001').symlink_to(device)
+            with self.assertRaisesRegex(ValueError, 'additional or unsupported'):
+                lab.handle('unload-microsoft')
+            run.assert_not_called()
+
+    def test_microsoft_module_failure_is_reported_and_can_be_retried(self):
+        hid, modules, _ = self.hid_fixture('microsoft')
+        (modules / 'hid_microsoft').mkdir()
+        with patch.object(lab, 'HID', hid), patch.object(lab, 'MODULE_SYSFS', modules), \
+                patch.object(lab, 'run', side_effect=ValueError('module is busy')) as run:
+            with self.assertRaisesRegex(ValueError, 'module is busy'):
+                lab.handle('unload-microsoft')
+            run.assert_called_once_with('rmmod', 'hid_microsoft')
+        with patch.object(lab, 'HID', hid), patch.object(lab, 'MODULE_SYSFS', modules), \
+                patch.object(lab, 'run') as run:
+            lab.handle('unload-microsoft')
+            run.assert_called_once_with('rmmod', 'hid_microsoft')
 
     def test_installer_update_is_explicit_and_rejects_symlinks(self):
         destination = self.root / 'installed.py'
