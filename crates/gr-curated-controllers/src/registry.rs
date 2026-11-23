@@ -453,6 +453,15 @@ mod tests {
 
     #[test]
     fn level_labels_mechanisms_and_permissions_are_stable() {
+        for (target, id) in [
+            (RealizationTarget::LINUX_UINPUT, "linux.uinput"),
+            (RealizationTarget::LINUX_UHID_USB, "linux.uhid.usb"),
+            (RealizationTarget::LINUX_UHID_BLUETOOTH, "linux.uhid.bluetooth"),
+            (RealizationTarget::LINUX_USBIP_USB_AUDIO, "linux.usbip.usb-audio"),
+            (RealizationTarget::LINUX_DUMMY_HCD_USB_HID, "linux.dummy_hcd.usb-hid"),
+        ] {
+            assert_eq!(target.as_str(), id);
+        }
         for (tier, label) in [
             (RealizationTier::Generic, "Generic"),
             (RealizationTier::NativeHid, "Native HID"),

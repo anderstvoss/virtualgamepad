@@ -703,7 +703,9 @@ fn creation_targets(kind: Kind) -> Vec<RealizationId> {
 fn target_display(kind: Kind, target: RealizationId) -> String {
     kind.entry()
         .realization_for(target)
-        .map_or_else(|| target.as_str().to_owned(), |realization| realization.display_label())
+        .map_or_else(|| target.as_str().to_owned(), |realization| {
+            realization.display_label()
+        })
 }
 
 fn valid_creation_target(kind: Kind, current: RealizationId) -> RealizationId {
@@ -3595,7 +3597,10 @@ mod tests {
                 "{labels:?}"
             );
             assert!(
-                labels.contains(&format!("Controller target: {}", target_display(original_kind, original_target))),
+                labels.contains(&format!(
+                    "Controller target: {}",
+                    target_display(original_kind, original_target)
+                )),
                 "{labels:?}"
             );
             assert!(labels.contains("Adjacent control"), "{labels:?}");

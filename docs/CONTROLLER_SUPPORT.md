@@ -31,7 +31,7 @@ constructors. Bluetooth-bus UHID is local HID, not radio discovery or pairing.
 
 ## Per-controller support dispositions
 
-| Controller | Linux uinput / evdev | USB personality over Linux UHID | USB HID through dummy_hcd | Bluetooth personality over UHID¹ | Actual Bluetooth¹ |
+| Controller | Linux uinput / evdev (Generic) | USB personality over Linux UHID (Native HID) | USB HID through dummy_hcd (Real USB) | Bluetooth personality over UHID¹ (Native HID) | Actual Bluetooth¹ (Real radio, reserved) |
 | --- | --- | --- | --- | --- | --- |
 | DualSense | WIP | WIP | Unavailable² | WIP | WIP |
 | DualShock 4 | WIP | WIP | Unavailable² | WIP | WIP |
