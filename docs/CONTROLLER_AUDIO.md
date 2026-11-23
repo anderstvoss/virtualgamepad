@@ -191,13 +191,75 @@ Administrator-selected VHCI ports must be reserved for this broker. Provisioning
 is separate from ordinary-user controller creation. The lab executable is not the
 installed production worker. Do not grant broad sound-device or sudo access.
 
-Root-API examples (these create virtual devices when run):
+Root-API examples create one virtual device per invocation. The Real USB
+examples share a family argument (`dualsense`, `ds4` or `xbox360`; `dualshock4`
+is also accepted) and named options. Run them on the prepared VHCI lab host
+with the installed broker.
 
 ```sh
 cargo run --features audio-pipewire --example controller_audio -- dualsense 10
-cargo run --features audio-usbip --example usb_audio_root
-cargo run --features audio-usbip,audio-pipewire --example usb_audio_root -- native
+
+features=experimental,audio-usbip,audio-pipewire
+cargo run --features "$features" --example usb_audio_root -- dualsense
+cargo run --features "$features" --example usb_audio_root -- dualsense --native
+cargo run --features "$features" --example usb_audio_acceptance -- dualsense --seconds 3 --trials 1 --mic-fill-ms 12
+cargo run --features "$features" --example usb_audio_latency -- dualsense --seconds 3
+cargo run --features "$features" --example usb_audio_latency_alsa -- dualsense --seconds 3
+cargo run --features "$features" --example usb_audio_latency_reverse -- dualsense --seconds 3 --mic-fill-ms 12
+cargo run --features "$features" --example usb_audio_native_probe -- dualsense --seconds 3
 ```
+
+The examples obtain the active VHCI port and broker serial from their newly
+created controller's observed USB parent. The serial supplies the broker
+instance and attachment generation. The checker independently verifies that
+identity, ALSA ancestry and pre-attachment audio isolation before PCM access.
+The examples leave the shared PipeWire graph and device profiles unchanged.
+
+### Isolate the Real USB lab card
+
+Before the measurement run, identify the lab card's USB parent during a
+short-lived Real USB attachment and read that parent's `serial` attribute under
+`/sys/bus/usb/devices/`. In the serial `vg-<instance>-<16 hex digits>`, the
+instance is the part after `vg-` and before the final hyphen and 16-digit
+generation. Close that attachment before installing the rule.
+
+Save the following two lines as `72-vg-audio-isolation.rules`. Replace every
+`<REPLACE_WITH_BROKER_INSTANCE>` with the exact instance from the serial, including
+any hyphens. Remove the angle brackets with the placeholder. Keep the final
+`-*` in the serial glob so the rule matches each new attachment generation.
+
+```udev
+SUBSYSTEM=="sound", KERNEL=="card[0-9]*", ATTRS{serial}=="vg-<REPLACE_WITH_BROKER_INSTANCE>-*", ENV{VG_ALPHA_AUDIO_INSTANCE}="<REPLACE_WITH_BROKER_INSTANCE>"
+SUBSYSTEM=="sound", KERNEL=="card[0-9]*", ENV{VG_ALPHA_AUDIO_INSTANCE}=="<REPLACE_WITH_BROKER_INSTANCE>", SUBSYSTEMS=="platform", KERNELS=="vhci_hcd.0", ENV{ACP_IGNORE}="1"
+```
+
+From the directory containing the completed rule:
+
+```sh
+udevadm verify 72-vg-audio-isolation.rules &&
+  sudo install -o root -g root -m 0644 72-vg-audio-isolation.rules /etc/udev/rules.d/72-vg-audio-isolation.rules &&
+  sudo udevadm control --reload-rules
+```
+
+Create a fresh Real USB attachment so the rule applies on its add event. Set
+`card` to its observed ALSA number and inspect the card properties:
+
+```sh
+udevadm info --query=property --path="/sys/class/sound/card${card}" |
+  grep -E '^(VG_ALPHA_AUDIO_INSTANCE|ACP_IGNORE)='
+```
+
+Require `VG_ALPHA_AUDIO_INSTANCE` to match the serial's instance and
+`ACP_IGNORE=1`. In `pw-dump`, check that no ALSA Device or Node refers to that
+number through `api.alsa.card` or `api.alsa.pcm.card`. PipeWire's ALSA udev
+monitor uses `ACP_IGNORE` to skip the card before WirePlumber creates its
+objects. [PipeWire ALSA monitor source](https://github.com/PipeWire/pipewire/blob/1.6.11/spa/plugins/alsa/alsa-udev.c#L162)
+
+The streaming commands default to three seconds. Acceptance and the native
+probe allow 1–60 seconds. Latency commands allow 3–60 seconds. Acceptance allows
+1–3 trials and defaults to one. Acceptance and reverse latency allow 1–16 ms of
+microphone fill and default to 12 ms. The native probe checks indexed patterns
+in both directions, and the ALSA latency commands measure the directional p99.
 
 ## Acceptance and remaining gates
 

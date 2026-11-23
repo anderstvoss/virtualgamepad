@@ -1,8 +1,12 @@
 //! Root-API host-to-controller USB sample latency probe.
-//! `cargo run --features audio-usbip --example usb_audio_latency -- dualsense 3 0`
+//! `cargo run --features experimental,audio-usbip --example usb_audio_latency -- dualsense --seconds 3`
 //! Measures from a paced write to `aplay`'s stdin until the root API returns
 //! the corresponding frame. This includes pipe/ALSA buffering and block
 //! timestamp uncertainty; it is not USB wire-time or a hard real-time bound.
+#[path = "support/usb_audio.rs"]
+mod usb_audio;
+use usb_audio::{Args, Attachment};
+
 use std::{
     io::Write,
     process::{Child, Command, Stdio},
@@ -34,7 +38,7 @@ fn percentile(sorted: &[u64], percent: usize) -> u64 {
 fn start_player(
     audio: &ControllerAudio,
     family: &str,
-    port: u32,
+    attachment: &Attachment,
 ) -> Result<(Player, usize), Box<dyn std::error::Error>> {
     let playback = audio
         .endpoints()
@@ -47,20 +51,7 @@ fn start_player(
         .alsa_pcm()
         .ok_or("endpoint is not ALSA PCM")?
         .0;
-    let preparation = Command::new("python3")
-        .arg("scripts/validate-usb-audio-live.py")
-        .args([
-            "--profile",
-            family,
-            "--port",
-            &port.to_string(),
-            "--reserve-owned-card",
-            "--prepare-only",
-        ])
-        .status()?;
-    if !preparation.success() {
-        return Err("owned ALSA card preparation failed".into());
-    }
+    attachment.prepare(family)?;
     let device = format!("hw:{card_id},0");
     let player = Player(
         Command::new("aplay")
@@ -241,9 +232,9 @@ fn run_probe(
     audio: &mut ControllerAudio,
     family: &str,
     seconds: u64,
-    port: u32,
+    attachment: &Attachment,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let (mut player, channels) = start_player(audio, family, port)?;
+    let (mut player, channels) = start_player(audio, family, attachment)?;
     let blocks = usize::try_from((seconds + 2) * 375)?;
     let timestamps: Arc<Vec<AtomicU64>> =
         Arc::new((0..blocks).map(|_| AtomicU64::new(0)).collect());
@@ -263,47 +254,44 @@ fn run_probe(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<_> = std::env::args().skip(1).collect();
-    if args.len() != 3 {
-        return Err("usage: usb_audio_latency FAMILY SECONDS PORT".into());
-    }
-    let seconds = args[1].parse::<u64>()?;
-    let port = args[2].parse::<u32>()?;
-    if !(3..=60).contains(&seconds) {
-        return Err("seconds must be 3..60".into());
-    }
+    let mut args = Args::parse()?;
+    let seconds = args.number("--seconds", 3, 3..=60)?;
+    args.finish()?;
     let options = CreationOptions::new(RealizationId::LINUX_USBIP_USB_AUDIO)
         .with_audio(AudioOptions::new(AudioExposure::Emulated));
-    match args[0].as_str() {
+    match args.family {
         "dualsense" => {
             let mut controller = create_dualsense(options, DualSenseOptions::default())?;
+            let attachment = Attachment::discover(controller.association())?;
             let result = run_probe(
                 controller.audio().ok_or("missing audio")?,
-                &args[0],
+                args.family,
                 seconds,
-                port,
+                &attachment,
             );
             controller.close();
             result?;
         }
         "dualshock4" => {
             let mut controller = create_dualshock4(options, DualShock4Options::default())?;
+            let attachment = Attachment::discover(controller.association())?;
             let result = run_probe(
                 controller.audio().ok_or("missing audio")?,
-                &args[0],
+                args.family,
                 seconds,
-                port,
+                &attachment,
             );
             controller.close();
             result?;
         }
         "xbox360" => {
             let mut controller = create_xbox360(options, Xbox360Options::default())?;
+            let attachment = Attachment::discover(controller.association())?;
             let result = run_probe(
                 controller.audio().ok_or("missing audio")?,
-                &args[0],
+                args.family,
                 seconds,
-                port,
+                &attachment,
             );
             controller.close();
             result?;

@@ -1,17 +1,21 @@
 //! Direct-ALSA host-to-controller marker probe, without an `aplay` process pipe.
-//! `cargo run --features audio-usbip --example usb_audio_latency_alsa -- dualsense 3 0`
+//! `cargo run --features audio-usbip --example usb_audio_latency_alsa -- dualsense --seconds 3`
 //! Timestamp boundary: before a blocking ALSA write until the root sample read.
 //! A 128-frame marker spans 2.667 ms. Blocking write scheduling can only make
 //! the conservative before-write timestamp appear slower, not faster.
 #[cfg(target_os = "linux")]
+#[path = "support/usb_audio.rs"]
+mod usb_audio;
+
+#[cfg(target_os = "linux")]
 mod linux {
+    use super::usb_audio::{Args, Attachment};
     use alsa::{
         Direction, ValueOr,
         pcm::{Access, Format, HwParams, PCM},
     };
     use std::{
         io,
-        process::Command,
         sync::{
             Arc,
             atomic::{AtomicBool, AtomicU64, Ordering},
@@ -44,7 +48,7 @@ mod linux {
     fn card(
         audio: &ControllerAudio,
         family: &str,
-        port: u32,
+        attachment: &Attachment,
     ) -> Result<(String, usize), Box<dyn std::error::Error>> {
         let endpoint = audio
             .endpoints()
@@ -52,20 +56,7 @@ mod linux {
             .find(|e| e.direction() == SampleDirection::HostToController)
             .ok_or("missing playback")?;
         let channels = endpoint.format().channels().len();
-        let status = Command::new("python3")
-            .arg("scripts/validate-usb-audio-live.py")
-            .args([
-                "--profile",
-                family,
-                "--port",
-                &port.to_string(),
-                "--reserve-owned-card",
-                "--prepare-only",
-            ])
-            .status()?;
-        if !status.success() {
-            return Err("owned ALSA card preparation failed".into());
-        }
+        attachment.prepare(family)?;
         Ok((
             format!(
                 "hw:{},0",
@@ -197,9 +188,9 @@ mod linux {
         audio: &mut ControllerAudio,
         family: &str,
         seconds: u64,
-        port: u32,
+        attachment: &Attachment,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let (device, channels) = card(audio, family, port)?;
+        let (device, channels) = card(audio, family, attachment)?;
         let measured_end = usize::try_from(seconds + 2)? * RATE / BLOCK;
         // Extra complete periods prevent ALSA shutdown from truncating the last
         // measured marker; only the preceding fixed range enters acceptance.
@@ -260,33 +251,45 @@ mod linux {
     }
 
     pub fn entrypoint() -> Result<(), Box<dyn std::error::Error>> {
-        let args: Vec<_> = std::env::args().skip(1).collect();
-        if args.len() != 3 {
-            return Err("usage: usb_audio_latency_alsa FAMILY SECONDS PORT".into());
-        }
-        let seconds = args[1].parse::<u64>()?;
-        let port = args[2].parse::<u32>()?;
-        if !(3..=60).contains(&seconds) {
-            return Err("seconds must be 3..60".into());
-        }
+        let mut args = Args::parse()?;
+        let seconds = args.number("--seconds", 3, 3..=60)?;
+        args.finish()?;
         let options = CreationOptions::new(RealizationId::LINUX_USBIP_USB_AUDIO)
             .with_audio(AudioOptions::new(AudioExposure::Emulated));
-        match args[0].as_str() {
+        match args.family {
             "dualsense" => {
                 let mut c = create_dualsense(options, DualSenseOptions::default())?;
-                let result = run(c.audio().ok_or("missing audio")?, &args[0], seconds, port);
+                let attachment = Attachment::discover(c.association())?;
+                let result = run(
+                    c.audio().ok_or("missing audio")?,
+                    args.family,
+                    seconds,
+                    &attachment,
+                );
                 c.close();
                 result?;
             }
             "dualshock4" => {
                 let mut c = create_dualshock4(options, DualShock4Options::default())?;
-                let result = run(c.audio().ok_or("missing audio")?, &args[0], seconds, port);
+                let attachment = Attachment::discover(c.association())?;
+                let result = run(
+                    c.audio().ok_or("missing audio")?,
+                    args.family,
+                    seconds,
+                    &attachment,
+                );
                 c.close();
                 result?;
             }
             "xbox360" => {
                 let mut c = create_xbox360(options, Xbox360Options::default())?;
-                let result = run(c.audio().ok_or("missing audio")?, &args[0], seconds, port);
+                let attachment = Attachment::discover(c.association())?;
+                let result = run(
+                    c.audio().ok_or("missing audio")?,
+                    args.family,
+                    seconds,
+                    &attachment,
+                );
                 c.close();
                 result?;
             }
