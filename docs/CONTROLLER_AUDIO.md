@@ -213,10 +213,47 @@ The examples obtain the active VHCI port and broker serial from their newly
 created controller's observed USB parent. The serial supplies the broker
 instance and attachment generation. The checker independently verifies that
 identity, ALSA ancestry and pre-attachment audio isolation before PCM access.
-The lab card requires udev properties `ACP_IGNORE=1` and
-`VG_ALPHA_AUDIO_INSTANCE=<broker-instance>` before the desktop session manager
-can import it. The examples leave the shared PipeWire graph and device profiles
-unchanged.
+The examples leave the shared PipeWire graph and device profiles unchanged.
+
+### Isolate the Real USB lab card
+
+Before the measurement run, identify the lab card's USB parent during a
+short-lived Real USB attachment and read that parent's `serial` attribute under
+`/sys/bus/usb/devices/`. In the serial `vg-<instance>-<16 hex digits>`, the
+instance is the part after `vg-` and before the final hyphen and 16-digit
+generation. Close that attachment before installing the rule.
+
+Save the following two lines as `72-vg-audio-isolation.rules`. Replace every
+`<REPLACE_WITH_BROKER_INSTANCE>` with the exact instance from the serial, including
+any hyphens. Remove the angle brackets with the placeholder. Keep the final
+`-*` in the serial glob so the rule matches each new attachment generation.
+
+```udev
+SUBSYSTEM=="sound", KERNEL=="card[0-9]*", ATTRS{serial}=="vg-<REPLACE_WITH_BROKER_INSTANCE>-*", ENV{VG_ALPHA_AUDIO_INSTANCE}="<REPLACE_WITH_BROKER_INSTANCE>"
+SUBSYSTEM=="sound", KERNEL=="card[0-9]*", ENV{VG_ALPHA_AUDIO_INSTANCE}=="<REPLACE_WITH_BROKER_INSTANCE>", SUBSYSTEMS=="platform", KERNELS=="vhci_hcd.0", ENV{ACP_IGNORE}="1"
+```
+
+From the directory containing the completed rule:
+
+```sh
+udevadm verify 72-vg-audio-isolation.rules &&
+  sudo install -o root -g root -m 0644 72-vg-audio-isolation.rules /etc/udev/rules.d/72-vg-audio-isolation.rules &&
+  sudo udevadm control --reload-rules
+```
+
+Create a fresh Real USB attachment so the rule applies on its add event. Set
+`card` to its observed ALSA number and inspect the card properties:
+
+```sh
+udevadm info --query=property --path="/sys/class/sound/card${card}" |
+  grep -E '^(VG_ALPHA_AUDIO_INSTANCE|ACP_IGNORE)='
+```
+
+Require `VG_ALPHA_AUDIO_INSTANCE` to match the serial's instance and
+`ACP_IGNORE=1`. In `pw-dump`, check that no ALSA Device or Node refers to that
+number through `api.alsa.card` or `api.alsa.pcm.card`. PipeWire's ALSA udev
+monitor uses `ACP_IGNORE` to skip the card before WirePlumber creates its
+objects. [PipeWire ALSA monitor source](https://github.com/PipeWire/pipewire/blob/1.6.11/spa/plugins/alsa/alsa-udev.c#L162)
 
 The streaming commands default to three seconds. Acceptance and the native
 probe allow 1–60 seconds. Latency commands allow 3–60 seconds. Acceptance allows
