@@ -1,5 +1,10 @@
 # Steam Controller 2026 wired
 
+The ordinary-root constructor takes `CreationOptions::new(realization)` and
+`SteamController2026Options`. The Puck/receiver is not a compiled realization.
+
+TODO(alpha2-final): Steam 0xae SET-selector fix and final #144 consumer matrix.
+
 C6 covers direct wired USB `28de:1302`. The Steam supporting module opens
 the full wired UHID realization and a reduced uinput gamepad.
 
