@@ -57,9 +57,15 @@ impl RealizationTier {
     pub const fn description(self) -> &'static str {
         match self {
             Self::Generic => "Generic evdev gamepad, broadly compatible with reduced fidelity.",
-            Self::NativeHid => "Controller-native HID protocol; kernel, SDL and Steam can bind as for the real pad.",
-            Self::RealUsb => "Complete virtual USB device, including associated interfaces such as audio where present.",
-            Self::RealRadio => "Reserved for physical radio discovery and pairing; not implemented.",
+            Self::NativeHid => {
+                "Controller-native HID protocol; kernel, SDL and Steam can bind as for the real pad."
+            }
+            Self::RealUsb => {
+                "Complete virtual USB device, including associated interfaces such as audio where present."
+            }
+            Self::RealRadio => {
+                "Reserved for physical radio discovery and pairing; not implemented."
+            }
         }
     }
 }
@@ -456,9 +462,18 @@ mod tests {
         for (target, id) in [
             (RealizationTarget::LINUX_UINPUT, "linux.uinput"),
             (RealizationTarget::LINUX_UHID_USB, "linux.uhid.usb"),
-            (RealizationTarget::LINUX_UHID_BLUETOOTH, "linux.uhid.bluetooth"),
-            (RealizationTarget::LINUX_USBIP_USB_AUDIO, "linux.usbip.usb-audio"),
-            (RealizationTarget::LINUX_DUMMY_HCD_USB_HID, "linux.dummy_hcd.usb-hid"),
+            (
+                RealizationTarget::LINUX_UHID_BLUETOOTH,
+                "linux.uhid.bluetooth",
+            ),
+            (
+                RealizationTarget::LINUX_USBIP_USB_AUDIO,
+                "linux.usbip.usb-audio",
+            ),
+            (
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                "linux.dummy_hcd.usb-hid",
+            ),
         ] {
             assert_eq!(target.as_str(), id);
         }

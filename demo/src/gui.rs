@@ -701,11 +701,10 @@ fn creation_targets(kind: Kind) -> Vec<RealizationId> {
 
 /// Include the application-visible fidelity level and device access requirement.
 fn target_display(kind: Kind, target: RealizationId) -> String {
-    kind.entry()
-        .realization_for(target)
-        .map_or_else(|| target.as_str().to_owned(), |realization| {
-            realization.display_label()
-        })
+    kind.entry().realization_for(target).map_or_else(
+        || target.as_str().to_owned(),
+        |realization| realization.display_label(),
+    )
 }
 
 fn valid_creation_target(kind: Kind, current: RealizationId) -> RealizationId {

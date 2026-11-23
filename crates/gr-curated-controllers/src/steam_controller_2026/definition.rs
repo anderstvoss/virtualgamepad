@@ -337,11 +337,7 @@ impl ControllerFamily for SteamController2026Definition {
     }
     fn realizations() -> &'static [FamilyRealization] {
         static TARGETS: &[FamilyRealization] = &[
-            FamilyRealization::new(
-                &UINPUT,
-                RealizationTier::Generic,
-                PermissionClass::Uinput,
-            ),
+            FamilyRealization::new(&UINPUT, RealizationTier::Generic, PermissionClass::Uinput),
             FamilyRealization::new(&WIRED, RealizationTier::NativeHid, PermissionClass::Uhid),
         ];
         TARGETS
