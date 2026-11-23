@@ -1,6 +1,9 @@
 # Manual lab work with the demo
 
-Current bounded alpha dispositions are recorded in the [alpha remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
+Current support dispositions are in [status](STATUS.md) and
+[controller support](CONTROLLER_SUPPORT.md). The
+[Alpha 1 remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md)
+records historical evidence and is not the current release gate.
 Seven scoped installed broker security/recovery phases passed (#115 closed);
 USB/IP audio remains opt-in WIP, with full routing and zero-loss qualification
 deferred to #143/#145. The demo enables USB/IP audio and ALSA host routing by
@@ -90,6 +93,8 @@ is a host command, not an input button. This baseline adds no speaker behavior,
 provider/model changes, host permissions or physical acceptance claims. Visual
 refinement is deferred to a later GUI pass.
 
+TODO(alpha2-final): demo audio/haptics acceptance, remaining P6 and P8 controller validation.
+
 ## Safe experiment order and next gates
 
 1. Begin with input-only neutral/buttons/sticks and typed output observation on
@@ -115,8 +120,9 @@ and observe continuing service on the others. Keep each consumer selection exact
    physical output/reconnect observations stay credited. L/M Bluetooth work remains
    separately gated; no support is promoted by endpoint enumeration.
 
-Other families remain best-effort. See the [physical validation policy](PHYSICAL_VALIDATION_POLICY.md)
-and the [alpha remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md). Bounded four-family keyboard smoke
+All seven families are compiled, but each selected target retains its
+own support limits. See the [physical validation policy](PHYSICAL_VALIDATION_POLICY.md)
+and [current status](STATUS.md). Bounded four-family keyboard smoke
 and the accepted neutral soak are credited; broader hands-on review is post-alpha
 #126. See the [historical refinement evidence](history/alpha-1/CURRENT_CONTROLLER_REFINEMENT.md).
 
