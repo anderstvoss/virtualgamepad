@@ -16,4 +16,6 @@ Use `SwitchProSpiImage::import_raw(base, &bytes)`, optionally compose a second w
 
 Subcommand `0x10` reads the selected image. Device-info subcommand `0x02` advertises available SPI RGB only after all twelve factory RGB bytes have been explicitly supplied and at least one is not erased (0xff); otherwise its flag remains clear. This conservative source-only flag policy keeps an erased default export/import from becoming advertised colours; #161 owns the final colour semantics. The implementation does **not** accept host SPI writes `0x11` or `0x12` as mutations: it preserves its previous generic reply and does not mark the image dirty. Therefore the Wii EEPROM's host-write terminal snapshot/discard policy is not applicable; export is entirely caller-controlled.
 
-The current Switch Pro implementations here are USB UHID and USB dummy-HCD; no Bluetooth realization is reported as landed. Tests are deterministic synthetic fixtures only. No physical Switch Pro test or host capture was run.
+Switch Pro has compiled `linux.uhid.usb` and `linux.uhid.bluetooth` native-HID realizations; the declared `linux.dummy_hcd.usb-hid` target refuses creation. P10d host observations verified supplied factory colour bytes/flag in GUI and API replies, including a Bluetooth case. This is **not** a measured real-controller calibration or physical-output qualification; tests also cover deterministic synthetic fixtures.
+
+TODO(alpha2-final): P10d real-device data and calibrated consumer validation.
