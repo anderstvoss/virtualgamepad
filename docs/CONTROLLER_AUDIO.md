@@ -3,9 +3,10 @@
 Sustained audio continuity and latency are not validated in alpha; occasional audio dropouts may occur.
 
 This is an opt-in alpha implementation with bounded functional acceptance, not
-a completed fidelity or latency qualification. The ordinary-root API review and
-110-item snapshot are complete. Existing constructors keep audio disabled by
-default. Current dispositions are in the [alpha remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
+a completed fidelity or latency qualification. The original 110-item snapshot was an **Alpha 1** milestone, not the current
+root API inventory. Existing constructors keep audio disabled by default.
+See the [application API](APPLICATION_API.md), [current status](STATUS.md) and
+[migration ledger](ALPHA_API_MIGRATION.md) for the current contract.
 
 | Family | Emulated playback / microphone channels | Controller matching |
 | --- | --- | --- |
@@ -47,7 +48,8 @@ The **Generic**, **Native HID** and **Real USB** level labels describe the host
 presentation, not proof of controller equivalence, sustained audio, physical
 actuation or application routing. Real radio is reserved. The existing
 realization IDs remain unchanged; acceptance manifests record these levels in
-`reason` text only until #408 defines a schema field.
+compiled registry and generated acceptance JSON fields (the checked-in
+TOML realization IDs remain unchanged).
 
 | Level and realization | Topology the host receives | Audio/haptic boundary |
 | --- | --- | --- |
@@ -271,8 +273,13 @@ or physical fidelity. Separately, seven scoped installed broker security/recover
 phases passed (#115 closed); this is not streaming qualification.
 
 Three consecutive 60-second full-duplex trials per family, transport and ownership
-mode, with exact patterns and directional p99 below 20 ms, remain a post-alpha
-closure target (#135/#145), not a bounded alpha requirement. Recorded
+mode remain a broader closure target (#135/#145), not a completed Alpha 2
+fidelity qualification. The November 23 k2 kalux reruns passed the bounded
+duplex Samples mode and directional p99 checks on DualSense, DS4 and Xbox 360
+(after the isolation/routing corrections); native playback checks exposed
+underruns on selected families, so those runs do not establish zero loss or
+physical acoustic correspondence. See [#143 host results](https://github.com/anderstvoss/virtualgamepad/issues/143#issuecomment-7094959681)
+and [#365 status](https://github.com/anderstvoss/virtualgamepad/issues/365). Recorded
 native-client continuity and simultaneous latency failures persist on the
 Parallels test VM; isolated PipeWire failures justify native-host qualification,
 but do not prove the VM is the sole cause. Follow
@@ -284,6 +291,8 @@ USB reconnect playback are observed. Meaningful headset-microphone response,
 microphone routing/fidelity and physical-versus-virtual equivalence remain open.
 Matching profiles stay unavailable. Further physical tests require operator
 readiness; adaptive-trigger actuation is excluded.
+
+TODO(alpha2-final): audio k1–k4 final acceptance, G4 native DualSense USB audio and G5 haptics consumers.
 
 The [execution ledger](history/alpha-1/AUDIO_IMPLEMENTATION.md),
 [USB acceptance record](history/alpha-1/USB_AUDIO_STOCK_LINUX.md) and
@@ -311,8 +320,7 @@ HID readiness/deadlines still require caller service; PCM is worker-backed, and
 service detects required audio failure without promising a fixed polling cadence.
 USB/IP remains opt-in WIP despite the seven scoped broker security/recovery
 phases passing (#115 closed); streaming and full routing remain deferred.
-See [migration](ALPHA_API_MIGRATION.md) and the
-[current remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
+See [migration](ALPHA_API_MIGRATION.md) and [current status](STATUS.md).
 
 ## Current release evidence boundary
 
@@ -323,7 +331,7 @@ assertion is relaxed. Three measured 60-second trials per sustained cell and
 duplex/mixed ownership remain post-alpha requirements (#143/#145).
 VM observations cannot establish native
 host latency or physical microphone fidelity. See
-[the remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
+[historical Alpha 1 remediation evidence](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
 
 Host-device discovery belongs to the GUI coordinator, with one active command
 and one coalesced refresh, generation filtering, a two-second per-command deadline
