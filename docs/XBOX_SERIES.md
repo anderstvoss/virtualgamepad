@@ -10,7 +10,13 @@ contains only `target()`: the family models no battery or input clock telemetry.
 Read retained rumble separately through `host_outputs()`; neutralization preserves
 selected-target metadata and host outputs. See [ADR-0025](adr/ADR-0025-input-model.md).
 
-For Bluetooth UHID, the first input report after open reflects the current input state.
+For Bluetooth UHID, the first input report after open reflects the current
+input state. The Bluetooth `uniq` identity defaults to a fresh synthetic value
+per instance. Applications can restore a selected identity using
+`XboxSeriesIdentity::from_bytes` and
+`XboxSeriesOptions::default().with_identity(identity)`; the uinput
+transport retains the handle identity but exposes no kernel serial/uniq.
+Neither is radio discovery or pairing.
 
 | Realization | Level | Mechanism · permission | Scope |
 | --- | --- | --- | --- |
