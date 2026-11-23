@@ -191,13 +191,38 @@ Administrator-selected VHCI ports must be reserved for this broker. Provisioning
 is separate from ordinary-user controller creation. The lab executable is not the
 installed production worker. Do not grant broad sound-device or sudo access.
 
-Root-API examples (these create virtual devices when run):
+Root-API examples create one virtual device per invocation. The Real USB
+examples share a family argument (`dualsense`, `ds4` or `xbox360`; `dualshock4`
+is also accepted) and named options. Run them on the prepared VHCI lab host
+with the installed broker.
 
 ```sh
 cargo run --features audio-pipewire --example controller_audio -- dualsense 10
-cargo run --features audio-usbip --example usb_audio_root
-cargo run --features audio-usbip,audio-pipewire --example usb_audio_root -- native
+
+features=experimental,audio-usbip,audio-pipewire
+cargo run --features "$features" --example usb_audio_root -- dualsense
+cargo run --features "$features" --example usb_audio_root -- dualsense --native
+cargo run --features "$features" --example usb_audio_acceptance -- dualsense --seconds 3 --trials 1 --mic-fill-ms 12
+cargo run --features "$features" --example usb_audio_latency -- dualsense --seconds 3
+cargo run --features "$features" --example usb_audio_latency_alsa -- dualsense --seconds 3
+cargo run --features "$features" --example usb_audio_latency_reverse -- dualsense --seconds 3 --mic-fill-ms 12
+cargo run --features "$features" --example usb_audio_native_probe -- dualsense --seconds 3
 ```
+
+The examples obtain the active VHCI port and broker serial from their newly
+created controller's observed USB parent. The serial supplies the broker
+instance and attachment generation. The checker independently verifies that
+identity, ALSA ancestry and pre-attachment audio isolation before PCM access.
+The lab card requires udev properties `ACP_IGNORE=1` and
+`VG_ALPHA_AUDIO_INSTANCE=<broker-instance>` before the desktop session manager
+can import it. The examples leave the shared PipeWire graph and device profiles
+unchanged.
+
+The streaming commands default to three seconds. Acceptance and the native
+probe allow 1–60 seconds. Latency commands allow 3–60 seconds. Acceptance allows
+1–3 trials and defaults to one. Acceptance and reverse latency allow 1–16 ms of
+microphone fill and default to 12 ms. The native probe checks indexed patterns
+in both directions, and the ALSA latency commands measure the directional p99.
 
 ## Acceptance and remaining gates
 
