@@ -302,14 +302,10 @@ impl ControllerFamily for WiiRemoteDefinition {
     }
     fn realizations() -> &'static [FamilyRealization] {
         static REALIZATIONS: &[FamilyRealization] = &[
-            FamilyRealization::new(
-                &UINPUT,
-                RealizationTier::PlayableReduced,
-                PermissionClass::Uinput,
-            ),
+            FamilyRealization::new(&UINPUT, RealizationTier::Generic, PermissionClass::Uinput),
             FamilyRealization::new(
                 &BLUETOOTH,
-                RealizationTier::PlayableFull,
+                RealizationTier::NativeHid,
                 PermissionClass::Uhid,
             ),
         ];

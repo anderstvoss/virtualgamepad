@@ -1184,22 +1184,22 @@ impl crate::registry::ControllerFamily for Xbox360Definition {
         static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
             crate::registry::FamilyRealization::new(
                 &SURFACE.common,
-                crate::registry::RealizationTier::PlayableReduced,
+                crate::registry::RealizationTier::Generic,
                 crate::registry::PermissionClass::Uinput,
             ),
             crate::registry::FamilyRealization::new(
                 &HID_SURFACE.common,
-                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::RealizationTier::NativeHid,
                 crate::registry::PermissionClass::Uhid,
             ),
             crate::registry::FamilyRealization::new(
                 &DUMMY_HCD_SURFACE.common,
-                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::RealizationTier::RealUsb,
                 crate::registry::PermissionClass::RootBroker,
             ),
             crate::registry::FamilyRealization::new(
                 &USBIP_SURFACE.common,
-                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::RealizationTier::RealUsb,
                 crate::registry::PermissionClass::RootBroker,
             ),
         ];

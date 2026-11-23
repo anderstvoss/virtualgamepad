@@ -38,6 +38,9 @@
     "permission": {
       "type": "string"
     },
+    "mechanism": {
+      "type": "string"
+    },
     "config": {
       "type": "object"
     },
