@@ -339,10 +339,10 @@ impl ControllerFamily for SteamController2026Definition {
         static TARGETS: &[FamilyRealization] = &[
             FamilyRealization::new(
                 &UINPUT,
-                RealizationTier::PlayableReduced,
+                RealizationTier::Generic,
                 PermissionClass::Uinput,
             ),
-            FamilyRealization::new(&WIRED, RealizationTier::PlayableFull, PermissionClass::Uhid),
+            FamilyRealization::new(&WIRED, RealizationTier::NativeHid, PermissionClass::Uhid),
         ];
         TARGETS
     }

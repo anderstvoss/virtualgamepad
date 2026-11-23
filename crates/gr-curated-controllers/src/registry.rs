@@ -10,10 +10,10 @@ use gr_realization_api::{ControllerId, RealizationTarget};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RealizationTier {
-    PlayableReduced,
-    PlayableFull,
-    FaithfulUsb,
-    FaithfulRadio,
+    Generic,
+    NativeHid,
+    RealUsb,
+    RealRadio,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionClass {
@@ -40,6 +40,99 @@ impl FamilyRealization {
         }
     }
 }
+impl RealizationTier {
+    /// Human-readable level of fidelity supplied to host applications.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Generic => "Generic",
+            Self::NativeHid => "Native HID",
+            Self::RealUsb => "Real USB",
+            Self::RealRadio => "Real radio",
+        }
+    }
+
+    /// What an application sees at this realization level.
+    #[must_use]
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::Generic => "Generic evdev gamepad, broadly compatible with reduced fidelity.",
+            Self::NativeHid => "Controller-native HID protocol; kernel, SDL and Steam can bind as for the real pad.",
+            Self::RealUsb => "Complete virtual USB device, including associated interfaces such as audio where present.",
+            Self::RealRadio => "Reserved for physical radio discovery and pairing; not implemented.",
+        }
+    }
+}
+
+/// Linux device presentation mechanism; independent of the fidelity level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RealizationMechanism {
+    Uinput,
+    Uhid,
+    UsbIpVhci,
+    DummyHcd,
+}
+
+impl RealizationMechanism {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Uinput => "uinput",
+            Self::Uhid => "UHID",
+            Self::UsbIpVhci => "USB/IP-VHCI",
+            Self::DummyHcd => "dummy_hcd",
+        }
+    }
+}
+
+impl PermissionClass {
+    #[must_use]
+    pub const fn requirement(self) -> &'static str {
+        match self {
+            Self::Uinput => "needs uinput access",
+            Self::Uhid => "needs UHID access",
+            Self::RootBroker => "needs root broker",
+        }
+    }
+}
+
+impl FamilyRealization {
+    /// Device mechanism, derived from the unchanged, typed realization target.
+    #[must_use]
+    pub fn mechanism(&self) -> RealizationMechanism {
+        match self.surface.target() {
+            RealizationTarget::LINUX_UINPUT => RealizationMechanism::Uinput,
+            RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH => {
+                RealizationMechanism::Uhid
+            }
+            RealizationTarget::LINUX_USBIP_USB_AUDIO => RealizationMechanism::UsbIpVhci,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID => RealizationMechanism::DummyHcd,
+            _ => unreachable!("unknown realization mechanism"),
+        }
+    }
+
+    /// Display text for selectors, diagnostics and application UIs.
+    #[must_use]
+    pub fn display_label(&self) -> String {
+        format!(
+            "{} — {} · {}",
+            self.surface.target().as_str(),
+            self.tier.label(),
+            self.permission.requirement()
+        )
+    }
+}
+
+impl FamilyEntry {
+    /// Find typed realization metadata in this compiled controller family.
+    #[must_use]
+    pub fn realization_for(&self, target: RealizationTarget) -> Option<&'static FamilyRealization> {
+        (self.realizations)()
+            .iter()
+            .find(|realization| realization.surface.target() == target)
+    }
+}
+
 /// Whether an option is a consumer compatibility shim or an opt-in feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -410,14 +503,14 @@ mod tests {
                 let realization = matches[0];
                 let (tier, permission) = match entry.target {
                     RealizationTarget::LINUX_UINPUT => {
-                        (RealizationTier::PlayableReduced, PermissionClass::Uinput)
+                        (RealizationTier::Generic, PermissionClass::Uinput)
                     }
                     RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH => {
-                        (RealizationTier::PlayableFull, PermissionClass::Uhid)
+                        (RealizationTier::NativeHid, PermissionClass::Uhid)
                     }
                     RealizationTarget::LINUX_DUMMY_HCD_USB_HID
                     | RealizationTarget::LINUX_USBIP_USB_AUDIO => {
-                        (RealizationTier::FaithfulUsb, PermissionClass::RootBroker)
+                        (RealizationTier::RealUsb, PermissionClass::RootBroker)
                     }
                     _ => panic!("unknown tier"),
                 };
