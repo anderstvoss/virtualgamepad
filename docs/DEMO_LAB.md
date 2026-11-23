@@ -56,6 +56,25 @@ Gadget selection is disabled in this application demo. The compiled gadget
 profiles remain experimental research interfaces pending Gate G; a reachable
 broker socket does not establish request handling or controller support.
 
+## Alpha 2 controller audio diagnostics
+
+With optional controller audio enabled, the **Audio** diagnostics panel shows
+the selected realization ID and its Generic / Native HID / Real USB level.
+PipeWire selectors or ALSA card/device selectors identify the current
+creation-scoped endpoints; reselect them after recreation rather than saving
+volatile numeric ALSA indices. The panel displays playback and microphone
+sample peaks from the **most recently serviced PCM batch** for Samples-owned
+streams, not accumulated loudness or a physical sound measurement.
+`NativeClient` streams explicitly show **not metered**, not silence.
+
+The retained health counters distinguish playback underruns/drops from the
+demo's playback-read discontinuities and accepted microphone frames.
+`playback_accounting()` and `microphone_accounting()` appear by direction,
+with **not instrumented** when the backend provides no typed record.
+These are independent queue-local observations and must not be added as an
+end-to-end delivery or latency total. The #426 demo change is display/diagnostic
+work; it does not provision audio routes or establish physical fidelity.
+
 ## Wii Remote functional baseline
 
 Choose **Wii Remote**, then **linux.uinput** or **linux.uhid.bluetooth**.
