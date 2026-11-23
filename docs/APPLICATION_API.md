@@ -145,6 +145,27 @@ including cleanup failure and observation loss. Recreate a new controller instea
 of resetting/reopening a closed session. Host OPEN/CLOSE observations are distinct
 from library session lifetime.
 
+## Input transactions and error handling
+
+For every family, `inputs()` borrows the last accepted native input snapshot.
+`set_inputs(controller.inputs().clone())` validates a **complete** candidate;
+`edit_inputs(|candidate| { /* edit native controls */ Ok(()) })` groups edits
+and validates only the final candidate. Targeted setters use the same
+transaction semantics. An accepted edit is not delivered until `commit()`.
+For a held button, use `neutralize()` and `commit()` before closing if the
+consumer needs to observe the release. Motion refresh methods are
+family-specific and must not be used simply to retry backpressure.
+
+Creation returns `ControllerError` for unsupported selections, missing host
+prerequisites or failed setup. Input operations return `ControlError` for
+validation or closed-session failures; transport delivery can be retryable or
+terminal as indicated by the error. A rejected edit preserves accepted inputs
+and pending work, and close is idempotent. Inspect `diagnostics().last_error()`
+after close for cleanup failure rather than treating `close()` as proof of
+host-node removal. `host_outputs()` returns the latest retained snapshot,
+not a continuous stream; an unimplemented retained-state query is a typed
+unavailability rather than an empty output event.
+
 ## Migration from the pre-108 surface
 
 | Before | Preliminary application API |
