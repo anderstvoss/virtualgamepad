@@ -47,6 +47,14 @@ pub(crate) trait HidDriver:
         session: gr_realization_api::RealizationSessionId,
         identity: [u8; 6],
     ) -> Self::Hid;
+    fn hid_protocol_for_target(
+        &self,
+        session: gr_realization_api::RealizationSessionId,
+        identity: [u8; 6],
+        _target: gr_realization_api::RealizationTarget,
+    ) -> Self::Hid {
+        self.hid_protocol(session, identity)
+    }
 }
 /// Implementation interface for a controller-native worker. The application
 /// crate owns transport setup; curated controllers keep edit validation and
@@ -55,6 +63,10 @@ pub trait WorkerBridge<S>: Send {
     fn update(&mut self, state: &S) -> Result<(), ProviderError>;
     fn output(&mut self) -> Result<Option<RawReverseEvent>, ProviderError>;
     fn diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics;
+    /// Host object verified while establishing the worker attachment.
+    fn observed_host_path(&self) -> Option<&std::path::Path> {
+        None
+    }
     /// Cumulative worker-side output loss, retained after closure.
     fn dropped_output_events(&self) -> u64;
     fn close(&mut self) -> Result<(), ProviderError>;
@@ -116,9 +128,16 @@ impl<D: HidDriver> ControllerSession<D> {
         bridge: Box<dyn WorkerBridge<D::State>>,
     ) -> Self {
         let state = driver.neutral_state();
+        let association = crate::ControllerAssociation {
+            observed_host_path: bridge
+                .observed_host_path()
+                .and_then(std::path::Path::to_str)
+                .map(str::to_owned),
+            ..crate::ControllerAssociation::default()
+        };
         Self {
             selection,
-            association: crate::ControllerAssociation::default(),
+            association,
             backend: Backend::Worker {
                 marker: (),
                 driver,
@@ -161,7 +180,7 @@ impl<D: HidDriver> ControllerSession<D> {
             Some(identity) => identity,
             None => driver.hid_identity()?,
         };
-        let protocol = driver.hid_protocol(request.session, identity);
+        let protocol = driver.hid_protocol_for_target(request.session, identity, selection.target);
         let id = request.session.0;
         let transport = driver.open_hid(request)?;
         let runtime =
@@ -666,6 +685,7 @@ impl<D: HidDriver, P, W> ControllerSession<D, P, W> {
             available_in: gr_realization_api::RealizationTargetSet::new(&[
                 gr_realization_api::RealizationTarget::LINUX_UINPUT,
                 gr_realization_api::RealizationTarget::LINUX_UHID_USB,
+                gr_realization_api::RealizationTarget::LINUX_UHID_BLUETOOTH,
             ]),
         })
     }
@@ -734,10 +754,13 @@ fn provider_error(error: gr_hid::Error) -> ProviderError {
 }
 
 pub(crate) fn creation_identity() -> Result<[u8; 6], ProviderError> {
-    let mut source = std::fs::File::open("/dev/urandom").map_err(|error| ProviderError::Open {
-        reason: format!("open OS identity entropy: {error}"),
+    // OS-backed entropy on every supported development platform, without
+    // weakening the per-instance synthetic identity requirement.
+    let mut entropy = [0; 6];
+    getrandom::fill(&mut entropy).map_err(|error| ProviderError::Open {
+        reason: format!("read OS identity entropy: {error}"),
     })?;
-    read_identity(&mut source)
+    read_identity(&mut &entropy[..])
 }
 
 fn read_identity(source: &mut impl std::io::Read) -> Result<[u8; 6], ProviderError> {

@@ -7,6 +7,36 @@ per-feature dispositions in
 [`acceptance/virtualgamepad.wii-remote.toml`](../acceptance/virtualgamepad.wii-remote.toml).
 It is not physical-reference or whole-controller acceptance.
 
+## P6 retail uinput rumble probe
+
+On 2026-11-21, the stock `scripts/wii-evdev-rumble-probe.c` was run twice
+against virtualgamepad `2e18a9c3faeaf0ee4835882f7b264ed7ad004ed4`.
+Both runs completed the kernel uinput FF upload, play, stop, and erase
+sequence; retained rumble state changed off, on, off. All three owned
+event nodes disappeared after two closes. This is bounded live Linux
+uinput consumer/software-intent evidence, not proof of physical motor
+delivery or a new test on the merged descriptor. See
+[the Wii tracker result](https://github.com/anderstvoss/virtualgamepad/issues/158#issuecomment-7072384755).
+
+## P6 pinned retail HID descriptor
+
+The generated 217-byte `wii-p6-retail-plus-rvl-cnt-01-descriptor` fixture
+comes directly from the research capture of one retail RVL-036 Wii Remote Plus
+advertising `Nintendo RVL-CNT-01`; its two SDP reads and a bound hidraw read
+agreed. Claims:
+`wii-p6-retail-plus-rvl-cnt-01-descriptor-observed` and
+`wii-p6-retail-plus-rvl-cnt-01-descriptor-comparison`.
+It retains the Game Pad application collection, report directions, IDs and
+payload lengths of the W2/W8 interim model, but changes vendor-page main-item
+flags from Variable (0x02) to retail Array (0x00). The pinned research fixture
+is the source of the compiled bytes; the historical C5 synthetic fixture is
+not modified. The descriptor is reused by Original and TR realizations as a
+compatibility choice; the single observed Plus unit does not validate those
+other revisions. W8 speaker configuration/data decode and acknowledgements
+remain, while speaker audio is explicitly refused. hid-wiimote, SDL and Dolphin
+must be rerun locally against the merged commit; prior results do not qualify
+this replacement.
+
 ## Native ownership and use
 
 At the ordinary root, call
@@ -102,18 +132,21 @@ retain error 7: the cited register records establish writes but do not decide
 the read contract here. Out-of-block and straddling writes keep error 7 without
 storing a prefix. These controls do not create an audio stream or audio endpoint.
 
-For `0x18`, the fixed report is admitted only to preserve its shared rumble bit.
-The audio area is discarded, including oversized encoded lengths, without an
-ACK, decoder, queue, mixer, PipeWire sink or playback. Transport success is not
-speaker-audio acceptance. This is an explicit deviation while playback remains
-gated by D7 and audio phase A3. No A3 work is included. Uinput has no HID output
-report or addressed register channel; its existing native rumble is unchanged.
-Evidence: `wii-gap-wiibrew-speaker-control-reports`,
-`audio-wii-dolphin-control-and-stream-reports`,
-`wii-gap-wiibrew-speaker-init-config-registers`, and
-`audio-wii-dolphin-speaker-register-model`. The speaker-enabled status flag
+For `0x18`, live protocol acceptance still applies only the shared rumble bit;
+the raw observation is optional and no audio ACK, mixer, sink or playback is
+provided. Brief 16 step S1 now supplies a pure supporting-API decoder for the
+later acceptance/journal integration, with typed control, configuration and
+bounded data records. See [Wii speaker decode](WII_SPEAKER_DECODE.md). Transport
+success is not speaker-audio acceptance; D7 and journal integration remain
+gates. Uinput has no HID output or addressed register channel; its rumble is
+unchanged.
+Evidence: [wii-gap-wiibrew-speaker-control-reports](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/wii-gap-wiibrew-speaker-control-reports.json),
+[audio-wii-dolphin-control-and-stream-reports](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-control-and-stream-reports.json),
+[wii-gap-wiibrew-speaker-init-config-registers](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/wii-gap-wiibrew-speaker-init-config-registers.json), and
+[audio-wii-dolphin-speaker-register-model](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-speaker-register-model.json). The speaker-enabled status flag
 `0x04` cites `wii-gap-wiibrew-status-20-resend`; it retains accepted enable
-intent and does not establish audio playback. No public API is added.
+intent and does not establish audio playback. The pure S1 decoder is supporting
+API only, not an ordinary-root or live stream API.
 
 The demo creates Wii handles and provides native controls, extension selection
 and typed IR editing. Battery metadata uses `controller.battery()` and
@@ -141,25 +174,50 @@ The final input/status contract and neutralization rules are recorded in
 ## Realization limits
 
 - Uinput follows the six `hid-wiimote` interface names and capability sets: core,
-  accelerometer, IR, Nunchuk, Classic and MotionPlus. The provider advertises
-  USB bus 3 and cannot express the kernel consumer's nonzero fuzz. Minimum,
+  accelerometer, IR, Nunchuk, Classic and MotionPlus. It advertises Bluetooth
+  bus 5 and, for the Original, version 0x8601, like the `hid-wiimote` nodes of
+  the one measured retail Original remote (#158 comment 7061259225). It cannot
+  express the kernel consumer's nonzero fuzz. Minimum,
   maximum and flat values match the extracted source table. Decoder values can
   exceed the advertised ABS bounds; they are preserved, including the missing
   IR 1023/1023 sentinel. There is no explicit evdev point-visibility/blob field.
 - Wii LED-class and `power_supply` endpoints belong to the HID kernel driver;
   plain uinput cannot provide them. Its target surface states this limitation.
-- Bluetooth-bus UHID uses Nintendo identity and an authored interim synthetic
-  Generic Desktop/Game Pad collection with vendor-page fields and source-backed
-  report sizes (W2 option B; retail-evidence successor #238). It is not a retail
-  descriptor. Bus 5 is local kernel metadata: no radio, pairing or BlueZ.
+- Bluetooth-bus UHID uses Nintendo identity and the pinned retail RVL-036
+  descriptor with Generic Desktop/Game Pad collection and vendor-page Array
+  fields. That capture covers one Plus advertising RVL-CNT-01, not the other
+  revisions using the same bytes. Bus 5 is local kernel metadata: no radio,
+  pairing or BlueZ.
+  The Original reports version 0x8601, measured on one retail remote. No -TR
+  value has been measured, so -TR keeps version 0.
+- SDL and Steam pick a gamepad mapping from device identity. On a real remote
+  and on Bluetooth-bus UHID, native A shows as gamepad B and native B as
+  gamepad A in Steam's tester. That is the consumers' real-remote mapping, not
+  a vg swap. When uinput advertised USB bus 3, it got a generic mapping: A and
+  B unswapped, and 1, 2, +, - and the D-pad unmapped (#158 comment
+  7061259225). Uinput now presents the real remote's identity, so the same
+  mapping is expected, but this has not yet been re-measured in Steam.
 - Classic Pro wire identity, early Plus discrimination, encrypted extension
   workflows, factory calibration/default registers, retail EEPROM size and
   visible extended/full IR blob metadata remain **No evidence**. Basic point
   coordinates and no-point data shapes are implemented; unsupported visible
   blobs reject rather than silently disappear.
-- Speaker support remains a later separately gated realization under D7 and
-  ADR-0023. USB-bus UHID is a fixture-only experiment, outside this production
+- Speaker playback and journal integration remain separately gated under D7,
+  Brief 16 S1 and ADR-0023. USB-bus UHID is a fixture-only experiment, outside this production
   package. Actual Bluetooth remains deferred to #164.
+
+For Brief 16 S1 (planned; not run in this audit), the pinned Dolphin-source
+records [audio-wii-dolphin-pcm-adpcm-rate](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-pcm-adpcm-rate.json) and
+[audio-wii-dolphin-yamaha-adpcm-nibbles](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-yamaha-adpcm-nibbles.json) describe the emulator's
+sample decoding and state, not a physical Wii Remote timing reference.
+See the [Dolphin speaker implementation, lines 22–139](https://github.com/dolphin-emu/dolphin/blob/e1d35f666cc35f6ead55d32ea2679df44d04da72/Source/Core/Core/HW/WiimoteEmu/Speaker.cpp#L22-L139)
+and [output handling, lines 362–399](https://github.com/dolphin-emu/dolphin/blob/e1d35f666cc35f6ead55d32ea2679df44d04da72/Source/Core/Core/HW/WiimoteEmu/EmuSubroutines.cpp#L362-L399).
+[audio-wii-dolphin-real-speaker-gate](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-real-speaker-gate.json) and
+[audio-wii-dolphin-real-speaker-pacing](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-real-speaker-pacing.json) concern Dolphin forwarding and
+input pacing, not hardware speaker acceptance. Keep
+[audio-wii-dolphin-volume-range-discrepancy](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-dolphin-volume-range-discrepancy.json) unresolved and
+[audio-wii-speaker-physical-acceptance-unknown](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-wii-speaker-physical-acceptance-unknown.json) unknown.
+The existing control ACK evidence does not qualify decoded or delivered PCM.
 
 ## Bounded host evidence
 
@@ -335,8 +393,9 @@ its records; none establishes retail fidelity or a firmware report clock.
 Encrypted workflows and Classic Pro stay refused. EEPROM images remain
 opaque, length-validated caller imports, with no invented checksums or per-device
 factory values (`wii-gap-extension-calibration-checksum-unknown`,
-`wii-gap-classic-pro-full-id-physical-unknown`). The subsequent W2 owner decision on #158 authorizes only the interim synthetic
-Game Pad collection described below; the retail descriptor remains unknown.
+`wii-gap-classic-pro-full-id-physical-unknown`). The subsequent W2 owner decision on #158 authorized the interim synthetic
+Game Pad collection described below. P6 later superseded its descriptor bytes
+with the bounded retail capture; the W2 consumer observations remain historical.
 Permissions, consumer discovery and timing remain separate acceptance questions;
 the earlier C5/W1 measurements are never relabelled as Part C measurements.
 
@@ -349,8 +408,8 @@ IDs and payload lengths were unchanged at W2; speaker IDs 14/18/19 were absent.
 The historical `wii-c5-functional-descriptor` fixture still records C5 and is
 used to verify the historical report body. W8 later appends source-sized speaker
 control reports and data handling for rumble only, without playback. No rnconrad candidate bytes were
-copied or used as a template. Retail-evidence replacement is tracked in#238;
-this interim descriptor makes no retail authenticity claim.
+copied or used as a template. The P6 retail fixture subsequently replaced this interim
+descriptor (#238); these historical W2 observations are not P6 consumer runs.
 
 Unsupported active MotionPlus A4FE selectors now use the same atomic deactivation
 path as 55 at A400F0: ACK, unplug/current-port statuses, data pause and preserved

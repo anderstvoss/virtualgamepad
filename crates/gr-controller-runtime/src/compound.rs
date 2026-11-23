@@ -505,6 +505,8 @@ mod tests {
                 reverse_events_drained: 0,
                 write_failures: 0,
                 lifecycle_events: 0,
+                dropped_writes: 0,
+                last_dropped_write: None,
                 last_error: None,
             }
         }
@@ -522,6 +524,7 @@ mod tests {
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
+                bus_type: 0x03,
                 physical_path: None,
                 device_name: "test".into(),
                 identity: NativeDeviceIdentity {
@@ -669,6 +672,8 @@ mod tests {
                 reverse_events_drained: 0,
                 write_failures: 0,
                 lifecycle_events: 0,
+                dropped_writes: 0,
+                last_dropped_write: None,
                 last_error: None,
             }
         }

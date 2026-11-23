@@ -1,6 +1,6 @@
 {
-  "corpus_commit": "a67781e2412eceea9440d20dbb350ad5d3352c25",
-  "generator_version": 6,
+  "corpus_commit": "b0b4e66f344d6cc072e42578b7782e3371f7bc4b",
+  "generator_version": 7,
   "inputs": {
     "fixtures/ds-cross.hex": "cf780dad4726100617c5c663522e37d6927393eca727a52c3285b50597437eda",
     "fixtures/ds-neutral.hex": "40380fbd97b0adccad7b02aaf75c990ecc323d99d641a2033fa6471ead8cd6fb",
@@ -61,6 +61,7 @@
     "fixtures/wii-c5-read-invalid-address.hex": "dbef8d56c5d78e47e09e26ae46677d059a73bb2f816abadd15b71ea8b3dbabcd",
     "fixtures/wii-c5-status-low.hex": "711a0311bd48c5cb597b6c38eeb0224e320bba875d75a75f3405a724b5daa452",
     "fixtures/wii-c5-write-invalid-address.hex": "2600a39f3dbb06f5c2714ac0828e6739ecba5812bea069dfe89bf19a6a7650ea",
+    "fixtures/wii-p6-retail-plus-rvl-cnt-01-descriptor.hex": "0a50350b86ef353e4d13769b14b34421435dad3d48bba7e9d759b3ebde98a6e5",
     "fixtures/xbox-series-xpad-evdev-golden.json": "2f15fcbc10f1281ad46e6d3c9ce9935f676598bd9106e38ed5450a2b632af345",
     "records/fixture/ds-cross.json": "ba6a5935b4b677fd550df5d38c49719342703eb73e02983ca718addbd6dcaa06",
     "records/fixture/ds-neutral.json": "d58251e43ddecbeba6c7eeefa9de3f1eccb62ad5565d3a16f46e8a23800db7ae",
@@ -121,6 +122,7 @@
     "records/fixture/wii-c5-read-invalid-address.json": "154da78d2c6c0de90f088274c7e4bf19f4b9658bb553ba419a5eda28f9bc1195",
     "records/fixture/wii-c5-status-low.json": "7d6f636cb8e4ce4bb14bb7ff09fb1e35a5feb3482792bcbfea873cdb49f54e6e",
     "records/fixture/wii-c5-write-invalid-address.json": "ccb2ff3fb10932ac937e2e0f3f0bdee794f94fed856813a2adbbe81dbe7b6701",
+    "records/fixture/wii-p6-retail-plus-rvl-cnt-01-descriptor.json": "6a5d59a0fa45825b46d15a67b4b48df4dcb84801ee3bf0be22aff0b353f031c8",
     "records/fixture/xbox-series-xpad-evdev-golden.json": "32b768321fbc2720c635dfea1a91963dbca0b6e13cccfc1ef86e240516aed47c"
   },
   "schema_version": 1

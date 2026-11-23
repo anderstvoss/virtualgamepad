@@ -54,14 +54,14 @@ id = "main-rumble"
 status = "source-evidence"
 test_id = "completes_each_rumble_request_and_retains_only_playback"
 evidence = ["xbox-series-xpad-trigger-rumble-limitation", "xbox-series-xpad-evdev-shape"]
-reason = "The virtual run observed both SDL magnitudes in the retained controller state."
+reason = "The virtual run observed both SDL magnitudes in the retained controller state. Decode sub-check: ff_rumble_decode_preserves_native_effect_and_stop_semantics (xbox-series-xpad-trigger-rumble-limitation); source only. Level: Generic."
 
 [functions.cells."linux.uhid.bluetooth"]
 status = "virtual-live"
 test_id = "host_requests_reply_for_each_report_class_and_keep_valid_rumble"
-evidence = []
+evidence = ["xbox-series-sdl-bluetooth-rumble", "xbox-cgap-descriptor-example"]
 live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
-reason = "Integrated SDL produced native output 0x03 and the controller retained both main motor amplitudes."
+reason = "Integrated SDL produced native output 0x03 and the controller retained both main motor amplitudes. Decode sub-check: series_native_rumble_decode; supplemental xbox-series-rumble-native-fields (research PR 155, pending pin); source only. Level: Native HID."
 
 [[functions]]
 id = "identity-and-enumeration"
@@ -115,14 +115,14 @@ id = "impulse-trigger-motors"
 status = "not-supported"
 test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
 evidence = ["xbox-series-xpad-trigger-rumble-limitation"]
-reason = "FF_RUMBLE exposes two main-motor amplitudes and no trigger channels."
+reason = "FF_RUMBLE exposes two main-motor amplitudes and no trigger channels. Level: Generic."
 
 [functions.cells."linux.uhid.bluetooth"]
 status = "virtual-live"
 test_id = "host_requests_reply_for_each_report_class_and_keep_valid_rumble"
-evidence = []
+evidence = ["xbox-series-sdl-bluetooth-rumble", "xbox-cgap-descriptor-example"]
 live_evidence = "docs/XBOX_SERIES_CHECKPOINT.md#rebased-product-candidate"
-reason = "Exact-candidate SDL HIDAPI independently submitted left-only and right-only commands received by the product on microsoft. Physical actuation remains unverified."
+reason = "Exact-candidate SDL HIDAPI independently submitted left-only and right-only commands received by the product on microsoft. Physical actuation remains unverified. Decode sub-check: series_native_rumble_decode; supplemental xbox-series-rumble-native-fields (research PR 155, pending pin); source only. Level: Native HID."
 
 [[functions]]
 id = "axis-fuzz"
@@ -144,13 +144,13 @@ id = "gain-and-periodic-ff"
 status = "not-supported"
 test_id = "completes_each_rumble_request_and_retains_only_playback"
 evidence = ["xbox-series-xpad-ff-memless"]
-reason = "The curated provider accepts conventional rumble effects only."
+reason = "The curated provider accepts conventional rumble effects only. Level: Generic."
 
 [functions.cells."linux.uhid.bluetooth"]
 status = "not-supported"
 test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
 evidence = []
-reason = "The native report map declares a four-channel rumble report; kernel-converted effects are consumer behavior."
+reason = "The native report map declares a four-channel rumble report; kernel-converted effects are consumer behavior. Level: Native HID."
 
 [[functions]]
 id = "button-triggered-rumble"
@@ -158,13 +158,13 @@ id = "button-triggered-rumble"
 status = "not-supported"
 test_id = "completes_each_rumble_request_and_retains_only_playback"
 evidence = ["xbox-series-xpad-evdev-shape"]
-reason = "The shared uinput effect policy refuses automatic button triggering."
+reason = "The shared uinput effect policy refuses automatic button triggering. Level: Generic."
 
 [functions.cells."linux.uhid.bluetooth"]
 status = "not-supported"
 test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
 evidence = []
-reason = "The native report has no automatic button-to-effect binding."
+reason = "The native report has no automatic button-to-effect binding. Level: Native HID."
 
 [[functions]]
 id = "battery-and-status"
@@ -186,13 +186,13 @@ id = "audio-and-accessories"
 status = "not-supported"
 test_id = "xbox_series_converged_constructors_reject_unavailable_targets_and_audio"
 evidence = []
-reason = "The evdev gamepad has no audio sidecar or accessory transport."
+reason = "The evdev gamepad has no audio sidecar or accessory transport. Level: Generic."
 
 [functions.cells."linux.uhid.bluetooth"]
 status = "not-supported"
 test_id = "family_contract_keeps_realization_specific_outputs_and_restrictions"
 evidence = []
-reason = "The measured Bluetooth HID map has no headset, microphone or accessory transport."
+reason = "The measured Bluetooth HID map has no headset, microphone or accessory transport. Level: Native HID."
 
 [[functions]]
 id = "motion-and-touch"

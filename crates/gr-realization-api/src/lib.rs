@@ -231,6 +231,10 @@ pub struct NativeEvdevRealization {
     /// Prepared correlation label passed unchanged to `UI_SET_PHYS`, not a file path.
     pub physical_path: Option<String>,
     pub device_name: String,
+    /// Linux input bus advertised through `UI_DEV_SETUP` (`BUS_USB` is 0x03,
+    /// `BUS_BLUETOOTH` is 0x05). It matches the bus of the native driver node
+    /// that the realization emulates.
+    pub bus_type: u16,
     pub identity: NativeDeviceIdentity,
     pub event_codes: Vec<u16>,
     pub key_codes: Vec<u16>,
@@ -528,7 +532,20 @@ pub struct ProviderDiagnostics {
     ///
     /// They never alter the session's polling contract or close a controller.
     pub lifecycle_events: u64,
+    /// Malformed unacknowledged writes discarded without failing the session.
+    pub dropped_writes: u64,
+    /// Metadata only, without report payload or device identity.
+    pub last_dropped_write: Option<DroppedWrite>,
     pub last_error: Option<String>,
+}
+/// Metadata for the most recently discarded provider write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DroppedWrite {
+    /// Native provider event type (`UHID_OUTPUT` is 6).
+    pub event_type: u32,
+    pub report_id: Option<u8>,
+    /// Complete wire length, including a numbered report ID.
+    pub length: usize,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventReadiness {
@@ -704,6 +721,7 @@ mod tests {
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
+                bus_type: 0x03,
                 physical_path: None,
                 device_name: "test".into(),
                 identity: NativeDeviceIdentity {

@@ -77,7 +77,7 @@ class ResearchWorkflow(unittest.TestCase):
         MODULE.check(self.root, write=True)
         generated = self.root / 'tests/fixtures/protocol-research'
         manifest = json.loads((generated / 'manifest.json').read_text())
-        self.assertEqual(manifest['generator_version'], 6)
+        self.assertEqual(manifest['generator_version'], 7)
         self.assertEqual(len(list(generated.glob('wii-c5-*.hex'))), 15)
         self.assertEqual(len(bytes.fromhex((generated / 'wii-c5-neutral-37.hex').read_text())), 22)
         path = self.corpus / 'fixtures/wii-c5-neutral-37.hex'
@@ -136,6 +136,31 @@ class ResearchWorkflow(unittest.TestCase):
             'commit', '-m', 'wrong Steam shape with valid hash')
         self.pin(git(self.corpus, 'rev-parse', 'HEAD'))
         with self.assertRaisesRegex(ValueError, 'unexpected fixture size: steam-c6-neutral-42'):
+            MODULE.check(self.root, write=True)
+
+    def test_physical_wii_descriptor_matches_retail_capture_and_rejects_modified_bytes(self):
+        MODULE.check(self.root, write=True)
+        generated = self.root / 'tests/fixtures/protocol-research'
+        name = 'wii-p6-retail-plus-rvl-cnt-01-descriptor'
+        raw = bytes(ast.literal_eval((generated / (name + '.rs')).read_text()))
+        self.assertEqual(len(raw), 217)
+        self.assertEqual(raw, bytes.fromhex((generated / (name + '.hex')).read_text()))
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),
+                         '4d40cb52850ded69a8c1474fff35dfd3e102d4b10ad3579258ab37f4a36fb3ef')
+        # Changing a file and its registry digest must not rewrite a capture.
+        path = self.corpus / 'fixtures' / (name + '.hex')
+        damaged = bytearray.fromhex(path.read_text())
+        damaged[-2] ^= 1
+        path.write_text(damaged.hex() + '\n')
+        record_path = self.corpus / 'records/fixture' / (name + '.json')
+        record = json.loads(record_path.read_text())
+        record['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        record_path.write_text(json.dumps(record))
+        git(self.corpus, 'add', '.')
+        git(self.corpus, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+            'commit', '-m', 'changed Wii descriptor with matching text hash')
+        self.pin(git(self.corpus, 'rev-parse', 'HEAD'))
+        with self.assertRaisesRegex(ValueError, 'physical descriptor raw hash mismatch'):
             MODULE.check(self.root, write=True)
 
     def test_physical_steam_descriptor_is_compiled_without_byte_changes(self):

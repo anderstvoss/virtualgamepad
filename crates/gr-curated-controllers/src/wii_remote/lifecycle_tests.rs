@@ -68,6 +68,8 @@ impl NativeProviderSession for Fake {
             reverse_events_drained: 0,
             write_failures: 0,
             lifecycle_events: 0,
+            dropped_writes: 0,
+            last_dropped_write: None,
             last_error: None,
         }
     }
@@ -160,24 +162,35 @@ fn wii_restores_the_typed_address_and_reports_the_actual_provider_labels() {
     .unwrap();
     let association = restored.association();
     assert_eq!(restored.identity(), first.identity());
-    assert_ne!(
+    assert_eq!(
         association.requested_unique_id,
         first.association().requested_unique_id
+    );
+    assert_eq!(
+        association.requested_unique_id.as_deref(),
+        Some(crate::common::address_label(identity.bytes()).as_str())
+    );
+    assert_ne!(
+        first.association().requested_unique_id,
+        second.association().requested_unique_id
     );
     assert_ne!(
         association.requested_physical_path,
         first.association().requested_physical_path
     );
     assert!(restored.surface().restrictions().iter().any(|restriction| {
-        restriction.feature == "host-visible Bluetooth identity"
-            && restriction.reason.contains("available on the handle")
+        restriction.feature == "Bluetooth radio pairing"
+            && restriction.reason.contains("kernel uniq")
     }));
     let record = fake.0.lock().unwrap();
     let NativeControllerRealization::Uhid(spec) = &record.opened[0].realization else {
         panic!("Bluetooth UHID");
     };
     assert_eq!(spec.bus_type, 5);
-    assert!(spec.unique_id.starts_with("virtualgamepad-"));
+    assert_eq!(
+        spec.unique_id,
+        crate::common::address_label(identity.bytes())
+    );
     assert_eq!(
         association.requested_unique_id.as_deref(),
         Some(spec.unique_id.as_str())
@@ -197,6 +210,18 @@ fn wii_restores_the_typed_address_and_reports_the_actual_provider_labels() {
     }
     assert_eq!(second_io.0.lock().unwrap().closed, 1);
     assert_eq!(fake.0.lock().unwrap().closed, 1);
+
+    let (mut fresh, fresh_io) = create(WiiEepromImage::default());
+    assert_ne!(
+        fresh.association().requested_unique_id,
+        first.association().requested_unique_id
+    );
+    assert_ne!(
+        fresh.association().requested_unique_id,
+        second.association().requested_unique_id
+    );
+    fresh.close();
+    assert_eq!(fresh_io.0.lock().unwrap().closed, 1);
 }
 
 fn output(fake: &Fake, id: u8, payload: &[u8]) {

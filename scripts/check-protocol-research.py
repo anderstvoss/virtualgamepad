@@ -9,7 +9,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-GENERATOR_VERSION = 6
+GENERATOR_VERSION = 7
 SUBMODULE = 'protocol-research'
 
 
@@ -100,6 +100,7 @@ def check(root, write=False, verify_remote=False):
                                 ('wii-c5-write-invalid-address', 5),
                                 ('wii-c5-read-invalid-address', 22),
                                 ('wii-c5-functional-descriptor', 191),
+                                ('wii-p6-retail-plus-rvl-cnt-01-descriptor', 217),
                                 ('wii-c5-evdev-golden', None),
                                 ('xbox-series-xpad-evdev-golden', None),
                                 ('steam-c6-neutral-42', 54),
@@ -145,7 +146,8 @@ def check(root, write=False, verify_remote=False):
         record_bytes = (research / record_path).read_bytes()
         record = json.loads(record_bytes)
         path = (research / record['path']).resolve()
-        physical = name in ('steam-s3-1302-report-descriptor',
+        physical = name in ('wii-p6-retail-plus-rvl-cnt-01-descriptor',
+                            'steam-s3-1302-report-descriptor',
                             'steam-d9-1302-attributes', 'steam-d9-steam-settings',
                             'steam-d9-lizard-desktop')
         expected_kind = 'physical' if physical else 'synthetic'
@@ -171,6 +173,9 @@ def check(root, write=False, verify_remote=False):
             # steam-s3-1302-report-shapes / steam-s3-1302-usb-interface.
             # Compile the exact decoded capture, without parsing profiles at runtime.
             raw = bytes.fromhex(data.decode())
+            if name == 'wii-p6-retail-plus-rvl-cnt-01-descriptor' and hashlib.sha256(raw).hexdigest() != (
+                    '4d40cb52850ded69a8c1474fff35dfd3e102d4b10ad3579258ab37f4a36fb3ef'):
+                raise ValueError('physical descriptor raw hash mismatch: ' + name)
             if name == 'steam-s3-1302-report-descriptor' and hashlib.sha256(raw).hexdigest() != (
                     '315a037c849ef9510d222ae520bb18c1b72552d26eb116c91b0750901a5c51fd'):
                 raise ValueError('physical descriptor raw hash mismatch: ' + name)

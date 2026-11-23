@@ -250,6 +250,8 @@ impl NativeProviderSession for Session {
             reverse_events_drained: 0,
             write_failures: 0,
             lifecycle_events: 0,
+            dropped_writes: 0,
+            last_dropped_write: None,
             last_error: None,
         };
         for component in diagnostics.components {

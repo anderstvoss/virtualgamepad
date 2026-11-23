@@ -83,6 +83,7 @@ pub struct SampleStreams {
     playback: PcmConsumer,
     microphone: PcmProducer,
     playback_loss: PcmObserver,
+    microphone_loss: PcmObserver,
     timing: Arc<PumpTiming>,
     stop: Arc<AtomicBool>,
     failure: Arc<Mutex<Option<String>>>,
@@ -104,6 +105,7 @@ impl SampleStreams {
         let (microphone_writer, microphone_reader) =
             pcm_queue(microphone_format, MICROPHONE_CAPACITY_FRAMES).map_err(io::Error::other)?;
         let playback_loss = playback_writer.observer();
+        let microphone_loss = microphone_writer.observer();
         let mut playback_socket = Receiver::new(
             playback,
             Format::new(profile, Direction::Playback, generation)?,
@@ -150,6 +152,7 @@ impl SampleStreams {
             playback: playback_reader,
             microphone: microphone_writer,
             playback_loss,
+            microphone_loss,
             timing,
             stop,
             failure,
@@ -197,6 +200,16 @@ impl SampleStreams {
     #[must_use]
     pub fn dropped_playback_frames(&self) -> u64 {
         self.playback_loss.discarded_frames()
+    }
+    /// Local client queue, excluding the worker and the USB/graph endpoint.
+    #[must_use]
+    pub fn playback_accounting(&self) -> gr_audio_contract::queue::PcmQueueAccounting {
+        self.playback_loss.accounting()
+    }
+    /// Local client queue, excluding framed sends in flight and worker consumption.
+    #[must_use]
+    pub fn microphone_accounting(&self) -> gr_audio_contract::queue::PcmQueueAccounting {
+        self.microphone_loss.accounting()
     }
     #[must_use]
     pub fn last_error(&self) -> Option<String> {

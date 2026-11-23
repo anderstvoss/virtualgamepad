@@ -14,6 +14,8 @@ use gr_controller_contract::{
     TargetRestriction, TriggerInput, TriggerInputKind, TriggerStack,
 };
 mod protocol;
+mod spi;
+pub use spi::SwitchProSpiImage;
 
 use gr_controller_wire::SWITCH_PRO_USB_DESCRIPTOR;
 use gr_realization_api::{
@@ -39,6 +41,38 @@ impl SwitchProAxis {
 pub struct SwitchProMotionSample {
     pub accelerometer: [i16; 3],
     pub gyroscope: [i16; 3],
+}
+/// Source-supported Switch Pro battery level; no voltage thresholds are inferred.
+/// Research: `swpro-l0-device-battery-connection-bits`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SwitchProBatteryLevel {
+    Empty,
+    Critical,
+    Low,
+    Medium,
+    #[default]
+    Full,
+}
+
+/// Native battery report status. Pro connection nibble 0 means unpowered;
+/// bit zero indicates host/USB power (other controller types are out of scope).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SwitchProBattery {
+    pub level: SwitchProBatteryLevel,
+    pub charging: bool,
+    pub usb_powered: bool,
+}
+impl SwitchProBattery {
+    const fn wire_byte(self) -> u8 {
+        let level = match self.level {
+            SwitchProBatteryLevel::Empty => 0,
+            SwitchProBatteryLevel::Critical => 2,
+            SwitchProBatteryLevel::Low => 4,
+            SwitchProBatteryLevel::Medium => 6,
+            SwitchProBatteryLevel::Full => 8,
+        };
+        ((level | (self.charging as u8)) << 4) | (self.usb_powered as u8)
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SwitchProControl {
@@ -86,6 +120,7 @@ impl Default for SwitchProInputs {
 const fn motion_targets() -> RealizationTargetSet {
     RealizationTargetSet::new(&[
         RealizationTarget::LINUX_UHID_USB,
+        RealizationTarget::LINUX_UHID_BLUETOOTH,
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
     ])
 }
@@ -182,6 +217,9 @@ impl SwitchProInputs {
 pub struct SwitchProStatus {
     timer: u8,
     stream_enabled: bool,
+    battery: SwitchProBattery,
+    imu_gating: bool,
+    imu_enabled: bool,
 }
 impl SwitchProStatus {
     /// Accepted motion clock; the transport has a separate report counter.
@@ -192,6 +230,21 @@ impl SwitchProStatus {
     #[must_use]
     pub const fn stream_enabled(self) -> bool {
         self.stream_enabled
+    }
+    /// Current caller-selected battery and Pro power status.
+    #[must_use]
+    pub const fn battery(&self) -> SwitchProBattery {
+        self.battery
+    }
+    /// Whether source-only IMU gating was selected at creation.
+    #[must_use]
+    pub const fn imu_gating(&self) -> bool {
+        self.imu_gating
+    }
+    /// Latest accepted 0x40 IMU enable state.
+    #[must_use]
+    pub const fn imu_enabled(self) -> bool {
+        self.imu_enabled
     }
 }
 
@@ -336,6 +389,25 @@ static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "console pairing",
     reason: "Steam/Linux mode deliberately omits Switch-console pairing and SPI calibration persistence",
 }];
+static BT_RESTRICTIONS: [TargetRestriction; 5] = [
+    RESTRICTIONS[0],
+    TargetRestriction {
+        feature: "Bluetooth radio and reconnection",
+        reason: "Bluetooth-bus UHID is a local HID presentation, with no radio, BlueZ, discovery, pairing or reconnection transport",
+    },
+    TargetRestriction {
+        feature: "NFC and infrared MCU",
+        reason: "the Switch Pro-specific MCU 0x11/0x31 exchange is not established by pinned consumer sources; controller-family research leads are insufficient",
+    },
+    TargetRestriction {
+        feature: "Bluetooth controller audio",
+        reason: "the selected UHID HID report surface carries no PCM or headset transport; Bluetooth audio requires a separate endpoint",
+    },
+    TargetRestriction {
+        feature: "opposing D-pad directions in simple report mode",
+        reason: "Bluetooth input report 0x3F uses a single hat that cannot represent simultaneous opposing directions; full mode 0x30 preserves independent bits",
+    },
+];
 static EVDEV_RESTRICTIONS: [TargetRestriction; 5] = [
     common::FEEDBACK_RESTRICTION,
     TargetRestriction {
@@ -539,6 +611,30 @@ static HID_SURFACE: SwitchProSurface = SwitchProSurface {
     }
     .build(),
 };
+
+/* Synthetic, source-derived Bluetooth-bus descriptor. Pinned consumer parsers
+ * establish report IDs and payload lengths, not retail SDP/descriptor bytes.
+ * No USB-proprietary report IDs, MCU mode, or audio endpoints are declared.
+ */
+const SWITCH_PRO_BT_DESCRIPTOR: &[u8] = &[
+    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x06, 0x00, 0xff, 0x85, 0x3f, 0x09, 0x01, 0x75, 0x08, 0x95,
+    0x0b, 0x81, 0x02, 0x85, 0x30, 0x09, 0x02, 0x75, 0x08, 0x95, 0x3f, 0x81, 0x02, 0x85, 0x21, 0x09,
+    0x03, 0x75, 0x08, 0x95, 0x3f, 0x81, 0x02, 0x85, 0x01, 0x09, 0x04, 0x75, 0x08, 0x95, 0x30, 0x91,
+    0x02, 0x85, 0x10, 0x09, 0x05, 0x75, 0x08, 0x95, 0x30, 0x91, 0x02, 0xc0,
+];
+static BT_SURFACE: SwitchProSurface = SwitchProSurface {
+    common: gr_controller_contract::construction::ControllerSurfaceSpec {
+        target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+        validation_status: RealizationValidationStatus::ResearchBacked,
+        digital_controls: &DIGITAL,
+        axes: &AXES,
+        outputs: &OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
+        restrictions: &BT_RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
+    }
+    .build(),
+};
 static RETAINED_DUMMY: [TargetRestriction; 2] =
     [RESTRICTIONS[0], crate::retained::DUMMY_RESTRICTION];
 static USB_SURFACE: SwitchProSurface = SwitchProSurface {
@@ -554,13 +650,16 @@ static USB_SURFACE: SwitchProSurface = SwitchProSurface {
     }
     .build(),
 };
-pub struct SwitchProDefinition;
+#[derive(Clone, Default)]
+pub struct SwitchProDefinition {
+    spi_image: SwitchProSpiImage,
+}
 impl RealizationControllerDefinition for SwitchProDefinition {
     fn controller_id(&self) -> ControllerId {
         ControllerId::new("virtualgamepad.switch-pro")
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        static E: [RealizationManifestEntry; 3] = [
+        static E: [RealizationManifestEntry; 4] = [
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
@@ -577,6 +676,13 @@ impl RealizationControllerDefinition for SwitchProDefinition {
             },
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UHID_USB,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: true,
+                },
+                audio_sidecar: None,
+            },
+            RealizationManifestEntry {
+                target: RealizationTarget::LINUX_UHID_BLUETOOTH,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -609,6 +715,7 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
             sel.target,
             RealizationTarget::LINUX_UINPUT
                 | RealizationTarget::LINUX_UHID_USB
+                | RealizationTarget::LINUX_UHID_BLUETOOTH
                 | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
         ) {
             return Err(common::unavailable(sel.target));
@@ -634,6 +741,12 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
         };
         if sel.target == RealizationTarget::LINUX_UHID_USB {
             Ok(ProviderFrame::HidInput { report_id, bytes })
+        } else if sel.target == RealizationTarget::LINUX_UHID_BLUETOOTH {
+            if s.1.stream_enabled {
+                Ok(ProviderFrame::HidInput { report_id, bytes })
+            } else {
+                Ok(switch_simple_frame(s))
+            }
         } else {
             let Some(report_id) = report_id else {
                 unreachable!("Switch USB reports are numbered")
@@ -703,7 +816,7 @@ fn pack(out: &mut [u8], x: i16, y: i16) {
 fn switch_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
     let mut b = vec![0; 63];
     b[0] = s.1.timer;
-    b[1] = 0x80;
+    b[1] = s.1.battery.wire_byte();
     // `FaceButton` follows the host gamepad layout, so its South/East controls
     // map to Nintendo B/A respectively (the printed labels are reversed).
     b[2] = u8::from(s.0.face[2])
@@ -738,6 +851,14 @@ fn switch_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
         s.0.right.1.raw().saturating_neg(),
     );
     b[11] = 9;
+    // Optional source-only compatibility gate; default keeps the prior raw
+    // samples even before the host's 0x40 command.
+    if s.1.imu_gating && !s.1.imu_enabled {
+        return ProviderFrame::HidInput {
+            report_id: Some(0x30),
+            bytes: b,
+        };
+    }
     let ax = s.0.motion.accelerometer[1] / 4;
     let ay = s.0.motion.accelerometer[0].wrapping_neg() / 4;
     let az = s.0.motion.accelerometer[2] / 4;
@@ -758,6 +879,57 @@ fn switch_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
     ProviderFrame::HidInput {
         report_id: Some(0x30),
         bytes: b,
+    }
+}
+
+// SDL 535d80b lines 137-152 and 2183-2257: 0x3f uses separate
+// face/shoulder, menu and hat bytes followed by 16-bit stick codes.
+// SDL 535d80b lines 1107-1122: simple-mode neutral raw stick is 0x8000.
+// This is a synthetic golden encoding, not a captured retail report.
+fn switch_simple_frame(s: &(SwitchProInputs, SwitchProStatus)) -> ProviderFrame {
+    let mut bytes = vec![0; 11];
+    bytes[0] = u8::from(s.0.face[0])
+        | (u8::from(s.0.face[1]) << 1)
+        | (u8::from(s.0.face[2]) << 2)
+        | (u8::from(s.0.face[3]) << 3)
+        | (u8::from(s.0.buttons[0]) << 4)
+        | (u8::from(s.0.buttons[1]) << 5)
+        | (u8::from(s.0.buttons[2]) << 6)
+        | (u8::from(s.0.buttons[3]) << 7);
+    bytes[1] = u8::from(s.0.buttons[4])
+        | (u8::from(s.0.buttons[5]) << 1)
+        | (u8::from(s.0.buttons[8]) << 2)
+        | (u8::from(s.0.buttons[9]) << 3)
+        | (u8::from(s.0.buttons[6]) << 4)
+        | (u8::from(s.0.buttons[7]) << 5);
+    let [up, down, left, right] = s.0.dpad;
+    bytes[2] = match (up, down, left, right) {
+        (true, false, false, false) => 0,
+        (true, false, false, true) => 1,
+        (false, false, false, true) => 2,
+        (false, true, false, true) => 3,
+        (false, true, false, false) => 4,
+        (false, true, true, false) => 5,
+        (false, false, true, false) => 6,
+        (true, false, true, false) => 7,
+        _ => 8,
+    };
+    for (idx, value) in [
+        s.0.left.0.raw(),
+        s.0.left.1.raw(),
+        s.0.right.0.raw(),
+        s.0.right.1.raw(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let centered = u16::try_from(i32::from(value) - i32::from(i16::MIN))
+            .expect("signed stick offset is a u16 raw code");
+        bytes[3 + idx * 2..5 + idx * 2].copy_from_slice(&centered.to_le_bytes());
+    }
+    ProviderFrame::HidInput {
+        report_id: Some(0x3f),
+        bytes,
     }
 }
 
@@ -808,6 +980,7 @@ fn switch_subcommand_reply(
     subcommand: u8,
     arguments: &[u8],
     identity: SwitchProIdentity,
+    spi_image: &SwitchProSpiImage,
 ) -> (ProviderFrame, bool) {
     let mut bytes = vec![0; 63];
     bytes[..12].copy_from_slice(&switch_input_prefix(state));
@@ -821,7 +994,9 @@ fn switch_subcommand_reply(
             // swpro-l0-consumer-linux-mac-uniq: device-info uses display order.
             bytes[18..24].copy_from_slice(&identity.bytes());
             bytes[24] = 1;
-            bytes[25] = 0; // Colors are not available in SPI.
+            // swpro-l0-device-factory-spi-map / swpro-l0-device-info02-fields:
+            // advertise SPI colours only if all RGB bytes were supplied.
+            bytes[25] = u8::from(spi_image.colors_available());
         }
         0x10 if arguments.len() >= 5 => {
             bytes[12] = 0x90;
@@ -833,7 +1008,7 @@ fn switch_subcommand_reply(
                 .take(usize::from(arguments[4]))
                 .enumerate()
             {
-                *byte = switch_spi_byte(
+                *byte = spi_image.read(
                     address.wrapping_add(u32::try_from(index).expect("SPI reply index fits u32")),
                 );
             }
@@ -847,6 +1022,8 @@ fn switch_subcommand_reply(
             bytes[14..20].copy_from_slice(&[0, 0xcc, 0, 0xee, 0, 0xff]);
         }
         0x21 => bytes[12] = 0xa0,
+        // Host SPI writes (0x11, 0x12) are not implemented and take this
+        // generic ACK. Do not mutate caller-owned images.
         _ => bytes[12] = 0x80,
     }
     (
@@ -877,8 +1054,27 @@ fn hid(identity: SwitchProIdentity) -> NativeControllerRealization {
         numbered_feature_reports: false,
     })
 }
+fn bluetooth_hid(identity: SwitchProIdentity) -> NativeControllerRealization {
+    NativeControllerRealization::Uhid(NativeHidRealization {
+        target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+        bus_type: 5,
+        device_name: "Pro Controller".into(),
+        physical_path: "virtualgamepad/uhid/switch-pro-bluetooth".into(),
+        unique_id: common::address_label(identity.bytes()),
+        identity: NativeDeviceIdentity {
+            vendor_id: 0x057e,
+            product_id: 0x2009,
+            version: 0x0220,
+        },
+        descriptor: SWITCH_PRO_BT_DESCRIPTOR.to_vec(),
+        numbered_input_reports: true,
+        numbered_output_reports: true,
+        numbered_feature_reports: false,
+    })
+}
 fn evdev_realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
+        bus_type: 0x03,
         physical_path: None,
         device_name: "Pro Controller".into(),
         identity: NativeDeviceIdentity {
@@ -925,11 +1121,18 @@ impl SwitchProIdentity {
 pub struct SwitchProController(
     common::ControllerSession<SwitchProDefinition>,
     SwitchProIdentity,
+    SwitchProSpiImage,
 );
 impl SwitchProController {
     #[must_use]
     pub const fn identity(&self) -> SwitchProIdentity {
         self.1
+    }
+
+    /// Caller-owned read image retained for recreation and runtime export.
+    #[must_use]
+    pub const fn spi_image(&self) -> &SwitchProSpiImage {
+        &self.2
     }
 
     /// Latest accepted host values and revision, retained after close. USB
@@ -943,6 +1146,17 @@ impl SwitchProController {
         self.0
             .optional_protocol()
             .map_or(self.0.state().1.stream_enabled, |p| p.stream_enabled)
+    }
+    #[must_use]
+    pub fn battery(&self) -> SwitchProBattery {
+        self.0.state().1.battery
+    }
+    /// Live caller battery metadata; updates the subsequent 0x30 and 0x21 prefixes.
+    pub fn set_battery(&mut self, battery: SwitchProBattery) -> Result<(), ControlError> {
+        self.0.update_state(|state| {
+            state.1.battery = battery;
+            Ok(())
+        })
     }
     #[must_use]
     pub fn motion_report_counter(&self) -> u8 {
@@ -981,6 +1195,10 @@ impl SwitchProController {
     pub fn status(&self) -> SwitchProStatus {
         SwitchProStatus {
             stream_enabled: self.stream_enabled(),
+            imu_enabled: self.0.optional_protocol().map_or(
+                self.0.state().1.imu_enabled,
+                protocol::SwitchUsbProtocol::imu_enabled,
+            ),
             ..self.0.state().1
         }
     }
@@ -993,6 +1211,7 @@ impl SwitchProController {
         match self.0.selection().target {
             RealizationTarget::LINUX_UINPUT => &EVDEV_SURFACE,
             RealizationTarget::LINUX_UHID_USB => &HID_SURFACE,
+            RealizationTarget::LINUX_UHID_BLUETOOTH => &BT_SURFACE,
             _ => &USB_SURFACE,
         }
     }
@@ -1077,7 +1296,10 @@ impl SwitchProController {
         self.0.commit()
     }
     pub fn refresh_motion(&mut self) -> Result<(), CommitError> {
-        if self.0.selection().target == RealizationTarget::LINUX_UHID_USB {
+        if matches!(
+            self.0.selection().target,
+            RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+        ) {
             return self.0.commit();
         }
         if self.0.state().1.stream_enabled {
@@ -1117,7 +1339,10 @@ impl SwitchProController {
         &mut self,
         callback: &mut dyn FnMut(SwitchProOutputEvent),
     ) -> Result<(), ProviderError> {
-        if self.0.selection().target == RealizationTarget::LINUX_UHID_USB {
+        if matches!(
+            self.0.selection().target,
+            RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+        ) {
             return self
                 .0
                 .drain(&mut |event| callback(SwitchProOutputEvent::from(event)));
@@ -1126,6 +1351,7 @@ impl SwitchProController {
         self.0
             .with_sink(|sink| sink.drain(&mut |event| events.push(event)))?;
         let mut enable = false;
+        let mut requested_imu = None;
         let state = self.0.state().clone();
         let mut replies = Vec::new();
         for event in events {
@@ -1139,9 +1365,12 @@ impl SwitchProController {
                     bytes,
                 } if bytes.len() >= 10 => {
                     let (reply, stream) =
-                        switch_subcommand_reply(&state, bytes[9], &bytes[10..], self.1);
+                        switch_subcommand_reply(&state, bytes[9], &bytes[10..], self.1, &self.2);
                     replies.push(reply);
                     enable |= stream;
+                    if bytes[9] == 0x40 {
+                        requested_imu = bytes.get(10).map(|value| *value != 0);
+                    }
                 }
                 RawReverseEvent::HidSetReportRequest { request_id, .. } => {
                     replies.push(ProviderFrame::HidSetReportReply {
@@ -1160,10 +1389,15 @@ impl SwitchProController {
             }
             Ok::<(), ProviderError>(())
         })?;
-        if enable {
+        if enable || requested_imu.is_some() {
             self.0
                 .update_state(|s| {
-                    s.1.stream_enabled = true;
+                    if enable {
+                        s.1.stream_enabled = true;
+                    }
+                    if let Some(enabled) = requested_imu {
+                        s.1.imu_enabled = enabled;
+                    }
                     Ok(())
                 })
                 .map_err(|e| ProviderError::Open {
@@ -1195,7 +1429,7 @@ fn dummy_hcd_reply(
     wire.extend_from_slice(&bytes);
     Ok(ProviderFrame::DummyHcdInput(wire))
 }
-/// Encoded motor words from one Switch host output; not decoded amplitudes.
+/// Original motor words from one Switch host output; not physical actuator measurements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SwitchProRumble {
     pub packet_counter: u8,
@@ -1203,9 +1437,523 @@ pub struct SwitchProRumble {
     pub right: [u8; 4],
 }
 
+/// A band's source-derived motor intent. Missing values require earlier motor state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchProRumbleBand {
+    frequency_step: Option<i16>,
+    amplitude_step: Option<i16>,
+    center_hz: u16,
+}
+
+impl SwitchProRumbleBand {
+    /// Frequency in Hz, or None when the previous frequency is unknown.
+    #[must_use]
+    pub fn frequency_hz(&self) -> Option<f32> {
+        self.frequency_step
+            .map(|step| f32::from(self.center_hz) * (f32::from(step) / 32.0).exp2())
+    }
+
+    /// Dimensionless `MissionControl` compatibility ratio (absolute index 127 = 1).
+    /// This is not acceleration, displacement, force, or a safe-drive guarantee.
+    /// None means an earlier amplitude is required.
+    #[must_use]
+    pub fn amplitude_ratio(&self) -> Option<f32> {
+        self.amplitude_step.map(|step| {
+            if step < -254 {
+                0.0
+            } else {
+                (f32::from(step) / 32.0).exp2()
+            }
+        })
+    }
+
+    fn unknown(center_hz: u16) -> Self {
+        Self {
+            frequency_step: None,
+            amplitude_step: None,
+            center_hz,
+        }
+    }
+
+    fn set_frequency(&mut self, index: i16) {
+        self.frequency_step = Some(index - 64);
+    }
+
+    fn set_amplitude(&mut self, index: i16) {
+        self.amplitude_step = Some(match index {
+            0 => -256,
+            1..=15 => 8 * index - 248,
+            16..=31 => 2 * index - 158,
+            _ => index - 127,
+        });
+    }
+
+    fn relative(&mut self, command: i16) {
+        match command {
+            0 => {
+                self.frequency_step = Some(0);
+                self.amplitude_step = Some(-256);
+            }
+            1..=11 => self.amplitude_step = Some(-16 * (command - 1)),
+            12..=16 => self.frequency_step = Some(6 * (command - 14)),
+            17..=31 => {
+                let index = command - 17;
+                let amplitude_delta = match index / 3 {
+                    0 => 4,
+                    1 => 1,
+                    2 => 0,
+                    3 => -1,
+                    _ => -4,
+                };
+                let frequency_delta = 1 - index % 3;
+                self.amplitude_step = self
+                    .amplitude_step
+                    .map(|step| (step + amplitude_delta).clamp(-256, 0));
+                self.frequency_step = self
+                    .frequency_step
+                    .map(|step| (step + frequency_delta).clamp(-64, 64));
+            }
+            _ => unreachable!("relative command is a five-bit field"),
+        }
+    }
+}
+
+/// One ordered sample of a single motor's high- and low-band intent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchProRumbleSample {
+    high: SwitchProRumbleBand,
+    low: SwitchProRumbleBand,
+}
+
+impl SwitchProRumbleSample {
+    #[must_use]
+    pub const fn high(&self) -> SwitchProRumbleBand {
+        self.high
+    }
+
+    #[must_use]
+    pub const fn low(&self) -> SwitchProRumbleBand {
+        self.low
+    }
+
+    fn unknown() -> Self {
+        Self {
+            high: SwitchProRumbleBand::unknown(320),
+            low: SwitchProRumbleBand::unknown(160),
+        }
+    }
+
+    fn relative_pair(&mut self, high: i16, low: i16) {
+        self.high.relative(high);
+        self.low.relative(low);
+    }
+}
+
+/// Bounded source-supported sample sequences, or an unpinned encoding.
+/// A recognized relative sample may still contain unknown individual values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SwitchProRumbleSamples {
+    NoSamples,
+    One([SwitchProRumbleSample; 1]),
+    Two([SwitchProRumbleSample; 2]),
+    Three([SwitchProRumbleSample; 3]),
+    Unknown,
+}
+
+impl SwitchProRumbleSamples {
+    /// None for an unpinned encoding; an empty slice for a no-sample word.
+    #[must_use]
+    pub fn as_slice(&self) -> Option<&[SwitchProRumbleSample]> {
+        match self {
+            Self::NoSamples => Some(&[]),
+            Self::One(samples) => Some(samples),
+            Self::Two(samples) => Some(samples),
+            Self::Three(samples) => Some(samples),
+            Self::Unknown => None,
+        }
+    }
+}
+
+/// One motor word, including its unchanged bytes even when decoding is unknown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchProRumbleWord {
+    pub raw: [u8; 4],
+    pub samples: SwitchProRumbleSamples,
+}
+
+/// The two independently decoded motors of a host output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchProRumbleDecoded {
+    pub left: SwitchProRumbleWord,
+    pub right: SwitchProRumbleWord,
+}
+
+impl SwitchProRumble {
+    /// Decode without assuming any previous motor intent.
+    #[must_use]
+    pub fn decode(&self) -> SwitchProRumbleDecoded {
+        self.decode_with_previous(None, None)
+    }
+
+    /// Decode with explicit preceding samples for each side, if available.
+    /// A no-sample word leaves previous state unchanged; an unknown word must
+    /// invalidate it. Never reuse earlier samples across a gap or reset.
+    #[must_use]
+    pub fn decode_with_previous(
+        &self,
+        left: Option<SwitchProRumbleSample>,
+        right: Option<SwitchProRumbleSample>,
+    ) -> SwitchProRumbleDecoded {
+        SwitchProRumbleDecoded {
+            left: decode_switch_pro_rumble_word_with_previous(self.left, left),
+            right: decode_switch_pro_rumble_word_with_previous(self.right, right),
+        }
+    }
+}
+
+/// Decode one native word with no assumed preceding state.
+#[must_use]
+pub fn decode_switch_pro_rumble_word(raw: [u8; 4]) -> SwitchProRumbleWord {
+    decode_switch_pro_rumble_word_with_previous(raw, None)
+}
+
+/// Decode one word using only the supplied previous sample and native bytes.
+/// Model: swpro-l0-rumble-absolute-layout, swpro-l0-rumble-sample-layouts,
+/// swpro-l0-rumble-logarithmic-units, swpro-l0-rumble-relative-commands.
+/// Source evidence only; no physical actuator response is asserted.
+#[must_use]
+pub fn decode_switch_pro_rumble_word_with_previous(
+    raw: [u8; 4],
+    previous: Option<SwitchProRumbleSample>,
+) -> SwitchProRumbleWord {
+    let word = u32::from_le_bytes(raw);
+    let field = |shift: u32, mask: u32| i16::from(((word >> shift) & mask).to_le_bytes()[0]);
+    let mut sample = previous.unwrap_or_else(SwitchProRumbleSample::unknown);
+
+    let samples = match word >> 30 {
+        0 if word == 0 => SwitchProRumbleSamples::NoSamples,
+        1 if word.trailing_zeros() >= 20 => {
+            sample.relative_pair(field(20, 31), field(25, 31));
+            SwitchProRumbleSamples::One([sample])
+        }
+        1 if word.trailing_zeros() >= 2 => {
+            sample.high.set_frequency(field(2, 127));
+            sample.high.set_amplitude(field(9, 127));
+            sample.low.set_frequency(field(16, 127));
+            sample.low.set_amplitude(field(23, 127));
+            SwitchProRumbleSamples::One([sample])
+        }
+        1 if word & 2 != 0 => {
+            let selected = if word & 1 != 0 {
+                &mut sample.high
+            } else {
+                &mut sample.low
+            };
+            if word & 4 != 0 {
+                selected.set_frequency(field(23, 127));
+            } else {
+                selected.set_amplitude(field(23, 127));
+            }
+            let first = sample;
+            sample.relative_pair(field(13, 31), field(18, 31));
+            let second = sample;
+            sample.relative_pair(field(3, 31), field(8, 31));
+            SwitchProRumbleSamples::Three([first, second, sample])
+        }
+        2 if word.trailing_zeros() >= 10 => {
+            sample.relative_pair(field(20, 31), field(25, 31));
+            let first = sample;
+            sample.relative_pair(field(10, 31), field(15, 31));
+            SwitchProRumbleSamples::Two([first, sample])
+        }
+        2 => {
+            let (absolute, relative) = if word & 1 != 0 {
+                (&mut sample.high, &mut sample.low)
+            } else {
+                (&mut sample.low, &mut sample.high)
+            };
+            absolute.set_frequency(field(1, 127));
+            absolute.set_amplitude(field(23, 127));
+            relative.relative(field(18, 31));
+            let first = sample;
+            sample.relative_pair(field(8, 31), field(13, 31));
+            SwitchProRumbleSamples::Two([first, sample])
+        }
+        3 => {
+            sample.relative_pair(field(20, 31), field(25, 31));
+            let first = sample;
+            sample.relative_pair(field(10, 31), field(15, 31));
+            let second = sample;
+            sample.relative_pair(field(0, 31), field(5, 31));
+            SwitchProRumbleSamples::Three([first, second, sample])
+        }
+        // Nonzero type-zero data and a missing documented mixed-format bit
+        // cannot be established as valid from the pinned sources.
+        _ => SwitchProRumbleSamples::Unknown,
+    };
+    SwitchProRumbleWord { raw, samples }
+}
+
+#[cfg(test)]
+mod rumble_decode_tests {
+    use super::{
+        SwitchProOutputEvent, SwitchProRumbleSample, SwitchProRumbleSamples,
+        decode_switch_pro_rumble_word, decode_switch_pro_rumble_word_with_previous,
+    };
+
+    fn absolute(hf: u8, ha: u8, lf: u8, la: u8) -> [u8; 4] {
+        [
+            hf << 2,
+            (hf >> 6) | (ha << 1),
+            lf | ((la & 1) << 7),
+            0x40 | (la >> 1),
+        ]
+    }
+
+    fn sample(word: [u8; 4]) -> SwitchProRumbleSample {
+        let decoded = decode_switch_pro_rumble_word(word);
+        assert_eq!(decoded.raw, word);
+        let SwitchProRumbleSamples::One([sample]) = decoded.samples else {
+            panic!("expected one sample");
+        };
+        sample
+    }
+
+    fn close(actual: Option<f32>, expected: f32) {
+        let value = actual.expect("expected known value");
+        assert!((value - expected).abs() <= 0.000_01 * expected.abs().max(1.0));
+    }
+
+    #[test]
+    fn absolute_indices_and_neutral() {
+        // swpro-l0-rumble-absolute-layout, swpro-l0-rumble-logarithmic-units.
+        // Use the other band's centered frequency to avoid the overlapping
+        // compact-format selector when sweeping each absolute field.
+        let neutral = sample([0x00, 0x01, 0x40, 0x40]);
+        close(neutral.high().frequency_hz(), 320.0);
+        close(neutral.low().frequency_hz(), 160.0);
+        close(neutral.high().amplitude_ratio(), 0.0);
+        close(neutral.low().amplitude_ratio(), 0.0);
+        for index in 0_u8..=127 {
+            let factor = (f32::from(index) / 32.0 - 2.0).exp2();
+            let a = sample(absolute(index, 64, 64, 64));
+            let b = sample(absolute(64, 64, index, 64));
+            close(a.high().frequency_hz(), 320.0 * factor);
+            close(b.low().frequency_hz(), 160.0 * factor);
+            let ratio = match index {
+                0 => 0.0,
+                1..=15 => 0.0625 * ((f32::from(index) - 15.0) / 4.0).exp2(),
+                16..=31 => 0.125 * ((f32::from(index) - 31.0) / 16.0).exp2(),
+                _ => ((f32::from(index) - 127.0) / 32.0).exp2(),
+            };
+            let c = sample(absolute(64, index, 64, 64));
+            let d = sample(absolute(64, 64, 64, index));
+            close(c.high().amplitude_ratio(), ratio);
+            close(d.low().amplitude_ratio(), ratio);
+        }
+    }
+
+    #[test]
+    fn relative_commands_and_partial_state() {
+        // swpro-l0-rumble-relative-commands, swpro-l0-rumble-logarithmic-units.
+        let baseline = sample(absolute(64, 64, 64, 64));
+        for command in 0_u32..=31 {
+            let raw = ((1_u32 << 30) | (command << 20) | (command << 25)).to_le_bytes();
+            let decoded = decode_switch_pro_rumble_word_with_previous(raw, Some(baseline));
+            let [value] = decoded.samples.as_slice().unwrap() else {
+                panic!("expected one sample");
+            };
+            let (amp, frequency) = match command {
+                0 => (-256, 0),
+                1..=11 => (-16 * (i16::try_from(command).unwrap() - 1), 0),
+                12..=16 => (-63, 6 * (i16::try_from(command).unwrap() - 14)),
+                _ => {
+                    let i = usize::try_from(command - 17).unwrap();
+                    (
+                        -63 + [4, 1, 0, -1, -4][i / 3],
+                        1 - i16::try_from(i % 3).unwrap(),
+                    )
+                }
+            };
+            let ratio = if amp < -254 {
+                0.0
+            } else {
+                (f32::from(amp) / 32.0).exp2()
+            };
+            close(value.high().amplitude_ratio(), ratio);
+            close(value.low().amplitude_ratio(), ratio);
+            close(
+                value.high().frequency_hz(),
+                320.0 * (f32::from(frequency) / 32.0).exp2(),
+            );
+            close(
+                value.low().frequency_hz(),
+                160.0 * (f32::from(frequency) / 32.0).exp2(),
+            );
+        }
+        let raw = ((1_u32 << 30) | (1 << 20) | (14 << 25)).to_le_bytes();
+        let partial = sample(raw);
+        close(partial.high().amplitude_ratio(), 1.0);
+        assert!(partial.high().frequency_hz().is_none());
+        close(partial.low().frequency_hz(), 160.0);
+        assert!(partial.low().amplitude_ratio().is_none());
+    }
+
+    #[test]
+    fn relative_multi_sample_forms_and_clamps() {
+        // swpro-l0-rumble-sample-layouts, swpro-l0-rumble-relative-commands.
+        let two = ((2_u32 << 30) | (1 << 10) | (14 << 15)).to_le_bytes();
+        let result = decode_switch_pro_rumble_word(two);
+        let [first, second] = result.samples.as_slice().unwrap() else {
+            panic!("expected two samples");
+        };
+        close(first.high().amplitude_ratio(), 0.0);
+        close(second.high().amplitude_ratio(), 1.0);
+        close(second.low().frequency_hz(), 160.0);
+        close(second.low().amplitude_ratio(), 0.0);
+
+        let three = ((3_u32 << 30) | (17 << 10) | (31 << 15) | 0x17 | (2 << 5)).to_le_bytes();
+        let result = decode_switch_pro_rumble_word(three);
+        let [first, second, third] = result.samples.as_slice().unwrap() else {
+            panic!("expected three samples");
+        };
+        close(first.high().frequency_hz(), 320.0);
+        close(
+            second.high().frequency_hz(),
+            320.0 * (1.0_f32 / 32.0).exp2(),
+        );
+        close(third.high().frequency_hz(), 320.0 * (2.0_f32 / 32.0).exp2());
+        close(second.high().amplitude_ratio(), (-252.0_f32 / 32.0).exp2());
+        close(second.low().amplitude_ratio(), 0.0);
+        close(third.low().amplitude_ratio(), 0.5_f32.sqrt());
+
+        let max = sample(absolute(127, 127, 127, 127));
+        let up =
+            ((3_u32 << 30) | (17 << 25) | (17 << 20) | (17 << 15) | (17 << 10) | (17 << 5) | 0x11)
+                .to_le_bytes();
+        let result = decode_switch_pro_rumble_word_with_previous(up, Some(max));
+        for value in result.samples.as_slice().unwrap() {
+            close(value.high().frequency_hz(), 1280.0);
+            close(value.low().frequency_hz(), 640.0);
+            close(value.high().amplitude_ratio(), 1.0);
+            close(value.low().amplitude_ratio(), 1.0);
+        }
+    }
+
+    #[test]
+    fn mixed_forms_both_bands_and_fields() {
+        // swpro-l0-rumble-sample-layouts, swpro-l0-rumble-relative-commands.
+        for selected_high in 0_u32..=1 {
+            let word =
+                ((2_u32 << 30) | (127 << 23) | (24 << 13) | (24 << 8) | (64 << 1) | selected_high)
+                    .to_le_bytes();
+            let result = decode_switch_pro_rumble_word(word);
+            assert_eq!(result.raw, word);
+            let [first, second] = result.samples.as_slice().unwrap() else {
+                panic!("expected two mixed samples");
+            };
+            assert_eq!(first, second);
+            let (selected, other) = if selected_high == 1 {
+                (first.high(), first.low())
+            } else {
+                (first.low(), first.high())
+            };
+            close(selected.amplitude_ratio(), 1.0);
+            close(other.amplitude_ratio(), 0.0);
+            for select_frequency in 0_u32..=1 {
+                let word = ((1_u32 << 30)
+                    | (64 << 23)
+                    | (24 << 8)
+                    | (24 << 3)
+                    | (select_frequency << 2)
+                    | 2
+                    | selected_high)
+                    .to_le_bytes();
+                let result = decode_switch_pro_rumble_word(word);
+                assert_eq!(result.raw, word);
+                let [first, second, third] = result.samples.as_slice().unwrap() else {
+                    panic!("expected three mixed samples");
+                };
+                let band = if selected_high == 1 {
+                    first.high()
+                } else {
+                    first.low()
+                };
+                if select_frequency == 1 {
+                    assert!(band.amplitude_ratio().is_none());
+                    close(
+                        band.frequency_hz(),
+                        if selected_high == 1 { 320.0 } else { 160.0 },
+                    );
+                } else {
+                    assert!(band.frequency_hz().is_none());
+                    close(band.amplitude_ratio(), (-63.0_f32 / 32.0).exp2());
+                }
+                close(second.high().amplitude_ratio(), 0.0);
+                close(second.low().frequency_hz(), 160.0);
+                assert_eq!(second, third);
+            }
+        }
+    }
+
+    #[test]
+    fn no_sample_unknown_and_raw_event_agreement() {
+        // swpro-l0-rumble-sample-layouts, swpro-l0-linux-rumble-framing.
+        let zero = decode_switch_pro_rumble_word([0; 4]);
+        assert_eq!(zero.samples, SwitchProRumbleSamples::NoSamples);
+        assert_eq!(zero.samples.as_slice(), Some(&[][..]));
+        let unknown = [1, 0, 0, 0x40];
+        let decoded = decode_switch_pro_rumble_word(unknown);
+        assert_eq!(decoded.raw, unknown);
+        assert_eq!(decoded.samples, SwitchProRumbleSamples::Unknown);
+        assert!(decoded.samples.as_slice().is_none());
+        assert_eq!(
+            decode_switch_pro_rumble_word([1, 0, 0, 0]).samples,
+            SwitchProRumbleSamples::Unknown
+        );
+        let left = absolute(64, 30, 64, 31);
+        let right = unknown;
+        for report_id in [1, 0x10] {
+            let mut bytes = vec![7];
+            bytes.extend_from_slice(&left);
+            bytes.extend_from_slice(&right);
+            if report_id == 1 {
+                bytes.push(0x48);
+            }
+            let raw = SwitchProOutputEvent::Output {
+                report_id: Some(report_id),
+                bytes,
+            }
+            .rumble()
+            .unwrap();
+            assert_eq!(raw.packet_counter, 7);
+            assert_eq!(raw.left, left);
+            assert_eq!(raw.right, right);
+            let decoded = raw.decode();
+            assert_eq!(decoded.left.raw, left);
+            assert_eq!(decoded.right.raw, right);
+            assert_eq!(decoded.left, decode_switch_pro_rumble_word(left));
+            assert_eq!(decoded.right, decode_switch_pro_rumble_word(right));
+        }
+    }
+}
+
+/// Source-only HOME light request via subcommand 0x38.
+/// `mini_cycle` retains all five request bytes; only Linux's brightness
+/// nibble is interpreted. Not a player indicator.
+/// Claim: `swpro-cgap-home-led-consumer`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchProHomeLight {
+    pub brightness: u8,
+    pub mini_cycle: [u8; 5],
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SwitchProOutputEvent {
     ForceFeedback(gr_realization_api::ForceFeedbackEvent),
+    /// Accepted HOME light command, distinct from the four player indicators.
+    HomeLight(SwitchProHomeLight),
     ProviderEvent(Vec<EvdevEvent>),
     HidLifecycle(gr_hid::Lifecycle),
     Output {
@@ -1221,7 +1969,7 @@ pub enum SwitchProOutputEvent {
 }
 impl SwitchProOutputEvent {
     /// Extract exact encoded motor words from accepted rumble/subcommand output.
-    /// Stateful compressed amplitude/frequency interpretation remains unvalidated.
+    /// Decode source-supported words with `SwitchProRumble::decode`; physical response is unknown.
     #[must_use]
     pub fn rumble(&self) -> Option<SwitchProRumble> {
         let Self::Output {
@@ -1248,6 +1996,18 @@ impl From<RawReverseEvent> for SwitchProOutputEvent {
             RawReverseEvent::ForceFeedback(event) => Self::ForceFeedback(event),
             RawReverseEvent::Evdev(events) => Self::ProviderEvent(events),
             RawReverseEvent::HidLifecycle(event) => Self::HidLifecycle(event),
+            RawReverseEvent::HidOutput {
+                report_id: Some(1),
+                bytes,
+            } if bytes.len() >= 15 && bytes[9] == 0x38 => {
+                let mini_cycle: [u8; 5] = bytes[10..15]
+                    .try_into()
+                    .expect("validated HOME mini-cycle payload");
+                Self::HomeLight(SwitchProHomeLight {
+                    brightness: mini_cycle[1] >> 4,
+                    mini_cycle,
+                })
+            }
             RawReverseEvent::HidOutput { report_id, bytes } => Self::Output { report_id, bytes },
             RawReverseEvent::HidGetReportRequest {
                 request_id,
@@ -1269,10 +2029,16 @@ impl From<RawReverseEvent> for SwitchProOutputEvent {
     }
 }
 /// Family options for a new `SwitchPro` session.
-#[derive(Debug, Clone, Copy, Default)]
+///
+/// IMU enable behavior is source-backed by research claim
+/// `swpro-l0-consumer-imu-rumble-ack-gates`; retail timing remains unmeasured.
+#[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct SwitchProOptions {
     identity: Option<SwitchProIdentity>,
+    battery: SwitchProBattery,
+    imu_gating: bool,
+    spi_image: Option<SwitchProSpiImage>,
 }
 
 impl SwitchProOptions {
@@ -1284,10 +2050,51 @@ impl SwitchProOptions {
         self
     }
 
+    /// Set the initial battery report status (defaults to full, not charging,
+    /// Pro connection nibble zero, preserving report byte 0x80).
+    #[must_use]
+    pub const fn with_battery(mut self, battery: SwitchProBattery) -> Self {
+        self.battery = battery;
+        self
+    }
+
+    /// Initial battery status for the new session.
+    #[must_use]
+    pub const fn battery(&self) -> SwitchProBattery {
+        self.battery
+    }
+
+    /// Opt into gating the IMU sample bytes until subcommand 0x40 enables them.
+    /// Defaults to false to preserve existing emissions.
+    /// Source-only: `swpro-l0-consumer-imu-rumble-ack-gates`.
+    #[must_use]
+    pub const fn with_imu_gating(mut self, enabled: bool) -> Self {
+        self.imu_gating = enabled;
+        self
+    }
+
+    #[must_use]
+    pub const fn imu_gating(&self) -> bool {
+        self.imu_gating
+    }
+
     /// An explicitly supplied identity, if any.
     #[must_use]
-    pub const fn identity(self) -> Option<SwitchProIdentity> {
+    pub const fn identity(&self) -> Option<SwitchProIdentity> {
         self.identity
+    }
+
+    /// Set an independently owned SPI read image before opening the provider.
+    #[must_use]
+    pub fn with_spi_image(mut self, image: SwitchProSpiImage) -> Self {
+        self.spi_image = Some(image);
+        self
+    }
+
+    /// Borrow the explicitly supplied image, if any.
+    #[must_use]
+    pub const fn spi_image(&self) -> Option<&SwitchProSpiImage> {
+        self.spi_image.as_ref()
     }
 }
 
@@ -1307,6 +2114,7 @@ fn create_switch_pro_configured(
     let build_realization: fn(SwitchProIdentity) -> NativeControllerRealization = match o.target {
         RealizationTarget::LINUX_UINPUT => |_| evdev_realization(),
         RealizationTarget::LINUX_UHID_USB => hid,
+        RealizationTarget::LINUX_UHID_BLUETOOTH => bluetooth_hid,
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => |_| {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
                 controller: gr_controller_wire::registry::ids::SWITCH_PRO,
@@ -1319,14 +2127,31 @@ fn create_switch_pro_configured(
         }
     };
     common::require_linux_platform(o.target)?;
-    let identity = family.identity().map_or_else(generate_identity, Ok)?;
+    let identity = family.identity.map_or_else(generate_identity, Ok)?;
+    let (battery, imu_gating) = (family.battery(), family.imu_gating());
+    let spi_image = family.spi_image.unwrap_or_default();
+    let definition = SwitchProDefinition {
+        spi_image: spi_image.clone(),
+    };
     let realization = build_realization(identity);
     let is_dummy_hcd = o.target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID;
-    let mut controller = if o.target == RealizationTarget::LINUX_UHID_USB {
-        common::create_restored(SwitchProDefinition, realization, o, Some(identity.bytes()))?
+    let mut controller = if matches!(
+        o.target,
+        RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+    ) {
+        common::create_restored(definition, realization, o, Some(identity.bytes()))?
     } else {
-        common::create(SwitchProDefinition, realization, o)?
+        common::create(definition, realization, o)?
     };
+    controller
+        .update_state(|state| {
+            state.1.battery = battery;
+            state.1.imu_gating = imu_gating;
+            Ok(())
+        })
+        .map_err(|error| ProviderError::Open {
+            reason: error.to_string(),
+        })?;
     if is_dummy_hcd {
         // A physical USB attachment should expose a neutral 0x30 report as
         // soon as it appears; host-side controller-info traffic then has a
@@ -1335,7 +2160,7 @@ fn create_switch_pro_configured(
             reason: error.to_string(),
         })?;
     }
-    Ok(SwitchProController(controller, identity))
+    Ok(SwitchProController(controller, identity, spi_image))
 }
 /// Workspace test seam. Never opens a real provider or accepts runtime profiles.
 #[cfg(feature = "test-support")]
@@ -1344,8 +2169,8 @@ pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<SwitchProController, ProviderError> {
     let identity = SwitchProIdentity::from_bytes(common::test_address(1))?;
-    common::injected(SwitchProDefinition, session)
-        .map(|session| SwitchProController(session, identity))
+    common::injected(SwitchProDefinition::default(), session)
+        .map(|session| SwitchProController(session, identity, SwitchProSpiImage::default()))
 }
 
 impl crate::registry::ControllerFamily for SwitchProDefinition {
@@ -1361,8 +2186,25 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
             &[
                 RealizationTarget::LINUX_UINPUT,
                 RealizationTarget::LINUX_UHID_USB,
+                RealizationTarget::LINUX_UHID_BLUETOOTH,
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             ],
+        ),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[1],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[2],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[3],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BT_RESTRICTIONS[4],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
         ),
         crate::registry::refusal(
             RETAINED_DUMMY[1],
@@ -1373,7 +2215,7 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
         &INPUT_TOPOLOGY_WITH_MOTION
     }
     fn manifest() -> RealizationManifest {
-        Self.realization_manifest()
+        Self::default().realization_manifest()
     }
     fn realizations() -> &'static [crate::registry::FamilyRealization] {
         static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
@@ -1391,6 +2233,11 @@ impl crate::registry::ControllerFamily for SwitchProDefinition {
                 &USB_SURFACE.common,
                 crate::registry::RealizationTier::FaithfulUsb,
                 crate::registry::PermissionClass::RootBroker,
+            ),
+            crate::registry::FamilyRealization::new(
+                &BT_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
             ),
         ];
         REALIZATIONS
@@ -1443,9 +2290,13 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let session =
-                input_validation_session(SwitchProDefinition, target, [true, true, false]);
-            let mut controller = SwitchProController(session, fixture_identity());
+            let session = input_validation_session(
+                SwitchProDefinition::default(),
+                target,
+                [true, true, false],
+            );
+            let mut controller =
+                SwitchProController(session, fixture_identity(), SwitchProSpiImage::default());
             controller.service(&mut |_| {}).unwrap();
             let status = controller.status();
             let outputs = controller.host_outputs();
@@ -1521,8 +2372,10 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let (session, io) = snapshot_session(SwitchProDefinition, target, [true, true, false]);
-            let mut controller = SwitchProController(session, fixture_identity());
+            let (session, io) =
+                snapshot_session(SwitchProDefinition::default(), target, [true, true, false]);
+            let mut controller =
+                SwitchProController(session, fixture_identity(), SwitchProSpiImage::default());
             controller.service(&mut |_| {}).unwrap();
             controller
                 .edit_inputs(|state| {
@@ -1576,9 +2429,13 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
             let is_uinput = target == RealizationTarget::LINUX_UINPUT;
-            let session =
-                input_validation_session(SwitchProDefinition, target, [true, true, false]);
-            let mut controller = SwitchProController(session, fixture_identity());
+            let session = input_validation_session(
+                SwitchProDefinition::default(),
+                target,
+                [true, true, false],
+            );
+            let mut controller =
+                SwitchProController(session, fixture_identity(), SwitchProSpiImage::default());
             controller.service(&mut |_| {}).unwrap();
             check_opposing_dpad!(controller, is_uinput);
             controller.neutralize().unwrap();
@@ -1641,8 +2498,10 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let (session, io) = snapshot_session(SwitchProDefinition, target, [true, true, false]);
-            let mut controller = SwitchProController(session, fixture_identity());
+            let (session, io) =
+                snapshot_session(SwitchProDefinition::default(), target, [true, true, false]);
+            let mut controller =
+                SwitchProController(session, fixture_identity(), SwitchProSpiImage::default());
             controller
                 .0
                 .update_state(|current| {
@@ -1696,7 +2555,7 @@ mod tests {
                 (snapshot.clone()).0,
                 SwitchProStatus {
                     timer: current.1.timer.wrapping_add(u8::from(motion_changed)),
-                    stream_enabled: current.1.stream_enabled,
+                    ..current.1
                 },
             );
             let mut bad = snapshot.clone();
@@ -1714,7 +2573,7 @@ mod tests {
                 snapshot,
                 expected,
                 invalid,
-                SwitchProDefinition
+                SwitchProDefinition::default()
                     .encode(controller.0.selection(), controller.test_state())
                     .unwrap(),
                 &[(0, 255)]
@@ -1731,14 +2590,14 @@ mod tests {
         }
     }
 
-    fn fixture_identity() -> SwitchProIdentity {
+    pub(super) fn fixture_identity() -> SwitchProIdentity {
         SwitchProIdentity::from_bytes(common::test_address(1)).unwrap()
     }
 
     #[test]
     fn undeclared_target_is_rejected_before_resolving_identity() {
         let options = CreationOptions {
-            target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+            target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
             session: RealizationSessionId(7),
         };
         assert!(matches!(
@@ -1755,6 +2614,7 @@ mod tests {
         for target in [
             RealizationTarget::LINUX_UINPUT,
             RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_UHID_BLUETOOTH,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
             let options = CreationOptions {
@@ -1778,6 +2638,7 @@ mod tests {
         }
         assert!(EVDEV_SURFACE.common.input_topology().motion().is_empty());
         assert_eq!(HID_SURFACE.common.input_topology().motion().len(), 1);
+        assert_eq!(BT_SURFACE.common.input_topology().motion().len(), 1);
         assert_eq!(USB_SURFACE.common.input_topology().motion().len(), 1);
     }
 
@@ -1816,6 +2677,7 @@ mod tests {
             SwitchProStatus {
                 timer: 77,
                 stream_enabled: true,
+                ..Default::default()
             },
         );
         let mut state = expected.clone();
@@ -1840,7 +2702,7 @@ mod tests {
     #[test]
     fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
         let selection = RealizationSelection {
-            controller: SwitchProDefinition.controller_id(),
+            controller: SwitchProDefinition::default().controller_id(),
             target: RealizationTarget::LINUX_UINPUT,
         };
         for (control, code) in [
@@ -1852,8 +2714,9 @@ mod tests {
             let mut state = <(SwitchProInputs, SwitchProStatus)>::default();
             for pressed in [true, false] {
                 state.0.set_native(control, pressed);
-                let ProviderFrame::Evdev(events) =
-                    SwitchProDefinition.encode(selection, &state).unwrap()
+                let ProviderFrame::Evdev(events) = SwitchProDefinition::default()
+                    .encode(selection, &state)
+                    .unwrap()
                 else {
                     panic!("evdev")
                 };
@@ -1892,6 +2755,186 @@ mod tests {
     }
 
     #[test]
+    fn battery_status_encodes_native_level_charging_and_pro_power() {
+        let mut state = <(SwitchProInputs, SwitchProStatus)>::default();
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
+            unreachable!()
+        };
+        assert_eq!(bytes[1], 0x80, "legacy default byte is unchanged");
+        assert_eq!(state.1.battery(), SwitchProBattery::default());
+        for (level, prefix) in [
+            (SwitchProBatteryLevel::Empty, 0x00),
+            (SwitchProBatteryLevel::Critical, 0x20),
+            (SwitchProBatteryLevel::Low, 0x40),
+            (SwitchProBatteryLevel::Medium, 0x60),
+            (SwitchProBatteryLevel::Full, 0x80),
+        ] {
+            for charging in [false, true] {
+                for usb_powered in [false, true] {
+                    let battery = SwitchProBattery {
+                        level,
+                        charging,
+                        usb_powered,
+                    };
+                    state.1.battery = battery;
+                    let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
+                        unreachable!()
+                    };
+                    let expected = prefix | (u8::from(charging) << 4) | u8::from(usb_powered);
+                    assert_eq!(bytes[1], expected);
+                    let (reply, enabled) = switch_subcommand_reply(
+                        &state,
+                        0x38,
+                        &[1, 0x50, 0x55, 0x11, 0x11],
+                        fixture_identity(),
+                        &SwitchProSpiImage::default(),
+                    );
+                    assert!(!enabled);
+                    let ProviderFrame::HidInput { bytes, .. } = reply else {
+                        unreachable!()
+                    };
+                    assert_eq!(bytes[1], expected, "0x21 prefix uses current battery");
+                }
+            }
+        }
+        let selected = SwitchProBattery {
+            level: SwitchProBatteryLevel::Critical,
+            charging: true,
+            usb_powered: true,
+        };
+        let options = SwitchProOptions::default().with_battery(selected);
+        assert_eq!(options.battery(), selected);
+        assert!(!options.imu_gating());
+        assert!(options.with_imu_gating(true).imu_gating());
+    }
+
+    #[test]
+    fn live_battery_edits_update_hid_and_preserve_native_inputs() {
+        use common::session_tests::snapshot_session;
+        let (session, _) = snapshot_session(
+            SwitchProDefinition::default(),
+            RealizationTarget::LINUX_UHID_USB,
+            [true, true, false],
+        );
+        let mut controller =
+            SwitchProController(session, fixture_identity(), SwitchProSpiImage::default());
+        let before = controller.inputs().clone();
+        assert_eq!(controller.battery(), SwitchProBattery::default());
+        let selected = SwitchProBattery {
+            level: SwitchProBatteryLevel::Low,
+            charging: true,
+            usb_powered: true,
+        };
+        controller.set_battery(selected).unwrap();
+        assert_eq!(controller.battery(), selected);
+        assert_eq!(controller.status().battery(), selected);
+        assert_eq!(controller.inputs(), &before);
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(controller.test_state()) else {
+            unreachable!()
+        };
+        assert_eq!(bytes[1], 0x51);
+        controller.commit().unwrap();
+        controller.close();
+        assert_eq!(controller.set_battery(selected), Err(ControlError::Closed));
+        assert_eq!(controller.battery(), selected);
+    }
+
+    #[test]
+    fn home_light_keeps_generic_ack_and_typed_minicycle_separate_from_players() {
+        let state = <(SwitchProInputs, SwitchProStatus)>::default();
+        let payload = [0x01, 0xb0, 0xbb, 0x11, 0x11];
+        let (reply, enabled) = switch_subcommand_reply(
+            &state,
+            0x38,
+            &payload,
+            fixture_identity(),
+            &SwitchProSpiImage::default(),
+        );
+        assert!(!enabled);
+        let mut expected = vec![0; 63];
+        expected[..12].copy_from_slice(&switch_input_prefix(&state));
+        expected[12] = 0x80;
+        expected[13] = 0x38;
+        assert_eq!(
+            reply,
+            ProviderFrame::HidInput {
+                report_id: Some(0x21),
+                bytes: expected
+            }
+        );
+        let mut raw = vec![0; 63];
+        raw[9] = 0x38;
+        raw[10..15].copy_from_slice(&payload);
+        assert_eq!(
+            SwitchProOutputEvent::from(RawReverseEvent::HidOutput {
+                report_id: Some(1),
+                bytes: raw,
+            }),
+            SwitchProOutputEvent::HomeLight(SwitchProHomeLight {
+                brightness: 11,
+                mini_cycle: payload,
+            })
+        );
+        let mut truncated = vec![0; 14];
+        truncated[9] = 0x38;
+        assert!(matches!(
+            SwitchProOutputEvent::from(RawReverseEvent::HidOutput {
+                report_id: Some(1),
+                bytes: truncated,
+            }),
+            SwitchProOutputEvent::Output { .. }
+        ));
+        assert_eq!(
+            NATIVE_OUTPUT_KINDS[1],
+            OutputKind::PlayerIndicator { count: 4 }
+        );
+    }
+
+    #[test]
+    fn native_service_retains_imu_enable_status_for_opted_in_frames() {
+        use common::session_tests::snapshot_session;
+        let (session, io) = snapshot_session(
+            SwitchProDefinition::default(),
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            [true, true, false],
+        );
+        let mut controller =
+            SwitchProController(session, fixture_identity(), SwitchProSpiImage::default());
+        controller
+            .0
+            .update_state(|state| {
+                state.1.imu_gating = true;
+                state.0.motion = SwitchProMotionSample {
+                    accelerometer: [400, -800, 1200],
+                    gyroscope: [1, -2, 3],
+                };
+                Ok(())
+            })
+            .unwrap();
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(controller.test_state()) else {
+            unreachable!()
+        };
+        assert!(bytes[12..48].iter().all(|byte| *byte == 0));
+        let mut enable = vec![0; 63];
+        enable[9] = 0x40;
+        enable[10] = 1;
+        io.lock()
+            .unwrap()
+            .events
+            .push_back(RawReverseEvent::HidOutput {
+                report_id: Some(1),
+                bytes: enable,
+            });
+        controller.service(&mut |_| {}).unwrap();
+        assert!(controller.status().imu_enabled());
+        assert!(controller.status().imu_gating());
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(controller.test_state()) else {
+            unreachable!()
+        };
+        assert!(bytes[12..48].iter().any(|byte| *byte != 0));
+    }
+
+    #[test]
     fn openpuck_motion_triplicates_and_maps_axes() {
         let s = (
             SwitchProInputs {
@@ -1915,10 +2958,10 @@ mod tests {
     }
     #[test]
     fn usb_frame_is_numbered() {
-        let f = SwitchProDefinition
+        let f = SwitchProDefinition::default()
             .encode(
                 RealizationSelection {
-                    controller: SwitchProDefinition.controller_id(),
+                    controller: SwitchProDefinition::default().controller_id(),
                     target: RealizationTarget::LINUX_UHID_USB,
                 },
                 &<(SwitchProInputs, SwitchProStatus)>::default(),
@@ -1929,10 +2972,10 @@ mod tests {
 
     #[test]
     fn dummy_hcd_frame_preserves_the_numbered_openpuck_usb_report() {
-        let frame = SwitchProDefinition
+        let frame = SwitchProDefinition::default()
             .encode(
                 RealizationSelection {
-                    controller: SwitchProDefinition.controller_id(),
+                    controller: SwitchProDefinition::default().controller_id(),
                     target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 },
                 &<(SwitchProInputs, SwitchProStatus)>::default(),
@@ -1942,7 +2985,7 @@ mod tests {
             matches!(frame, ProviderFrame::DummyHcdInput(bytes) if bytes.len() == 64 && bytes[0] == 0x30)
         );
         assert!(
-            SwitchProDefinition
+            SwitchProDefinition::default()
                 .realization_manifest()
                 .entries()
                 .iter()
@@ -1978,10 +3021,10 @@ mod tests {
 
     #[test]
     fn evdev_realization_preserves_hid_controls_without_motion_claims() {
-        let frame = SwitchProDefinition
+        let frame = SwitchProDefinition::default()
             .encode(
                 RealizationSelection {
-                    controller: SwitchProDefinition.controller_id(),
+                    controller: SwitchProDefinition::default().controller_id(),
                     target: RealizationTarget::LINUX_UINPUT,
                 },
                 &<(SwitchProInputs, SwitchProStatus)>::default(),
@@ -2103,6 +3146,119 @@ mod tests {
     }
 
     #[test]
+    fn bt_descriptor_and_identity_use_explicit_local_transport_metadata() {
+        let first = bluetooth_hid(fixture_identity());
+        let second_identity = SwitchProIdentity::from_bytes(common::test_address(2)).unwrap();
+        let second = bluetooth_hid(second_identity);
+        let first_uniq = crate::ControllerAssociation::requested(&first).requested_unique_id;
+        let second_uniq = crate::ControllerAssociation::requested(&second).requested_unique_id;
+        assert_ne!(first_uniq, second_uniq);
+        let NativeControllerRealization::Uhid(bt) = first else {
+            unreachable!()
+        };
+        assert_eq!(bt.target, RealizationTarget::LINUX_UHID_BLUETOOTH);
+        assert_eq!(bt.bus_type, 5);
+        assert_eq!(
+            (bt.identity.vendor_id, bt.identity.product_id),
+            (0x057e, 0x2009)
+        );
+        assert!(bt.numbered_input_reports && bt.numbered_output_reports);
+        assert!(!bt.numbered_feature_reports);
+        for id in [0x3f, 0x30, 0x21, 0x01, 0x10] {
+            assert!(bt.descriptor.windows(2).any(|pair| pair == [0x85, id]));
+        }
+        for usb_id in [0x80, 0x81, 0x82] {
+            assert!(!bt.descriptor.windows(2).any(|pair| pair == [0x85, usb_id]));
+        }
+        let NativeControllerRealization::Uhid(usb) = hid(fixture_identity()) else {
+            unreachable!()
+        };
+        assert_eq!(usb.bus_type, 3);
+        assert_eq!(usb.descriptor.as_slice(), SWITCH_PRO_USB_DESCRIPTOR);
+        assert_ne!(bt.descriptor, usb.descriptor);
+    }
+
+    #[test]
+    fn bt_simple_report_has_source_derived_synthetic_golden_bytes() {
+        // SDL 535d80b lines 137-152, 2183-2257, not a physical capture.
+        let mut inputs = SwitchProInputs::default();
+        inputs.set_native(SwitchProControl::B, true);
+        inputs.set_native(SwitchProControl::L, true);
+        inputs.set_native(SwitchProControl::Zr, true);
+        inputs.set_native(SwitchProControl::Minus, true);
+        inputs.set_native(SwitchProControl::Home, true);
+        inputs.set_digital(DigitalControlUpdate::Dpad {
+            direction: gr_controller_contract::DpadDirection::Up,
+            pressed: true,
+        });
+        inputs.set_sticks(
+            (SwitchProAxis::new(-1234), SwitchProAxis::new(2345)),
+            (SwitchProAxis::new(0), SwitchProAxis::new(0)),
+        );
+        assert_eq!(
+            switch_simple_frame(&(inputs, SwitchProStatus::default())),
+            ProviderFrame::HidInput {
+                report_id: Some(0x3f),
+                bytes: vec![0x91, 0x11, 0, 0x2e, 0x7b, 0x29, 0x89, 0, 0x80, 0, 0x80],
+            }
+        );
+        assert_eq!(
+            switch_simple_frame(&(SwitchProInputs::default(), SwitchProStatus::default())),
+            ProviderFrame::HidInput {
+                report_id: Some(0x3f),
+                bytes: vec![0, 0, 8, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80],
+            }
+        );
+        let mut opposite = SwitchProInputs::default();
+        for direction in [
+            gr_controller_contract::DpadDirection::Up,
+            gr_controller_contract::DpadDirection::Down,
+        ] {
+            opposite.set_digital(DigitalControlUpdate::Dpad {
+                direction,
+                pressed: true,
+            });
+        }
+        let ProviderFrame::HidInput { bytes, .. } =
+            switch_simple_frame(&(opposite, SwitchProStatus::default()))
+        else {
+            unreachable!()
+        };
+        assert_eq!(bytes[2], 8); // Simple hat cannot carry opposing directions.
+    }
+
+    #[test]
+    fn bluetooth_surface_has_every_provider_specific_refusal() {
+        let family = <SwitchProDefinition as crate::registry::ControllerFamily>::realizations();
+        let bt = family
+            .iter()
+            .find(|r| r.surface.target() == RealizationTarget::LINUX_UHID_BLUETOOTH)
+            .unwrap();
+        assert_eq!(bt.tier, crate::registry::RealizationTier::PlayableFull);
+        assert_eq!(bt.permission, crate::registry::PermissionClass::Uhid);
+        for (index, restriction) in BT_RESTRICTIONS.into_iter().enumerate() {
+            assert!(bt.surface.restrictions().contains(&restriction));
+            let entries: Vec<_> =
+                <SwitchProDefinition as crate::registry::ControllerFamily>::REFUSED_OPERATIONS
+                    .iter()
+                    .filter(|r| r.name == restriction.feature && r.detail == restriction.reason)
+                    .collect();
+            assert_eq!(entries.len(), 1);
+            assert!(
+                entries[0]
+                    .targets
+                    .contains(&RealizationTarget::LINUX_UHID_BLUETOOTH)
+            );
+            if index > 0 {
+                assert_eq!(
+                    entries[0].targets,
+                    &[RealizationTarget::LINUX_UHID_BLUETOOTH]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn hid_identity_matches_openpuck_usb_personality() {
         let identity = fixture_identity();
         let realization = hid(identity);
@@ -2127,10 +3283,15 @@ mod tests {
 
     fn assert_spi_reply(address: u32, expected: &[u8]) {
         let state = <(SwitchProInputs, SwitchProStatus)>::default();
-        let mut arguments = address.to_le_bytes().to_vec();
+        let mut arguments = u32::to_le_bytes(address).to_vec();
         arguments.push(u8::try_from(expected.len()).unwrap());
-        let (reply, enabled) =
-            switch_subcommand_reply(&state, 0x10, &arguments, fixture_identity());
+        let (reply, enabled) = switch_subcommand_reply(
+            &state,
+            0x10,
+            &arguments,
+            fixture_identity(),
+            &SwitchProSpiImage::default(),
+        );
         assert!(!enabled);
         let mut bytes = vec![0; 63];
         bytes[..12].copy_from_slice(&switch_input_prefix(&state));
@@ -2198,7 +3359,8 @@ mod tests {
         assert_spi_reply(0x6050, &[0xff; 11]);
         let state = <(SwitchProInputs, SwitchProStatus)>::default();
         let identity = fixture_identity();
-        let (reply, enabled) = switch_subcommand_reply(&state, 0x02, &[], identity);
+        let (reply, enabled) =
+            switch_subcommand_reply(&state, 0x02, &[], identity, &SwitchProSpiImage::default());
         assert!(!enabled);
         let mut bytes = vec![0; 63];
         bytes[..12].copy_from_slice(&switch_input_prefix(&state));
@@ -2217,12 +3379,24 @@ mod tests {
     #[test]
     fn steam_style_subcommands_receive_full_replies_and_enable_motion() {
         let state = <(SwitchProInputs, SwitchProStatus)>::default();
-        let (device_info, enabled) = switch_subcommand_reply(&state, 0x02, &[], fixture_identity());
+        let (device_info, enabled) = switch_subcommand_reply(
+            &state,
+            0x02,
+            &[],
+            fixture_identity(),
+            &SwitchProSpiImage::default(),
+        );
         assert!(!enabled);
         assert!(
             matches!(device_info, ProviderFrame::HidInput { report_id: Some(0x21), bytes } if bytes.len() == 63 && bytes[12] == 0x82 && bytes[13] == 0x02)
         );
-        let (mode, enabled) = switch_subcommand_reply(&state, 0x03, &[0x30], fixture_identity());
+        let (mode, enabled) = switch_subcommand_reply(
+            &state,
+            0x03,
+            &[0x30],
+            fixture_identity(),
+            &SwitchProSpiImage::default(),
+        );
         assert!(enabled);
         assert!(
             matches!(mode, ProviderFrame::HidInput { report_id: Some(0x21), bytes } if bytes[12] == 0x80 && bytes[13] == 0x03)
@@ -2230,11 +3404,81 @@ mod tests {
         assert!(
             matches!(switch_usb_reply(2, fixture_identity()), ProviderFrame::HidInput { report_id: Some(0x81), bytes } if bytes.len() == 63 && bytes[0] == 2)
         );
-        let (calibration, enabled) =
-            switch_subcommand_reply(&state, 0x10, &[0x20, 0x60, 0, 0, 6], fixture_identity());
+        let (calibration, enabled) = switch_subcommand_reply(
+            &state,
+            0x10,
+            &[0x20, 0x60, 0, 0, 6],
+            fixture_identity(),
+            &SwitchProSpiImage::default(),
+        );
         assert!(!enabled);
         assert!(
             matches!(calibration, ProviderFrame::HidInput { report_id: Some(0x21), bytes } if bytes[12] == 0x90 && bytes[14..25] == [0x20, 0x60, 0, 0, 6, 0, 0, 0, 0, 0, 0])
         );
+    }
+
+    #[test]
+    fn supplied_spi_bytes_reach_subcommand_replies_and_colour_flag() {
+        // Synthetic patterned factory and user values, never captured calibration.
+        let image = SwitchProSpiImage::default()
+            .with_region(0x6020, &[0x15, 0x2a, 0x3c])
+            .unwrap()
+            .with_region(0x8010, &[0x42, 0x24])
+            .unwrap()
+            .with_region(0x6050, &[0x20; 12])
+            .unwrap();
+        let state = <(SwitchProInputs, SwitchProStatus)>::default();
+        for (address, expected) in [(0x6020, vec![0x15, 0x2a, 0x3c]), (0x8010, vec![0x42, 0x24])] {
+            let mut arguments = u32::to_le_bytes(address).to_vec();
+            arguments.push(u8::try_from(expected.len()).unwrap());
+            let (frame, enabled) =
+                switch_subcommand_reply(&state, 0x10, &arguments, fixture_identity(), &image);
+            assert!(!enabled);
+            let ProviderFrame::HidInput { bytes, .. } = frame else {
+                panic!("HID expected")
+            };
+            assert_eq!(&bytes[19..19 + expected.len()], expected);
+        }
+        let (info, _) = switch_subcommand_reply(&state, 0x02, &[], fixture_identity(), &image);
+        let ProviderFrame::HidInput { bytes, .. } = info else {
+            panic!("HID expected")
+        };
+        assert_eq!(bytes[25], 1);
+        let partial = SwitchProSpiImage::default()
+            .with_region(0x6050, &[0x20; 3])
+            .unwrap();
+        let (info, _) = switch_subcommand_reply(&state, 0x02, &[], fixture_identity(), &partial);
+        let ProviderFrame::HidInput { bytes, .. } = info else {
+            panic!("HID expected")
+        };
+        assert_eq!(bytes[25], 0);
+    }
+
+    #[test]
+    fn spi_host_writes_leave_caller_image_unchanged_and_options_restore_it() {
+        let image = SwitchProSpiImage::default()
+            .with_region(0x8010, &[0x11, 0x22])
+            .unwrap();
+        let options = SwitchProOptions::default().with_spi_image(image.clone());
+        assert_eq!(options.clone().spi_image(), Some(&image));
+        let recreated = options.with_identity(fixture_identity());
+        assert_eq!(recreated.spi_image(), Some(&image));
+        let state = <(SwitchProInputs, SwitchProStatus)>::default();
+        for command in [0x11, 0x12] {
+            let (reply, enabled) = switch_subcommand_reply(
+                &state,
+                command,
+                &[0x10, 0x80, 0, 0, 2, 1, 2],
+                fixture_identity(),
+                &image,
+            );
+            assert!(!enabled);
+            let ProviderFrame::HidInput { bytes, .. } = reply else {
+                panic!("HID expected")
+            };
+            assert_eq!(bytes[13], command);
+            assert_eq!(bytes[12], 0x80); // Existing generic reply, no write mutation.
+            assert_eq!(image.export_raw(0x8010, 2).unwrap(), [0x11, 0x22]);
+        }
     }
 }

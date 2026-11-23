@@ -17,6 +17,78 @@ These profiles use interleaved signed 16-bit samples at 48 kHz. DS4 and Xbox
 profiles are functional approximations. DualSense channel roles have physical
 evidence, but its emulated UAC2 topology is not the physical UAC1 topology.
 
+## Pinned evidence boundaries (Brief 16 R1)
+
+The evidence crosswalk below applies to the compiled functional profiles and
+HID paths at [the R0/R1 audit base](https://github.com/anderstvoss/virtualgamepad/commit/324d250bb01a5ddbfc1dd189513d4c9160429ee1), using
+the adopted research revision [`a67781e`](https://github.com/anderstvoss/controller-protocol-research/commit/a67781e2412eceea9440d20dbb350ad5d3352c25).
+It supplements source-generic implementation comments without changing code,
+wire bytes, or the research gitlink. Source-supported consumer behavior is not
+device-side measurement.
+
+| Implementation surface | Pinned claim records and limits |
+| --- | --- |
+| `gr-curated-controllers/src/audio.rs`, DualSense functional channel grouping | [audio-dualsense-alsa-ucm-roles](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-dualsense-alsa-ucm-roles.json) describes the ALSA UCM mapping; [audio-dualsense-observed-playback-order](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-dualsense-observed-playback-order.json) cites the historical maintainer's qualitative grip/headphone observation. Neither quantifies isolation or microphone fidelity. |
+| DualSense HID output and route/mute/level intent | [audio-dualsense-hid-framing](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-dualsense-hid-framing.json), [audio-dualsense-hid-levels](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-dualsense-hid-levels.json), [audio-dualsense-hid-routing](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-dualsense-hid-routing.json), [audio-dualsense-hid-preamp-mute](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-dualsense-hid-preamp-mute.json), [audio-dualsense-kernel-jack-detect-routing](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-dualsense-kernel-jack-detect-routing.json), [audio-dualsense-haptics-consumers](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-dualsense-haptics-consumers.json). The [Linux consumer, routing and mute](https://github.com/torvalds/linux/blob/4056b3c9d3c92ea45955641dbafeb9b960e146ef/drivers/hid/hid-playstation.c#L1361-L1429) and [USB jack detection](https://github.com/torvalds/linux/blob/4056b3c9d3c92ea45955641dbafeb9b960e146ef/drivers/hid/hid-playstation.c#L1529-L1552) describe host intent, not PCM delivery. [audio-dualsense-bluetooth-inband-pcm-unknown](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-dualsense-bluetooth-inband-pcm-unknown.json) remains unknown. |
+| DS4 functional stereo/mono profile | [audio-dualshock4-hid-output](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-dualshock4-hid-output.json) and [audio-dualshock4-sdl-audio-fields](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-dualshock4-sdl-audio-fields.json) describe different consumer effect layouts, not a PCM path. [audio-dualshock4-usb-audio-unknown](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-dualshock4-usb-audio-unknown.json) and [audio-dualshock4-bluetooth-inband-audio-unknown](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-dualshock4-bluetooth-inband-audio-unknown.json) prohibit physical topology or Bluetooth audio inference. No dedicated onboard-speaker matching is established. |
+| Xbox360 functional profile and Xbox Series refusal | [audio-xbox360-xpad-no-headset-audio](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-xbox360-xpad-no-headset-audio.json) and [audio-xbox-series-xpad-disables-gip-audio](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-xbox-series-xpad-disables-gip-audio.json) concern the Linux xpad consumer; [its GIP startup path](https://github.com/torvalds/linux/blob/4056b3c9d3c92ea45955641dbafeb9b960e146ef/drivers/input/joystick/xpad.c#L1494-L1505) does not implement headset streaming. The standard-HID Xbox360 approximation is not proprietary headset transport; Series has no declared audio profile. |
+| USB/IP functional UAC2 profile (`gr-usbip`) | [audio-dualsense-usb-uac1-topology](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-dualsense-usb-uac1-topology.json) reports a maintainer-documented UAC1 reference, not a corpus-controlled descriptor experiment. The compiled UAC2 profile is deliberately not a UAC1 match. DS4/Xbox360 physical descriptor matching is likewise unqualified. |
+| Independent UHID/PipeWire nodes | [audio-consumer-sidecar-hid-sound-association-unknown](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-consumer-sidecar-hid-sound-association-unknown.json) and [audio-consumer-proton-steam-audio-association-unknown](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-consumer-proton-steam-audio-association-unknown.json) remain unknown; independent nodes do not imply automatic consumer routing. |
+| Switch Pro, Wii and Steam | [audio-switch-pro-hid-consumers-no-audio](https://github.com/anderstvoss/controller-protocol-research/blob/a67781e2412eceea9440d20dbb350ad5d3352c25/records/claim/audio-switch-pro-hid-consumers-no-audio.json) distinguishes native HD rumble from PCM. Wii speaker playback is refused pending S1; see [Wii Remote](WII_REMOTE.md). Steam's opt-in in-band PCM is not UAC or MIDI enumeration; see [Steam Haptics](STEAM_HAPTICS_STREAMING.md). |
+
+The source lineages include ALSA UCM configuration, Linux and SDL consumer
+implementations, and a VirtualGamepad maintainer narrative; these are not
+independent physical experiments. No sustained audio, native matching, or host
+test was run for this documentation audit.
+
+## Reproducing the real USB topology
+
+The **Generic**, **Native HID** and **Real USB** level labels describe the host
+presentation, not proof of controller equivalence, sustained audio, physical
+actuation or application routing. Real radio is reserved. The existing
+realization IDs remain unchanged; acceptance manifests record these levels in
+`reason` text only until #408 defines a schema field.
+
+| Level and realization | Topology the host receives | Audio/haptic boundary |
+| --- | --- | --- |
+| **Generic** — `linux.uinput` | Generic evdev input/FF nodes, not a USB HID/UAC composite. | Conventional force feedback where declared; no emulated speaker, microphone or USB audio endpoint. |
+| **Native HID** — `linux.uhid.usb` plus opt-in `audio-pipewire` | Controller-specific HID on the kernel USB *bus type*, plus independent caller-session PipeWire playback/capture nodes. The sound nodes do **not** inherit the HID device's USB ancestry. | The application may explicitly select the associated sound nodes; automatic HID–sound routing by SDL, Steam or Proton is **unknown**, not guaranteed. |
+| **Native HID** — `linux.uhid.bluetooth` | Controller-specific UHID on the Bluetooth *bus type*; no physical Bluetooth radio or USB audio composite is created. | Native rumble and controller in-band speaker commands are separate from UAC audio. Wii speaker playback is still refused; Bluetooth-bus metadata do not imply radio pairing. |
+| **Real USB** — `linux.usbip.usb-audio` plus `audio-usbip` | A USB/IP/VHCI device with **one composite USB parent**, HID interface and UAC2 audio-control/playback/capture interfaces; the Linux sound subsystem identifies its ALSA card by that VHCI USB ancestry. | Needs the provisioned root broker and unprivileged worker. Optional `audio-pipewire` supports NativeClient bridging. This is **functional UAC2**, not a physical controller descriptor match; the DualSense reference described by the research corpus is UAC1. |
+| **Real USB (experimental)** — `linux.dummy_hcd.usb-hid` | Experimental USB HID presentation without the compiled USB/IP UAC2 audio function. | Does not reproduce the HID-plus-audio composite and remains `not-supported` in the affected acceptance cells. |
+
+For the USB/IP descriptor layout, see the
+[compiled UAC2/HID configuration](https://github.com/anderstvoss/virtualgamepad/blob/62f98b628839d173e3b894111544eea6b62163a7/crates/gr-usbip/src/profile.rs#L158-L176);
+for Linux's USB-parent/ALSA-card check, see the
+[VHCI sound-card resolver](https://github.com/anderstvoss/virtualgamepad/blob/62f98b628839d173e3b894111544eea6b62163a7/crates/gr-root-audio/src/usb_audio.rs#L193-L233).
+[ADR-0017](https://github.com/anderstvoss/virtualgamepad/blob/62f98b628839d173e3b894111544eea6b62163a7/docs/adr/ADR-0017-primary-realization-and-audio-components.md#L9-L24)
+defines the distinction between associated PipeWire components and a single USB
+composite. The controller-native Steam haptic PCM/MIDI commands and Wii speaker
+protocol are **in-band HID** subsystems, not standalone USB Audio Class or USB
+MIDI interfaces; see
+[ADR-0023](https://github.com/anderstvoss/virtualgamepad/blob/62f98b628839d173e3b894111544eea6b62163a7/docs/adr/ADR-0023-controller-subsystems.md#L8-L27) and
+[ADR-0024](https://github.com/anderstvoss/virtualgamepad/blob/62f98b628839d173e3b894111544eea6b62163a7/docs/adr/ADR-0024-host-output-stream.md#L85-L96).
+
+The pinned research claims
+[`audio-consumer-sidecar-hid-sound-association-unknown`](https://github.com/anderstvoss/controller-protocol-research/blob/4684fce0dc2dd993dd8c3e8846c86c537fdcf7e1/records/claim/audio-consumer-sidecar-hid-sound-association-unknown.json)
+and
+[`audio-consumer-proton-steam-audio-association-unknown`](https://github.com/anderstvoss/controller-protocol-research/blob/4684fce0dc2dd993dd8c3e8846c86c537fdcf7e1/records/claim/audio-consumer-proton-steam-audio-association-unknown.json)
+do **not** establish automatic association or routing of independent HID and
+sound nodes. Neither does common USB ancestry alone prove how a proprietary
+Steam client selects an audio endpoint. The
+[`audio-dualsense-usb-uac1-topology`](https://github.com/anderstvoss/controller-protocol-research/blob/4684fce0dc2dd993dd8c3e8846c86c537fdcf7e1/records/claim/audio-dualsense-usb-uac1-topology.json)
+claim cites a historical physical-reference description, not a new controlled
+descriptor experiment.
+
+**Proposed host checks — not run in this documentation change:** On a separately
+provisioned Linux host, inspect the USB/IP device's interface descriptors and
+common VHCI parent, then resolve ALSA playback/capture endpoints and exercise
+both directions with bounded markers. Independently enumerate UHID and
+PipeWire sidecar nodes, confirm their separate ancestry, and test explicit
+selection versus automatic selection in each targeted SDL/Steam/Proton consumer.
+Record successes, failures, disconnect cleanup and permissions per realization
+and ownership mode. None of these proposed checks are acceptance evidence.
+
 ## Choose the presentation at creation
 
 - `LINUX_UHID_USB` with `audio-pipewire`: HID plus associated PipeWire sink/source
@@ -65,6 +137,46 @@ not an end-to-end latency measurement. Emulated PCM preserves raw sample values;
 it does not apply HID volume/routing controls a second time or claim matching
 physical control behavior.
 
+## Cooperative Native HID sidecar association
+
+For `linux.uhid.usb`, PipeWire audio endpoints are separate session-graph
+nodes, not USB audio interfaces. An opt-in cooperating application can correlate
+them with the owning HID presentation using VirtualGamepad association metadata;
+stock SDL, Steam and WirePlumber do not perform this association. Automatic
+HID/audio device association requires the Real USB realization
+(`linux.usbip.usb-audio`) rather than PipeWire properties alone.
+
+The borrowed `controller.audio()?.sidecar_association()` accessor is available
+only for Native HID/PipeWire audio; it returns the stable-per-creation
+`AudioSidecarAssociation::key()` and exact `node_names()`. It does not return
+PipeWire numeric node IDs, which are assigned by the graph and can change.
+All host and NativeClient caller nodes carry the same key.
+
+A cooperating client enumerates its current PipeWire graph, looks up nodes
+whose `virtualgamepad.association.key` equals the accessor value, and connects
+them using the appropriate declared `media.class` (sink or source). Each
+registered node publishes:
+
+- `device.vendor.id` and `device.product.id` (hexadecimal USB HID IDs),
+  `device.product.name` (owning HID product name), and `device.serial`
+  (the **exact UHID uniq**, not a manufactured physical device serial).
+- `virtualgamepad.realization.id` (`linux.uhid.usb`) and
+  `virtualgamepad.association.key` (creation-scoped shared correlation key).
+- Existing `node.name`, `media.class`, and `node.virtual` properties.
+
+The key differs for distinct creations, including a recreation with restored
+HID identity. Graph names and property metadata neither attach a Linux sound
+card to the HID input nor grant physical USB ancestry. Do not persist the key
+or use it as a controller's long-term hardware identity.
+
+**Live host check plan — not run:** on an explicitly provisioned Linux test
+host, create two UHID controllers with PipeWire audio, enumerate current nodes
+with `pw-dump`, verify every sink/source and optional caller node has the
+expected matching key, HID uniq, VID/PID and direction; verify sibling isolation,
+close/removal and recreation with a changed key. Then test a cooperating client
+routing playback and microphone explicitly. This agent has no live host and
+reports no host, physical, SDL, Steam or WirePlumber acceptance result.
+
 ## Build and provision
 
 PipeWire builds need its development headers, SPA headers, pkg-config and libclang
@@ -79,13 +191,75 @@ Administrator-selected VHCI ports must be reserved for this broker. Provisioning
 is separate from ordinary-user controller creation. The lab executable is not the
 installed production worker. Do not grant broad sound-device or sudo access.
 
-Root-API examples (these create virtual devices when run):
+Root-API examples create one virtual device per invocation. The Real USB
+examples share a family argument (`dualsense`, `ds4` or `xbox360`; `dualshock4`
+is also accepted) and named options. Run them on the prepared VHCI lab host
+with the installed broker.
 
 ```sh
 cargo run --features audio-pipewire --example controller_audio -- dualsense 10
-cargo run --features audio-usbip --example usb_audio_root
-cargo run --features audio-usbip,audio-pipewire --example usb_audio_root -- native
+
+features=experimental,audio-usbip,audio-pipewire
+cargo run --features "$features" --example usb_audio_root -- dualsense
+cargo run --features "$features" --example usb_audio_root -- dualsense --native
+cargo run --features "$features" --example usb_audio_acceptance -- dualsense --seconds 3 --trials 1 --mic-fill-ms 12
+cargo run --features "$features" --example usb_audio_latency -- dualsense --seconds 3
+cargo run --features "$features" --example usb_audio_latency_alsa -- dualsense --seconds 3
+cargo run --features "$features" --example usb_audio_latency_reverse -- dualsense --seconds 3 --mic-fill-ms 12
+cargo run --features "$features" --example usb_audio_native_probe -- dualsense --seconds 3
 ```
+
+The examples obtain the active VHCI port and broker serial from their newly
+created controller's observed USB parent. The serial supplies the broker
+instance and attachment generation. The checker independently verifies that
+identity, ALSA ancestry and pre-attachment audio isolation before PCM access.
+The examples leave the shared PipeWire graph and device profiles unchanged.
+
+### Isolate the Real USB lab card
+
+Before the measurement run, identify the lab card's USB parent during a
+short-lived Real USB attachment and read that parent's `serial` attribute under
+`/sys/bus/usb/devices/`. In the serial `vg-<instance>-<16 hex digits>`, the
+instance is the part after `vg-` and before the final hyphen and 16-digit
+generation. Close that attachment before installing the rule.
+
+Save the following two lines as `72-vg-audio-isolation.rules`. Replace every
+`<REPLACE_WITH_BROKER_INSTANCE>` with the exact instance from the serial, including
+any hyphens. Remove the angle brackets with the placeholder. Keep the final
+`-*` in the serial glob so the rule matches each new attachment generation.
+
+```udev
+SUBSYSTEM=="sound", KERNEL=="card[0-9]*", ATTRS{serial}=="vg-<REPLACE_WITH_BROKER_INSTANCE>-*", ENV{VG_ALPHA_AUDIO_INSTANCE}="<REPLACE_WITH_BROKER_INSTANCE>"
+SUBSYSTEM=="sound", KERNEL=="card[0-9]*", ENV{VG_ALPHA_AUDIO_INSTANCE}=="<REPLACE_WITH_BROKER_INSTANCE>", SUBSYSTEMS=="platform", KERNELS=="vhci_hcd.0", ENV{ACP_IGNORE}="1"
+```
+
+From the directory containing the completed rule:
+
+```sh
+udevadm verify 72-vg-audio-isolation.rules &&
+  sudo install -o root -g root -m 0644 72-vg-audio-isolation.rules /etc/udev/rules.d/72-vg-audio-isolation.rules &&
+  sudo udevadm control --reload-rules
+```
+
+Create a fresh Real USB attachment so the rule applies on its add event. Set
+`card` to its observed ALSA number and inspect the card properties:
+
+```sh
+udevadm info --query=property --path="/sys/class/sound/card${card}" |
+  grep -E '^(VG_ALPHA_AUDIO_INSTANCE|ACP_IGNORE)='
+```
+
+Require `VG_ALPHA_AUDIO_INSTANCE` to match the serial's instance and
+`ACP_IGNORE=1`. In `pw-dump`, check that no ALSA Device or Node refers to that
+number through `api.alsa.card` or `api.alsa.pcm.card`. PipeWire's ALSA udev
+monitor uses `ACP_IGNORE` to skip the card before WirePlumber creates its
+objects. [PipeWire ALSA monitor source](https://github.com/PipeWire/pipewire/blob/1.6.11/spa/plugins/alsa/alsa-udev.c#L162)
+
+The streaming commands default to three seconds. Acceptance and the native
+probe allow 1–60 seconds. Latency commands allow 3–60 seconds. Acceptance allows
+1–3 trials and defaults to one. Acceptance and reverse latency allow 1–16 ms of
+microphone fill and default to 12 ms. The native probe checks indexed patterns
+in both directions, and the ALSA latency commands measure the directional p99.
 
 ## Acceptance and remaining gates
 

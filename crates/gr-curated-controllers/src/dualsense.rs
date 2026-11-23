@@ -1,5 +1,6 @@
 //! `DualSense` controller with native input, touch, motion, and output types.
 
+mod bluetooth;
 #[cfg(all(test, target_os = "linux"))]
 mod host_probe;
 mod protocol;
@@ -120,6 +121,8 @@ pub enum DualSenseFeature {
     Touch,
     Motion,
     Lightbar,
+    PlayerIndicators,
+    MicrophoneLed,
     AdaptiveTriggers,
     Audio,
 }
@@ -538,7 +541,7 @@ static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     event_type: 21,
     event_code: 80,
 }];
-static RESTRICTIONS: [TargetRestriction; 7] = [
+static RESTRICTIONS: [TargetRestriction; 9] = [
     TargetRestriction {
         feature: "touch companion",
         reason: "evdev exposes associated touch contacts separately so udev classifies the primary device as a gamepad; SDL gamepad touch APIs do not consume this companion",
@@ -551,6 +554,14 @@ static RESTRICTIONS: [TargetRestriction; 7] = [
     TargetRestriction {
         feature: "RGB lightbar",
         reason: "generic evdev LEDs cannot faithfully express DualSense lightbar reports",
+    },
+    TargetRestriction {
+        feature: "player indicators",
+        reason: "linux.uinput exposes conventional rumble but no native DualSense player-indicator output reports",
+    },
+    TargetRestriction {
+        feature: "microphone LED",
+        reason: "linux.uinput exposes conventional rumble but no native DualSense microphone LED output reports",
     },
     TargetRestriction {
         feature: "adaptive triggers",
@@ -573,6 +584,24 @@ static HID_RESTRICTIONS: [TargetRestriction; 2] = [
     TargetRestriction {
         feature: "physical-device fidelity",
         reason: "the USB HID report contract is research-backed until reference-device comparison",
+    },
+];
+static BLUETOOTH_RESTRICTIONS: [TargetRestriction; 4] = [
+    TargetRestriction {
+        feature: "Bluetooth radio and pairing",
+        reason: "Bluetooth-bus UHID exposes a local HID node but cannot discover, pair or reconnect over a radio; actual Bluetooth is deferred to #164",
+    },
+    TargetRestriction {
+        feature: "Bluetooth controller audio",
+        reason: "Bluetooth-bus UHID has no PCM/audio transport and this realization does not create an audio sidecar",
+    },
+    TargetRestriction {
+        feature: "Bluetooth retail descriptor fidelity",
+        reason: "the synthetic Bluetooth HID report descriptor is source-compatible; no physical reference descriptor is available for byte-level comparison",
+    },
+    TargetRestriction {
+        feature: "Bluetooth adaptive-trigger actuator fidelity",
+        reason: "output effect bytes are retained and decoded, but no physical actuation or advanced haptics transport has been validated",
     },
 ];
 const BYTE_AXIS: InputAxisRange = InputAxisRange {
@@ -782,6 +811,19 @@ static HID_SURFACE: DualSenseSurface = DualSenseSurface {
     }
     .build(),
 };
+static BLUETOOTH_SURFACE: DualSenseSurface = DualSenseSurface {
+    common: gr_controller_contract::construction::ControllerSurfaceSpec {
+        target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+        validation_status: RealizationValidationStatus::ResearchBacked,
+        digital_controls: &DIGITAL,
+        axes: &AXES,
+        outputs: &OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
+        restrictions: &BLUETOOTH_RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
+    }
+    .build(),
+};
 static USB_RESTRICTIONS: [TargetRestriction; 2] = [
     TargetRestriction {
         feature: "controller audio routing",
@@ -831,6 +873,7 @@ static USBIP_SURFACE: DualSenseSurface = DualSenseSurface {
 const fn motion_targets() -> RealizationTargetSet {
     RealizationTargetSet::new(&[
         RealizationTarget::LINUX_UHID_USB,
+        RealizationTarget::LINUX_UHID_BLUETOOTH,
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         RealizationTarget::LINUX_USBIP_USB_AUDIO,
     ])
@@ -840,13 +883,16 @@ const fn supports_motion(target: RealizationTarget) -> bool {
     motion_targets().contains(target)
 }
 
-pub struct DualSenseDefinition;
+#[derive(Clone, Default)]
+pub struct DualSenseDefinition {
+    device_data: Option<DualSenseDeviceData>,
+}
 impl RealizationControllerDefinition for DualSenseDefinition {
     fn controller_id(&self) -> ControllerId {
         ControllerId::new("virtualgamepad.dualsense")
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        static ENTRIES: [RealizationManifestEntry; 4] = [
+        static ENTRIES: [RealizationManifestEntry; 5] = [
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
@@ -856,6 +902,13 @@ impl RealizationControllerDefinition for DualSenseDefinition {
             },
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UHID_USB,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: true,
+                },
+                audio_sidecar: None,
+            },
+            RealizationManifestEntry {
+                target: RealizationTarget::LINUX_UHID_BLUETOOTH,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -902,6 +955,7 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
             selection.target,
             RealizationTarget::LINUX_UINPUT
                 | RealizationTarget::LINUX_UHID_USB
+                | RealizationTarget::LINUX_UHID_BLUETOOTH
                 | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
                 | RealizationTarget::LINUX_USBIP_USB_AUDIO
         ) {
@@ -935,6 +989,12 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
     ) -> Result<Self::Frame, ControlError> {
         if selection.target == RealizationTarget::LINUX_UHID_USB {
             return Ok(dualsense_hid_input_report(state));
+        }
+        if selection.target == RealizationTarget::LINUX_UHID_BLUETOOTH {
+            return Ok(ProviderFrame::HidInput {
+                report_id: Some(bluetooth::ENHANCED_ID),
+                bytes: bluetooth::enhanced_input(state).payload().to_vec(),
+            });
         }
         if selection.target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID {
             let ProviderFrame::HidInput {
@@ -1194,6 +1254,16 @@ pub enum DualSenseOutputEvent {
     },
 }
 
+/// Source-supported microphone LED mode (`ds-cgap-mute-led-pulse-source-mapping`).
+/// Unknown values remain lossless and are not interpreted as on/off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DualSenseMuteLed {
+    Off,
+    On,
+    Pulse,
+    Unknown(u8),
+}
+
 /// Reverse HID output preserved in its native report form.
 ///
 /// `UsbOutput` exposes the fields whose positions are documented by the Linux
@@ -1224,7 +1294,7 @@ pub enum DualSenseHidOutput {
         right_trigger_effect: [u8; 11],
         left_trigger_effect: [u8; 11],
         /// Present only when the host set the mic-mute LED valid bit.
-        mute_button_led: Option<bool>,
+        mute_button_led: Option<DualSenseMuteLed>,
         /// Native microphone mute request, present only when power-save control
         /// is valid. Independent of the LED; observation does not alter PCM.
         microphone_muted: Option<bool>,
@@ -1237,8 +1307,18 @@ pub enum DualSenseHidOutput {
         microphone_volume: Option<u8>,
         /// Controller-native speaker preamp field, validity-gated and not applied to PCM.
         speaker_preamp: Option<u8>,
-        /// Present only when the host set the player-indicator valid bit.
+        /// Raw brightness byte, without interpreting disputed encoding.
+        /// See `ds-cgap-led-brightness-encoding-disagreement`.
+        led_brightness: u8,
+        /// Raw lightbar setup byte, only when `valid_flag2` bit 1 is set.
+        lightbar_setup: Option<u8>,
+        /// Release/reset LEDs command; present only when `valid_flag1` bit 3 is set.
+        release_leds: Option<bool>,
+        /// Five indicator bits (0..4), only when `valid_flag1` bit 4 is set.
         player_leds: Option<u8>,
+        /// Instant (true) versus fade (false), bit 5 of the player LED byte.
+        /// Source-only mapping: `ds-cgap-player-led-instant-source-mapping`.
+        player_led_instant: Option<bool>,
         /// Present only when the host set the lightbar valid bit.
         lightbar_rgb: Option<[u8; 3]>,
     },
@@ -1246,6 +1326,363 @@ pub enum DualSenseHidOutput {
         report_id: Option<u8>,
         raw: Vec<u8>,
     },
+}
+
+/// Source-derived 3-bit force levels per active trigger zone (1..=8).
+///
+/// The zone boundaries are inclusive indices in 0..=9, not physical travel.
+/// Claim: ds-l0-device-adaptive-trigger-mode-parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DualSenseTriggerZoneForces {
+    pub active_zones: u16,
+    pub start_zone: u8,
+    pub end_zone: u8,
+    pub strengths: [Option<u8>; 10],
+}
+
+/// Source-supported interpretation of one 11-byte `DualSense` effect block.
+///
+/// These are compatibility encoder parameters, not measured force/actuation.
+/// Unsupported mode bytes or noncanonical parameter layouts preserve all bytes.
+/// Claims: ds-l0-device-adaptive-trigger-mode-block,
+/// ds-l0-device-adaptive-trigger-mode-parameters,
+/// ds-l0-sdl-trigger-demo-modes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DualSenseTriggerEffect {
+    Off,
+    Feedback {
+        zones: DualSenseTriggerZoneForces,
+    },
+    Weapon {
+        start_zone: u8,
+        end_zone: u8,
+        strength: u8,
+    },
+    Vibration {
+        zones: DualSenseTriggerZoneForces,
+        frequency_code: u8,
+    },
+    Unknown {
+        mode: u8,
+        raw: [u8; 11],
+    },
+}
+
+/// One trigger's effect bytes and whether this report actually updates it.
+/// `effect` is absent if the host did not set that side's validity bit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DualSenseTriggerEffectUpdate {
+    pub valid: bool,
+    pub raw: [u8; 11],
+    pub effect: Option<DualSenseTriggerEffect>,
+}
+
+/// Decode the source-pinned 0x05 / 0x21 / 0x25 / 0x26 effect layouts.
+///
+/// Force levels are 1..=8, zone indices 0..=9. Vibration frequency is
+/// an *unscaled native code*, not verified hertz. SDL demo modes 0x01/0x06
+/// intentionally remain Unknown (ds-l0-sdl-trigger-demo-modes).
+#[must_use]
+pub fn decode_dualsense_trigger_effect(raw: [u8; 11]) -> DualSenseTriggerEffect {
+    let unknown = || DualSenseTriggerEffect::Unknown { mode: raw[0], raw };
+    match raw[0] {
+        0x05 if raw[1..].iter().all(|byte| *byte == 0) => DualSenseTriggerEffect::Off,
+        0x25 => {
+            let zone_mask = u16::from_le_bytes([raw[1], raw[2]]);
+            if zone_mask & !0x03ff != 0
+                || zone_mask.count_ones() != 2
+                || raw[3] > 7
+                || raw[4..].iter().any(|byte| *byte != 0)
+            {
+                return unknown();
+            }
+            DualSenseTriggerEffect::Weapon {
+                start_zone: u8::try_from(zone_mask.trailing_zeros()).unwrap_or_default(),
+                end_zone: u8::try_from(zone_mask.ilog2()).unwrap_or_default(),
+                strength: raw[3] + 1,
+            }
+        }
+        0x21 | 0x26 => {
+            let zone_mask = u16::from_le_bytes([raw[1], raw[2]]);
+            let strength_bits = u32::from_le_bytes([raw[3], raw[4], raw[5], raw[6]]);
+            if zone_mask == 0
+                || zone_mask & !0x03ff != 0
+                || strength_bits >> 30 != 0
+                || raw[7] != 0
+                || raw[8] != 0
+                || raw[10] != 0
+                || (raw[0] == 0x21 && raw[9] != 0)
+            {
+                return unknown();
+            }
+            let mut strengths = [None; 10];
+            for (zone, strength) in strengths.iter_mut().enumerate() {
+                let encoded = ((strength_bits >> (zone * 3)) & 7) as u8;
+                if zone_mask & (1 << zone) != 0 {
+                    *strength = Some(encoded + 1);
+                } else if encoded != 0 {
+                    return unknown();
+                }
+            }
+            let zones = DualSenseTriggerZoneForces {
+                active_zones: zone_mask,
+                start_zone: u8::try_from(zone_mask.trailing_zeros()).unwrap_or_default(),
+                end_zone: u8::try_from(zone_mask.ilog2()).unwrap_or_default(),
+                strengths,
+            };
+            if raw[0] == 0x21 {
+                DualSenseTriggerEffect::Feedback { zones }
+            } else {
+                DualSenseTriggerEffect::Vibration {
+                    zones,
+                    frequency_code: raw[9],
+                }
+            }
+        }
+        _ => unknown(),
+    }
+}
+
+impl DualSenseHidOutput {
+    /// Return (right, left) trigger updates from a USB report; None for
+    /// unrecognized reports. Raw bytes are retained even when validity is
+    /// unset. Validity bits are 0x04 (right) and 0x08 (left) of flag0.
+    /// Claims: ds-l0-sdl-trigger-demo-modes, ds-l0-device-adaptive-trigger-mode-block.
+    #[must_use]
+    pub fn trigger_effects(
+        &self,
+    ) -> Option<(DualSenseTriggerEffectUpdate, DualSenseTriggerEffectUpdate)> {
+        let Self::UsbOutput {
+            valid_flag0,
+            right_trigger_effect,
+            left_trigger_effect,
+            ..
+        } = self
+        else {
+            return None;
+        };
+        let right_valid = valid_flag0 & 0x04 != 0;
+        let left_valid = valid_flag0 & 0x08 != 0;
+        Some((
+            DualSenseTriggerEffectUpdate {
+                valid: right_valid,
+                raw: *right_trigger_effect,
+                effect: right_valid.then(|| decode_dualsense_trigger_effect(*right_trigger_effect)),
+            },
+            DualSenseTriggerEffectUpdate {
+                valid: left_valid,
+                raw: *left_trigger_effect,
+                effect: left_valid.then(|| decode_dualsense_trigger_effect(*left_trigger_effect)),
+            },
+        ))
+    }
+}
+
+#[cfg(test)]
+mod dualsense_trigger_effect_tests {
+    use super::*;
+
+    // Source claims: ds-l0-device-adaptive-trigger-mode-block,
+    // ds-l0-device-adaptive-trigger-mode-parameters.
+    #[test]
+    fn off_reset_and_unpinned_sdl_demo_modes_keep_raw() {
+        let reset = [0x05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        assert_eq!(
+            decode_dualsense_trigger_effect(reset),
+            DualSenseTriggerEffect::Off
+        );
+        let mut nonzero_reset = reset;
+        nonzero_reset[10] = 1;
+        assert_eq!(
+            decode_dualsense_trigger_effect(nonzero_reset),
+            DualSenseTriggerEffect::Unknown {
+                mode: 0x05,
+                raw: nonzero_reset
+            }
+        );
+        // ds-l0-sdl-trigger-demo-modes: SDL sends 0x01 and 0x06, but
+        // the demonstration does not pin general parameter semantics.
+        for (mode, p1, p2, p3) in [(0x01, 0, 110, 0), (0x06, 15, 63, 128)] {
+            let mut raw = [0; 11];
+            raw[0..4].copy_from_slice(&[mode, p1, p2, p3]);
+            assert_eq!(
+                decode_dualsense_trigger_effect(raw),
+                DualSenseTriggerEffect::Unknown { mode, raw }
+            );
+        }
+        let mut unknown = [0; 11];
+        unknown[0] = 0xfe;
+        unknown[10] = 0xa5;
+        assert_eq!(
+            decode_dualsense_trigger_effect(unknown),
+            DualSenseTriggerEffect::Unknown {
+                mode: 0xfe,
+                raw: unknown
+            }
+        );
+    }
+
+    // ds-l0-device-adaptive-trigger-mode-parameters: 10 zone bits,
+    // two Weapon boundary positions and one-based force levels.
+    #[test]
+    fn weapon_minimum_maximum_and_invalid_masks() {
+        let mut lowest = [0; 11];
+        lowest[0..3].copy_from_slice(&[0x25, 0x03, 0]);
+        assert_eq!(
+            decode_dualsense_trigger_effect(lowest),
+            DualSenseTriggerEffect::Weapon {
+                start_zone: 0,
+                end_zone: 1,
+                strength: 1
+            }
+        );
+        let mut highest = [0; 11];
+        highest[0..4].copy_from_slice(&[0x25, 0, 0x03, 7]);
+        assert_eq!(
+            decode_dualsense_trigger_effect(highest),
+            DualSenseTriggerEffect::Weapon {
+                start_zone: 8,
+                end_zone: 9,
+                strength: 8
+            }
+        );
+        for (slot, value) in [(1, 0_u8), (2, 0x80), (3, 8), (10, 1)] {
+            let mut malformed = lowest;
+            malformed[slot] = value;
+            assert!(matches!(
+                decode_dualsense_trigger_effect(malformed),
+                DualSenseTriggerEffect::Unknown { raw, .. } if raw == malformed
+            ));
+        }
+    }
+
+    // ds-l0-device-adaptive-trigger-mode-parameters:
+    // LE16 active-zone mask; LE32 three bits per zone (1..=8 exposed).
+    #[test]
+    fn feedback_minimum_maximum_and_unpinned_parameters() {
+        let mut min = [0; 11];
+        min[0..3].copy_from_slice(&[0x21, 1, 0]);
+        let mut min_levels = [None; 10];
+        min_levels[0] = Some(1);
+        assert_eq!(
+            decode_dualsense_trigger_effect(min),
+            DualSenseTriggerEffect::Feedback {
+                zones: DualSenseTriggerZoneForces {
+                    active_zones: 1,
+                    start_zone: 0,
+                    end_zone: 0,
+                    strengths: min_levels
+                }
+            }
+        );
+        let mut max = [0; 11];
+        max[0..7].copy_from_slice(&[0x21, 0xff, 0x03, 0xff, 0xff, 0xff, 0x3f]);
+        assert_eq!(
+            decode_dualsense_trigger_effect(max),
+            DualSenseTriggerEffect::Feedback {
+                zones: DualSenseTriggerZoneForces {
+                    active_zones: 0x03ff,
+                    start_zone: 0,
+                    end_zone: 9,
+                    strengths: [Some(8); 10]
+                }
+            }
+        );
+        for (slot, value) in [(1, 0), (2, 0x80), (6, 0x80), (7, 1), (9, 1)] {
+            let mut malformed = min;
+            malformed[slot] = value;
+            assert!(matches!(
+                decode_dualsense_trigger_effect(malformed),
+                DualSenseTriggerEffect::Unknown { raw, .. } if raw == malformed
+            ));
+        }
+        let mut inactive_force = min;
+        inactive_force[3] = 0x08; // Only zone 0 is marked active.
+        assert!(matches!(
+            decode_dualsense_trigger_effect(inactive_force),
+            DualSenseTriggerEffect::Unknown { .. }
+        ));
+    }
+
+    // ds-l0-device-adaptive-trigger-mode-parameters:
+    // Frequency is a native code, not a verified Hz conversion.
+    #[test]
+    fn vibration_minimum_maximum_and_frequency_code() {
+        let mut min = [0; 11];
+        min[0..3].copy_from_slice(&[0x26, 1, 0]);
+        let mut levels = [None; 10];
+        levels[0] = Some(1);
+        assert_eq!(
+            decode_dualsense_trigger_effect(min),
+            DualSenseTriggerEffect::Vibration {
+                zones: DualSenseTriggerZoneForces {
+                    active_zones: 1,
+                    start_zone: 0,
+                    end_zone: 0,
+                    strengths: levels
+                },
+                frequency_code: 0
+            }
+        );
+        let mut max = [0; 11];
+        max[0..7].copy_from_slice(&[0x26, 0xff, 0x03, 0xff, 0xff, 0xff, 0x3f]);
+        max[9] = u8::MAX;
+        assert_eq!(
+            decode_dualsense_trigger_effect(max),
+            DualSenseTriggerEffect::Vibration {
+                zones: DualSenseTriggerZoneForces {
+                    active_zones: 0x03ff,
+                    start_zone: 0,
+                    end_zone: 9,
+                    strengths: [Some(8); 10]
+                },
+                frequency_code: u8::MAX
+            }
+        );
+    }
+
+    // ds-l0-sdl-trigger-demo-modes pins right=0x04 and left=0x08.
+    // A report without valid bits is not a command to turn effects off.
+    #[test]
+    fn usb_side_validity_and_native_byte_agreement() {
+        let mut right_raw = [0; 11];
+        right_raw[0..4].copy_from_slice(&[0x25, 0x03, 0, 7]);
+        let mut left_raw = [0; 11];
+        left_raw[0..3].copy_from_slice(&[0x21, 1, 0]);
+        for length in [47, 62] {
+            for flags in [0, 0x04, 0x08, 0x0c] {
+                let mut raw = vec![0; length];
+                raw[0] = flags;
+                raw[10..21].copy_from_slice(&right_raw);
+                raw[21..32].copy_from_slice(&left_raw);
+                let output = decode_dualsense_hid_output(Some(0x02), raw.clone());
+                let (right, left) = output.trigger_effects().expect("valid USB frame");
+                assert_eq!(right.raw, right_raw);
+                assert_eq!(left.raw, left_raw);
+                assert_eq!(right.valid, flags & 0x04 != 0);
+                assert_eq!(left.valid, flags & 0x08 != 0);
+                assert_eq!(
+                    right.effect,
+                    (flags & 0x04 != 0).then(|| decode_dualsense_trigger_effect(right_raw))
+                );
+                assert_eq!(
+                    left.effect,
+                    (flags & 0x08 != 0).then(|| decode_dualsense_trigger_effect(left_raw))
+                );
+                let DualSenseHidOutput::UsbOutput { raw: retained, .. } = output else {
+                    panic!("expected USB report");
+                };
+                assert_eq!(retained, raw);
+            }
+        }
+        assert!(
+            decode_dualsense_hid_output(Some(0x31), vec![0; 77])
+                .trigger_effects()
+                .is_none(),
+            "Bluetooth output is not parsed by this USB-only path"
+        );
+    }
 }
 
 pub(crate) fn decode_dualsense_hid_output(
@@ -1267,7 +1704,12 @@ pub(crate) fn decode_dualsense_hid_output(
             left_motor: vibration_enabled.then_some(raw[3]),
             right_trigger_effect,
             left_trigger_effect,
-            mute_button_led: (raw[1] & 0x01 != 0).then_some(raw[8] != 0),
+            mute_button_led: (raw[1] & 0x01 != 0).then(|| match raw[8] {
+                0 => DualSenseMuteLed::Off,
+                1 => DualSenseMuteLed::On,
+                2 => DualSenseMuteLed::Pulse,
+                value => DualSenseMuteLed::Unknown(value),
+            }),
             // Linux hid-playstation: power-save validity bit 1, mic-mute bit 4.
             microphone_muted: (raw[1] & 0x02 != 0).then_some(raw[9] & 0x10 != 0),
             audio_path: (raw[0] & 0x80 != 0).then(|| match (raw[7] >> 4) & 0x03 {
@@ -1279,15 +1721,27 @@ pub(crate) fn decode_dualsense_hid_output(
             speaker_volume: (raw[0] & 0x20 != 0).then_some(raw[5]),
             microphone_volume: (raw[0] & 0x40 != 0).then_some(raw[6]),
             speaker_preamp: (raw[1] & 0x80 != 0).then_some(raw[37] & 0x07),
-            player_leds: (raw[1] & 0x10 != 0).then_some(raw[43]),
+            led_brightness: raw[42],
+            lightbar_setup: (raw[38] & 0x02 != 0).then_some(raw[41]),
+            release_leds: (raw[1] & 0x08 != 0).then_some(true),
+            player_leds: (raw[1] & 0x10 != 0).then_some(raw[43] & 0x1f),
+            player_led_instant: (raw[1] & 0x10 != 0).then_some(raw[43] & 0x20 != 0),
             lightbar_rgb: (raw[1] & 0x04 != 0).then_some([raw[44], raw[45], raw[46]]),
             raw,
         };
     }
     DualSenseHidOutput::Unknown { report_id, raw }
 }
-pub struct DualSenseController(common::ControllerSession<DualSenseDefinition>);
+pub struct DualSenseController(
+    common::ControllerSession<DualSenseDefinition>,
+    DualSenseDeviceData,
+);
 impl DualSenseController {
+    /// The validated device data used for this instance, including after close.
+    #[must_use]
+    pub const fn device_data(&self) -> &DualSenseDeviceData {
+        &self.1
+    }
     /// Pairing identity of a local USB/UHID session, if available.
     #[must_use]
     pub fn identity(&self) -> Option<DualSenseIdentity> {
@@ -1334,6 +1788,7 @@ impl DualSenseController {
     pub fn surface(&self) -> &'static DualSenseSurface {
         match self.0.selection().target {
             RealizationTarget::LINUX_UHID_USB => &HID_SURFACE,
+            RealizationTarget::LINUX_UHID_BLUETOOTH => &BLUETOOTH_SURFACE,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID => &USB_SURFACE,
             RealizationTarget::LINUX_USBIP_USB_AUDIO => &USBIP_SURFACE,
             _ => &SURFACE,
@@ -1457,6 +1912,8 @@ impl DualSenseController {
             DualSenseFeature::Touch => Ok(()),
             DualSenseFeature::Motion if supports_motion(self.0.selection().target) => Ok(()),
             DualSenseFeature::Lightbar
+            | DualSenseFeature::PlayerIndicators
+            | DualSenseFeature::MicrophoneLed
             | DualSenseFeature::AdaptiveTriggers
             | DualSenseFeature::Audio => Err(common::unavailable(self.0.selection().target)),
             DualSenseFeature::Motion => Err(ControlError::UnavailableInRealization {
@@ -1578,6 +2035,7 @@ impl DualSenseController {
 }
 pub(crate) fn realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
+        bus_type: 0x03,
         physical_path: None,
         device_name: "DualSense Wireless Controller".into(),
         identity: NativeDeviceIdentity {
@@ -1603,7 +2061,14 @@ pub(crate) fn realization() -> NativeControllerRealization {
         force_feedback_codes: vec![0x50],
     })
 }
+#[cfg(test)]
 fn dualsense_feature_responses(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
+    dualsense_feature_responses_with_data(identity, None)
+}
+fn dualsense_feature_responses_with_data(
+    identity: [u8; 6],
+    data: Option<DualSenseDeviceData>,
+) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     // `uhid_report_type`: feature=0, output=1, input=2. This is distinct
     // from the HID class-request values and is the value Linux sends in a
     // `UHID_GET_REPORT` event.
@@ -1614,26 +2079,8 @@ fn dualsense_feature_responses(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey
     let mut capabilities = vec![0_u8; 48];
     capabilities[0] = 0x03;
     capabilities[2..6].copy_from_slice(&[0x28, 0x01, 0x00, 0x0e]);
-    let mut calibration = vec![0_u8; 41];
-    calibration[0] = 0x05;
-    // Consistent synthetic calibration values. `hid-playstation` uses these
-    // fields to derive per-axis denominators; zero-filled placeholder values
-    // make it take its broken-device fallback and prevent reliable motion
-    // handling by host software. No physical controller data is captured.
-    for offset in [7, 11, 15] {
-        calibration[offset..offset + 2].copy_from_slice(&32_000_i16.to_le_bytes());
-    }
-    for offset in [9, 13, 17] {
-        calibration[offset..offset + 2].copy_from_slice(&(-32_000_i16).to_le_bytes());
-    }
-    calibration[19..21].copy_from_slice(&2_000_i16.to_le_bytes());
-    calibration[21..23].copy_from_slice(&2_000_i16.to_le_bytes());
-    for offset in [23, 27, 31] {
-        calibration[offset..offset + 2].copy_from_slice(&8_192_i16.to_le_bytes());
-    }
-    for offset in [25, 29, 33] {
-        calibration[offset..offset + 2].copy_from_slice(&(-8_192_i16).to_le_bytes());
-    }
+    let data = data.unwrap_or_default();
+    let calibration = data.calibration.to_vec();
     let mut pairing = vec![0_u8; 20];
     pairing[0] = 0x09;
     // `hid-playstation` de-duplicates DualSense connections by this address.
@@ -1641,17 +2088,7 @@ fn dualsense_feature_responses(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey
     // from OS entropy. Keep it unchanged for this personality, independently
     // of caller session IDs. This is not a captured physical address.
     pairing[1..7].copy_from_slice(&identity);
-    let mut firmware = vec![0_u8; 64];
-    firmware[0] = 0x20;
-    // OpenPuck's PS5 USB personality exposes non-zero hardware and firmware
-    // versions at these report offsets.
-    firmware[24] = 1;
-    firmware[28] = 1;
-    // Current SDL/Steam HIDAPI accepts the USB controller path only with this
-    // feature/update version populated. OpenPuck leaves this reserved field
-    // zero, so retain this host-observed compatibility extension separately
-    // from its hardware/firmware version bytes above.
-    firmware[44..46].copy_from_slice(&0x0224_u16.to_le_bytes());
+    let firmware = data.firmware.to_vec();
     [
         (0x03, capabilities),
         (0x05, calibration),
@@ -1691,6 +2128,114 @@ fn hid_realization(_session: RealizationSessionId) -> NativeControllerRealizatio
         numbered_feature_reports: true,
     })
 }
+fn bluetooth_realization(_session: RealizationSessionId) -> NativeControllerRealization {
+    // Source-backed consumer report lengths; not a captured retail descriptor.
+    NativeControllerRealization::Uhid(NativeHidRealization {
+        target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+        bus_type: 5,
+        device_name: "DualSense Wireless Controller".into(),
+        physical_path: "virtualgamepad/uhid/dualsense-bluetooth".into(),
+        unique_id: "virtualgamepad-dualsense".into(),
+        identity: NativeDeviceIdentity {
+            vendor_id: 0x054c,
+            product_id: 0x0ce6,
+            version: 0x0110,
+        },
+        descriptor: bluetooth::DESCRIPTOR.to_vec(),
+        numbered_input_reports: true,
+        numbered_output_reports: true,
+        numbered_feature_reports: true,
+    })
+}
+
+/// Validated USB calibration and firmware feature reports, without pairing identity.
+///
+/// Caller bytes are accepted only for the two device-data reports. Pairing
+/// feature replies always come from the separate, validated creation identity.
+/// All default values are deterministic synthetic calibration and firmware,
+/// not captured physical-device data. Bluetooth report framing is not accepted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DualSenseDeviceData {
+    calibration: [u8; 41],
+    firmware: [u8; 64],
+}
+impl Default for DualSenseDeviceData {
+    fn default() -> Self {
+        let mut calibration = [0; 41];
+        calibration[0] = 0x05;
+        for offset in [7, 11, 15] {
+            calibration[offset..offset + 2].copy_from_slice(&32_000_i16.to_le_bytes());
+        }
+        for offset in [9, 13, 17] {
+            calibration[offset..offset + 2].copy_from_slice(&(-32_000_i16).to_le_bytes());
+        }
+        calibration[19..21].copy_from_slice(&2_000_i16.to_le_bytes());
+        calibration[21..23].copy_from_slice(&2_000_i16.to_le_bytes());
+        for offset in [23, 27, 31] {
+            calibration[offset..offset + 2].copy_from_slice(&8_192_i16.to_le_bytes());
+        }
+        for offset in [25, 29, 33] {
+            calibration[offset..offset + 2].copy_from_slice(&(-8_192_i16).to_le_bytes());
+        }
+        let mut firmware = [0; 64];
+        firmware[0] = 0x20;
+        firmware[24] = 1;
+        firmware[28] = 1;
+        firmware[44..46].copy_from_slice(&0x0224_u16.to_le_bytes());
+        Self {
+            calibration,
+            firmware,
+        }
+    }
+}
+impl DualSenseDeviceData {
+    /// Atomically validate the two numbered USB feature reports.
+    pub fn from_feature_reports(calibration: &[u8], firmware: &[u8]) -> std::io::Result<Self> {
+        Self::default()
+            .with_feature_report(0x05, calibration)?
+            .with_feature_report(0x20, firmware)
+    }
+    /// Validate a single supported USB report; on error the original value survives.
+    ///
+    /// Address-bearing pairing reports are never accepted here, even if they
+    /// contain a locally valid identity: identity belongs in `DualSenseIdentity`.
+    pub fn with_feature_report(mut self, id: u8, bytes: &[u8]) -> std::io::Result<Self> {
+        match id {
+            0x05 => {
+                let data = crate::sony_device_data::validate::<41>(id, bytes, 0x05)?;
+                crate::sony_device_data::validate_motion(&data)?;
+                self.calibration = data;
+            }
+            0x20 => self.firmware = crate::sony_device_data::validate::<64>(id, bytes, 0x20)?,
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "unsupported DualSense device-data feature report",
+                ));
+            }
+        }
+        Ok(self)
+    }
+    /// Return an exact, numbered validated feature report, excluding pairing.
+    #[must_use]
+    pub fn feature_report(&self, id: u8) -> Option<&[u8]> {
+        match id {
+            0x05 => Some(&self.calibration),
+            0x20 => Some(&self.firmware),
+            _ => None,
+        }
+    }
+    /// Import validated reports from a caller-selected UTF-8 file, never a repo fixture.
+    pub fn load_file(path: impl AsRef<std::path::Path>) -> std::io::Result<Self> {
+        let (cal, fw) = crate::sony_device_data::load(path, 0x05, 0x20, 41, 64)?;
+        Self::from_feature_reports(&cal, &fw)
+    }
+    /// Save only calibration and firmware; pairing identity is excluded.
+    pub fn save_file(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        crate::sony_device_data::save(path, &self.calibration, &self.firmware)
+    }
+}
+
 /// Controller-owned identity material for explicit USB/UHID recreation.
 ///
 /// Store `bytes()` in application-owned storage and restore with `from_bytes`.
@@ -1726,14 +2271,15 @@ impl DualSenseIdentity {
 pub fn create_dualsense_usb_worker(
     bridge: Box<dyn common::WorkerBridge<DualSenseSessionState>>,
 ) -> DualSenseController {
-    let definition = DualSenseDefinition;
+    let definition = DualSenseDefinition::default();
     let selection = RealizationSelection {
         controller: ControllerId::new("virtualgamepad.dualsense"),
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
     };
-    DualSenseController(common::ControllerSession::worker(
-        definition, selection, bridge,
-    ))
+    DualSenseController(
+        common::ControllerSession::worker(definition, selection, bridge),
+        DualSenseDeviceData::default(),
+    )
 }
 
 /// Family options for a new `DualSense` session.
@@ -1741,9 +2287,22 @@ pub fn create_dualsense_usb_worker(
 #[non_exhaustive]
 pub struct DualSenseOptions {
     identity: Option<DualSenseIdentity>,
+    device_data: Option<DualSenseDeviceData>,
 }
 
 impl DualSenseOptions {
+    /// Use a validated calibration/firmware pair for this session.
+    #[must_use]
+    pub const fn with_device_data(mut self, device_data: DualSenseDeviceData) -> Self {
+        self.device_data = Some(device_data);
+        self
+    }
+    /// Explicit caller data, or None for the byte-stable synthetic baseline.
+    #[must_use]
+    pub const fn device_data(self) -> Option<DualSenseDeviceData> {
+        self.device_data
+    }
+
     /// Restore a caller-owned controller identity. Restoration is supported on USB/UHID. Pairing bytes and the UHID
     /// unique ID remain stable, and the physical path and session state are fresh.
     #[must_use]
@@ -1764,10 +2323,21 @@ pub fn create_dualsense(
     options: CreationOptions,
     family: DualSenseOptions,
 ) -> Result<DualSenseController, ProviderError> {
-    let identity = family.identity();
+    let identity = if options.target == RealizationTarget::LINUX_UHID_BLUETOOTH {
+        // The Bluetooth uniq and feature identity must be derived from the
+        // same creation-owned value, including for fresh concurrent sessions.
+        Some(match family.identity() {
+            Some(identity) => identity,
+            None => DualSenseIdentity::generate()?,
+        })
+    } else {
+        family.identity()
+    };
+    let device_data = family.device_data().unwrap_or_default();
     let mut realization = match options.target {
         RealizationTarget::LINUX_UINPUT => realization(),
         RealizationTarget::LINUX_UHID_USB => hid_realization(options.session),
+        RealizationTarget::LINUX_UHID_BLUETOOTH => bluetooth_realization(options.session),
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
                 controller: gr_controller_wire::registry::ids::DUALSENSE,
@@ -1779,7 +2349,10 @@ pub fn create_dualsense(
             });
         }
     };
-    if options.target == RealizationTarget::LINUX_UHID_USB {
+    if matches!(
+        options.target,
+        RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH
+    ) {
         common::require_linux_platform(options.target)?;
     }
     if let (Some(identity), NativeControllerRealization::Uhid(spec)) = (identity, &mut realization)
@@ -1787,7 +2360,9 @@ pub fn create_dualsense(
         spec.unique_id = identity.unique_id();
     }
     let mut controller = common::create_restored(
-        DualSenseDefinition,
+        DualSenseDefinition {
+            device_data: family.device_data(),
+        },
         realization,
         options,
         identity.map(DualSenseIdentity::bytes),
@@ -1799,7 +2374,7 @@ pub fn create_dualsense(
     controller.commit().map_err(|error| ProviderError::Open {
         reason: format!("send initial DualSense input report: {error}"),
     })?;
-    Ok(DualSenseController(controller))
+    Ok(DualSenseController(controller, device_data))
 }
 
 /// Workspace test seam. Never opens a real provider or accepts runtime profiles.
@@ -1808,7 +2383,8 @@ pub fn create_dualsense(
 pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<DualSenseController, ProviderError> {
-    common::injected(DualSenseDefinition, session).map(DualSenseController)
+    common::injected(DualSenseDefinition::default(), session)
+        .map(|session| DualSenseController(session, DualSenseDeviceData::default()))
 }
 
 impl crate::registry::ControllerFamily for DualSenseDefinition {
@@ -1824,7 +2400,25 @@ impl crate::registry::ControllerFamily for DualSenseDefinition {
         crate::registry::refusal(RESTRICTIONS[4], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(RESTRICTIONS[5], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(RESTRICTIONS[6], &[RealizationTarget::LINUX_UINPUT]),
+        crate::registry::refusal(RESTRICTIONS[7], &[RealizationTarget::LINUX_UINPUT]),
+        crate::registry::refusal(RESTRICTIONS[8], &[RealizationTarget::LINUX_UINPUT]),
         crate::registry::refusal(HID_RESTRICTIONS[0], &[RealizationTarget::LINUX_UHID_USB]),
+        crate::registry::refusal(
+            BLUETOOTH_RESTRICTIONS[0],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BLUETOOTH_RESTRICTIONS[1],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BLUETOOTH_RESTRICTIONS[2],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
+        crate::registry::refusal(
+            BLUETOOTH_RESTRICTIONS[3],
+            &[RealizationTarget::LINUX_UHID_BLUETOOTH],
+        ),
         crate::registry::FamilyOperation {
             name: "UHID physical-device fidelity",
             ..crate::registry::refusal(HID_RESTRICTIONS[1], &[RealizationTarget::LINUX_UHID_USB])
@@ -1856,7 +2450,7 @@ impl crate::registry::ControllerFamily for DualSenseDefinition {
         &INPUT_TOPOLOGY_WITH_MOTION
     }
     fn manifest() -> RealizationManifest {
-        Self.realization_manifest()
+        Self::default().realization_manifest()
     }
     fn realizations() -> &'static [crate::registry::FamilyRealization] {
         static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
@@ -1867,6 +2461,11 @@ impl crate::registry::ControllerFamily for DualSenseDefinition {
             ),
             crate::registry::FamilyRealization::new(
                 &HID_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
+            ),
+            crate::registry::FamilyRealization::new(
+                &BLUETOOTH_SURFACE.common,
                 crate::registry::RealizationTier::PlayableFull,
                 crate::registry::PermissionClass::Uhid,
             ),
@@ -1912,6 +2511,101 @@ mod tests {
     use crate::common::session_tests::{ControllerFixture as _, InputFixture as _};
 
     #[test]
+    fn led_fields_are_validity_gated_and_keep_the_original_report() {
+        let mut raw = vec![0_u8; 47];
+        raw[1] = 0x1d; // Mute, lightbar, release, player indicators.
+        raw[38] = 0x02; // Lightbar setup.
+        raw[8] = 2;
+        raw[41] = 0x02;
+        raw[42] = 0xa5;
+        raw[43] = 0x35; // Five bits 0x15, instant bit 0x20.
+        raw[44..47].copy_from_slice(&[1, 2, 3]);
+        let DualSenseHidOutput::UsbOutput {
+            raw: retained,
+            mute_button_led,
+            led_brightness,
+            lightbar_setup,
+            release_leds,
+            player_leds,
+            player_led_instant,
+            lightbar_rgb,
+            ..
+        } = decode_dualsense_hid_output(Some(2), raw.clone())
+        else {
+            panic!("known USB report");
+        };
+        assert_eq!(retained, raw);
+        assert_eq!(mute_button_led, Some(DualSenseMuteLed::Pulse));
+        assert_eq!(led_brightness, 0xa5);
+        assert_eq!(lightbar_setup, Some(2));
+        assert_eq!(release_leds, Some(true));
+        assert_eq!(player_leds, Some(0x15));
+        assert_eq!(player_led_instant, Some(true));
+        assert_eq!(lightbar_rgb, Some([1, 2, 3]));
+
+        raw[1] = 0;
+        raw[38] = 0;
+        let DualSenseHidOutput::UsbOutput {
+            raw: retained,
+            mute_button_led,
+            led_brightness,
+            lightbar_setup,
+            release_leds,
+            player_leds,
+            player_led_instant,
+            lightbar_rgb,
+            ..
+        } = decode_dualsense_hid_output(Some(2), raw.clone())
+        else {
+            panic!("known USB report");
+        };
+        assert_eq!(retained, raw);
+        assert_eq!(led_brightness, 0xa5);
+        assert_eq!(mute_button_led, None);
+        assert_eq!(lightbar_setup, None);
+        assert_eq!(release_leds, None);
+        assert_eq!(player_leds, None);
+        assert_eq!(player_led_instant, None);
+        assert_eq!(lightbar_rgb, None);
+    }
+
+    #[test]
+    fn mute_led_modes_are_lossless_including_unknown_bytes() {
+        for (value, expected) in [
+            (0, DualSenseMuteLed::Off),
+            (1, DualSenseMuteLed::On),
+            (2, DualSenseMuteLed::Pulse),
+            (0xfe, DualSenseMuteLed::Unknown(0xfe)),
+        ] {
+            let mut raw = vec![0_u8; 47];
+            raw[1] = 1;
+            raw[8] = value;
+            let DualSenseHidOutput::UsbOutput {
+                raw: retained,
+                mute_button_led,
+                ..
+            } = decode_dualsense_hid_output(Some(2), raw.clone())
+            else {
+                panic!("known USB report");
+            };
+            assert_eq!(mute_button_led, Some(expected));
+            assert_eq!(retained, raw);
+        }
+    }
+
+    #[test]
+    fn uinput_has_explicit_separate_led_output_restrictions() {
+        for feature in ["RGB lightbar", "player indicators", "microphone LED"] {
+            assert!(RESTRICTIONS.iter().any(|r| r.feature == feature));
+        }
+        assert!(
+            EVDEV_OUTPUT_KINDS
+                .iter()
+                .all(|kind| matches!(kind, OutputKind::Rumble { .. }))
+        );
+    }
+
+    #[test]
     fn input_values_are_independent_of_battery_and_controller_clocks() {
         use common::session_tests::input_validation_session;
         let neutral = DualSenseInputs::default();
@@ -1933,8 +2627,9 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             RealizationTarget::LINUX_USBIP_USB_AUDIO,
         ] {
-            let session = input_validation_session(DualSenseDefinition, target, [true; 3]);
-            let mut controller = DualSenseController(session);
+            let session =
+                input_validation_session(DualSenseDefinition::default(), target, [true; 3]);
+            let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller.set_battery_exposed(true).unwrap();
             controller
@@ -2016,8 +2711,8 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let (session, io) = snapshot_session(DualSenseDefinition, target, [true; 3]);
-            let mut controller = DualSenseController(session);
+            let (session, io) = snapshot_session(DualSenseDefinition::default(), target, [true; 3]);
+            let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller.commit().unwrap();
             if target == RealizationTarget::LINUX_UINPUT {
@@ -2070,7 +2765,7 @@ mod tests {
                         state.status.sensor_timestamp.wrapping_add(12_000);
                     state.status.input_sequence = state.status.input_sequence.wrapping_add(1);
                 },
-                DualSenseDefinition
+                DualSenseDefinition::default()
                     .encode(controller.0.selection(), &expected)
                     .unwrap(),
                 if target == RealizationTarget::LINUX_UHID_USB {
@@ -2090,8 +2785,8 @@ mod tests {
             RealizationTarget::LINUX_UHID_USB,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
-            let (session, io) = snapshot_session(DualSenseDefinition, target, [true; 3]);
-            let mut controller = DualSenseController(session);
+            let (session, io) = snapshot_session(DualSenseDefinition::default(), target, [true; 3]);
+            let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             controller
                 .edit_inputs(|state| {
@@ -2196,8 +2891,9 @@ mod tests {
             RealizationTarget::LINUX_USBIP_USB_AUDIO,
         ] {
             let is_uinput = target == RealizationTarget::LINUX_UINPUT;
-            let session = input_validation_session(DualSenseDefinition, target, [true; 3]);
-            let mut controller = DualSenseController(session);
+            let session =
+                input_validation_session(DualSenseDefinition::default(), target, [true; 3]);
+            let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller.service(&mut |_| {}).unwrap();
             check_opposing_dpad!(controller, true);
             controller.neutralize().unwrap();
@@ -2295,8 +2991,9 @@ mod tests {
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         ] {
             let is_uinput = target == RealizationTarget::LINUX_UINPUT;
-            let (session, io) = snapshot_session(DualSenseDefinition, target, [true, true, true]);
-            let mut controller = DualSenseController(session);
+            let (session, io) =
+                snapshot_session(DualSenseDefinition::default(), target, [true, true, true]);
+            let mut controller = DualSenseController(session, DualSenseDeviceData::default());
             controller
                 .0
                 .update_state(|current| {
@@ -2363,7 +3060,7 @@ mod tests {
                 snapshot,
                 expected,
                 invalid,
-                DualSenseDefinition
+                DualSenseDefinition::default()
                     .encode(controller.0.selection(), controller.test_state())
                     .unwrap(),
                 &[(6, 255), (27, 255), (28, 255), (29, 255), (30, 255)]
@@ -2396,8 +3093,9 @@ mod tests {
                 controller: ControllerId::new("virtualgamepad.dualsense"),
                 target: RealizationTarget::LINUX_UINPUT,
             };
-            let ProviderFrame::Evdev(original) =
-                DualSenseDefinition.encode(selection, &state).unwrap()
+            let ProviderFrame::Evdev(original) = DualSenseDefinition::default()
+                .encode(selection, &state)
+                .unwrap()
             else {
                 panic!()
             };
@@ -2557,7 +3255,7 @@ mod tests {
     #[test]
     fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
         let selection = RealizationSelection {
-            controller: DualSenseDefinition.controller_id(),
+            controller: DualSenseDefinition::default().controller_id(),
             target: RealizationTarget::LINUX_UINPUT,
         };
         for (control, code) in [
@@ -2569,8 +3267,9 @@ mod tests {
             let mut state = DualSenseSessionState::default();
             for pressed in [true, false] {
                 state.inputs.set_native(control, pressed);
-                let ProviderFrame::Evdev(events) =
-                    DualSenseDefinition.encode(selection, &state).unwrap()
+                let ProviderFrame::Evdev(events) = DualSenseDefinition::default()
+                    .encode(selection, &state)
+                    .unwrap()
                 else {
                     panic!("evdev")
                 };
@@ -2592,7 +3291,7 @@ mod tests {
         assert_eq!(spec.identity.version, 0x8111);
         assert!(spec.key_codes.contains(&312) && spec.key_codes.contains(&313));
         let selection = RealizationSelection {
-            controller: DualSenseDefinition.controller_id(),
+            controller: DualSenseDefinition::default().controller_id(),
             target: RealizationTarget::LINUX_UINPUT,
         };
         for (left, right, expected) in [
@@ -2608,8 +3307,9 @@ mod tests {
                 },
                 status: DualSenseStatus::default(),
             };
-            let ProviderFrame::Evdev(events) =
-                DualSenseDefinition.encode(selection, &state).unwrap()
+            let ProviderFrame::Evdev(events) = DualSenseDefinition::default()
+                .encode(selection, &state)
+                .unwrap()
             else {
                 panic!("evdev")
             };
@@ -2670,7 +3370,7 @@ mod tests {
     #[test]
     fn spatial_and_native_faces_are_equivalent() {
         let mut state = DualSenseSessionState::default();
-        DualSenseDefinition
+        DualSenseDefinition::default()
             .apply_digital(
                 &mut state,
                 DigitalControlUpdate::FaceButton {
@@ -2746,10 +3446,10 @@ mod tests {
     #[test]
     fn dummy_hcd_uses_the_fixed_usb_transport_frame() {
         let state = DualSenseSessionState::default();
-        let dummy = DualSenseDefinition
+        let dummy = DualSenseDefinition::default()
             .encode(
                 RealizationSelection {
-                    controller: DualSenseDefinition.controller_id(),
+                    controller: DualSenseDefinition::default().controller_id(),
                     target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 },
                 &state,
@@ -2763,6 +3463,7 @@ mod tests {
     #[test]
     fn motion_support_includes_dummy_hcd_and_reports_the_exact_available_targets() {
         assert!(supports_motion(RealizationTarget::LINUX_UHID_USB));
+        assert!(supports_motion(RealizationTarget::LINUX_UHID_BLUETOOTH));
         assert!(supports_motion(RealizationTarget::LINUX_DUMMY_HCD_USB_HID));
         assert!(supports_motion(RealizationTarget::LINUX_USBIP_USB_AUDIO));
         assert!(!supports_motion(RealizationTarget::LINUX_UINPUT));
@@ -2770,6 +3471,7 @@ mod tests {
             motion_targets(),
             RealizationTargetSet::new(&[
                 RealizationTarget::LINUX_UHID_USB,
+                RealizationTarget::LINUX_UHID_BLUETOOTH,
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 RealizationTarget::LINUX_USBIP_USB_AUDIO,
             ])
@@ -2953,7 +3655,11 @@ mod tests {
                 left_motor: Some(0x44),
                 right_trigger_effect: [1; 11],
                 left_trigger_effect: [2; 11],
-                mute_button_led: Some(true),
+                mute_button_led: Some(DualSenseMuteLed::On),
+                led_brightness: 0,
+                lightbar_setup: None,
+                release_leds: None,
+                player_led_instant: Some(false),
                 microphone_muted: None,
                 audio_path: None,
                 speaker_volume: None,
@@ -2984,7 +3690,14 @@ mod tests {
                         panic!()
                     };
                     assert_eq!(microphone_muted, valid.then_some(muted));
-                    assert_eq!(mute_button_led, Some(!muted));
+                    assert_eq!(
+                        mute_button_led,
+                        Some(if muted {
+                            DualSenseMuteLed::Off
+                        } else {
+                            DualSenseMuteLed::On
+                        })
+                    );
                     assert_eq!(retained, raw);
                 }
             }

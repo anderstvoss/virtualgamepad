@@ -1,7 +1,11 @@
 //! Bounded ordinary-caller USB native-client signal-flow probe.
-//! `cargo run --features audio-usbip,audio-pipewire --example usb_audio_native_probe -- dualsense 3 0`
-//! This checks exact microphone capture and an unbroken host-playback pattern;
-//! a constant playback pattern cannot establish frame-exact continuity or latency.
+//! `cargo run --features experimental,audio-usbip,audio-pipewire --example usb_audio_native_probe -- dualsense --seconds 3`
+//! Checks indexed markers in both directions through ALSA and `PipeWire`.
+//! This is a signal-flow probe; directional latency is measured separately.
+#[path = "support/usb_audio.rs"]
+mod usb_audio;
+use usb_audio::{Args, Attachment, marker_frame};
+
 use std::{
     io::{Read, Write},
     process::{Child, Command, Stdio},
@@ -85,26 +89,46 @@ struct CaptureAudit {
     other: u64,
     runs: u64,
 }
-fn audit_capture(bytes: &[u8], pattern: &[i16]) -> CaptureAudit {
-    let frame_bytes = pattern.len() * 2;
+fn playback_position(frame: &[u8]) -> Option<u64> {
+    if !matches!(frame.len(), 4 | 8) {
+        return None;
+    }
+    let high = i16::from_le_bytes([frame[0], frame[1]]);
+    let low = i16::from_le_bytes([frame[2], frame[3]]);
+    if high <= 0 || low <= 0 {
+        return None;
+    }
+    if frame.len() == 8
+        && (i16::from_le_bytes([frame[4], frame[5]]) != -high
+            || i16::from_le_bytes([frame[6], frame[7]]) != -low)
+    {
+        return None;
+    }
+    Some((u64::try_from(high).ok()? - 1) * 32_767 + u64::try_from(low).ok()? - 1)
+}
+
+fn audit_capture(bytes: &[u8], channels: usize, expected_start: Option<u64>) -> CaptureAudit {
+    let frame_bytes = channels * 2;
     let mut audit = CaptureAudit::default();
-    let mut current = 0_u64;
+    let mut current = 0;
+    let mut previous = None;
     let mut first_exact = None;
     let mut last_exact = None;
     for (index, frame) in bytes.chunks_exact(frame_bytes).enumerate() {
-        let exact = frame
-            .chunks_exact(2)
-            .zip(pattern)
-            .all(|(sample, expected)| i16::from_le_bytes([sample[0], sample[1]]) == *expected);
-        if exact {
+        let position = playback_position(frame).filter(|position| {
+            expected_start.is_none_or(|start| *position == start + index as u64)
+        });
+        if let Some(position) = position {
             first_exact.get_or_insert(index);
             last_exact = Some(index);
-            if current == 0 {
+            if previous != position.checked_sub(1) || current == 0 {
                 audit.runs += 1;
+                current = 0;
             }
             current += 1;
             audit.exact += 1;
             audit.longest = audit.longest.max(current);
+            previous = Some(position);
         } else {
             if frame.iter().all(|sample| *sample == 0) {
                 audit.zero += 1;
@@ -124,90 +148,27 @@ fn audit_capture(bytes: &[u8], pattern: &[i16]) -> CaptureAudit {
     });
     audit
 }
-// The native source can be connected before ALSA activates the USB playback
-// alternate setting. Score only the fixed post-warm-up interval; do not let a
-// long clean run elsewhere conceal a gap in the requested measurement window.
-fn measured_capture(bytes: &[u8], pattern: &[i16], seconds: u64) -> Option<CaptureAudit> {
-    let frame_bytes = pattern.len() * 2;
-    let first = bytes.chunks_exact(frame_bytes).position(|frame| {
-        frame
-            .chunks_exact(2)
-            .zip(pattern)
-            .all(|(sample, expected)| i16::from_le_bytes([sample[0], sample[1]]) == *expected)
-    })?;
-    let begin = first.checked_add(96_000)?;
+
+// Padding or a discontinuity in preroll breaks any projection from marker zero.
+// Start at the first entry into the measured index range. A later replay of the
+// start marker cannot replace a missing start or move the window.
+fn measured_capture(bytes: &[u8], channels: usize, seconds: u64) -> Option<CaptureAudit> {
+    const WARMUP_FRAMES: u64 = 96_000;
+    let frame_bytes = channels * 2;
+    let (begin, position) = bytes
+        .chunks_exact(frame_bytes)
+        .enumerate()
+        .filter_map(|(offset, frame)| playback_position(frame).map(|position| (offset, position)))
+        .find(|&(_, position)| position >= WARMUP_FRAMES)?;
+    if position != WARMUP_FRAMES {
+        return None;
+    }
     let end = begin.checked_add(usize::try_from(seconds).ok()?.checked_mul(48_000)?)?;
     Some(audit_capture(
         bytes.get(begin.checked_mul(frame_bytes)?..end.checked_mul(frame_bytes)?)?,
-        pattern,
+        channels,
+        Some(WARMUP_FRAMES),
     ))
-}
-fn run_checker(family: &str, seconds: u64, port: u32) -> std::io::Result<std::process::ExitStatus> {
-    let mut checker = Command::new("python3");
-    checker.arg("scripts/validate-usb-audio-live.py").args([
-        "--profile",
-        family,
-        "--port",
-        &port.to_string(),
-        "--seconds",
-        &seconds.to_string(),
-        "--trials",
-        "1",
-    ]);
-    // The private PipeWire lab starts policy only: it does not enumerate ALSA
-    // cards. The checker still verifies exact owned VHCI/ALSA ancestry, while
-    // avoiding a wait for a PipeWire device that cannot exist in that graph.
-    if std::env::var_os("VIRTUALGAMEPAD_AUDIO_LAB_QUANTUM").is_none() {
-        checker.arg("--reserve-owned-card");
-    }
-    checker.status()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{CaptureAudit, audit_capture, measured_capture};
-    #[test]
-    fn native_capture_audit_keeps_interior_silence_separate_from_edges() {
-        let mut bytes = Vec::new();
-        for frame in [
-            [0_i16, 0],
-            [101, -202],
-            [101, -202],
-            [0, 0],
-            [101, -202],
-            [8, 9],
-            [101, -202],
-            [0, 0],
-        ] {
-            for sample in frame {
-                bytes.extend(sample.to_le_bytes());
-            }
-        }
-        assert_eq!(
-            audit_capture(&bytes, &[101, -202]),
-            CaptureAudit {
-                longest: 2,
-                exact: 4,
-                zero: 3,
-                interior_zero: 1,
-                other: 1,
-                runs: 3,
-            }
-        );
-    }
-    #[test]
-    fn native_acceptance_requires_exact_post_warmup_window() {
-        let mut samples = vec![101_i16; 96_000 + 144_000];
-        samples[500] = 0; // Startup instability is excluded.
-        let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
-        let measured = measured_capture(&bytes, &[101], 3).unwrap();
-        assert_eq!(measured.exact, 144_000);
-        assert_eq!(measured.zero, 0);
-        samples[96_500] = 0;
-        let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
-        assert_eq!(measured_capture(&bytes, &[101], 3).unwrap().zero, 1);
-        assert_eq!(measured_capture(&bytes[..bytes.len() - 2], &[101], 3), None);
-    }
 }
 
 fn sample_window(
@@ -265,10 +226,10 @@ fn write_microphone_pattern(
         let mut bytes = vec![0_u8; 128 * channels * 2];
         while frame < end {
             for (index, samples) in bytes.chunks_exact_mut(channels * 2).enumerate() {
-                for (channel, sample) in samples.chunks_exact_mut(2).enumerate() {
-                    let value =
-                        i16::try_from(100 + (frame + index as u64) % 97 + 100 * channel as u64)
-                            .expect("bounded synthetic pattern");
+                for (sample, value) in samples
+                    .chunks_exact_mut(2)
+                    .zip(marker_frame(frame + index as u64, channels))
+                {
                     sample.copy_from_slice(&value.to_le_bytes());
                 }
             }
@@ -284,7 +245,7 @@ fn exercise(
     audio: &mut ControllerAudio,
     family: &str,
     seconds: u64,
-    port: u32,
+    attachment: &Attachment,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let playback = audio
         .endpoints()
@@ -307,6 +268,7 @@ fn exercise(
     let playback_channels = playback.format().channels().len();
     let microphone_channels = microphone.format().channels().len();
 
+    attachment.prepare(family)?;
     let mut capture = client("--record", playback_node, playback_channels)?;
     let stdout = capture.stdout.take().ok_or("missing capture pipe")?;
     let reader = thread::spawn(move || {
@@ -348,17 +310,16 @@ fn exercise(
     let done = AtomicBool::new(false);
     let (status, measured_underrun, measured_graph_drop, queue_window) = thread::scope(|scope| {
         let sampler = scope.spawn(|| sample_window(audio, &done, seconds));
-        let status = run_checker(family, seconds, port);
+        let status = attachment.checker(family, Some((seconds, 1))).status();
         done.store(true, Ordering::Release);
         let (underrun, dropped, queue) = sampler.join().unwrap_or((0, 0, (0, 0, 0)));
         (status, underrun, dropped, queue)
     });
     let status = status?;
     let bytes = clients.finish();
-    let pattern = &[101_i16, -202, 303, -404][..playback_channels];
     let frame_bytes = playback_channels * 2;
-    let capture_result = audit_capture(&bytes, pattern);
-    let measured = measured_capture(&bytes, pattern, seconds);
+    let capture_result = audit_capture(&bytes, playback_channels, None);
+    let measured = measured_capture(&bytes, playback_channels, seconds);
     println!(
         "usb_native family={family} audit={capture_result:?} measured={measured:?} captured_pipe_frames={} dropped={} native_playback_underrun={:?} measured_underrun={} microphone_silence={} microphone_dropped={:?} native_microphone_graph_dropped={:?} measured_graph_drop={} native_microphone_queue={:?} queue_window={queue_window:?} bridge_schedule_us={:?} closed={} last_error={:?} graph={:?}",
         bytes.len() / frame_bytes,
@@ -389,27 +350,22 @@ fn exercise(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<_> = std::env::args().skip(1).collect();
-    if args.len() != 3 {
-        return Err("usage: usb_audio_native_probe FAMILY SECONDS PORT".into());
-    }
-    let seconds = args[1].parse::<u64>()?;
-    let port = args[2].parse::<u32>()?;
-    if !(1..=60).contains(&seconds) {
-        return Err("seconds must be 1..60".into());
-    }
+    let mut args = Args::parse()?;
+    let seconds = args.number("--seconds", 3, 1..=60)?;
+    args.finish()?;
     let audio = AudioOptions::new(AudioExposure::Emulated)
         .with_playback_access(AudioAccess::NativeClient)
         .with_microphone_access(AudioAccess::NativeClient);
     let options = CreationOptions::new(RealizationId::LINUX_USBIP_USB_AUDIO).with_audio(audio);
-    match args[0].as_str() {
+    match args.family {
         "dualsense" => {
             let mut controller = create_dualsense(options, DualSenseOptions::default())?;
+            let attachment = Attachment::discover(controller.association())?;
             let result = exercise(
                 controller.audio().ok_or("missing audio")?,
-                &args[0],
+                args.family,
                 seconds,
-                port,
+                &attachment,
             );
             eprintln!(
                 "usb_native_controller family=dualsense diagnostics={:?}",
@@ -420,11 +376,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "dualshock4" => {
             let mut controller = create_dualshock4(options, DualShock4Options::default())?;
+            let attachment = Attachment::discover(controller.association())?;
             let result = exercise(
                 controller.audio().ok_or("missing audio")?,
-                &args[0],
+                args.family,
                 seconds,
-                port,
+                &attachment,
             );
             eprintln!(
                 "usb_native_controller family=dualshock4 diagnostics={:?}",
@@ -435,11 +392,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "xbox360" => {
             let mut controller = create_xbox360(options, Xbox360Options::default())?;
+            let attachment = Attachment::discover(controller.association())?;
             let result = exercise(
                 controller.audio().ok_or("missing audio")?,
-                &args[0],
+                args.family,
                 seconds,
-                port,
+                &attachment,
             );
             eprintln!(
                 "usb_native_controller family=xbox360 diagnostics={:?}",
@@ -451,4 +409,94 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => return Err("unknown family".into()),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CaptureAudit, audit_capture, marker_frame, measured_capture, playback_position};
+
+    fn indexed_bytes(position: u64, channels: usize) -> Vec<u8> {
+        marker_frame(position, channels)[..channels]
+            .iter()
+            .flat_map(|sample| sample.to_le_bytes())
+            .collect()
+    }
+
+    #[test]
+    fn native_capture_audit_keeps_interior_silence_separate_from_edges() {
+        let mut bytes = vec![0; 4];
+        bytes.extend(indexed_bytes(0, 2));
+        bytes.extend(indexed_bytes(1, 2));
+        bytes.extend([0; 4]);
+        bytes.extend(indexed_bytes(3, 2));
+        bytes.extend([1, 0, 0, 0]);
+        bytes.extend(indexed_bytes(5, 2));
+        bytes.extend([0; 4]);
+        assert_eq!(
+            audit_capture(&bytes, 2, None),
+            CaptureAudit {
+                longest: 2,
+                exact: 4,
+                zero: 3,
+                interior_zero: 1,
+                other: 1,
+                runs: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn native_measurement_anchors_after_dualsense_and_ds4_preroll_padding() {
+        for (channels, padding, skipped) in [(4, 208, 128), (2, 64, 0)] {
+            let mut bytes = vec![0; 128 * channels * 2];
+            for position in 0..240_000 {
+                if position == 864 {
+                    bytes.resize(bytes.len() + padding * channels * 2, 0);
+                }
+                if !(77_024..77_024 + skipped).contains(&position) {
+                    bytes.extend(indexed_bytes(position, channels));
+                }
+            }
+            let measured = measured_capture(&bytes, channels, 3).unwrap();
+            assert_eq!(
+                (measured.exact, measured.zero, measured.other),
+                (144_000, 0, 0),
+                "{channels} playback channels"
+            );
+        }
+    }
+
+    #[test]
+    fn native_measurement_refuses_a_missing_start_even_if_it_is_replayed_later() {
+        let bytes: Vec<_> = (96_001..96_002)
+            .chain(96_000..144_000)
+            .flat_map(|position| indexed_bytes(position, 2))
+            .collect();
+        assert_eq!(measured_capture(&bytes, 2, 1), None);
+    }
+
+    #[test]
+    fn native_acceptance_requires_exact_post_warmup_window() {
+        let mut bytes: Vec<u8> = (0..96_000 + 48_000)
+            .flat_map(|position| indexed_bytes(position, 2))
+            .collect();
+        bytes[..4].fill(0); // The next marker identifies the startup offset.
+        let measured = measured_capture(&bytes, 2, 1).unwrap();
+        assert_eq!(
+            (measured.exact, measured.zero, measured.other),
+            (48_000, 0, 0)
+        );
+        bytes[96_500 * 4..96_501 * 4].fill(0);
+        bytes[96_800 * 4..96_801 * 4].copy_from_slice(&indexed_bytes(96_799, 2));
+        let measured = measured_capture(&bytes, 2, 1).unwrap();
+        assert_eq!(
+            (measured.exact, measured.zero, measured.other),
+            (47_998, 1, 1)
+        );
+        assert_eq!(measured_capture(&bytes[..bytes.len() - 4], 2, 1), None);
+        let mut four_channel = indexed_bytes(32_767, 4);
+        assert_eq!(playback_position(&four_channel), Some(32_767));
+        four_channel[4] ^= 1;
+        assert_eq!(playback_position(&four_channel), None);
+    }
 }

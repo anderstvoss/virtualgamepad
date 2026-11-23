@@ -107,6 +107,8 @@ impl NativeProviderSession for Fake {
             reverse_events_drained: 0,
             write_failures: 0,
             lifecycle_events: 0,
+            dropped_writes: 0,
+            last_dropped_write: None,
             last_error: None,
         }
     }
@@ -282,8 +284,8 @@ macro_rules! consumer_case {
         }
     };
 }
-consumer_case!(dualsense_consumer_lifecycle, dualsense, DualSenseController, DualSenseControl, Cross, DualSenseOutputEvent, "virtualgamepad.dualsense", identity: None, audio: None);
-consumer_case!(ds4_consumer_lifecycle, dualshock4, DualShock4Controller, DualShock4Control, Cross, DualShock4OutputEvent, "virtualgamepad.dualshock4", identity: None, audio: None);
+consumer_case!(dualsense_consumer_lifecycle, dualsense, DualSenseController, DualSenseControl, Cross, DualSenseOutputEvent, "virtualgamepad.dualsense", identity: None, device_data: DualSenseDeviceData::default(), audio: None);
+consumer_case!(ds4_consumer_lifecycle, dualshock4, DualShock4Controller, DualShock4Control, Cross, DualShock4OutputEvent, "virtualgamepad.dualshock4", identity: None, device_data: DualShock4DeviceData::default(), audio: None);
 consumer_case!(
     switch_consumer_lifecycle,
     switch_pro,
@@ -412,8 +414,8 @@ macro_rules! audio_consumer_case {
         }
     };
 }
-audio_consumer_case!(audio_dualsense, dualsense_required_audio_lifecycle, dualsense_borrowed_audio_threads, dualsense, DualSenseController, "virtualgamepad.dualsense", identity: None);
-audio_consumer_case!(audio_ds4, ds4_required_audio_lifecycle, ds4_borrowed_audio_threads, dualshock4, DualShock4Controller, "virtualgamepad.dualshock4", identity: None);
+audio_consumer_case!(audio_dualsense, dualsense_required_audio_lifecycle, dualsense_borrowed_audio_threads, dualsense, DualSenseController, "virtualgamepad.dualsense", identity: None, device_data: DualSenseDeviceData::default());
+audio_consumer_case!(audio_ds4, ds4_required_audio_lifecycle, ds4_borrowed_audio_threads, dualshock4, DualShock4Controller, "virtualgamepad.dualshock4", identity: None, device_data: DualShock4DeviceData::default());
 audio_consumer_case!(
     audio_xbox,
     xbox_required_audio_lifecycle,
@@ -565,6 +567,8 @@ mod worker_outputs {
                 reverse_events_drained: 0,
                 write_failures: 0,
                 lifecycle_events: 0,
+                dropped_writes: 0,
+                last_dropped_write: None,
                 last_error: None,
             },
             closes: 0,
@@ -633,13 +637,21 @@ mod worker_outputs {
                     left_motor: Some(left),
                     right_trigger_effect: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
                     left_trigger_effect: [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
-                    mute_button_led: Some((index % 2 == 0) != live),
+                    mute_button_led: Some(if (index % 2 == 0) == live {
+                        crate::DualSenseMuteLed::Off
+                    } else {
+                        crate::DualSenseMuteLed::On
+                    }),
                     microphone_muted: Some(index % 2 == 1),
                     audio_path: Some(route),
                     speaker_volume: Some(64),
                     microphone_volume: Some(96),
                     speaker_preamp: Some(5),
+                    led_brightness: 0,
+                    lightbar_setup: None,
+                    release_leds: None,
                     player_leds: Some(0x15),
+                    player_led_instant: Some(false),
                     lightbar_rgb: Some([red, 64, 128]),
                 },
             ));
@@ -666,7 +678,11 @@ mod worker_outputs {
                     speaker_volume: None,
                     microphone_volume: None,
                     speaker_preamp: None,
+                    led_brightness: 0,
+                    lightbar_setup: None,
+                    release_leds: None,
                     player_leds: None,
+                    player_led_instant: None,
                     lightbar_rgb: None,
                 },
             ));
@@ -682,6 +698,7 @@ mod worker_outputs {
             association(inner.association(), inner.surface().common()),
             inner,
             None,
+            DualSenseDeviceData::default(),
             None,
         );
         let mut observed = Vec::new();
@@ -740,6 +757,7 @@ mod worker_outputs {
             association(inner.association(), inner.surface().common()),
             inner,
             None,
+            DualShock4DeviceData::default(),
             None,
         );
         let mut observed = Vec::new();
@@ -815,6 +833,8 @@ mod worker_outputs {
                 reverse_events_drained: 0,
                 write_failures: 0,
                 lifecycle_events: 0,
+                dropped_writes: 0,
+                last_dropped_write: None,
                 last_error: None,
             },
             closes: 0,
@@ -930,6 +950,7 @@ mod worker_outputs {
                             association(inner.association(), inner.surface().common()),
                             inner,
                             None,
+                            DualSenseDeviceData::default(),
                             None,
                         ),
                         dualsense_cases(true).1,
@@ -947,6 +968,7 @@ mod worker_outputs {
                             association(inner.association(), inner.surface().common()),
                             inner,
                             None,
+                            DualShock4DeviceData::default(),
                             None,
                         ),
                         ds4_cases(true).1,
@@ -2450,3 +2472,53 @@ fn xbox_series_converged_constructors_reject_unavailable_targets_and_audio() {
 }
 
 mod input_snapshots;
+
+#[test]
+fn sony_root_device_data_readback_survives_close_without_hardware() {
+    let selected_dualsense = {
+        let base = DualSenseDeviceData::default();
+        let mut firmware = base.feature_report(0x20).unwrap().to_vec();
+        firmware[3] = 0x2a;
+        base.with_feature_report(0x20, &firmware).unwrap()
+    };
+    let options = CreationOptions::new(RealizationId::LINUX_UINPUT)
+        .internal()
+        .unwrap();
+    let record = Arc::new(Mutex::new(Record::default()));
+    let inner = gr_curated_controllers::dualsense::test_controller(Box::new(Fake(record))).unwrap();
+    let association = ControllerAssociation::single(
+        ControllerId::new("virtualgamepad.dualsense"),
+        options,
+        inner.association(),
+        inner.surface().common(),
+    );
+    let mut dualsense =
+        DualSenseController::from_parts(association, inner, None, selected_dualsense, None);
+    assert_eq!(dualsense.device_data(), &selected_dualsense);
+    dualsense.close();
+    assert_eq!(dualsense.device_data(), &selected_dualsense);
+
+    let selected_dualshock4 = {
+        let base = DualShock4DeviceData::default();
+        let mut firmware = base.feature_report(0xa3).unwrap().to_vec();
+        firmware[3] = 0x2a;
+        base.with_feature_report(0xa3, &firmware).unwrap()
+    };
+    let options = CreationOptions::new(RealizationId::LINUX_UINPUT)
+        .internal()
+        .unwrap();
+    let record = Arc::new(Mutex::new(Record::default()));
+    let inner =
+        gr_curated_controllers::dualshock4::test_controller(Box::new(Fake(record))).unwrap();
+    let association = ControllerAssociation::single(
+        ControllerId::new("virtualgamepad.dualshock4"),
+        options,
+        inner.association(),
+        inner.surface().common(),
+    );
+    let mut dualshock4 =
+        DualShock4Controller::from_parts(association, inner, None, selected_dualshock4, None);
+    assert_eq!(dualshock4.device_data(), &selected_dualshock4);
+    dualshock4.close();
+    assert_eq!(dualshock4.device_data(), &selected_dualshock4);
+}
