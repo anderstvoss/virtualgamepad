@@ -81,10 +81,12 @@ required-features = ["audio-usbip"]
 
 [[example]]
 name = "usb_audio_acceptance"
+test = true
 required-features = ["audio-usbip"]
 
 [[example]]
 name = "usb_audio_native_probe"
+test = true
 required-features = ["experimental", "audio-usbip", "audio-pipewire"]
 
 [[example]]

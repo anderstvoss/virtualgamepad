@@ -1,8 +1,7 @@
 //! Ordinary-caller, root-API USB sample continuity check. Requires the installed
 //! broker and a prepared VHCI host. This does not measure end-to-end latency.
-//! Supply the prepared lab instance and expected broker generation; the checker
-//! verifies serial, ancestry and isolation before streaming. See the CLI usage.
-use std::process::{Child, Command};
+//! `cargo run --features audio-usbip --example usb_audio_acceptance -- dualsense --seconds 3 --trials 1 --mic-fill-ms 12`
+use std::process::Child;
 use std::time::{Duration, Instant};
 use virtualgamepad::{
     AudioExposure, AudioOptions, AudioRead, ControllerAudio, CreationOptions, DualSenseOptions,
@@ -10,61 +9,11 @@ use virtualgamepad::{
     create_xbox360,
 };
 
-#[derive(Debug)]
-struct LabIdentity {
-    instance: String,
-    generation: u64,
-}
-impl LabIdentity {
-    fn new(instance: String, generation: u64) -> Result<Self, &'static str> {
-        if instance.is_empty()
-            || instance.len() > 32
-            || !instance
-                .bytes()
-                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-            || generation == 0
-        {
-            return Err("invalid expected lab session identity");
-        }
-        Ok(Self {
-            instance,
-            generation,
-        })
-    }
-    fn checker_arguments(&self, family: &str, seconds: u64, trials: u64, port: u32) -> Vec<String> {
-        vec![
-            "scripts/validate-usb-audio-live.py".into(),
-            "--reserve-owned-card".into(),
-            "--profile".into(),
-            family.into(),
-            "--port".into(),
-            port.to_string(),
-            "--instance".into(),
-            self.instance.clone(),
-            "--generation".into(),
-            self.generation.to_string(),
-            "--seconds".into(),
-            seconds.to_string(),
-            "--trials".into(),
-            trials.to_string(),
-        ]
-    }
-}
+#[path = "support/usb_audio.rs"]
+mod usb_audio;
+use usb_audio::{Args, Attachment};
 
-fn marker_frame(position: u64, channels: usize) -> [i16; 4] {
-    let index = if channels == 1 {
-        position / 2
-    } else {
-        position
-    };
-    let high = i16::try_from(index / 32_767 + 1).expect("bounded trial marker high");
-    let low = i16::try_from(index % 32_767 + 1).expect("bounded trial marker low");
-    if channels == 1 {
-        [if position % 2 == 0 { high } else { -low }, 0, 0, 0]
-    } else {
-        [high, low, -high, -low]
-    }
-}
+use usb_audio::marker_frame;
 
 fn trial_frames(seconds: u64) -> u64 {
     // The ALSA checker sends two startup seconds and one drain-edge second.
@@ -218,15 +167,15 @@ fn exercise(
     family: &str,
     seconds: u64,
     trials: u64,
-    port: u32,
     microphone_fill_ms: u64,
-    identity: &LabIdentity,
+    attachment: &Attachment,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let playback_channels = if family == "dualsense" { 4 } else { 2 };
     let microphone_channels = if family == "dualsense" { 2 } else { 1 };
+    attachment.prepare(family)?;
     let mut child = Checker(
-        Command::new("python3")
-            .args(identity.checker_arguments(family, seconds, trials, port))
+        attachment
+            .checker(family, Some((seconds, trials)))
             .spawn()?,
     );
     let started = Instant::now();
@@ -317,36 +266,86 @@ fn exercise(
     Ok(())
 }
 
+fn run(
+    family: &str,
+    seconds: u64,
+    trials: u64,
+    microphone_fill_ms: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let options = CreationOptions::new(RealizationId::LINUX_USBIP_USB_AUDIO)
+        .with_audio(AudioOptions::new(AudioExposure::Emulated));
+    match family {
+        "dualsense" => {
+            let mut controller = create_dualsense(options, DualSenseOptions::default())?;
+            let attachment = Attachment::discover(controller.association())?;
+            let result = exercise(
+                controller.audio().ok_or("missing audio")?,
+                family,
+                seconds,
+                trials,
+                microphone_fill_ms,
+                &attachment,
+            );
+            if result.is_err() {
+                eprintln!("controller_terminal {:?}", controller.diagnostics());
+            }
+            controller.close();
+            result?;
+        }
+        "dualshock4" => {
+            let mut controller = create_dualshock4(options, DualShock4Options::default())?;
+            let attachment = Attachment::discover(controller.association())?;
+            let result = exercise(
+                controller.audio().ok_or("missing audio")?,
+                family,
+                seconds,
+                trials,
+                microphone_fill_ms,
+                &attachment,
+            );
+            if result.is_err() {
+                eprintln!("controller_terminal {:?}", controller.diagnostics());
+            }
+            controller.close();
+            result?;
+        }
+        "xbox360" => {
+            let mut controller = create_xbox360(options, Xbox360Options::default())?;
+            let attachment = Attachment::discover(controller.association())?;
+            let result = exercise(
+                controller.audio().ok_or("missing audio")?,
+                family,
+                seconds,
+                trials,
+                microphone_fill_ms,
+                &attachment,
+            );
+            if result.is_err() {
+                eprintln!("controller_terminal {:?}", controller.diagnostics());
+            }
+            controller.close();
+            result?;
+        }
+        _ => return Err("family must be dualsense, dualshock4 or xbox360".into()),
+    }
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut args = Args::parse()?;
+    let seconds = args.number("--seconds", 3, 1..=60)?;
+    let trials = args.number("--trials", 1, 1..=3)?;
+    let fill_ms = args.number("--mic-fill-ms", 12, 1..=16)?;
+    args.finish()?;
+    run(args.family, seconds, trials, fill_ms)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{LabIdentity, PatternAudit, marker_frame, refill_target, trial_frames};
+    use super::{PatternAudit, marker_frame, refill_target, trial_frames};
     #[test]
-    fn checker_receives_exact_expected_session_identity_and_trial_bounds() {
-        let identity = LabIdentity::new("fixture-lab".into(), 7).unwrap();
-        assert_eq!(
-            identity.checker_arguments("dualshock4", 3, 2, 1),
-            [
-                "scripts/validate-usb-audio-live.py",
-                "--reserve-owned-card",
-                "--profile",
-                "dualshock4",
-                "--port",
-                "1",
-                "--instance",
-                "fixture-lab",
-                "--generation",
-                "7",
-                "--seconds",
-                "3",
-                "--trials",
-                "2",
-            ]
-        );
+    fn trial_includes_startup_and_drain_edges() {
         assert_eq!(trial_frames(3), 288_000);
-        for instance in ["", "../foreign", "UPPER", "with space"] {
-            assert!(LabIdentity::new(instance.into(), 7).is_err());
-        }
-        assert!(LabIdentity::new("fixture".into(), 0).is_err());
     }
     #[test]
     fn indexed_markers_match_checker_channel_and_wrap_contract() {
@@ -415,97 +414,4 @@ mod tests {
         // recover after an underrun instead of waiting on consumed samples.
         assert_eq!(refill_target(48 + 96, 576).unwrap(), 720);
     }
-}
-
-fn run(
-    family: &str,
-    seconds: u64,
-    trials: u64,
-    port: u32,
-    microphone_fill_ms: u64,
-    identity: &LabIdentity,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let options = CreationOptions::new(RealizationId::LINUX_USBIP_USB_AUDIO)
-        .with_audio(AudioOptions::new(AudioExposure::Emulated));
-    match family {
-        "dualsense" => {
-            let mut controller = create_dualsense(options, DualSenseOptions::default())?;
-            let result = exercise(
-                controller.audio().ok_or("missing audio")?,
-                family,
-                seconds,
-                trials,
-                port,
-                microphone_fill_ms,
-                identity,
-            );
-            if result.is_err() {
-                eprintln!("controller_terminal {:?}", controller.diagnostics());
-            }
-            controller.close();
-            result?;
-        }
-        "dualshock4" => {
-            let mut controller = create_dualshock4(options, DualShock4Options::default())?;
-            let result = exercise(
-                controller.audio().ok_or("missing audio")?,
-                family,
-                seconds,
-                trials,
-                port,
-                microphone_fill_ms,
-                identity,
-            );
-            if result.is_err() {
-                eprintln!("controller_terminal {:?}", controller.diagnostics());
-            }
-            controller.close();
-            result?;
-        }
-        "xbox360" => {
-            let mut controller = create_xbox360(options, Xbox360Options::default())?;
-            let result = exercise(
-                controller.audio().ok_or("missing audio")?,
-                family,
-                seconds,
-                trials,
-                port,
-                microphone_fill_ms,
-                identity,
-            );
-            if result.is_err() {
-                eprintln!("controller_terminal {:?}", controller.diagnostics());
-            }
-            controller.close();
-            result?;
-        }
-        _ => return Err("family must be dualsense, dualshock4 or xbox360".into()),
-    }
-    Ok(())
-}
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<_> = std::env::args().skip(1).collect();
-    if !(6..=7).contains(&args.len()) {
-        return Err("usage: usb_audio_acceptance FAMILY SECONDS TRIALS PORT INSTANCE GENERATION [MIC_FILL_MS]".into());
-    }
-    let seconds = args[1].parse::<u64>()?;
-    let trials = args[2].parse::<u64>()?;
-    let port = args[3].parse::<u32>()?;
-    let identity = LabIdentity::new(args[4].clone(), args[5].parse()?)?;
-    let microphone_fill_ms = args.get(6).map_or(Ok(12), |value| value.parse::<u64>())?;
-    if !(1..=60).contains(&seconds)
-        || !(1..=3).contains(&trials)
-        || !(1..=16).contains(&microphone_fill_ms)
-    {
-        return Err("seconds must be 1..60, trials 1..3 and fill 1..16 ms".into());
-    }
-    run(
-        &args[0],
-        seconds,
-        trials,
-        port,
-        microphone_fill_ms,
-        &identity,
-    )
 }
