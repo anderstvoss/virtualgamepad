@@ -149,21 +149,25 @@ fn audit_capture(bytes: &[u8], channels: usize, expected_start: Option<u64>) -> 
     audit
 }
 
-// Locate the start of the fixed measured interval by marker index. Never slide
-// the window forward to a later clean run or accept a replay in place of a loss.
+// Padding or a discontinuity in preroll breaks any projection from marker zero.
+// Start at the first entry into the measured index range. A later replay of the
+// start marker cannot replace a missing start or move the window.
 fn measured_capture(bytes: &[u8], channels: usize, seconds: u64) -> Option<CaptureAudit> {
-    const WARMUP_FRAMES: usize = 96_000;
+    const WARMUP_FRAMES: u64 = 96_000;
     let frame_bytes = channels * 2;
-    let (offset, position) = bytes
+    let (begin, position) = bytes
         .chunks_exact(frame_bytes)
         .enumerate()
-        .find_map(|(offset, frame)| playback_position(frame).map(|position| (offset, position)))?;
-    let begin = offset.checked_add(WARMUP_FRAMES.checked_sub(usize::try_from(position).ok()?)?)?;
+        .filter_map(|(offset, frame)| playback_position(frame).map(|position| (offset, position)))
+        .find(|&(_, position)| position >= WARMUP_FRAMES)?;
+    if position != WARMUP_FRAMES {
+        return None;
+    }
     let end = begin.checked_add(usize::try_from(seconds).ok()?.checked_mul(48_000)?)?;
     Some(audit_capture(
         bytes.get(begin.checked_mul(frame_bytes)?..end.checked_mul(frame_bytes)?)?,
         channels,
-        Some(WARMUP_FRAMES as u64),
+        Some(WARMUP_FRAMES),
     ))
 }
 
@@ -439,6 +443,36 @@ mod tests {
                 runs: 3,
             }
         );
+    }
+
+    #[test]
+    fn native_measurement_anchors_after_dualsense_and_ds4_preroll_padding() {
+        for (channels, padding, skipped) in [(4, 208, 128), (2, 64, 0)] {
+            let mut bytes = vec![0; 128 * channels * 2];
+            for position in 0..240_000 {
+                if position == 864 {
+                    bytes.resize(bytes.len() + padding * channels * 2, 0);
+                }
+                if !(77_024..77_024 + skipped).contains(&position) {
+                    bytes.extend(indexed_bytes(position, channels));
+                }
+            }
+            let measured = measured_capture(&bytes, channels, 3).unwrap();
+            assert_eq!(
+                (measured.exact, measured.zero, measured.other),
+                (144_000, 0, 0),
+                "{channels} playback channels"
+            );
+        }
+    }
+
+    #[test]
+    fn native_measurement_refuses_a_missing_start_even_if_it_is_replayed_later() {
+        let bytes: Vec<_> = (96_001..96_002)
+            .chain(96_000..144_000)
+            .flat_map(|position| indexed_bytes(position, 2))
+            .collect();
+        assert_eq!(measured_capture(&bytes, 2, 1), None);
     }
 
     #[test]
