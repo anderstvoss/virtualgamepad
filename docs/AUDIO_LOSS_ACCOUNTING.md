@@ -1,6 +1,6 @@
 # Audio loss accounting (Brief 16 A0)
 
-Status: source-level inventory and synthetic-only receipt. **No kalux host run, real PipeWire graph, USB/VHCI host or physical controller was exercised.** This is an A0 instrumenting PR, not closure of #143/#145 or a claim of 60-second continuity / latency.
+**Scope of this original A0 receipt:** source-level inventory and synthetic-only tests; no live host was used by that work. Subsequent bounded k1 and k2 kalux checks are reported under [#365](https://github.com/anderstvoss/virtualgamepad/issues/365), not retroactively inserted into its synthetic receipt. No receipt here establishes continuous lossless PCM or physical audio fidelity.
 
 The selected realization defines the host presentation, not what the application owns. The existing IDs are **unchanged**: Native HID `linux.uhid.usb` with `audio-pipewire` provides independent PipeWire sidecars; Real USB `linux.usbip.usb-audio` with `audio-usbip` provides emulated composite HID/UAC2 through the existing worker and root broker. `AudioAccess::Samples` and `AudioAccess::NativeClient` can be chosen independently per direction. The former is an application queue; the latter adds caller-side PipeWire graph/bridge. Neither asserts consumer auto-association or real-device acoustic behavior. See [controller audio](CONTROLLER_AUDIO.md), [Brief 16](plans/pre-controller-buildout/16-audio-haptics-buildout.md), and [ADR-0023](adr/ADR-0023-controller-subsystems.md).
 

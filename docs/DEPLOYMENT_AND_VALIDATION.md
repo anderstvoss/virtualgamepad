@@ -1,6 +1,6 @@
 # Deployment and validation
 
-Current bounded alpha dispositions are recorded in the [alpha remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
+Current dispositions are in [status](STATUS.md), [controller support](CONTROLLER_SUPPORT.md) and the [Alpha 2 tracking gate](https://github.com/anderstvoss/virtualgamepad/issues/365). The [Alpha 1 remediation record](history/alpha-1/ALPHA_REMEDIATION_STATUS.md) is historical.
 Seven scoped installed broker security/recovery phases passed (#115 closed);
 USB/IP audio remains opt-in WIP, with full routing and zero-loss qualification
 deferred to #143/#145. The demo enables USB/IP audio and ALSA host routing by
@@ -16,9 +16,36 @@ not normal root creation or a supported alpha target. No automatic fallback or
 runtime host preparation is introduced by the new application layer.
 
 
-The realization IDs (`linux.uinput`, `linux.uhid.usb`, and `linux.dummy_hcd.usb-hid`) are peers. A controller is created only for the exact target selected by the application and declared by that controller. There is no target ordering and no fallback. The current dummy_hcd transport is unavailable: Linux f_hid does not expose complete GET_REPORT metadata or negative replies. Provider and broker creation reject it before resource construction; preparation cannot enable it.
+The compiled realization IDs include `linux.uinput`, `linux.uhid.usb`,
+`linux.uhid.bluetooth`, `linux.usbip.usb-audio` and the refused
+`linux.dummy_hcd.usb-hid`. A controller is created only for the exact target
+selected by the application **and** declared by that family; no target ordering
+or fallback is implemented. Bluetooth-bus UHID uses `/dev/uhid` and kernel
+bus metadata, not a Bluetooth adapter. The current dummy_hcd transport refuses
+creation because Linux f_hid lacks complete GET_REPORT metadata/negative
+replies; host preparation cannot enable it.
 
 `Evdev` uses an already accessible `/dev/uinput`. `Uhid` uses an already accessible `/dev/uhid`. Neither provider changes permissions or host setup.
+
+## Application ownership and service deployment today
+
+The current ordinary-root `virtualgamepad` Rust library is embedded **in
+process**. The application owns each controller handle, commits its native
+inputs, and drives `service()` from readiness and `next_service_in()`
+deadlines. Creating uinput or UHID controllers requires the creating
+process to have access to the corresponding kernel device node. Library code
+does not provision permissions, start an application broker, discover
+physical controllers, or move handles between processes.
+
+For opt-in `linux.usbip.usb-audio`, an administrator separately installs the
+existing root-owned USB/IP broker, its socket-activated systemd unit and a
+restricted worker. The client uses the compiled family/profile allowlist and
+preinstalled worker; this **is not** a generic multi-process controller
+service API. Normal applications do not use the experimental dummy_hcd
+broker for a supported realization. Use the exact installer and validation
+procedures in [controller audio](CONTROLLER_AUDIO.md#build-and-provision).
+
+TODO(alpha2-final): broker
 
 ## Privileged attachment targets
 
@@ -79,10 +106,10 @@ the GET_REPORT limitation visible and no created resources. Use UHID/evdev for
 available controller checks. The following prototype procedure is historical;
 preparing the host no longer enables gadget creation.
 
-For an interactive local check, run `cargo run -p virtualgamepad-demo`, select
-one of the curated controllers and `USB / dummy_hcd`, then create it. The create panel
-shows whether the broker socket is reachable; creation continues to provide the
-authoritative authorization and host-preflight error. The DualSense, DualShock
+For an interactive local check, run `cargo run -p virtualgamepad-demo`
+and select a **constructible** uinput or UHID realization. The demo may
+display the dummy_hcd limitation and host-preflight information, but
+dummy_hcd creation rejects before any gadget resources are opened. The DualSense, DualShock
 4, and Switch Pro panels can exercise buttons, sticks, triggers, touch,
 battery, and USB motion reports at 250 Hz. The Xbox 360 DummyHcd target is a
 best-effort standard-HID USB attachment under the Xbox identity; it is not a
@@ -94,14 +121,14 @@ indicators show host activity.
 The retained ignored gadget tests describe the earlier prototype, not current
 successful construction. Do not blanket-enable them. Require the deterministic
 rejection regressions and installed candidate rejection instead. Installed USB/IP
-audio acceptance remains a separate gate; see [the remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
+audio acceptance remains a separate gate; see [historical Alpha 1 remediation record](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
 
 Root-only integration tests are intentionally ignored in normal test runs.
 DummyHcd validation covers USB enumeration, HID feature exchange, motion input,
 reverse output, and resource-only cleanup. The Linux `dummy_hcd` module exposes
 a finite virtual-UDC resource: run controller-specific root tests against a
 fresh attachment, rather than concurrently. SDL/Steam recognition and gyro
-behavior remain controller-specific acceptance criteria. Bluetooth realizations require the separate L/M gates and have no supported installation path yet.
+behavior remain controller-specific acceptance criteria. Local Bluetooth-bus UHID uses the existing UHID creator permission path; **real radio/BlueZ pairing** is separate deferred work (#164), with no supported installation path.
 
 ## Stateful UHID service and current migration boundary
 

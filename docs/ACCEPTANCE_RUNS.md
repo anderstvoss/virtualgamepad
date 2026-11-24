@@ -10,12 +10,26 @@ cargo xtask acceptance --controller virtualgamepad.dualsense --realization linux
 cargo xtask acceptance-diff run.json reference.json
 ```
 
-Repeat for Xbox360 uinput and DualSense UHID USB. In a fresh process the first
-cycle is cold, subsequent cycles warm; N sessions coexist before removal.
+Select a **compiled, constructible family/realization** from the
+[controller support inventory](CONTROLLER_SUPPORT.md) and that family's
+`acceptance/virtualgamepad.*.toml` manifest. Repeat N1 and N4 as appropriate
+for each targeted family and both native HID and generic paths; the deliberately
+refused `linux.dummy_hcd.usb-hid` target is not an acceptance-run candidate.
+For `linux.uhid.bluetooth`, the kernel bus metadata does not establish real
+radio discovery or pairing. In a fresh process the first cycle is cold;
+subsequent cycles warm, and N sessions coexist before removal.
 `--backend fake` produces explicitly synthetic observations for CI/development.
 `--reference file` embeds a reference comparison without assigning a verdict.
 `acceptance-diff` compares timing records side by side, or invokes the existing
 SDL comparator for SDL observations. No universal timing threshold is set.
+
+Alpha 2 kalux acceptance reports are **pinned candidate evidence**, not
+universal guarantees: see [P5a USB host runs](ALPHA2_P5A_USB_HOST_ACCEPTANCE.md)
+and [polish cleanup](ALPHA2_POLISH_CLEANUP.md). The feature-specific
+per-function manifest grade must be read separately from the family's WIP
+realization status.
+
+TODO(alpha2-final): P6/P8/P10d final acceptance matrix and the #144 Steam rerun.
 
 All timestamps are nanoseconds on one process monotonic clock. `api_returned`
 is preparation/open complete, not consumer discovery. Node stages poll at 1 ms

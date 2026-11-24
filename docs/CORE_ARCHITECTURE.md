@@ -1,6 +1,6 @@
 # Controller protocol and realization architecture
 
-`virtualgamepad` is a standalone library for compiled, curated controllers. It does not own slot assignment, routing policy, runtime profiles, arbitrary identity selection, or automatic provider fallback.
+`virtualgamepad` is a standalone library for compiled, curated controllers. It does not own slot assignment, routing policy, runtime profiles, physical discovery, or automatic provider fallback. Each family may support caller-selected validated identity and device-data options; those are not arbitrary descriptor injection.
 
 ## Exact primary realization IDs
 
@@ -10,10 +10,11 @@ the resulting component set. See [ADR-0017](adr/ADR-0017-primary-realization-and
 
 | ID | Mechanism | Implemented meaning |
 | --- | --- | --- |
-| `linux.uinput` | Linux uinput | Controller-owned evdev controls and supported outputs. |
-| `linux.uhid.usb` | Linux UHID with USB bus metadata | Local HID protocol presentation; not an actual USB device. |
-| `linux.dummy_hcd.usb-hid` | dummy_hcd and ConfigFS | Unavailable: current f_hid lacks complete request metadata and negative replies; creation fails closed. |
-| `linux.usbip.usb-audio` | stock Linux USB/IP/VHCI | Opt-in WIP composite HID/UAC2; seven scoped broker security/recovery phases passed (#115 closed), streaming qualification deferred (#143/#145). |
+| `linux.uinput` | Generic · Linux uinput | Controller-owned evdev controls and supported outputs. |
+| `linux.uhid.usb` | Native HID · Linux UHID with USB bus metadata | Local HID protocol presentation; not an actual USB device. |
+| `linux.uhid.bluetooth` | Native HID · Linux UHID with Bluetooth bus metadata | Local HID presentation; no radio, BlueZ or pairing. |
+| `linux.dummy_hcd.usb-hid` | Real USB · dummy_hcd and ConfigFS | Declared for four families but refused: f_hid lacks complete request metadata and negative replies. |
+| `linux.usbip.usb-audio` | Real USB · stock Linux USB/IP/VHCI | Opt-in WIP composite HID/UAC2 for Sony and Xbox 360; uses the currently installed root broker, not a general application service facade. |
 
 `RealizationId` is an extensible compiled string identifier. `RealizationTarget` and its `Evdev`, `Uhid`, and `DummyHcd` constants remain supporting-crate SPI aliases. `RealizationTargetSet::new(&[...])` declares a static membership set without a closed global enum. Unknown or mismatched paths fail preparation; they do not select another provider. Mechanism potential is not evidence of implemented or tested support.
 
@@ -32,9 +33,11 @@ name, a default, affected realizations and a fidelity note. Consumer-compatibili
 shims default on. Features with side effects or an explicit opt-in policy default
 off. The demo uses this metadata for its Wii and Steam advanced controls.
 
-Wii and Steam use a shared `CreationOptions { target, session }` plus
-family-specific, non-exhaustive builder options. Both resolve typed identity at
-creation and keep caller storage separate from the transport session. Future
+All seven ordinary-root constructors use `create_<family>(CreationOptions,
+<Family>Options)`, with `CreationOptions::new(realization)`; the internal session
+token is not a caller-created field. Family-specific builder options resolve
+validated per-instance identity and supported device data while keeping caller
+storage separate from the transport session. Future
 realizations can consume additional identity fields, and resource or option
 builders can grow alongside the registry. A receiver entry can declare the
 families it hosts and the features of its own realization.
@@ -200,7 +203,7 @@ truth. Production Wii Remote remains positively gated on later authorization.
 
 ### Application facade ownership
 
-The four typed root handles are newtypes around a private `Controller<F>`. Its
+The seven typed root handles are newtypes around a private `Controller<F>`. Its
 compiled family adapter supplies typed service dispatch; one owner coordinates
 audio failure, deadlines, diagnostics and audio-first terminal cleanup. Shared
 forwarding is generated with `macro_rules!`; controller-native edits and protocol

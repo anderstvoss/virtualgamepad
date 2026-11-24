@@ -1,13 +1,15 @@
 # Typed rumble records — realization audit
 
-Source review baseline: [virtualgamepad](https://github.com/anderstvoss/virtualgamepad/tree/324d250bb01a5ddbfc1dd189513d4c9160429ee1), [research](https://github.com/anderstvoss/controller-protocol-research/tree/6fc8a2d4d8a48a8f025d98ac8448e46c0f97ea7d). Source evidence only, no physical run. Optional observations are not the ADR-0024 accepted-command journal.
+The original source review was pinned to [virtualgamepad `324d250`](https://github.com/anderstvoss/virtualgamepad/tree/324d250bb01a5ddbfc1dd189513d4c9160429ee1) and [research `6fc8a2d`](https://github.com/anderstvoss/controller-protocol-research/tree/6fc8a2d4d8a48a8f025d98ac8448e46c0f97ea7d). The typed decode accessors below are now compiled on `main`. Deterministic records and scoped host observations do not assert physical motor response. **Optional output events and retained snapshots are not the accepted-command VG-2 journal.**
 
-| Family | uinput | UHID USB | UHID Bluetooth | Existing typed view |
-| --- | --- | --- | --- | --- |
-| Xbox Series | FF_RUMBLE, two channels | Not supported | HID output 0x03, four channels | `host_outputs()` returns `XboxSeriesOutputState` with `RumblePlayback` or `XboxSeriesBluetoothRumble`; raw output observation has no rumble accessor. |
-| DualShock 4 | FF_RUMBLE | HID output 0x05 | Not supported; 0x11 is research-only for this product | `DualShock4HidOutput::UsbOutput` carries motor bytes but does not gate them on the rumble validity bit; retained `DualShock4OutputState` does. |
-| Xbox 360 | FF_RUMBLE | Standard HID input only; XUSB rumble report not admitted | Not supported | `Xbox360OutputState` retains evdev playback; native observation is raw, not an XUSB interpretation. |
-| Wii Remote | FF_RUMBLE, collapsed to binary | Not supported | Shared bit 0 of declared HID outputs | `WiiRemoteOutputs::rumble` retains binary intent; raw observation has no typed accessor. |
+| Family | Relevant realizations | Current root typed view |
+| --- | --- | --- |
+| DualSense | uinput FF; USB/BT UHID | Native trigger report/effect types, including `DualSenseTriggerEffectUpdate`; use `decode_dualsense_trigger_effect` for supported payloads. BT actuation and physical fidelity remain unverified. |
+| DualShock 4 | uinput FF; USB output 0x05 and BT output 0x11 | `DualShock4OutputEvent::rumble()` returns `DualShock4Rumble` for recognized reports or playback. The BT payload requires its valid flags and CRC. |
+| Switch Pro | uinput FF; USB/BT UHID motor words | `SwitchProOutputEvent::rumble()` and `SwitchProRumble::decode` describe supported encoded words, not physically measured HD-rumble amplitude/frequency. |
+| Xbox 360 | uinput FF; standard HID USB input | `Xbox360OutputEvent::rumble()` exposes conventional playback; `Xbox360Rumble::decode_xusb` is **source-only**, not a report admitted by this USB HID realization. |
+| Wii Remote | uinput FF; BT-bus UHID shared rumble bit | `WiiRemoteOutputEvent::rumble()` returns a binary-intent `WiiRemoteRumble`. No speaker PCM playback follows from this output. |
+| Xbox Series | uinput FF; BT-bus UHID output 0x03 | `XboxSeriesOutputEvent::rumble()` returns `XboxSeriesRumble` (conventional two-motor playback or native four-channel command). |
 
 USB/IP does not add an XUSB-native Xbox 360 path; DS4 USB worker is separately a USB presentation. No realization, FF input envelope, GIP or journal changes are implied. Decoder tests are deterministic synthetic fixtures; no physical run.
 
@@ -24,3 +26,5 @@ All FF records are derived only from playback commands: zero repetitions stops b
 ## Acceptance
 
 Existing acceptance grades are unchanged. Decode sub-checks name deterministic tests and claims in the existing rumble cells. The two supplemental research claims are cited in descriptions rather than in the manifests' machine-resolved evidence arrays until the corpus PR lands and a separate reviewed pin update adopts it. Native XUSB and DS4 Bluetooth tests are source fixtures, not accepted VG host operations.
+
+TODO(alpha2-final): G2 DualSense Bluetooth output decode and VG-2 journal verification.
