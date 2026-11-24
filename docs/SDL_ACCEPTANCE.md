@@ -4,11 +4,13 @@ UHID controller targets are research-backed until a reference-device comparison
 promotes their surface metadata. A familiar VID/PID alone is never a physical
 controller-fidelity claim.
 
-| Target | Current status | Scope of the claim |
+| Presentation | Families that compile it | Acceptance boundary |
 | --- | --- | --- |
-| DualSense / UHID | ResearchBacked | Curated DualSense HID realization with project-owned descriptor and feature fixtures. |
-| DualSense / DummyHcd | HostValidationRequired | Curated USB attachment realization; validate enumeration, feature exchange, motion, and output on a root-enabled host. |
-| Xbox 360 / UHID | ResearchBacked | Local input-only HID identity and standard controls. XInput, xpad, rumble, and Xbox USB protocol fidelity require USB gadget work. |
+| `linux.uinput` (Generic) | All seven | Family-level WIP; selected per-function virtual-live results are recorded in manifests. |
+| `linux.uhid.usb` (Native HID) | DualSense, DualShock 4, Switch Pro, Xbox 360 standard HID, Steam Controller 2026 wired | Bounded SDL and Steam observations are specific to a tested family and host. Xbox 360 is not proprietary XUSB. |
+| `linux.uhid.bluetooth` (Native HID) | DualSense, DualShock 4, Switch Pro, Wii Remote, Xbox Series | Local UHID with Bluetooth bus metadata, **not** actual radio/pairing; P5b host observations remain scoped. |
+| `linux.usbip.usb-audio` (Real USB) | DualSense, DualShock 4, Xbox 360 | Opt-in composite HID/UAC2 requiring the installed broker and worker; consumer/latency validation is separate. |
+| `linux.dummy_hcd.usb-hid` (Real USB) | Declared but refused for DualSense, DualShock 4, Switch Pro, Xbox 360 | **Not constructible** through ordinary root; Linux f_hid request contract is incomplete. |
 
 Before promoting any entry, compare its descriptor, neutral and full-state
 reports, initialization exchanges, reverse reports, and observed SDL/Steam
@@ -28,9 +30,12 @@ Each target must pass this supported-host gate:
    rumble/LED output and retain the typed reverse-event log.
 
 The probe deliberately has no Cargo dependency on SDL. Steam Input validation
-is interactive and must not be represented as an ordinary CI pass. The current
-repository has no SDL3 development package installed, so this gate remains a
-supported-host prerequisite rather than an ordinary automated test.
+is interactive and must not be represented as an ordinary CI pass. A test host
+must provide the matching SDL3 development/runtime package and an appropriately
+isolated, authorized active-seat Steam session. Do not assume the developer's
+machine has the same libraries or access policy as kalux.
+
+TODO(alpha2-final): #144 final 21-row Steam compatibility matrix and P8 support promotion.
 
 For the D9 host conclusions, exact udev rule inventory, installation modes and
 future setup checks, see the
@@ -198,9 +203,10 @@ No SDL dependency is added to ordinary Cargo builds.
 The evdev `--gamepad-rumble-script` profile requires standard controls and rumble,
 with the Rust parent verifying typed playback magnitudes. It scopes
 `SDL_JOYSTICK_HIDAPI=0` to that child and records SDL's actual mapping and joystick
-match counts to explain discovery failures. DS4 currently fails gamepad discovery
-because its combined touch node is classified as a touchscreen; do not suppress
-touch capabilities or change global udev policy to count a pass. See
+match counts to explain discovery failures. The pinned Alpha 1 DS4 evdev case failed gamepad discovery because its
+combined touch node was classified as a touchscreen; do not generalize that
+historical result to every host or disable touch/change global udev policy to
+manufacture a pass. See
 [EXP-0011](history/alpha-1/experiments/EXP-0011-evdev-sdl.md).
 
 ### Steam input-lab extension
