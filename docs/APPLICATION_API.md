@@ -67,8 +67,10 @@ family options for controller-specific settings. Family options implement
 `Default` and can be reused. Each creation gets fresh internal request and
 session ownership. `association().creation()` is a process-local observation.
 
-For Sony USB/UHID and USB/IP, or Switch Pro USB/UHID, save the handle's
-typed `identity().bytes()` (unwrap the Sony option when present). Restore it
+For Sony USB or Bluetooth UHID, and Switch Pro USB or Bluetooth UHID,
+save the handle's typed `identity().bytes()` (unwrap the Sony option when present).
+The optional USB/IP composite path has its own worker/identity constraints; do
+not assume that a device-data override is supported there. Restore an identity
 with the matching `Identity::from_bytes(bytes)?` and pass it to
 `FamilyOptions::default().with_identity(identity)`. The root re-exports the
 curated identity types, so generation and restoration return the same errors
@@ -125,16 +127,44 @@ interest. Polling sessions require bounded polling. Readiness descriptors borrow
 the controller; never close them or retain a raw descriptor after that borrow.
 
 Required host requests complete internally before optional native observations.
-Applications cannot reply to them. Native output retains Sony flags, LED changes,
-adaptive-trigger bytes and unknown payloads, plus Switch encoded motor words and
-subcommand payloads. Optional observations are bounded; loss is reported by
+Applications cannot reply to them. Native output retains Sony flags, LED changes, adaptive-trigger bytes and
+unknown payloads, plus Switch encoded motor words and subcommand payloads.
+Optional observations are bounded; loss is reported by
 `dropped_output_events()`. Conventional force-feedback upload is not playback.
-No decoded Switch amplitude/frequency fidelity is implied.
+A typed `rumble()` accessor is available on the applicable output event types:
+Switch Pro decoded HD-rumble intent, DS4, Xbox 360, Xbox Series and Wii Remote.
+The original native event and raw bytes remain accessible. The Xbox 360
+`decode_xusb` helper is **source-only**; standard-HID UHID does not accept XUSB
+output reports. Switch Pro decoding does not establish physical motor response.
+See [typed haptic records](RUMBLE_RECORDS.md).
+
+TODO(alpha2-final): VG-2 journal family wiring and acceptance.
 
 Close is terminal and idempotent. Diagnostics remain available after closure,
 including cleanup failure and observation loss. Recreate a new controller instead
 of resetting/reopening a closed session. Host OPEN/CLOSE observations are distinct
 from library session lifetime.
+
+## Input transactions and error handling
+
+For every family, `inputs()` borrows the last accepted native input snapshot.
+`set_inputs(controller.inputs().clone())` validates a **complete** candidate;
+`edit_inputs(|candidate| { /* edit native controls */ Ok(()) })` groups edits
+and validates only the final candidate. Targeted setters use the same
+transaction semantics. An accepted edit is not delivered until `commit()`.
+For a held button, use `neutralize()` and `commit()` before closing if the
+consumer needs to observe the release. Motion refresh methods are
+family-specific and must not be used simply to retry backpressure.
+
+Creation returns `ControllerError` for unsupported selections, missing host
+prerequisites or failed setup. Input operations return `ControlError` for
+validation or closed-session failures; transport delivery can be retryable or
+terminal as indicated by the error. A rejected edit preserves accepted inputs
+and pending work, and close is idempotent. Inspect `diagnostics().last_error()`
+after close for cleanup failure rather than treating `close()` as proof of
+host-node removal. `host_outputs()` returns the latest retained snapshot,
+not a continuous stream; an unimplemented retained-state query is a typed
+unavailability rather than an empty output event.
 
 ## Migration from the pre-108 surface
 
@@ -240,8 +270,12 @@ not flush audio. Endpoint selectors invalidate on close/recreation; retained
 association/diagnostic snapshots neither keep endpoints alive nor prove ownership.
 
 Use `AudioDiagnostics` for retained health and loss, typed errors for sample
-alignment/ownership/closure, and optional `microphone_consumed_frames()` for pacing.
-Graph timing is experimental instrumentation, not measured end-to-end latency.
+alignment/ownership/closure, and optional `microphone_consumed_frames()` for
+pacing. `playback_accounting()` and `microphone_accounting()` return optional
+`AudioDirectionAccounting` for the active direction, including generation,
+produced/consumed frame counters and explicit loss telemetry. Missing direction
+means `None`, not zero loss. Graph timing is experimental instrumentation, not
+measured end-to-end latency.
 See [audio](CONTROLLER_AUDIO.md) and [migration](ALPHA_API_MIGRATION.md).
 
 ## Lifecycle observations and companion topology
@@ -266,10 +300,12 @@ handling. Supporting `ControllerAssociation` constructors also need the new
 `companions` field. These SPI changes leave ordinary root signatures unchanged.
 
 The supporting curated and ordinary-root handles expose retained host outputs.
-Optional observation callbacks remain bounded and lossy. The internal retained
-view survives event eviction and terminal close. USB-worker snapshots are
-explicitly unavailable because the lossy worker channel has no recovery query
-(tracked separately in #203).
+Optional observation callbacks remain bounded and lossy. The internal retained view survives event eviction and terminal close.
+For USB/IP, the installed retained-output-v1 worker transmits validated
+snapshots through the existing worker contract: `host_outputs()` reflects
+in-service updates and the terminal FINAL snapshot after orderly close.
+The host run for #350 checked those three broker/worker behaviors on its
+pinned candidate, not a general streamed event or physical-output guarantee.
 
 ## Wii attachment and EEPROM, and Steam scheduling
 
