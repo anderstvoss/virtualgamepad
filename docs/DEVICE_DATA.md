@@ -16,8 +16,8 @@ A transport-only `physical_path` suffix is not a controller-reported identity. O
 | DualShock 4 | Calibration, USB UHID | Feature `0x02` | Synthetic constant; **not required** | `DualShock4Options::with_device_data` (P10b) | Yes, caller-runtime only |
 | DualShock 4 | Firmware and hardware constants, USB UHID | Feature `0xA3` | Synthetic constant; **not required** | `DualShock4Options::with_device_data` (P10b) | Yes, caller-runtime only |
 | Switch Pro | Controller identity, USB UHID | USB status `0x80/0x01`, subcommand `0x02`, `uniq` | Generated locally; **yes** | `SwitchProIdentity::from_bytes`, `SwitchProOptions::with_identity` | No direct loader; caller can restore bytes at runtime |
-| Switch Pro | Factory IMU and stick calibration, USB UHID | SPI read subcommand `0x10` | Synthetic constant; **not required** | None; P10c | Planned P10c |
-| Switch Pro | User calibration, colours and serial region, USB UHID | SPI read subcommand `0x10` | Unpopulated synthetic response; **not required** | None; P10c | Planned P10c |
+| Switch Pro | Factory IMU and stick calibration, USB/Bluetooth UHID | SPI read subcommand `0x10` | Synthetic defaults when no image supplied | `SwitchProOptions::with_spi_image` | **Yes**, caller-supplied `SwitchProSpiImage` regions |
+| Switch Pro | User calibration and colour regions, USB/Bluetooth UHID | SPI read subcommand `0x10` | Synthetic defaults when absent | `SwitchProSpiImage::import_raw` / `with_region` | **Yes**, factory and user windows (P10c) |
 | Xbox 360 | Device-reported serial, uinput | **Not emitted** (ordinary evdev keys/axes/FF only) | Not applicable | No identity API needed | No |
 | Xbox 360 | Transport path, uinput | uinput `phys` label | Per-instance suffix; **yes** (not a reported serial) | No override; `Xbox360Options` empty | No |
 | Xbox 360 | Standard gamepad presentation, USB UHID | UHID `uniq` and `phys` transport labels; no serial feature | Per-instance suffix; **yes** (transport label, not controller serial) | No override; `Xbox360Options` empty | No |
@@ -33,7 +33,9 @@ The Xbox 360 USB UHID presentation uses the project-standard gamepad descriptor 
 
 ## Conformance and outstanding work
 
-`crates/gr-curated-controllers/tests/device_data.rs` covers synthetically generated and deterministic restored identities without hardware. Existing in-crate fake-provider/protocol tests exercise Sony feature response shape and transport labels. The audited default constant fields are intentional, not a failure of uniqueness. P10b adds unignored pure synthetic tests for caller-selected Sony feature reports, round-trip restoration and typed USB/IP refusal. Mainline audit tests for non-identity blobs may remain ignored until lanes are integrated. P10c (Switch Pro) and full two-instance host-level report and restore coverage remain outstanding; do not mistake ignored tests for validation.
+`crates/gr-curated-controllers/tests/device_data.rs` covers synthetically generated and deterministic restored identities without hardware. Existing in-crate fake-provider/protocol tests exercise Sony feature response shape and transport labels. The audited default constant fields are intentional, not a failure of uniqueness. P10b adds unignored pure synthetic tests for caller-selected Sony feature reports, round-trip restoration and typed USB/IP refusal. Mainline audit tests for non-identity blobs may remain ignored until lanes are integrated. P10c Switch Pro SPI image support is implemented and independently testable; see [SPI image guide](SWITCH_PRO_SPI.md). A prior P10d kalux check observed synthetic identity uniqueness and selected reports for two instances, but Wii Bluetooth consumer access, full calibrated consumer output and owner-consented real-data validation remain unqualified. Do not mistake ignored or synthetic tests for physical validation.
+
+TODO(alpha2-final): P10d final host identity/device-data validation.
 
 The guard `scripts/check-private-device-data.py` inspects tracked/indexed Git blobs, never the working tree, and rejects private paths and likely dump shapes. The legacy Wii entry point delegates to it. Name/size/shape heuristics are defense in depth, **not** a proof that a renamed or transformed dump will be detected. Keep physical data outside the public repository regardless of scanner result.
 
@@ -86,10 +88,7 @@ avoids changing the installed worker's wire protocol; a compatible
 broker/audio-workstream design must close the gap separately.
 No caller-selected report bytes are sent in worker frames or executable
 arguments in this PR. Supplying a pair cannot partially update a live
-controller. The current Sony Bluetooth-bus realization is not on
-the checked `main`; this API accepts **numbered USB reports only**.
-Bluetooth forms (including CRC-bearing variants) are rejected; no
-claim of Bluetooth feature-report support is made here.
+controller. Sony Bluetooth-bus UHID realizations are now compiled and accept per-instance identities. The `DeviceData` value still uses validated **numbered USB report** inputs; callers must not supply separately encoded Bluetooth reports or CRC trailers. DualSense Bluetooth response encoding shares the configured common data and adds the Bluetooth transport envelope. DS4 USB accepts explicit device-data overrides; DS4 Bluetooth currently refuses explicit overrides. Neither result establishes physical sensor calibration accuracy.
 
 ### Caller-selected file format
 
