@@ -4,7 +4,12 @@ The MIDI test uses **SteamHapticsSinger itself**. It reads a generated MIDI file
 and sends haptic tone requests; virtualgamepad does not add a MIDI synthesizer,
 MIDI server, or USB MIDI interface. PCM tests use the pinned SteamHapticsPlayer
 and iczero clients. The wired descriptor remains unchanged and has no invented
-USB Audio Class endpoint.
+USB Audio Class endpoint. These in-band haptic HID packets are not separate
+PipeWire/ALSA controller-audio endpoints. `host_outputs()` is a latest-state
+view, while `service()` yields bounded native observations; neither provides
+a loss-aware accepted-command journal on its own.
+
+TODO(alpha2-final): G5 Steam consumer haptics run and VG-2 stream/journal wiring.
 
 ## Creation and output consumption
 
