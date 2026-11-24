@@ -14,26 +14,31 @@ validated.
 
 ## Controllers and realizations
 
-| Controller | `linux.uinput` | `linux.uhid.usb` | Emulated audio (opt-in) |
-| --- | --- | --- | --- |
-| DualSense | WIP | WIP | UHID/PipeWire, USB/IP |
-| DualShock 4 | WIP | WIP | UHID/PipeWire, USB/IP |
-| Switch Pro | WIP | WIP | — |
-| Xbox 360 (standard HID, not XInput) | WIP | WIP | UHID/PipeWire, USB/IP |
+| Controller | `linux.uinput` | `linux.uhid.usb` | `linux.uhid.bluetooth` | `linux.usbip.usb-audio` |
+| --- | --- | --- | --- | --- |
+| DualSense | WIP | WIP | WIP | Opt-in WIP |
+| DualShock 4 | WIP | WIP | WIP | Opt-in WIP |
+| Switch Pro | WIP | WIP | WIP | — |
+| Xbox 360 (standard HID; not XInput) | WIP | WIP | — | Opt-in WIP |
+| Wii Remote | WIP | — | WIP | — |
+| Steam Controller 2026 (wired; not Puck) | WIP, reduced | WIP | — | — |
+| Xbox Series | WIP, reduced | — | WIP | — |
 
 - `linux.uinput`: Linux evdev controls through `/dev/uinput`.
 - `linux.uhid.usb`: a HID device with USB bus metadata through `/dev/uhid`. It is
   not an actual USB device.
-- `linux.usbip.usb-audio`: opt-in composite HID/UAC2 device through a root-owned
-  local broker.
-- `linux.dummy_hcd.usb-hid`: unavailable; creation is rejected before any
-  resources are opened.
+- `linux.uhid.bluetooth`: local HID with Bluetooth bus metadata; this does
+  **not** implement Bluetooth discovery, pairing or a radio transport.
+- `linux.usbip.usb-audio`: opt-in real USB/IP composite HID/UAC2 for
+  DualSense, DualShock 4 and Xbox 360, using the current installed root broker.
+- `linux.dummy_hcd.usb-hid`: declared for four families but **refused**
+  before resource creation (incomplete Linux f_hid request semantics).
 
-No cell is promoted beyond WIP yet; see the [support matrix](docs/CONTROLLER_SUPPORT.md)
-for the status definitions. The ordinary root includes all seven families,
-including [Wii Remote](docs/WII_REMOTE.md) with uinput and Bluetooth-bus UHID,
-Steam Controller 2026 with uinput and wired UHID, and Xbox Series with uinput
-and Bluetooth-bus UHID.
+All compiled family realizations remain WIP in the family support overview;
+individual acceptance-manifest functions may have narrower evidence-backed
+statuses. An em dash means **undeclared**, not an unsupported implementation.
+Actual Bluetooth radio and the Steam Puck are deferred. See the
+[support matrix](docs/CONTROLLER_SUPPORT.md) for exact claims and restrictions.
 
 ## Usage
 
@@ -87,7 +92,8 @@ cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 cargo test --locked --workspace --all-features
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), the [architecture](docs/CORE_ARCHITECTURE.md)
+Start with the [documentation index](docs/README.md) for integration,
+controller implementation and acceptance paths. See [CONTRIBUTING.md](CONTRIBUTING.md), the [architecture](docs/CORE_ARCHITECTURE.md)
 and the [decision records](docs/adr/). Alpha 1 planning and evidence records are
 kept in [docs/history/alpha-1](docs/history/alpha-1/README.md).
 
