@@ -1,5 +1,12 @@
 # Wii speaker decode (Brief 16 S1, Alpha 2)
 
+The S1 speaker framing/decode implementation is compiled, but the controller
+still refuses audible speaker playback. Decoding commands and delivering
+samples are distinct capabilities. Do not report a working speaker before
+the downstream journal, Dolphin and hardware checks.
+
+TODO(alpha2-final): G6 Wii speaker journal integration and Dolphin acceptance.
+
 Source-evidence audit at vg `324d250bb01a5ddbfc1dd189513d4c9160429ee1`; research `6fc8a2d4d8a48a8f025d98ac8448e46c0f97ea7d`. No host or physical run. This is decode-only; journal wiring and playback are outside this change.
 
 ## Baseline audit
