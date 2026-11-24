@@ -1,6 +1,6 @@
 # DualShock 4 Bluetooth-bus UHID realization (p9b)
 
-**Status:** local synthetic UHID with bus metadata 5; no radio, pairing, BlueZ or physical Bluetooth connection. Source evidence only; host runs follow in local kalux P5b (**not run**). The support-matrix cell stays **WIP**.
+**Status:** local synthetic UHID with bus metadata 5; no radio, pairing, BlueZ or physical Bluetooth connection. Source-backed synthetic protocol behavior now also has bounded P5b kalux Linux/SDL observations; the support-matrix family target stays **WIP**. This is not a retail-device equivalence finding.
 
 ### Realization levels
 
@@ -27,6 +27,8 @@ The compiled descriptor declares these report sizes but is deliberately syntheti
 
 - **Bluetooth device fidelity:** local bus-type metadata is not wireless discovery, pairing or a retail descriptor. Do not report a physical Bluetooth connection or fidelity acceptance.
 - **Bluetooth audio:** UHID has neither speaker nor headset PCM endpoints; cannot carry native audio. Audio is addressed separately for other realizations.
-- **Host and device observation:** compile-time/golden synthetic CRC and report tests are not Linux, SDL or physical captures; local P5b qualification and eventual owner-approved hardware comparison are required.
+- **Host and device observation:** synthetic CRC/report tests are distinct from live host evidence. P5b kalux reached N1 50/50 and N3 150/150 Bluetooth UHID direct/SDL opens and cleanup; isolated SDL controls mapped, with Sony baseline-centering limitations. There is still no owner-approved physical equivalence test ([host evidence](ALPHA2_POLISH_CLEANUP.md)).
+
+TODO(alpha2-final): #287 DS4 lightbar blink decode and acceptance.
 
 The per-function [DS4 acceptance manifest](../acceptance/virtualgamepad.dualshock4.toml) enumerates the new target with WIP statuses, consumer claim IDs and audio limitations. [Research draft #159](https://github.com/anderstvoss/controller-protocol-research/pull/159) adds `ds4-bt-consumer-input-envelope`, `ds4-bt-consumer-output-effects`, `ds4-bt-consumer-calibration-open`, and `ds4-bt-consumer-identity-uniq`. Because that draft is not merged, the research pin remains unchanged and must be updated in a separate follow-up after merge.

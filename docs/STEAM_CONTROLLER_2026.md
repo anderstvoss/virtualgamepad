@@ -1,5 +1,10 @@
 # Steam Controller 2026 wired
 
+The ordinary-root constructor takes `CreationOptions::new(realization)` and
+`SteamController2026Options`. The Puck/receiver is not a compiled realization.
+
+TODO(alpha2-final): Steam 0xae SET-selector fix and final #144 consumer matrix.
+
 C6 covers direct wired USB `28de:1302`. The Steam supporting module opens
 the full wired UHID realization and a reduced uinput gamepad.
 
@@ -7,9 +12,13 @@ The approved Steam supporting API has its own reviewed snapshot,
 [`api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json`](api/STEAM_CONTROLLER_2026_API_SNAPSHOT.json),
 checked by `python3 scripts/check-alpha-api.py` alongside the root and Wii APIs.
 
-Research pin: `6bf1eb21f755cfd6e0cd409eb81f928cd90a7f30`, including merged
-wired stability research PR #108, LED research PR #109 and prior physical
-input/haptic references.
+The original C6 wired-stability and LED evidence came from research
+`6bf1eb21f755cfd6e0cd409eb81f928cd90a7f30` (including PRs #108
+and #109). The currently checked-in research submodule is
+`b0b4e66f344d6cc072e42578b7782e3371f7bc4b`; the Steam
+acceptance manifest records its own exact experiment provenance
+(`research_revision = "a67781e2412eceea9440d20dbb350ad5d3352c25"`).
+These are different pin scopes, not interchangeable revisions.
 The generated fixture manifest records the exact revision and fixture/record
 digests. The LED acceptance cell adopts the bounded physical and separate
 consumer records from [research PR #109](https://github.com/anderstvoss/controller-protocol-research/pull/109).
