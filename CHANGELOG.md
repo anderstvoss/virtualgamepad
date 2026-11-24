@@ -6,6 +6,32 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Alpha 2 (in progress)
+
+- **Added:** Three local Bluetooth-bus UHID realizations (DualSense, DualShock 4,
+  Switch Pro). These provide native HID over UHID, **not** Bluetooth pairing
+  or a radio transport. Wii Remote and Xbox Series also expose their previously
+  declared Bluetooth-bus UHID targets.
+- **Added:** Caller-supplied identity and device data for the applicable
+  families, with synthetic per-instance defaults; Sony calibration/firmware
+  and Switch Pro SPI resource options are documented in
+  [device data](docs/DEVICE_DATA.md).
+- **Added:** Typed rumble/haptic output records for the implemented families,
+  reviewed per-family host-output snapshots, audio diagnostics and optional
+  USB/IP controller audio. See [haptics](docs/RUMBLE_RECORDS.md) and
+  [audio](docs/CONTROLLER_AUDIO.md) for current acceptance limits.
+- **Changed:** Registry realization level labels are now **Generic**,
+  **Native HID** and **Real USB**, with a reserved **Real radio** level.
+  Realization IDs are unchanged; curated `RealizationTier` variants changed
+  ([migration notes](docs/ALPHA_API_MIGRATION.md)).
+- **Changed:** All seven ordinary-root families use native
+  `<Family>Inputs` views, transactional `set_inputs`/`edit_inputs`,
+  targeted setters and separate controller status.
+- **Pending:** VG-2 journal family wiring, Wii speaker validation, final
+  audio/haptics and consumer runs, and final support promotion are tracked
+  under [#365](https://github.com/anderstvoss/virtualgamepad/issues/365).
+  These are not claimed as shipped.
+
 ### Added
 
 - The ordinary root now includes Wii Remote and Steam Controller 2026 handles

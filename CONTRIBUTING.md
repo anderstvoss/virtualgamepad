@@ -5,11 +5,15 @@ shift. Please read this file end-to-end before opening a PR.
 
 ## Where things are documented
 
+- [Documentation index](docs/README.md): start with application integration, adding
+  a controller or running acceptance.
+- [Application API](docs/APPLICATION_API.md): current ordinary-root calls and lifecycle.
 - [Status](docs/STATUS.md): current dispositions and known limitations.
 - [Architecture](docs/CORE_ARCHITECTURE.md) and [decision records](docs/adr/):
   the current model. Record a significant technical decision as a new ADR rather
   than rewriting an accepted one; mark superseded parts explicitly.
-- [Support matrix](docs/CONTROLLER_SUPPORT.md): status definitions and promotion rules.
+- [Support matrix](docs/CONTROLLER_SUPPORT.md) and [acceptance manifests](acceptance/README.md):
+  exact compiled realizations, per-function evidence and promotion rules.
 - [Alpha 1 history](docs/history/alpha-1/README.md): the architecture rewrite plan,
   gate ledgers, experiments and evidence. Historical; do not extend it for new work.
 
@@ -54,7 +58,8 @@ Scorecard on pushes to `main`.
 3. Justify any new dependency in the PR description.
 4. Don't commit secrets, credentials, `.env` files, logs, private keys,
    local configs, hardcoded local paths, usernames, or private IPs.
-5. Add or update tests for behavior changes.
+5. Add or update tests and per-function acceptance evidence for behavior changes.
+   Do not treat a `virtual-live` manifest cell as physical equivalence.
 6. Sign your commits if possible (`git commit -S`) — helps with
    provenance, not required.
 7. Make sure CI is green before requesting review.
