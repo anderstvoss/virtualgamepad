@@ -7,6 +7,8 @@ per-feature dispositions in
 [`acceptance/virtualgamepad.wii-remote.toml`](../acceptance/virtualgamepad.wii-remote.toml).
 It is not physical-reference or whole-controller acceptance.
 
+TODO(alpha2-final): Wii speaker journal/wiring (G6) and P6 retail SDL/Dolphin reruns.
+
 ### Realization levels
 
 | Realization ID | Level | Mechanism | Permission |

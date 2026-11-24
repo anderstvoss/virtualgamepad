@@ -16,6 +16,8 @@ The behavioral target is source-backed Linux `hid-nintendo` and SDL Switch HIDAP
 - Source-backed 0x01 subcommand and 0x10 rumble-only outputs, 0x21 acknowledgements, device info, synthetic SPI and retained ordinary output semantics are in scope.
 - NFC/IR MCU reports 0x11/0x31, console pairing, Bluetooth audio, actual Bluetooth discovery/reconnection and physical descriptor equivalence remain explicitly unsupported.
 - Simple report 0x3F uses a D-pad hat and cannot represent simultaneous opposing directions. Full 0x30 input preserves individual direction bits. The SDL simple-axis parser requires a raw neutral value of `0x8000`; the native signed axis is offset to this code, rather than emitting zero as neutral (source claim `swpro-bt-simple-axis-neutral` in research PR #161).
-- No physical capture or host trial is available. Bluetooth report shape is a source-derived emulation interface, not a measured retail Bluetooth descriptor. Proposed P5b local host tests: **not run**.
+- P5b host testing on kalux observed successful SDL Bluetooth mapping and bounded N1/N3 create, open, SDL-open and remove sequences (50/50 N1 and 150/150 N3 per Bluetooth family). The report shape remains a source-derived emulation interface, **not** a measured retail Bluetooth descriptor or real radio.
 
-The controller support matrix stays WIP; the local kalux P5b run is the next validation gate (#156, #164, #365).
+The [controller support matrix](CONTROLLER_SUPPORT.md) remains family-level WIP despite those scoped host results. See [Alpha 2 cleanup evidence](ALPHA2_POLISH_CLEANUP.md) and [#365 P5b findings](https://github.com/anderstvoss/virtualgamepad/issues/365#issuecomment-7073966945).
+
+TODO(alpha2-final): P8 support acceptance and physical Bluetooth comparison.
