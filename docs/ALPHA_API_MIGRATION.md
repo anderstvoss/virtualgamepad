@@ -793,7 +793,7 @@ In each root snapshot feature view, remove the old type and add `XboxSeriesInput
 and `XboxSeriesStatus`. Remove the handle's `state()`, add
 `inputs() -> &XboxSeriesInputs` and `status() -> XboxSeriesStatus`, and change both
 mutation signatures above. The public `sticks` field and six native input methods
-move to the input type unchanged. Status adds `target() -> RealizationTarget`.
+move to the input type unchanged. Status adds `target() -> RealizationId` (the supporting SPI may spell the same type `RealizationTarget`).
 Inputs retain default, clone and equality support; status is copyable with clone
 and equality support. Both new types are exported by root and experimental
 modules. Wii and Steam supporting snapshots have zero delta.
@@ -912,7 +912,7 @@ snapshots stay byte-identical to the end of step d (root 172, Wii 23, Steam 14).
 | Edit one native field | Family setters use the same final-state transaction as replacement, edits and neutralization. Rejection preserves accepted inputs, metadata, dirty work and pending bytes. |
 | Release held controls | `neutralize()`, then `commit()`; preserve live metadata and host outputs. Wii attached inputs can also be cloned, neutralized and passed to `set_inputs`. Default Wii inputs have extension None and are rejected when an extension is attached. |
 | Produce an explicit motion sample | Sony `refresh_motion()` advances the accepted clocks even for equal motion, then commits. Switch Pro retains its realization/stream-specific refresh behavior and HID cadence. Retry an accepted sample with `commit()` after backpressure; do not refresh again merely to retry. |
-| Manage Wii battery | `battery()` / `set_battery(WiiRemoteBattery::new(raw))`; read raw byte with `.raw()` or `status().battery()`. Metadata survives input edits, attach, neutralize and close. Old `set_battery_raw` is removed. |
+| Manage Wii battery | `battery()` / `set_battery(WiiRemoteBattery::new(raw))`; read the raw byte with `controller.battery().raw()` or `controller.status().battery().raw()`. Metadata survives input edits, attach, neutralize and close. Old `set_battery_raw` is removed. |
 | Read Wii live / projected topology | Live `current_topology()` uses accepted attachment metadata. Detached editors use `projected_input_topology(bool)` with explicit pending presence. Only live `attach()` changes companions and topology generation. |
 | Deliver or service | Call `commit()` explicitly and service readiness/deadlines independently. Input levels coalesce: press/release before commit may disappear. There is no input event queue or guarantee of atomic host observation. |
 
