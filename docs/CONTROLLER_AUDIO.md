@@ -125,6 +125,13 @@ controller.close();
 `Samples` is the default ownership. `AudioOptions::with_playback_access` and
 `with_microphone_access` can instead select `AudioAccess::NativeClient` per
 stream group. Library sample methods reject access to native-owned groups.
+
+> **Known limitation (Alpha 2):** NativeClient *playback* can drop short runs of
+> frames (replaced by silence), more often under CPU load. On the kalux Real USB
+> runs this happened in 4 of 15 baseline trials and in every heavily loaded
+> trial. `Samples` ownership stayed exact in every trial, so use it when
+> continuity matters. This is tracked in #448 and is the first item to fix after
+> Alpha 2.
 `audio().endpoints()` exposes direction, format, group, clock identity and typed
 PipeWire/ALSA selectors. Resolve them for each creation; never remember ALSA card
 numbers. Host-to-controller means playback/haptics; controller-to-host means
