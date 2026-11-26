@@ -34,6 +34,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Proposed ADR-0026 broker service and client protocol (vgsp), covering the
+  Alpha 2 integration and compatibility gate without implementation changes.
+
 - The ordinary root now includes Wii Remote and Steam Controller 2026 handles
   with typed input, retained outputs and service scheduling. Wii Remote exposes
   attachment topology and explicit EEPROM resolution.
